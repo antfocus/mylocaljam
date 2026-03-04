@@ -48,9 +48,10 @@ export async function POST(request) {
   const BATCH_SIZE = 50;
   for (let i = 0; i < allEvents.length; i += BATCH_SIZE) {
     const batch = allEvents.slice(i, i + BATCH_SIZE);
-    const { error: upsertError, count } = await supabase
-      .from('events')
-      .upsert(batch, { onConflict: 'external_id', count: 'exact' });
+  const cleanedBatch = batch.map(({ approved, ...rest }) => rest);
+const { error: upsertError, count } = await supabase
+  .from('events')
+  .upsert(cleanedBatch, { onConflict: 'external_id', count: 'exact' });
 
     if (upsertError) {
       totalErrors.push(`DB upsert: ${upsertError.message}`);
