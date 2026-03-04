@@ -1,8 +1,8 @@
 const TM_BASE = 'https://app.ticketmaster.com/discovery/v2/events.json';
 
 const VENUES = [
-  { id: '1217', name: 'Wonder Bar' },
-  { id: '1251', name: 'Stone Pony Summer Stage' },
+  { id: 'KovZpZAdnEtA', name: 'Wonder Bar' },
+  { id: 'KovZpZAatk1A', name: 'Stone Pony Summer Stage' },
 ];
 
 function formatTime(timeStr) {
