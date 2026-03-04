@@ -1,15 +1,14 @@
 // lib/scrapers/pigAndParrot.js
 // Pig & Parrot Brielle — PopMenu GraphQL API
 //
-// If this scraper stops working, go to thepigandparrot.com/events-brielle,
-// open DevTools → Network → Fetch/XHR, scroll to the Live Events section,
-// and look for the calendarEventBySlug request. Check the Payload tab for
-// an updated slug or operationId and update the constants below.
+// Uses customPageCalendarSection to fetch all upcoming events.
+// If broken: go to thepigandparrot.com/brielle, open DevTools → Network,
+// scroll to events section, find the customPageCalendarSection request,
+// and update OPERATION_ID and SECTION_ID below.
 
 const GRAPHQL_URL = 'https://www.thepigandparrot.com/graphql';
-const RESTAURANT_ID = 9325; // Brielle location
-const CALENDAR_SLUG = 'burning-sun-db8b9cec'; // calendar section slug
-const OPERATION_ID = 'PopmenuClient/7f4d92021ed75fb31ada391acac0a154';
+const SECTION_ID = 4216789;
+const OPERATION_ID = 'PopmenuClient/cd5b0fad2ca75f0ee6749973681b6474';
 
 function secondsToTime(seconds) {
   if (!seconds && seconds !== 0) return null;
@@ -35,10 +34,11 @@ export async function scrapePigAndParrot() {
         'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0)',
       },
       body: JSON.stringify({
-        operationName: 'calendarEventBySlug',
+        operationName: 'customPageCalendarSection',
         variables: {
-          restaurantId: RESTAURANT_ID,
-          slug: CALENDAR_SLUG,
+          rangeStartAt: new Date().toISOString(),
+          limit: 60,
+          sectionId: SECTION_ID,
         },
         extensions: {
           operationId: OPERATION_ID,
@@ -46,33 +46,30 @@ export async function scrapePigAndParrot() {
       }),
     });
 
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} from PopMenu GraphQL`);
-    }
+    if (!res.ok) throw new Error(`HTTP ${res.status} from PopMenu`);
 
     const json = await res.json();
+    if (json.errors?.length) throw new Error(json.errors[0].message);
 
-    if (json.errors?.length) {
-      throw new Error(`GraphQL error: ${json.errors[0].message}`);
-    }
+    const upcomingEvents =
+      json?.data?.customPageSection?.upcomingCalendarEvents || [];
 
-    const raw = json?.data?.calendarEventBySlug;
+    for (const ev of upcomingEvents) {
+      if (ev.isPastEvent) continue;
 
-    // API may return a single event object or an array
-    const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
-
-    for (const ev of list) {
-      // Skip past or cancelled events
-      if (ev.isPastEvent || ev.status !== 'active') continue;
+      const photoUrl =
+        ev.photoUploadedPhoto?.url ||
+        ev.photoUrl ||
+        null;
 
       events.push({
         title: ev.name,
         venue: 'Pig & Parrot Brielle',
-        date: ev.startAt,           // "YYYY-MM-DD"
+        date: ev.startAt,
         time: secondsToTime(ev.startTime),
         end_time: secondsToTime(ev.endTime),
         description: ev.description || null,
-        image_url: ev.photoUrl || null,
+        image_url: photoUrl,
         ticket_url:
           ev.externalLinkUrl ||
           `https://www.thepigandparrot.com${ev.calendarEventPageUrl}`,
