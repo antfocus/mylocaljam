@@ -16,7 +16,7 @@ function mapToDbSchema(ev) {
         const ampm = m[3].toUpperCase();
         if (ampm === 'PM' && h !== 12) h += 12;
         if (ampm === 'AM' && h === 12) h = 0;
-        event_date = `${ev.date}T${String(h).padStart(2,'0')}:${min}:00`;
+      event_date = `${ev.date}T${String(h).padStart(2,'0')}:${min}:00-05:00`;
       } else {
         event_date = ev.date;
       }
