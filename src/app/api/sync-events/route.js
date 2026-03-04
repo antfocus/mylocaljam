@@ -34,7 +34,7 @@ function mapToDbSchema(ev) {
     cover: ev.price || null,
     source: ev.source_url || null,
     external_id: ev.external_id,
-    status: 'active',
+   status: 'published',
   };
 }
 
