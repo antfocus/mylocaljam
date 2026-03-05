@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { POST } from '@/app/api/sync-events/route';
 
 export async function GET() {
