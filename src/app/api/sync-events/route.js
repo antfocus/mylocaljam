@@ -36,7 +36,6 @@ function mapEvent(ev, venueMap) {
     cover: ev.price || null,
     source: ev.source_url || null,
     external_id: ev.external_id,
-    image_url: ev.image_url || null,
     status: 'published',
     verified_at: new Date().toISOString(),
   };
