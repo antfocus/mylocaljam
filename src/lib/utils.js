@@ -79,3 +79,69 @@ export const VIBES = [
   '🎤 Singer-Songwriter', '🎧 DJ / Electronic', '🎺 Funk & Soul',
   '🌊 Beach Vibes', '🎻 Folk & Americana',
 ];
+
+// ── New: clean time range formatting ─────────────────────────────────────────
+// Accepts 24-hr strings ("19:00", "22:30"). Returns compact display strings:
+//   "19:00", null       → "7p"
+//   "19:00", "22:00"    → "7-10p"
+//   "18:30", "22:00"    → "6:30-10p"
+//   "14:00", "18:30"    → "2-6:30p"
+//   "11:00", "14:00"    → "11a-2p"
+export function formatTimeRange(startStr, endStr) {
+  function parse(t) {
+    if (!t) return null;
+    const [h, m] = t.split(':').map(Number);
+    return { h, m, period: h < 12 ? 'a' : 'p', h12: h % 12 || 12 };
+  }
+  function fmt(o, showPeriod) {
+    const mins = o.m ? `:${String(o.m).padStart(2, '0')}` : '';
+    return `${o.h12}${mins}${showPeriod ? o.period : ''}`;
+  }
+  const s = parse(startStr);
+  if (!s) return '';
+  const e = parse(endStr);
+  if (!e) return fmt(s, true);
+  const samePeriod = s.period === e.period;
+  return samePeriod
+    ? `${fmt(s, false)}-${fmt(e, true)}`
+    : `${fmt(s, true)}-${fmt(e, true)}`;
+}
+
+// ── New: group a sorted event array by date ───────────────────────────────────
+// Returns [{ label: 'Today' | 'Tomorrow' | 'Fri Mar 7', date: 'YYYY-MM-DD', events: [] }]
+export function groupEventsByDate(events) {
+  const now       = new Date();
+  const pad       = n => String(n).padStart(2, '0');
+  const localStr  = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const today     = localStr(now);
+  const tmrw      = new Date(now); tmrw.setDate(now.getDate() + 1);
+  const tomorrow  = localStr(tmrw);
+  const groups    = {};
+  const order     = [];
+
+  for (const event of events) {
+    const d = (event.date || event.event_date || '').substring(0, 10);
+    if (!groups[d]) { groups[d] = []; order.push(d); }
+    groups[d].push(event);
+  }
+
+  return order.map(d => {
+    let baseLabel;
+    if (d === today)         baseLabel = 'Today';
+    else if (d === tomorrow)  baseLabel = 'Tomorrow';
+    else                     baseLabel = null;
+
+    let dateFull = '';
+    try {
+      dateFull = new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric',
+      }).toUpperCase();
+    } catch { dateFull = d; }
+
+    const label = baseLabel
+      ? `${baseLabel.toUpperCase()} · ${dateFull}`
+      : dateFull;
+
+    return { label, date: d, events: groups[d] };
+  });
+}
