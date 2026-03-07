@@ -124,8 +124,11 @@ export default function HomePage() {
         // e.g. "2026-03-07T21:00:00" → "21:00"
         const extractedStartTime = e.start_time || (() => {
           if (e.event_date && e.event_date.includes('T')) {
-            const t = e.event_date.split('T')[1];
-            return t ? t.substring(0, 5) : null;
+            // Parse as Date and use LOCAL time getters to avoid UTC offset
+            const d = new Date(e.event_date);
+            const h = String(d.getHours()).padStart(2, '0');
+            const m = String(d.getMinutes()).padStart(2, '0');
+            return `${h}:${m}`;
           }
           return null;
         })();
