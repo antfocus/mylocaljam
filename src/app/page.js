@@ -200,7 +200,12 @@ export default function HomePage() {
     switch (dateKey) {
       case 'today':   list = list.filter(e => e.date === todayStr); break;
       case 'tomorrow':list = list.filter(e => e.date === tomorrowStr); break;
-      case 'weekend': list = list.filter(e => e.date >= fridayStr && e.date <= sundayStr); break;
+      case 'weekend': {
+        // Start from today if today is after Friday (i.e. Sat/Sun) so past days fall off
+        const weekendStart = todayStr > fridayStr ? todayStr : fridayStr;
+        list = list.filter(e => e.date >= weekendStart && e.date <= sundayStr);
+        break;
+      }
       default: break;
     }
 
@@ -503,7 +508,11 @@ export default function HomePage() {
               switch (dateKey) {
                 case 'today':   savedEvents = savedEvents.filter(e => e.date === todayStr); break;
                 case 'tomorrow':savedEvents = savedEvents.filter(e => e.date === tomorrowStr); break;
-                case 'weekend': savedEvents = savedEvents.filter(e => e.date >= fridayStr && e.date <= sundayStr); break;
+                case 'weekend': {
+                  const weekendStart = todayStr > fridayStr ? todayStr : fridayStr;
+                  savedEvents = savedEvents.filter(e => e.date >= weekendStart && e.date <= sundayStr);
+                  break;
+                }
                 default: break;
               }
 
