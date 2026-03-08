@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
 import { scrapePigAndParrot } from '@/lib/scrapers/pigAndParrot';
 import { scrapeTicketmaster } from '@/lib/scrapers/ticketmaster';
+import { scrapeJoesSurfShack } from '@/lib/scrapers/joesSurfShack';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,20 +70,23 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
+    scrapeJoesSurfShack(),
   ]);
 
   const scraperResults = {
     PigAndParrot: { count: pigAndParrot.events.length, error: pigAndParrot.error },
     Ticketmaster: { count: ticketmaster.events.length, error: ticketmaster.error },
+    JoesSurfShack: { count: joesSurfShack.events.length, error: joesSurfShack.error },
   };
 
   // Combine all events
   const allEvents = [
     ...pigAndParrot.events,
     ...ticketmaster.events,
+    ...joesSurfShack.events,
   ].map(ev => mapEvent(ev, venueMap));
 
   // Filter out events with no external_id or date
