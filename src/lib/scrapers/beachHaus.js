@@ -73,62 +73,69 @@ function formatTime(timeStr) {
 }
 
 /**
- * Parse the Divi text block content into events.
- * Events are separated by blank lines, each block has:
- * Line 1: Artist name
- * Line 2 (optional): Instagram handle
- * Line 3: Date
- * Line 4: Time
+ * Parse the Divi page HTML into events.
+ * Structure (confirmed via DevTools):
+ *   SPAN: Artist name (e.g. "Chris Brown")
+ *   A:    Instagram link (optional, skip)
+ *   H4:   Date (e.g. "Friday, March 6, 2026")
+ *   P:    Time (e.g. "7:00 p.m. to 10:00 p.m.")
  */
 function parseEvents(html) {
   const events = [];
   const now = new Date();
 
-  // Extract all et_pb_text_inner divs
-  const textBlockRegex = /<div class="et_pb_text_inner">([\s\S]*?)<\/div>/g;
-  let blockMatch;
+  // Extract all leaf text elements in order from the page
+  // Match SPAN (artist), H4 (date), P (time) tags
+  const tokenRegex = /<(span|h4|p|a)[^>]*>([\s\S]*?)<\/\1>/gi;
+  const tokens = [];
+  let m;
 
-  while ((blockMatch = textBlockRegex.exec(html)) !== null) {
-    const content = blockMatch[1];
+  while ((m = tokenRegex.exec(html)) !== null) {
+    const tag = m[1].toLowerCase();
+    const raw = m[2].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+    if (!raw) continue;
 
-    // Strip HTML tags and decode entities
-    const text = content
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<[^>]+>/g, '')
-      .replace(/&amp;/g, '&')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&#8211;/g, '—')
-      .replace(/&#8212;/g, '—')
-      .trim();
+    // Skip navigation, footer, meta content
+    if (raw.length > 200) continue;
 
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    if (lines.length < 2) continue;
+    tokens.push({ tag, text: raw });
+  }
 
-    // Look for a date line pattern
-    const dateLineIdx = lines.findIndex(l =>
-      /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(l) ||
-      /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(l)
-    );
-    if (dateLineIdx === -1) continue;
+  // Walk tokens looking for the pattern: SPAN (artist) → H4 (date) → P (time)
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
 
-    // Artist name is the line before the date (skip Instagram lines)
-    let titleIdx = dateLineIdx - 1;
-    while (titleIdx >= 0 && lines[titleIdx].toLowerCase().includes('instagram')) {
-      titleIdx--;
+    // Look for an H4 that contains a date
+    if (t.tag !== 'h4') continue;
+    const dateStr = t.text;
+    if (!/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(dateStr)) continue;
+
+    // Look back for the nearest SPAN that's an artist name (skip Instagram links)
+    let title = null;
+    for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
+      const prev = tokens[j];
+      if (prev.tag === 'span' &&
+          !prev.text.toLowerCase().includes('instagram') &&
+          !prev.text.toLowerCase().includes('calendar') &&
+          !prev.text.toLowerCase().includes('http') &&
+          prev.text.length > 1) {
+        title = prev.text;
+        break;
+      }
     }
-    if (titleIdx < 0) continue;
-    const title = lines[titleIdx];
-    if (!title || title.toLowerCase().includes('calendar')) continue;
+    if (!title) continue;
 
-    const dateStr = lines[dateLineIdx];
-    const timeStr = lines[dateLineIdx + 1] || null;
+    // Look ahead for the time P tag
+    let timeStr = null;
+    if (i + 1 < tokens.length && tokens[i + 1].tag === 'p') {
+      timeStr = tokens[i + 1].text;
+    }
 
     const eventDate = parseEventDate(dateStr, timeStr);
     if (!eventDate) continue;
     if (eventDate < now) continue;
 
-    // Build a stable external_id from title + date
-    const dateKey = eventDate.toISOString().split('T')[0];
+    const dateKey = eventDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const externalId = `beachhaus-${title.toLowerCase().replace(/[^a-z0-9]/g, '')}-${dateKey}`;
 
     events.push({
