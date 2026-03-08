@@ -206,14 +206,22 @@ export default function HomePage() {
         list = list.filter(e => e.date >= weekendStart && e.date <= sundayStr);
         break;
       }
-      default: break;
+      default:
+        // All Upcoming: strip any events whose local date is before today
+        // (can happen when UTC midnight events get converted to yesterday local time)
+        list = list.filter(e => e.date >= todayStr);
+        break;
     }
 
     if (activeVenue !== 'all') list = list.filter(e => e.venue === activeVenue);
 
     if (activeCategory !== 'All') {
       list = list.filter(e => {
-        const g = (e.genre ?? e.vibe ?? '').toLowerCase();
+        const g = ((e.genre ?? e.vibe) ?? '').toLowerCase();
+        if (activeCategory === 'Music') {
+          // Music = anything that isn't explicitly a happy hour, special, or community event
+          return !g.includes('happy') && !g.includes('special') && !g.includes('communit');
+        }
         return g.includes(activeCategory.toLowerCase().replace(/s$/, ''));
       });
     }

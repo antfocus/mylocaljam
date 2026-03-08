@@ -87,7 +87,7 @@ export default function HeroSection({ events = [], defaultCategory = 'Music', is
       {/* Event info */}
       <div style={{ position: 'relative', zIndex: 10 }}>
         {/* Time + event name on same line */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px', overflow: 'hidden' }}>
           {timeStr && (
             <span style={{
               fontSize: '13px', fontWeight: 800, flexShrink: 0,
@@ -100,7 +100,7 @@ export default function HeroSection({ events = [], defaultCategory = 'Music', is
               {timeStr}
             </span>
           )}
-          <h2 style={{ color: 'white', fontSize: '20px', fontWeight: 900, lineHeight: 1.2, margin: 0 }}>
+          <h2 style={{ color: 'white', fontSize: '20px', fontWeight: 900, lineHeight: 1.2, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {name}
           </h2>
         </div>
