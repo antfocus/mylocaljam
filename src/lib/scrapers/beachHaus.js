@@ -84,40 +84,64 @@ function parseEvents(html) {
   const events = [];
   const now = new Date();
 
-  // Extract all leaf text elements in order from the page
-  // Match SPAN (artist), H4 (date), P (time) tags
-  const tokenRegex = /<(span|h4|p|a)[^>]*>([\s\S]*?)<\/\1>/gi;
+  // Structure confirmed via DevTools:
+  // <h4 class="et_pb_module_header"><span>Artist Name</span></h4>
+  // <div class="et_pb_blurb_description"><p><a href="Instagram">...</a></p></div>
+  // <h4 class="et_pb_module_header"><span>Friday, March 6, 2026</span></h4>  ← date block
+  // OR date is in a separate et_pb_text div as plain <h4>
+  //
+  // Strategy: extract all et_pb_module_header h4 spans and et_pb_text h4s as tokens,
+  // then match artist → date → time pattern.
+
   const tokens = [];
+
+  // Match et_pb_module_header h4 (artist names AND possibly dates)
+  const headerRegex = /<h4[^>]*class="et_pb_module_header"[^>]*><span>([\s\S]*?)<\/span><\/h4>/gi;
   let m;
-
-  while ((m = tokenRegex.exec(html)) !== null) {
-    const tag = m[1].toLowerCase();
-    const raw = m[2].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
-    if (!raw) continue;
-
-    // Skip navigation, footer, meta content
-    if (raw.length > 200) continue;
-
-    tokens.push({ tag, text: raw });
+  while ((m = headerRegex.exec(html)) !== null) {
+    const text = m[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+    if (text) tokens.push({ type: 'header', text, pos: m.index });
   }
 
-  // Walk tokens looking for the pattern: SPAN (artist) → H4 (date) → P (time)
+  // Match plain h4 tags in et_pb_text sections (dates)
+  const plainH4Regex = /<h4>([\s\S]*?)<\/h4>/gi;
+  while ((m = plainH4Regex.exec(html)) !== null) {
+    const text = m[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+    if (text) tokens.push({ type: 'h4', text, pos: m.index });
+  }
+
+  // Match p tags for times
+  const pRegex = /<p>([\s\S]*?)<\/p>/gi;
+  while ((m = pRegex.exec(html)) !== null) {
+    const text = m[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim();
+    if (text && text.includes('p.m.') || (text && text.includes('a.m.'))) {
+      tokens.push({ type: 'time', text, pos: m.index });
+    }
+  }
+
+  // Sort all tokens by position in document
+  tokens.sort((a, b) => a.pos - b.pos);
+
+  // Walk tokens: find date tokens, look back for artist, look ahead for time
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
 
-    // Look for an H4 that contains a date
-    if (t.tag !== 'h4') continue;
+    // Look for a date token (h4 or header containing a month name)
+    const isDate = /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(t.text);
+    if (!isDate) continue;
     const dateStr = t.text;
-    if (!/\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(dateStr)) continue;
 
-    // Look back for the nearest SPAN that's an artist name (skip Instagram links)
+    // Look back for artist name (header type, not a date, not Instagram)
     let title = null;
-    for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
+    for (let j = i - 1; j >= Math.max(0, i - 4); j--) {
       const prev = tokens[j];
-      if (prev.tag === 'span' &&
+      const prevIsDate = /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(prev.text);
+      if (!prevIsDate &&
           !prev.text.toLowerCase().includes('instagram') &&
           !prev.text.toLowerCase().includes('calendar') &&
           !prev.text.toLowerCase().includes('http') &&
+          !prev.text.toLowerCase().includes('p.m.') &&
+          !prev.text.toLowerCase().includes('a.m.') &&
           prev.text.length > 1) {
         title = prev.text;
         break;
@@ -125,9 +149,9 @@ function parseEvents(html) {
     }
     if (!title) continue;
 
-    // Look ahead for the time P tag
+    // Look ahead for time token
     let timeStr = null;
-    if (i + 1 < tokens.length && tokens[i + 1].tag === 'p') {
+    if (i + 1 < tokens.length && tokens[i + 1].type === 'time') {
       timeStr = tokens[i + 1].text;
     }
 
