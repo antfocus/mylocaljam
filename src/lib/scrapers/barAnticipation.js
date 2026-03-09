@@ -67,10 +67,13 @@ function decodeIcalText(str) {
 
 /**
  * Parse raw iCal text into an array of event objects.
+ * Handles RDATE recurring dates — each RDATE becomes its own event.
  */
 function parseIcal(icalText) {
   const events = [];
   const now = new Date();
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const seen = new Set();
 
   // Unfold lines (iCal wraps long lines with CRLF + space/tab)
   const unfolded = icalText.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
@@ -82,48 +85,57 @@ function parseIcal(icalText) {
   for (const line of lines) {
     if (line === 'BEGIN:VEVENT') {
       inEvent = true;
-      current = {};
+      current = { rdates: [] };
       continue;
     }
 
     if (line === 'END:VEVENT') {
       inEvent = false;
 
-      const startDate = parseIcalDate(current.dtstart);
-      if (!startDate) { current = {}; continue; }
-
-      // Skip only if the event date is before today in Eastern time
-      const eventDateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-      const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-      if (eventDateStr < todayStr) { current = {}; continue; }
-
       const title = decodeIcalText(current.summary || '');
       if (!title) { current = {}; continue; }
 
-      // Build external_id from UID or title+date
-      const uid = current.uid || `${title}-${current.dtstart}`;
-      const externalId = `baranticipation-${uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 60)}`;
+      // Collect all dates: DTSTART + all RDATEs
+      const allDates = [];
+      const startDate = parseIcalDate(current.dtstart);
+      if (startDate) allDates.push(startDate);
+      for (const rd of current.rdates) {
+        const d = parseIcalDate(rd);
+        if (d) allDates.push(d);
+      }
 
-      // Format date and time for Eastern
-      const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-      const timeStr = startDate.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'America/New_York',
-      });
+      // Create an event for each future date
+      for (const date of allDates) {
+        const dateStr = date.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        if (dateStr < todayStr) continue;
 
-      events.push({
-        title,
-        venue: VENUE,
-        date: dateStr,
-        time: timeStr,
-        description: current.description ? decodeIcalText(current.description) : null,
-        ticket_url: current.url || VENUE_URL,
-        price: null,
-        source_url: VENUE_URL,
-        external_id: externalId,
-      });
+        const timeStr = date.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: 'America/New_York',
+        });
+
+        // Include date in external_id so each occurrence is unique
+        const uid = current.uid || `${title}-${current.dtstart}`;
+        const uidClean = uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 40);
+        const externalId = `baranticipation-${dateStr}-${uidClean}`;
+
+        if (seen.has(externalId)) continue;
+        seen.add(externalId);
+
+        events.push({
+          title,
+          venue: VENUE,
+          date: dateStr,
+          time: timeStr,
+          description: current.description ? decodeIcalText(current.description) : null,
+          ticket_url: current.url || VENUE_URL,
+          price: null,
+          source_url: VENUE_URL,
+          external_id: externalId,
+        });
+      }
 
       current = {};
       continue;
@@ -134,6 +146,7 @@ function parseIcal(icalText) {
     if (line.startsWith('SUMMARY')) current.summary = extractValue(line);
     else if (line.startsWith('DTSTART')) current.dtstart = extractValue(line);
     else if (line.startsWith('DTEND')) current.dtend = extractValue(line);
+    else if (line.startsWith('RDATE')) current.rdates.push(extractValue(line));
     else if (line.startsWith('DESCRIPTION')) current.description = extractValue(line);
     else if (line.startsWith('URL')) current.url = extractValue(line);
     else if (line.startsWith('UID')) current.uid = extractValue(line);
