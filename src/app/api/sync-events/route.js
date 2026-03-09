@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
 import { scrapePigAndParrot } from '@/lib/scrapers/pigAndParrot';
 import { scrapeTicketmaster } from '@/lib/scrapers/ticketmaster';
+import { scrapeJoesSurfShack } from '@/lib/scrapers/joesSurfShack';
+import { scrapeStStephensGreen } from '@/lib/scrapers/stStephensGreen';
+import { scrapeMcCanns } from '@/lib/scrapers/mccanns';
+import { scrapeBeachHaus } from '@/lib/scrapers/beachHaus';
+import { scrapeMartells } from '@/lib/scrapers/martells';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,20 +74,35 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
+    scrapeJoesSurfShack(),
+    scrapeStStephensGreen(),
+    scrapeMcCanns(),
+    scrapeBeachHaus(),
+    scrapeMartells(),
   ]);
 
   const scraperResults = {
     PigAndParrot: { count: pigAndParrot.events.length, error: pigAndParrot.error },
     Ticketmaster: { count: ticketmaster.events.length, error: ticketmaster.error },
+    JoesSurfShack: { count: joesSurfShack.events.length, error: joesSurfShack.error },
+    StStephensGreen: { count: stStephensGreen.events.length, error: stStephensGreen.error },
+    McCanns: { count: mcCanns.events.length, error: mcCanns.error },
+    BeachHaus: { count: beachHaus.events.length, error: beachHaus.error },
+    Martells: { count: martells.events.length, error: martells.error },
   };
 
   // Combine all events
   const allEvents = [
     ...pigAndParrot.events,
     ...ticketmaster.events,
+    ...joesSurfShack.events,
+    ...stStephensGreen.events,
+    ...mcCanns.events,
+    ...beachHaus.events,
+    ...martells.events,
   ].map(ev => mapEvent(ev, venueMap));
 
   // Filter out events with no external_id or date
