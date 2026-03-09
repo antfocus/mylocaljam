@@ -92,10 +92,10 @@ function parseIcal(icalText) {
       const startDate = parseIcalDate(current.dtstart);
       if (!startDate) { current = {}; continue; }
 
-      // Skip only if the event date is in the past (compare dates, not times)
-      const eventDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-      const todayOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      if (eventDateOnly < todayOnly) { current = {}; continue; }
+      // Skip only if the event date is before today in Eastern time
+      const eventDateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      if (eventDateStr < todayStr) { current = {}; continue; }
 
       const title = decodeIcalText(current.summary || '');
       if (!title) { current = {}; continue; }

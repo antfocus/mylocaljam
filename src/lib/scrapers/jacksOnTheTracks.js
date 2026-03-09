@@ -86,7 +86,11 @@ function parseIcal(icalText) {
 
       const startDate = parseIcalDate(current.dtstart);
       if (!startDate) { current = {}; continue; }
-      if (startDate < now) { current = {}; continue; }
+
+      // Skip only if the event date is before today in Eastern time
+      const eventDateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      if (eventDateStr < todayStr) { current = {}; continue; }
 
       const title = decodeIcalText(current.summary || '');
       if (!title) { current = {}; continue; }

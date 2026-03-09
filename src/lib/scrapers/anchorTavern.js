@@ -52,9 +52,10 @@ export async function scrapeAnchorTavern() {
       const startDate = new Date(startMs);
       if (isNaN(startDate.getTime())) continue;
 
-      // Skip past events
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      if (startDate < todayStart) continue;
+      // Skip only if the event date is before today in Eastern time
+      const eventDateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      if (eventDateStr < todayStr) continue;
 
       const year = startDate.getFullYear();
       const month = String(startDate.getMonth() + 1).padStart(2, '0');
