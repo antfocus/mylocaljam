@@ -1,95 +1,167 @@
-// lib/scrapers/barAnticipation.js
-// Bar Anticipation (Bar A) — HTML scraper using All-in-One Event Calendar plugin
+/**
+ * Bar Anticipation (Bar A) scraper
+ * Entertainment calendar: https://bar-a.com/entertainment-calendar/
+ *
+ * Uses the All-in-One Event Calendar (AILEC) iCal export feed.
+ * iCal URL: https://bar-a.com/?plugin=all-in-one-event-calendar&controller=ai1ec_exporter_controller&action=export_events
+ *
+ * If it breaks:
+ *   1. Go to https://bar-a.com/entertainment-calendar/
+ *   2. Look for an "Export" or "Subscribe" link
+ *   3. Update ICAL_URL below with the new export URL
+ */
 
-const PAGE_URL = 'https://bar-a.com/entertainment-calendar/';
+const ICAL_URL =
+  'https://bar-a.com/?plugin=all-in-one-event-calendar&controller=ai1ec_exporter_controller&action=export_events';
+const VENUE = 'Bar Anticipation';
+const VENUE_URL = 'https://bar-a.com/entertainment-calendar/';
 
-function parseEvents(html) {
-  const events = [];
-  
-  // Find all event divs with class ailec-event-id-*
-  const eventRegex = /class="ailec-event-id-(\d+)[^"]*"[^>]*>[\s\S]*?<span class="ailec-event-title">([^<]+)<\/span>[\s\S]*?<div class="ailec-event-time">([^<]+)<\/div>/g;
-  
-  let match;
-  const seen = new Set();
-  
-  while ((match = eventRegex.exec(html)) !== null) {
-    const eventId = match[1];
-    const title = match[2].trim();
-    const timeStr = match[3].trim(); // "Mar 9 @ 5:30 PM – 8:30 PM"
-    
-    if (seen.has(eventId)) continue;
-    seen.add(eventId);
-    
-    // Parse date and time: "Mar 9 @ 5:30 PM – 8:30 PM"
-    const dateMatch = timeStr.match(/(\w+)\s+(\d{1,2})\s+@\s+(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    if (!dateMatch) continue;
-    
-    const monthStr = dateMatch[1];
-    const day = dateMatch[2];
-    const hour = dateMatch[3];
-    const min = dateMatch[4];
-    const ampm = dateMatch[5].toUpperCase();
-    
-    const months = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
-    const monthNum = months[monthStr.slice(0, 3)];
-    if (!monthNum) continue;
-    
-    const date = `2026-${String(monthNum).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    
-    let h = parseInt(hour);
-    if (ampm === 'PM' && h !== 12) h += 12;
-    if (ampm === 'AM' && h === 12) h = 0;
-    const time = `${h % 12 || 12}:${min} ${ampm}`;
-    
-    // Extract end time if present
-    const endMatch = timeStr.match(/–\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    let endTime = null;
-    if (endMatch) {
-      let eh = parseInt(endMatch[1]);
-      const eampm = endMatch[3].toUpperCase();
-      if (eampm === 'PM' && eh !== 12) eh += 12;
-      if (eampm === 'AM' && eh === 12) eh = 0;
-      endTime = `${eh % 12 || 12}:${endMatch[2]} ${eampm}`;
-    }
-    
-    events.push({
-      title,
-      venue: 'Bar Anticipation',
-      date,
-      time,
-      end_time: endTime,
-      description: null,
-      image_url: null,
-      ticket_url: PAGE_URL,
-      price: null,
-      source_url: PAGE_URL,
-      external_id: `baranticipation-${eventId}`,
-      approved: true,
-    });
+/**
+ * Parse an iCal date string into a JS Date.
+ * Handles: TZID format, UTC (Z), and floating dates.
+ */
+function parseIcalDate(str) {
+  if (!str) return null;
+
+  // DATE only: 20260315
+  const dateOnly = str.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (dateOnly) {
+    return new Date(`${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T00:00:00-05:00`);
   }
-  
+
+  // DateTime UTC: 20260315T210000Z
+  const utcMatch = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+  if (utcMatch) {
+    return new Date(
+      `${utcMatch[1]}-${utcMatch[2]}-${utcMatch[3]}T${utcMatch[4]}:${utcMatch[5]}:${utcMatch[6]}Z`
+    );
+  }
+
+  // DateTime floating or with TZID: 20260315T210000
+  const localMatch = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/);
+  if (localMatch) {
+    return new Date(
+      `${localMatch[1]}-${localMatch[2]}-${localMatch[3]}T${localMatch[4]}:${localMatch[5]}:${localMatch[6]}-05:00`
+    );
+  }
+
+  return null;
+}
+
+/** Extract the value after the colon in an iCal property line. */
+function extractValue(line) {
+  const colonIdx = line.indexOf(':');
+  if (colonIdx === -1) return '';
+  return line.slice(colonIdx + 1).trim();
+}
+
+/** Decode iCal text escapes. */
+function decodeIcalText(str) {
+  return str
+    .replace(/\\n/gi, ' ')
+    .replace(/\\,/g, ',')
+    .replace(/\\;/g, ';')
+    .replace(/\\\\/g, '\\')
+    .trim();
+}
+
+/**
+ * Parse raw iCal text into an array of event objects.
+ */
+function parseIcal(icalText) {
+  const events = [];
+  const now = new Date();
+
+  // Unfold lines (iCal wraps long lines with CRLF + space/tab)
+  const unfolded = icalText.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
+  const lines = unfolded.split(/\r\n|\n|\r/);
+
+  let inEvent = false;
+  let current = {};
+
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') {
+      inEvent = true;
+      current = {};
+      continue;
+    }
+
+    if (line === 'END:VEVENT') {
+      inEvent = false;
+
+      const startDate = parseIcalDate(current.dtstart);
+      if (!startDate) { current = {}; continue; }
+
+      // Skip past events
+      if (startDate < now) { current = {}; continue; }
+
+      const title = decodeIcalText(current.summary || '');
+      if (!title) { current = {}; continue; }
+
+      // Build external_id from UID or title+date
+      const uid = current.uid || `${title}-${current.dtstart}`;
+      const externalId = `baranticipation-${uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 60)}`;
+
+      // Format date and time for Eastern
+      const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const timeStr = startDate.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'America/New_York',
+      });
+
+      events.push({
+        title,
+        venue: VENUE,
+        date: dateStr,
+        time: timeStr,
+        description: current.description ? decodeIcalText(current.description) : null,
+        ticket_url: current.url || VENUE_URL,
+        price: null,
+        source_url: VENUE_URL,
+        external_id: externalId,
+      });
+
+      current = {};
+      continue;
+    }
+
+    if (!inEvent) continue;
+
+    if (line.startsWith('SUMMARY')) current.summary = extractValue(line);
+    else if (line.startsWith('DTSTART')) current.dtstart = extractValue(line);
+    else if (line.startsWith('DTEND')) current.dtend = extractValue(line);
+    else if (line.startsWith('DESCRIPTION')) current.description = extractValue(line);
+    else if (line.startsWith('URL')) current.url = extractValue(line);
+    else if (line.startsWith('UID')) current.uid = extractValue(line);
+  }
+
   return events;
 }
 
 export async function scrapeBarAnticipation() {
-  const events = [];
-  let error = null;
-
   try {
-    const res = await fetch(PAGE_URL, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0)' },
+    const res = await fetch(ICAL_URL, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
+      },
+      next: { revalidate: 0 },
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching iCal feed`);
 
-    const html = await res.text();
-    events.push(...parseEvents(html));
+    const icalText = await res.text();
+    if (!icalText.includes('BEGIN:VCALENDAR')) {
+      throw new Error('Response does not appear to be a valid iCal feed');
+    }
 
-    console.log(`[BarAnticipation] Found ${events.length} events`);
+    const events = parseIcal(icalText);
+    console.log(`[BarAnticipation] Found ${events.length} upcoming events`);
+    return { events, error: null };
+
   } catch (err) {
-    error = err.message;
     console.error('[BarAnticipation] Scraper error:', err.message);
+    return { events: [], error: err.message };
   }
-
-  return { events, error };
 }
