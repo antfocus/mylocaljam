@@ -14,7 +14,7 @@
  */
 
 const BASE_URL = 'https://www.anchortavernnj.com';
-const COLLECTION = 'music';
+const COLLECTION = 'schedule';
 const VENUE = 'Anchor Tavern';
 const VENUE_URL = 'https://www.anchortavernnj.com/music';
 
