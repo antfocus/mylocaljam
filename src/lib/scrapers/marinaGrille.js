@@ -2,101 +2,97 @@
  * Marina Grille scraper
  * Music page: https://www.marinagrillenj.com/music
  *
- * Squarespace site — events are in static HTML.
- * Each event is inside a <div class="summary-thumbnail-outer-container">
- * with data-title on the <a> tag, date in <time class="...--date">,
- * and time in <span class="event-time-12hr">.
+ * Squarespace site — uses the built-in JSON API (?format=json) on the
+ * /schedule collection, which returns structured event data.
  *
  * If it breaks:
  *   1. Go to https://www.marinagrillenj.com/music
- *   2. Inspect a few events to check the class names haven't changed
- *   3. Update the regex patterns below
+ *   2. Click on an event and note the URL path (e.g. /schedule/event-slug)
+ *   3. The collection name is the first path segment (e.g. "schedule")
+ *   4. Try https://www.marinagrillenj.com/{collection}?format=json
+ *   5. Update COLLECTION below
  */
 
-const PAGE_URL = 'https://www.marinagrillenj.com/music';
+const BASE_URL = 'https://www.marinagrillenj.com';
+const COLLECTION = 'schedule';
 const VENUE = 'Marina Grille';
+const VENUE_URL = 'https://www.marinagrillenj.com/music';
 
 export async function scrapeMarinaGrille() {
   try {
-    const res = await fetch(PAGE_URL, {
+    const url = `${BASE_URL}/${COLLECTION}?format=json`;
+
+    const res = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
+        'Accept': 'application/json',
       },
       next: { revalidate: 0 },
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching Squarespace JSON`);
 
-    const html = await res.text();
+    const data = await res.json();
+    const items = data?.items || data?.upcoming || [];
+
+    if (!Array.isArray(items)) throw new Error('Unexpected JSON shape — no items array');
+
     const events = [];
     const now = new Date();
     const seen = new Set();
 
-    // Match each event block: <a> with data-title, followed by date and time
-    // We look for each summary-thumbnail-outer-container block
-    const blockRegex = /<div[^>]*class="summary-thumbnail-outer-container"[^>]*>([\s\S]*?)<!\-\- Products: Quick View \-\->/g;
+    for (const item of items) {
+      const title = item.title;
+      if (!title) continue;
 
-    let block;
-    while ((block = blockRegex.exec(html)) !== null) {
-      const content = block[1];
+      // Squarespace stores dates as epoch milliseconds in startDate
+      const startMs = item.startDate;
+      if (!startMs) continue;
 
-      // Extract title from data-title attribute
-      const titleMatch = content.match(/data-title="([^"]+)"/);
-      if (!titleMatch) continue;
-      const title = titleMatch[1].trim();
-
-      // Extract link href
-      const hrefMatch = content.match(/href="([^"]+)"/);
-      const eventPath = hrefMatch ? hrefMatch[1] : null;
-
-      // Extract date: <time class="summary-metadata-item summary-metadata-item--date">Mar 7, 2026</time>
-      const dateMatch = content.match(/summary-metadata-item--date"[^>]*>([^<]+)<\/time>/);
-      if (!dateMatch) continue;
-      const dateText = dateMatch[1].trim(); // e.g. "Mar 7, 2026"
-
-      // Parse the date string
-      const parsedDate = new Date(dateText);
-      if (isNaN(parsedDate.getTime())) continue;
+      const startDate = new Date(startMs);
+      if (isNaN(startDate.getTime())) continue;
 
       // Skip past events
-      const dateOnly = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate());
-      const todayOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      if (dateOnly < todayOnly) continue;
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (startDate < todayStart) continue;
 
-      const year = parsedDate.getFullYear();
-      const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
-      const day = String(parsedDate.getDate()).padStart(2, '0');
+      const year = startDate.getFullYear();
+      const month = String(startDate.getMonth() + 1).padStart(2, '0');
+      const day = String(startDate.getDate()).padStart(2, '0');
       const dateStr = `${year}-${month}-${day}`;
 
-      // Extract time: <span class="event-time-12hr">8:00 PM &ndash; 11:00 PM</span>
-      const timeMatch = content.match(/event-time-12hr"[^>]*>([^<]+)<\/span>/);
-      let time = null;
-      if (timeMatch) {
-        // Clean up: get start time only (before dash/ndash)
-        const raw = timeMatch[1]
-          .replace(/&ndash;/g, '–')
-          .replace(/&mdash;/g, '—')
-          .trim();
-        const startTime = raw.split(/\s*[–—-]\s*/)[0].trim();
-        if (startTime) time = startTime;
-      }
+      const timeStr = startDate.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'America/New_York',
+      });
 
-      // Build external_id from title + date
-      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-      const externalId = `marinagrille-${dateStr}-${slug}`;
+      // Build event URL from slug
+      const slug = item.urlId || item.fullUrl || '';
+      const eventUrl = slug.startsWith('http')
+        ? slug
+        : slug
+          ? `${BASE_URL}/${COLLECTION}/${slug}`
+          : VENUE_URL;
+
+      // External ID from Squarespace item ID or slug
+      const itemId = item.id || slug || `${title}-${dateStr}`;
+      const idClean = String(itemId).replace(/[^a-zA-Z0-9-]/g, '').slice(0, 60);
+      const externalId = `marinagrille-${dateStr}-${idClean}`;
 
       if (seen.has(externalId)) continue;
       seen.add(externalId);
 
       events.push({
-        title,
+        title: title.trim(),
         venue: VENUE,
         date: dateStr,
-        time,
-        description: null,
-        ticket_url: eventPath ? `https://www.marinagrillenj.com${eventPath}` : PAGE_URL,
+        time: timeStr,
+        description: item.excerpt || item.body ? (item.excerpt || '').replace(/<[^>]*>/g, '').trim() || null : null,
+        ticket_url: eventUrl,
         price: null,
-        source_url: PAGE_URL,
+        source_url: VENUE_URL,
         external_id: externalId,
       });
     }
