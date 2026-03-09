@@ -87,9 +87,26 @@ export async function scrapeBrielleHouse() {
 
     if (!res.ok) throw new Error(`HTTP ${res.status} from admin-ajax`);
 
-    const data = await res.json();
+    const raw = await res.json();
 
-    if (!Array.isArray(data)) throw new Error('Unexpected response shape — expected array');
+    // Handle different WordPress response shapes:
+    // Could be: array, { success: true, data: [...] }, { data: [...] }, or 0 (bad nonce)
+    let data;
+    if (Array.isArray(raw)) {
+      data = raw;
+    } else if (raw && Array.isArray(raw.data)) {
+      data = raw.data;
+    } else if (raw && typeof raw === 'object') {
+      // Try to find any array property in the response
+      const arrayProp = Object.values(raw).find(v => Array.isArray(v));
+      if (arrayProp) {
+        data = arrayProp;
+      } else {
+        throw new Error(`Unexpected response shape: ${JSON.stringify(raw).slice(0, 200)}`);
+      }
+    } else {
+      throw new Error(`Unexpected response (nonce may be invalid): ${JSON.stringify(raw).slice(0, 200)}`);
+    }
 
     const events = [];
     const seen = new Set();
