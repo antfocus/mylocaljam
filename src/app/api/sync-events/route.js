@@ -11,6 +11,7 @@ import { scrapeBarAnticipation } from '@/lib/scrapers/barAnticipation';
 import { scrapeJacksOnTheTracks } from '@/lib/scrapers/jacksOnTheTracks';
 import { scrapeMarinaGrille } from '@/lib/scrapers/marinaGrille';
 import { scrapeAnchorTavern } from '@/lib/scrapers/anchorTavern';
+import { scrapeRBar } from '@/lib/scrapers/rBar';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,7 +79,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -90,6 +91,7 @@ export async function POST(request) {
     scrapeJacksOnTheTracks(),
     scrapeMarinaGrille(),
     scrapeAnchorTavern(),
+    scrapeRBar(),
   ]);
 
   const scraperResults = {
@@ -104,6 +106,7 @@ export async function POST(request) {
     JacksOnTheTracks: { count: jacksOnTheTracks.events.length, error: jacksOnTheTracks.error },
     MarinaGrille: { count: marinaGrille.events.length, error: marinaGrille.error },
     AnchorTavern: { count: anchorTavern.events.length, error: anchorTavern.error },
+    RBar: { count: rBar.events.length, error: rBar.error },
   };
 
   // Combine all events
@@ -119,6 +122,7 @@ export async function POST(request) {
     ...jacksOnTheTracks.events,
     ...marinaGrille.events,
     ...anchorTavern.events,
+    ...rBar.events,
   ].map(ev => mapEvent(ev, venueMap));
 
   // Filter out events with no external_id or date, and deduplicate by external_id
