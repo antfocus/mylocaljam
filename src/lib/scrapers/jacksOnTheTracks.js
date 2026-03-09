@@ -2,61 +2,99 @@
  * Jacks on the Tracks scraper
  * Calendar page: https://www.jacksbytracks.com/calendar
  *
- * Uses The Events Calendar broker API which proxies a Google Calendar.
- * API: https://broker.eventscalendar.co/api/google/events
+ * Uses the public Google Calendar iCal feed (jackstracksnj@gmail.com).
+ * The website uses Events Calendar broker to display events, but the
+ * underlying Google Calendar is publicly accessible via iCal.
  *
  * If it breaks:
  *   1. Go to https://www.jacksbytracks.com/calendar
- *   2. Open DevTools → Network tab → filter XHR
- *   3. Look for requests to broker.eventscalendar.co
- *   4. Update USER_ID, PROJECT_ID, and CALENDAR_ID below
+ *   2. Open DevTools → Network → look for broker.eventscalendar.co requests
+ *   3. Find the calendar= parameter — that's the Google Calendar ID
+ *   4. Update CALENDAR_ID below
  */
 
-const USER_ID = 'user_owyofJjoX85Y2ScKhIYAQ';
-const PROJECT_ID = 'proj_7CWF6zndYMQ7ie3lY7pxG';
 const CALENDAR_ID = 'jackstracksnj@gmail.com';
+const ICAL_URL = `https://calendar.google.com/calendar/ical/${encodeURIComponent(CALENDAR_ID)}/public/basic.ics`;
 const VENUE = 'Jacks on the Tracks';
 const VENUE_URL = 'https://www.jacksbytracks.com/calendar';
 
-export async function scrapeJacksOnTheTracks() {
-  try {
-    // Fetch events from now through ~6 months out
-    const from = Date.now();
-    const to = from + 180 * 24 * 60 * 60 * 1000;
+/**
+ * Parse an iCal date string into a JS Date.
+ */
+function parseIcalDate(str) {
+  if (!str) return null;
 
-    const url =
-      `https://broker.eventscalendar.co/api/google/events` +
-      `?user=${USER_ID}` +
-      `&project=${PROJECT_ID}` +
-      `&calendar=${encodeURIComponent(CALENDAR_ID)}` +
-      `&from=${from}` +
-      `&to=${to}` +
-      `&options=undefined`;
+  // DATE only: 20260315
+  const dateOnly = str.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (dateOnly) {
+    return new Date(`${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T00:00:00-05:00`);
+  }
 
-    const res = await fetch(url, {
-      headers: {
-        'Accept': 'application/json',
-        'Origin': 'https://plugin.eventscalendar.co',
-        'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
-      },
-    });
+  // DateTime UTC: 20260315T210000Z
+  const utcMatch = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+  if (utcMatch) {
+    return new Date(
+      `${utcMatch[1]}-${utcMatch[2]}-${utcMatch[3]}T${utcMatch[4]}:${utcMatch[5]}:${utcMatch[6]}Z`
+    );
+  }
 
-    if (!res.ok) throw new Error(`Events Calendar API error: ${res.status}`);
+  // DateTime floating or with TZID: 20260315T210000
+  const localMatch = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/);
+  if (localMatch) {
+    return new Date(
+      `${localMatch[1]}-${localMatch[2]}-${localMatch[3]}T${localMatch[4]}:${localMatch[5]}:${localMatch[6]}-05:00`
+    );
+  }
 
-    const data = await res.json();
-    if (!Array.isArray(data)) throw new Error('Unexpected API response shape');
+  return null;
+}
 
-    const events = [];
-    const now = new Date();
+function extractValue(line) {
+  const colonIdx = line.indexOf(':');
+  if (colonIdx === -1) return '';
+  return line.slice(colonIdx + 1).trim();
+}
 
-    for (const item of data) {
-      if (!item.title || !item.start_time) continue;
+function decodeIcalText(str) {
+  return str
+    .replace(/\\n/gi, ' ')
+    .replace(/\\,/g, ',')
+    .replace(/\\;/g, ';')
+    .replace(/\\\\/g, '\\')
+    .trim();
+}
 
-      // Skip past events
-      const startDate = new Date(item.start_time);
-      if (startDate < now) continue;
+function parseIcal(icalText) {
+  const events = [];
+  const now = new Date();
 
-      // Format time for display (e.g. "7:00 PM")
+  const unfolded = icalText.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
+  const lines = unfolded.split(/\r\n|\n|\r/);
+
+  let inEvent = false;
+  let current = {};
+
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') {
+      inEvent = true;
+      current = {};
+      continue;
+    }
+
+    if (line === 'END:VEVENT') {
+      inEvent = false;
+
+      const startDate = parseIcalDate(current.dtstart);
+      if (!startDate) { current = {}; continue; }
+      if (startDate < now) { current = {}; continue; }
+
+      const title = decodeIcalText(current.summary || '');
+      if (!title) { current = {}; continue; }
+
+      const uid = current.uid || `${title}-${current.dtstart}`;
+      const externalId = `jackstracks-${uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 60)}`;
+
+      const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
       const timeStr = startDate.toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: '2-digit',
@@ -64,24 +102,52 @@ export async function scrapeJacksOnTheTracks() {
         timeZone: 'America/New_York',
       });
 
-      // Format date as YYYY-MM-DD
-      const dateStr = startDate.toLocaleDateString('en-CA', {
-        timeZone: 'America/New_York',
-      });
-
       events.push({
-        title: item.title.trim(),
+        title,
         venue: VENUE,
         date: dateStr,
         time: timeStr,
-        description: item.description || null,
-        ticket_url: VENUE_URL,
+        description: current.description ? decodeIcalText(current.description) : null,
+        ticket_url: current.url || VENUE_URL,
         price: null,
         source_url: VENUE_URL,
-        external_id: `jackstracks-${item.id}`,
+        external_id: externalId,
       });
+
+      current = {};
+      continue;
     }
 
+    if (!inEvent) continue;
+
+    if (line.startsWith('SUMMARY')) current.summary = extractValue(line);
+    else if (line.startsWith('DTSTART')) current.dtstart = extractValue(line);
+    else if (line.startsWith('DTEND')) current.dtend = extractValue(line);
+    else if (line.startsWith('DESCRIPTION')) current.description = extractValue(line);
+    else if (line.startsWith('URL')) current.url = extractValue(line);
+    else if (line.startsWith('UID')) current.uid = extractValue(line);
+  }
+
+  return events;
+}
+
+export async function scrapeJacksOnTheTracks() {
+  try {
+    const res = await fetch(ICAL_URL, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
+      },
+      next: { revalidate: 0 },
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching iCal feed`);
+
+    const icalText = await res.text();
+    if (!icalText.includes('BEGIN:VCALENDAR')) {
+      throw new Error('Response does not appear to be a valid iCal feed');
+    }
+
+    const events = parseIcal(icalText);
     console.log(`[JacksOnTheTracks] Found ${events.length} upcoming events`);
     return { events, error: null };
 
