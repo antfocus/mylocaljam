@@ -116,13 +116,14 @@ function parseIcal(icalText) {
           timeZone: 'America/New_York',
         });
 
-        // Include date in external_id so each occurrence is unique
-        const uid = current.uid || `${title}-${current.dtstart}`;
-        const uidClean = uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 40);
-        const externalId = `baranticipation-${dateStr}-${uidClean}`;
+        // Deduplicate by title + date (different VEVENTs can produce the same event)
+        const titleDateKey = `${title.toLowerCase().trim()}|${dateStr}`;
+        if (seen.has(titleDateKey)) continue;
+        seen.add(titleDateKey);
 
-        if (seen.has(externalId)) continue;
-        seen.add(externalId);
+        // Include date in external_id so each occurrence is unique
+        const titleClean = title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
+        const externalId = `baranticipation-${dateStr}-${titleClean}`;
 
         events.push({
           title,
