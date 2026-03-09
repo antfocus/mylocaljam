@@ -24,8 +24,8 @@ export async function scrapeMartells() {
 
       const res = await fetch(url, {
         headers: {
-          'Origin': 'https://tikibar.com',
-          'Referer': 'https://tikibar.com/tiki-events/',
+          'Origin': 'https://calendar.time.ly',
+          'Referer': 'https://calendar.time.ly/ixnvhbv0/',
           'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
         },
       });
