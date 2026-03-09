@@ -113,8 +113,14 @@ export async function POST(request) {
     ...jacksOnTheTracks.events,
   ].map(ev => mapEvent(ev, venueMap));
 
-  // Filter out events with no external_id or date
-  const validEvents = allEvents.filter(ev => ev.external_id && ev.event_date);
+  // Filter out events with no external_id or date, and deduplicate by external_id
+  const seen = new Set();
+  const validEvents = allEvents.filter(ev => {
+    if (!ev.external_id || !ev.event_date) return false;
+    if (seen.has(ev.external_id)) return false;
+    seen.add(ev.external_id);
+    return true;
+  });
 
   // Batch upsert to Supabase in chunks of 50
   const BATCH_SIZE = 50;

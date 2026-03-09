@@ -91,10 +91,12 @@ function parseIcal(icalText) {
       const title = decodeIcalText(current.summary || '');
       if (!title) { current = {}; continue; }
 
-      const uid = current.uid || `${title}-${current.dtstart}`;
-      const externalId = `jackstracks-${uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 60)}`;
-
       const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
+      // Include date in external_id so recurring events (same UID) get unique IDs
+      const uid = current.uid || `${title}-${current.dtstart}`;
+      const uidClean = uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 40);
+      const externalId = `jackstracks-${dateStr}-${uidClean}`;
       const timeStr = startDate.toLocaleTimeString('en-US', {
         hour: 'numeric',
         minute: '2-digit',
