@@ -22,7 +22,13 @@ export async function scrapeMartells() {
         `?timezone=America/New_York&view=modern_list` +
         `&start_date_utc=${startDateUtc}&per_page=50&page=${page}`;
 
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        headers: {
+          'Origin': 'https://tikibar.com',
+          'Referer': 'https://tikibar.com/tiki-events/',
+          'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
+        },
+      });
       if (!res.ok) throw new Error(`Timely API error: ${res.status}`);
 
       const json = await res.json();
