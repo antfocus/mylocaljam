@@ -4,6 +4,7 @@ const VENUES = [
   { id: 'KovZpZAdnEtA', name: 'Wonder Bar' },
   { id: 'KovZpZAatk1A', name: 'Stone Pony Summer Stage' },
   { id: 'KovZpZAdt7AA', name: 'The Stone Pony' },
+  { id: '237860', name: 'ParkStage' },
 ];
 
 function formatTime(timeStr) {
