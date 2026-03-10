@@ -113,17 +113,22 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
           }}>▼</span>
         </div>
 
-        {/* Expanded detail panel */}
-        {expanded && (
-          <div style={{ padding: '0 12px 12px 12px', borderTop: `1px solid ${borderColor}`, background: expandedBg }}>
+        {/* Expanded detail panel — always rendered, animated via max-height */}
+        <div style={{
+          maxHeight: expanded ? '500px' : '0px',
+          overflow: 'hidden',
+          transition: 'max-height 0.25s ease-out',
+        }}>
+          <div style={{ padding: '0 12px 12px 12px', borderTop: expanded ? `1px solid ${borderColor}` : '1px solid transparent', background: expandedBg }}>
 
-            {/* Event image */}
+            {/* Event image — only load src when expanded */}
             {imageUrl && (
               <div style={{ margin: '10px 0 8px', borderRadius: '8px', overflow: 'hidden', lineHeight: 0 }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={imageUrl}
+                  src={expanded ? imageUrl : undefined}
                   alt={name}
+                  loading="lazy"
                   style={{ width: '100%', maxHeight: '160px', objectFit: 'cover', display: 'block' }}
                   onError={e => { e.currentTarget.style.display = 'none'; }}
                 />
@@ -199,7 +204,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
               </button>
             )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
