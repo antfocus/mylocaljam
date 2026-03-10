@@ -77,19 +77,34 @@ export default function MapView({ events = [], onClose, darkMode = true }) {
   // ── Address / zip search ────────────────────────────────────────────────────
   const handleSearch = async (e) => {
     e.preventDefault();
-    if (!addressInput.trim() || !mapRef.current) return;
+    const raw = addressInput.trim();
+    if (!raw || !mapRef.current) return;
     setSearching(true);
     setSearchError('');
+
     try {
-      const res  = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addressInput)}&format=json&limit=1`,
-        { headers: { 'Accept-Language': 'en' } }
-      );
-      const data = await res.json();
-      if (data?.length > 0) {
-        mapRef.current.setView([parseFloat(data[0].lat), parseFloat(data[0].lon)], 13);
+      const isZip = /^\d{5}(-\d{4})?$/.test(raw);
+
+      // Build the best possible query string for Nominatim
+      // For zip codes, append country so it resolves correctly
+      // For addresses, if no state/country clue, nudge toward NJ
+      let query;
+      if (isZip) {
+        query = `${raw}, USA`;
+      } else if (/\b(nj|new jersey|ny|pa|de|md)\b/i.test(raw)) {
+        query = raw; // already has state context
       } else {
-        setSearchError('Location not found — try a city, address, or zip.');
+        query = `${raw}, NJ, USA`; // default to NJ area
+      }
+
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=us`;
+      const res  = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'myLocalJam/1.0' } });
+      const data = await res.json();
+
+      if (data?.length > 0) {
+        mapRef.current.setView([parseFloat(data[0].lat), parseFloat(data[0].lon)], isZip ? 13 : 14);
+      } else {
+        setSearchError('Location not found — try a full address or zip code.');
       }
     } catch { setSearchError('Search failed. Please try again.'); }
     setSearching(false);
@@ -204,13 +219,11 @@ async function pinVenues(map, L, events, setStatus) {
   for (const [name, info] of venues) {
     try {
       const query = info.address
-        ? `${info.address}, New Jersey`
+        ? `${info.address}, New Jersey, USA`
         : `${name}, New Jersey, USA`;
 
-      const res  = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
-        { headers: { 'Accept-Language': 'en' } }
-      );
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=us`;
+      const res  = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'myLocalJam/1.0' } });
       const data = await res.json();
       if (data?.length > 0) {
         const lat = parseFloat(data[0].lat);
