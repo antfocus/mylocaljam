@@ -65,15 +65,36 @@ export default function HeroSection({ events = [], defaultCategory = 'Music', is
   return (
     <div style={{
       position: 'relative', flexShrink: 0, overflow: 'hidden',
-      background: 'linear-gradient(160deg, #2D2D2D 0%, #3D2010 55%, #1A1A1A 100%)',
-      display: 'flex', flexDirection: 'column', padding: '10px 14px 12px', gap: '4px',
+      background: 'linear-gradient(180deg, #0A0A10 0%, #1A1208 60%, #0D0D0D 100%)',
+      display: 'flex', flexDirection: 'column', padding: '10px 14px 20px', gap: '4px',
+      minHeight: '140px',
     }}>
-      {/* Ambient glow */}
+      {/* Spotlight beam — cone from top-center */}
+      <div style={{
+        position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+        width: 0, height: 0,
+        borderLeft: '90px solid transparent',
+        borderRight: '90px solid transparent',
+        borderTop: '160px solid rgba(255,210,100,0.10)',
+        filter: 'blur(18px)',
+        pointerEvents: 'none',
+      }} />
+
+      {/* Spotlight floor glow */}
+      <div style={{
+        position: 'absolute', bottom: '0', left: '50%', transform: 'translateX(-50%)',
+        width: '200px', height: '55px',
+        background: 'radial-gradient(ellipse, rgba(255,200,80,0.32) 0%, rgba(232,114,42,0.12) 40%, transparent 75%)',
+        filter: 'blur(12px)',
+        pointerEvents: 'none',
+      }} />
+
+      {/* Ambient side glows */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none',
         backgroundImage: `
-          radial-gradient(circle at 20% 70%, rgba(232,114,42,0.38) 0%, transparent 52%),
-          radial-gradient(circle at 82% 18%, rgba(58,173,160,0.22) 0%, transparent 42%)`,
+          radial-gradient(circle at 10% 80%, rgba(232,114,42,0.18) 0%, transparent 45%),
+          radial-gradient(circle at 90% 20%, rgba(58,173,160,0.12) 0%, transparent 40%)`,
       }} />
 
       {/* Top row: badge + category dropdown */}

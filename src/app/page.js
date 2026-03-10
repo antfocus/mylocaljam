@@ -329,30 +329,57 @@ export default function HomePage() {
         {/* ── Top Nav ────────────────────────────────────────────────────── */}
         <header style={{
           position: 'sticky', top: 0, zIndex: 100,
-          background: t.navBg,
+          background: darkMode ? '#1E1E2C' : '#FFFFFF',
           borderBottom: `1px solid ${t.border}`,
-          boxShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.4)' : '0 2px 8px rgba(0,0,0,0.08)',
-          padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          boxShadow: darkMode ? '0 2px 16px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.08)',
+          padding: '8px 12px',
+          display: 'flex', alignItems: 'center', gap: '10px',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Image src="/myLocaljam_Logo_v4.png" alt="myLocalJam" width={40} height={40} style={{ objectFit: 'contain' }} />
+          {/* Logo */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <Image src="/myLocaljam_Logo_v4.png" alt="myLocalJam" width={36} height={36} style={{ objectFit: 'contain' }} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-              <div style={{ fontSize: '18px', fontWeight: 900, letterSpacing: '-0.8px', lineHeight: 1 }}>
+              <div style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '-0.8px', lineHeight: 1 }}>
                 <span style={{ color: t.text }}>mylocal</span>
                 <span style={{ color: t.accent }}>jam</span>
               </div>
-              <div style={{ fontSize: '7.5px', fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: t.textMuted, lineHeight: 1, whiteSpace: 'nowrap' }}>
-                Local Music&nbsp;·&nbsp;Food&nbsp;·&nbsp;Experiences&nbsp;·&nbsp;Community
+              <div style={{ fontSize: '7px', fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: t.textMuted, lineHeight: 1, whiteSpace: 'nowrap' }}>
+                Local Music&nbsp;·&nbsp;Food&nbsp;·&nbsp;Experiences
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button
-              onClick={() => setShowSubmit(true)}
-              style={{ width: '34px', height: '34px', borderRadius: '50%', border: 'none', background: t.accent, color: 'white', fontSize: '20px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              +
-            </button>
+
+          {/* Search bar — center, flex fills remaining space */}
+          <div style={{
+            flex: 1, display: 'flex', alignItems: 'center', gap: '6px',
+            background: darkMode ? '#14141E' : '#F3F4F6',
+            border: `1px solid ${darkMode ? '#2A2A3A' : '#E5E7EB'}`,
+            borderRadius: '20px', padding: '6px 12px',
+          }}>
+            <span style={{ fontSize: '12px', color: t.textMuted, flexShrink: 0 }}>🔍</span>
+            <input
+              type="text"
+              placeholder="Search artists, venues, events..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{ flex: 1, border: 'none', background: 'none', outline: 'none', fontSize: '13px', color: t.text, minWidth: 0 }}
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: '14px', flexShrink: 0, padding: 0 }}>✕</button>
+            )}
           </div>
+
+          {/* Profile avatar */}
+          <button
+            onClick={() => setActiveTab('profile')}
+            style={{
+              width: '34px', height: '34px', borderRadius: '50%', border: `2px solid ${darkMode ? '#3A3A50' : '#E5E7EB'}`,
+              background: 'linear-gradient(135deg, #E8722A, #3AADA0)',
+              cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '16px',
+            }}>
+            👤
+          </button>
         </header>
 
         {/* ── Hero (home tab only) ──────────────────────────────────────── */}
@@ -360,26 +387,6 @@ export default function HomePage() {
           <HeroSection events={heroEvents} isToday={heroIsToday} />
         )}
 
-        {/* ── Search bar (home tab only) ────────────────────────────────── */}
-        {activeTab === 'home' && (
-          <div style={{ padding: '10px 16px 6px', background: t.surface, borderBottom: `1px solid ${t.borderLight}` }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              background: t.inputBg, borderRadius: '12px', padding: '8px 14px',
-              border: `1px solid ${t.border}`,
-            }}>
-              <span style={{ fontSize: '14px', color: t.textMuted }}>🔍</span>
-              <input
-                type="text" placeholder="Search artists, venues, events..."
-                value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                style={{ flex: 1, border: 'none', background: 'none', outline: 'none', fontSize: '14px', color: t.text }}
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: '16px' }}>✕</button>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* ── Category pills (home tab only) ────────────────────────────── */}
         {activeTab === 'home' && (
@@ -510,19 +517,6 @@ export default function HomePage() {
         {/* ── Saved view ───────────────────────────────────────────────── */}
         {activeTab === 'saved' && (
           <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg }}>
-            <div style={{ padding: '10px 16px 6px', background: t.surface, borderBottom: `1px solid ${t.borderLight}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: t.inputBg, borderRadius: '12px', padding: '8px 14px', border: `1px solid ${t.border}` }}>
-                <span style={{ fontSize: '14px', color: t.textMuted }}>🔍</span>
-                <input
-                  type="text" placeholder="Search saved events..."
-                  value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                  style={{ flex: 1, border: 'none', background: 'none', outline: 'none', fontSize: '14px', color: t.text }}
-                />
-                {searchQuery && (
-                  <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: '16px' }}>✕</button>
-                )}
-              </div>
-            </div>
             <div style={{ display: 'flex', gap: '6px', padding: '8px 16px 10px', overflowX: 'auto', background: t.surface, borderBottom: `1px solid ${t.border}`, scrollbarWidth: 'none' }}>
               {DATE_OPTIONS.map(opt => (
                 <button key={opt.key} onClick={() => setDateKey(opt.key)} style={{
