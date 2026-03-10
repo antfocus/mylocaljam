@@ -115,13 +115,14 @@ export async function enrichWithLastfm(artistName, supabase) {
 
   // --- 2. Fetch from Last.fm ---
   const fresh = await fetchFromLastfm(name);
-  if (!fresh) return cached || null; // fall back to stale cache if fetch fails
 
+  // Cache the result even if Last.fm returned nothing ("not found").
+  // This prevents re-querying the same unknown local band every run.
   const record = {
-    name: fresh.name,
-    image_url: fresh.image_url,
-    bio: fresh.bio,
-    tags: fresh.tags,
+    name: fresh?.name || name,
+    image_url: fresh?.image_url || null,
+    bio: fresh?.bio || null,
+    tags: fresh?.tags || null,
     last_fetched: new Date().toISOString(),
   };
 
@@ -130,6 +131,7 @@ export async function enrichWithLastfm(artistName, supabase) {
     .from('artists')
     .upsert(record, { onConflict: 'name' });
 
+  // Return the record (may have null fields if artist wasn't found)
   return record;
 }
 

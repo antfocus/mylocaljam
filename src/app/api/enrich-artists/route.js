@@ -2,10 +2,15 @@
  * /api/enrich-artists
  *
  * Enriches events with artist images and bios from Last.fm.
- * Processes events that are missing an image_url or artist_bio.
+ *
+ * How it works:
+ *   1. Gets unique artist names from events that are missing image_url or artist_bio
+ *   2. Checks the `artists` cache table — skips any artist already looked up
+ *   3. For uncached artists, calls Last.fm and caches the result (even "not found")
+ *   4. Updates matching events with any new image/bio data
  *
  * Supports two modes:
- *   POST /api/enrich-artists          → enrich all unenriched events (up to limit)
+ *   POST /api/enrich-artists          → enrich new artists (up to limit)
  *   POST /api/enrich-artists?dry=true → count only, no writes
  *
  * Auth: same SYNC_SECRET Bearer token as sync-events.
@@ -34,8 +39,8 @@ import { enrichWithLastfm } from '@/lib/enrichLastfm';
 
 export const dynamic = 'force-dynamic';
 
-// Max events to process per run (to stay within Vercel's 10s serverless timeout)
-const BATCH_LIMIT = 30;
+// Max NEW artists to look up per run (keeps within Vercel timeout)
+const ARTIST_LIMIT = 20;
 
 function isAuthorized(request) {
   const secret = process.env.SYNC_SECRET;
@@ -55,14 +60,14 @@ export async function POST(request) {
   const start = Date.now();
   const supabase = getAdminClient();
 
-  // Fetch events that are missing image_url OR artist_bio, limited to BATCH_LIMIT
+  // --- 1. Get all unique artist names from unenriched events ---
   const { data: events, error: fetchErr } = await supabase
     .from('events')
     .select('id, artist_name, image_url, artist_bio')
     .eq('status', 'published')
     .not('artist_name', 'is', null)
     .or('image_url.is.null,artist_bio.is.null')
-    .limit(BATCH_LIMIT);
+    .limit(500);
 
   if (fetchErr) {
     return NextResponse.json({ error: fetchErr.message }, { status: 500 });
@@ -72,53 +77,90 @@ export async function POST(request) {
     return NextResponse.json({ ok: true, message: 'All events already enriched', processed: 0, duration: '0s' });
   }
 
-  // Dry run: just report how many would be processed
-  if (isDry) {
-    // Count all unenriched events (not just the first BATCH_LIMIT)
-    const { count } = await supabase
-      .from('events')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'published')
-      .not('artist_name', 'is', null)
-      .or('image_url.is.null,artist_bio.is.null');
+  // Deduplicate artist names
+  const uniqueArtists = [...new Set(events.map(e => e.artist_name.trim()))];
 
+  // --- 2. Check which artists are already cached ---
+  const { data: cachedArtists } = await supabase
+    .from('artists')
+    .select('name, image_url, bio')
+    .in('name', uniqueArtists.slice(0, 200)); // Supabase IN limit
+
+  const cachedMap = {};
+  for (const a of (cachedArtists || [])) {
+    cachedMap[a.name.toLowerCase()] = a;
+  }
+
+  // Split into cached vs uncached
+  const uncachedNames = uniqueArtists.filter(n => !cachedMap[n.toLowerCase()]);
+  const cachedWithData = uniqueArtists.filter(n => {
+    const c = cachedMap[n.toLowerCase()];
+    return c && (c.image_url || c.bio);
+  });
+
+  // Dry run
+  if (isDry) {
     return NextResponse.json({
       ok: true,
       dry: true,
-      totalUnenriched: count,
-      wouldProcess: events.length,
+      totalUnenrichedEvents: events.length,
+      uniqueArtists: uniqueArtists.length,
+      alreadyCached: Object.keys(cachedMap).length,
+      uncachedToLookUp: uncachedNames.length,
+      cachedWithUsefulData: cachedWithData.length,
     });
   }
 
-  // Process events
-  let enriched = 0;
-  let skipped  = 0;
+  // --- 3. Look up uncached artists on Last.fm ---
+  let lookedUp = 0;
+  const artistsToProcess = uncachedNames.slice(0, ARTIST_LIMIT);
   const errors = [];
 
-  for (const ev of events) {
+  for (const name of artistsToProcess) {
     try {
-      const artistData = await enrichWithLastfm(ev.artist_name, supabase);
-      if (!artistData) { skipped++; continue; }
-
-      // Build update: only overwrite fields that are currently null
-      const update = {};
-      if (!ev.image_url   && artistData.image_url) update.image_url  = artistData.image_url;
-      if (!ev.artist_bio  && artistData.bio)        update.artist_bio = artistData.bio;
-
-      if (Object.keys(update).length === 0) { skipped++; continue; }
-
-      const { error: updateErr } = await supabase
-        .from('events')
-        .update(update)
-        .eq('id', ev.id);
-
-      if (updateErr) {
-        errors.push(`${ev.artist_name}: ${updateErr.message}`);
-      } else {
-        enriched++;
-      }
+      await enrichWithLastfm(name, supabase);
+      lookedUp++;
+      // Small delay to not hammer Last.fm
+      await new Promise(r => setTimeout(r, 300));
     } catch (err) {
-      errors.push(`${ev.artist_name}: ${err.message}`);
+      errors.push(`${name}: ${err.message}`);
+    }
+  }
+
+  // Reload cache after lookups
+  const { data: allCached } = await supabase
+    .from('artists')
+    .select('name, image_url, bio')
+    .in('name', uniqueArtists.slice(0, 200));
+
+  const freshMap = {};
+  for (const a of (allCached || [])) {
+    freshMap[a.name.toLowerCase()] = a;
+  }
+
+  // --- 4. Update events with enriched data ---
+  let enriched = 0;
+  let skipped = 0;
+
+  for (const ev of events) {
+    const artistData = freshMap[ev.artist_name.trim().toLowerCase()];
+    if (!artistData) { skipped++; continue; }
+
+    const update = {};
+    if (!ev.image_url  && artistData.image_url) update.image_url  = artistData.image_url;
+    if (!ev.artist_bio && artistData.bio)       update.artist_bio = artistData.bio;
+
+    if (Object.keys(update).length === 0) { skipped++; continue; }
+
+    const { error: updateErr } = await supabase
+      .from('events')
+      .update(update)
+      .eq('id', ev.id);
+
+    if (updateErr) {
+      errors.push(`Event ${ev.id}: ${updateErr.message}`);
+    } else {
+      enriched++;
     }
   }
 
@@ -127,9 +169,10 @@ export async function POST(request) {
   return NextResponse.json({
     ok: true,
     duration,
-    processed: events.length,
-    enriched,
-    skipped,
+    artistsLookedUp: lookedUp,
+    artistsRemaining: Math.max(0, uncachedNames.length - ARTIST_LIMIT),
+    eventsEnriched: enriched,
+    eventsSkipped: skipped,
     errors: errors.length ? errors : null,
   });
 }
