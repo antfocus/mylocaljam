@@ -182,8 +182,13 @@ export default function HomePage() {
         const extractedStartTime = e.start_time || (() => {
           if (e.event_date && e.event_date.includes('T')) {
             const d = new Date(e.event_date);
-            const h = String(d.getHours()).padStart(2, '0');
-            const m = String(d.getMinutes()).padStart(2, '0');
+            // Use Eastern time, not UTC, so times display correctly
+            const parts = d.toLocaleTimeString('en-US', {
+              hour: 'numeric', minute: '2-digit', hour12: false,
+              timeZone: 'America/New_York',
+            }).split(':');
+            const h = String(parseInt(parts[0])).padStart(2, '0');
+            const m = parts[1];
             return `${h}:${m}`;
           }
           return null;
@@ -197,9 +202,9 @@ export default function HomePage() {
             const raw = e.event_date || '';
             if (!raw) return '';
             if (raw.includes('T')) {
+              // Use Eastern time so dates don't shift when UTC crosses midnight
               const d = new Date(raw);
-              const p = n => String(n).padStart(2, '0');
-              return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+              return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
             }
             return raw.substring(0, 10);
           })(),
