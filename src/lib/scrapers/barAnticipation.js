@@ -17,8 +17,27 @@ const VENUE = 'Bar Anticipation';
 const VENUE_URL = 'https://bar-a.com/entertainment-calendar/';
 
 /**
+ * Return the correct Eastern UTC offset for a given date string (YYYY-MM-DD).
+ * EDT (UTC-4) from 2nd Sun Mar → 1st Sun Nov, else EST (UTC-5).
+ */
+function easternOffset(dateStr) {
+  try {
+    const d = new Date(`${dateStr}T12:00:00Z`);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      timeZoneName: 'short',
+    }).formatToParts(d);
+    const tz = parts.find(p => p.type === 'timeZoneName')?.value ?? 'EST';
+    return tz.includes('EDT') ? '-04:00' : '-05:00';
+  } catch {
+    return '-05:00';
+  }
+}
+
+/**
  * Parse an iCal date string into a JS Date.
  * Handles: TZID format, UTC (Z), and floating dates.
+ * Uses dynamic EST/EDT offset for non-UTC dates.
  */
 function parseIcalDate(str) {
   if (!str) return null;
@@ -26,7 +45,8 @@ function parseIcalDate(str) {
   // DATE only: 20260315
   const dateOnly = str.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (dateOnly) {
-    return new Date(`${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T00:00:00-05:00`);
+    const ds = `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}`;
+    return new Date(`${ds}T00:00:00${easternOffset(ds)}`);
   }
 
   // DateTime UTC: 20260315T210000Z
@@ -40,8 +60,9 @@ function parseIcalDate(str) {
   // DateTime floating or with TZID: 20260315T210000
   const localMatch = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/);
   if (localMatch) {
+    const ds = `${localMatch[1]}-${localMatch[2]}-${localMatch[3]}`;
     return new Date(
-      `${localMatch[1]}-${localMatch[2]}-${localMatch[3]}T${localMatch[4]}:${localMatch[5]}:${localMatch[6]}-05:00`
+      `${ds}T${localMatch[4]}:${localMatch[5]}:${localMatch[6]}${easternOffset(ds)}`
     );
   }
 

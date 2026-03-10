@@ -25,26 +25,38 @@ const VENUE_URL = 'https://www.ststephensgreenpub.com';
  *   DTSTART:20260315T210000Z
  *   DTSTART;VALUE=DATE:20260315
  */
+function easternOffset(dateStr) {
+  try {
+    const d = new Date(`${dateStr}T12:00:00Z`);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      timeZoneName: 'short',
+    }).formatToParts(d);
+    const tz = parts.find(p => p.type === 'timeZoneName')?.value ?? 'EST';
+    return tz.includes('EDT') ? '-04:00' : '-05:00';
+  } catch {
+    return '-05:00';
+  }
+}
+
 function parseIcalDate(str) {
   if (!str) return null;
 
-  // DATE only (no time): VALUE=DATE:20260315
   const dateOnly = str.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (dateOnly) {
-    return new Date(`${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}T00:00:00-05:00`);
+    const ds = `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}`;
+    return new Date(`${ds}T00:00:00${easternOffset(ds)}`);
   }
 
-  // DateTime with Z (UTC): 20260315T210000Z
   const utcMatch = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
   if (utcMatch) {
     return new Date(`${utcMatch[1]}-${utcMatch[2]}-${utcMatch[3]}T${utcMatch[4]}:${utcMatch[5]}:${utcMatch[6]}Z`);
   }
 
-  // DateTime floating or with TZID: 20260315T210000
   const localMatch = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/);
   if (localMatch) {
-    // Treat as Eastern time
-    return new Date(`${localMatch[1]}-${localMatch[2]}-${localMatch[3]}T${localMatch[4]}:${localMatch[5]}:${localMatch[6]}-05:00`);
+    const ds = `${localMatch[1]}-${localMatch[2]}-${localMatch[3]}`;
+    return new Date(`${ds}T${localMatch[4]}:${localMatch[5]}:${localMatch[6]}${easternOffset(ds)}`);
   }
 
   return null;

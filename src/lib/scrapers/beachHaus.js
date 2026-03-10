@@ -26,6 +26,20 @@ const MONTHS = {
   july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
 };
 
+function easternOffset(dateStr) {
+  try {
+    const d = new Date(`${dateStr}T12:00:00Z`);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      timeZoneName: 'short',
+    }).formatToParts(d);
+    const tz = parts.find(p => p.type === 'timeZoneName')?.value ?? 'EST';
+    return tz.includes('EDT') ? '-04:00' : '-05:00';
+  } catch {
+    return '-05:00';
+  }
+}
+
 /**
  * Parse "Friday, March 6, 2026" → Date object
  * Parse "7:00 p.m. to 10:00 p.m." → time string
@@ -33,7 +47,6 @@ const MONTHS = {
 function parseEventDate(dateStr, timeStr) {
   if (!dateStr) return null;
 
-  // Match "Monday, March 6, 2026" or "Friday — March 6, 2026" or "Sunday,  March 8, 2026"
   const dateMatch = dateStr.match(/([A-Za-z]+),?\s*[—-]?\s*([A-Za-z]+)\s+(\d{1,2}),?\s*(\d{4})/);
   if (!dateMatch) return null;
 
@@ -43,7 +56,6 @@ function parseEventDate(dateStr, timeStr) {
   const month = MONTHS[monthName];
   if (!month) return null;
 
-  // Parse start time from "7:00 p.m. to 10:00 p.m."
   let hours = 0;
   let minutes = 0;
   if (timeStr) {
@@ -57,8 +69,9 @@ function parseEventDate(dateStr, timeStr) {
     }
   }
 
+  const ds = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   return new Date(
-    `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00-05:00`
+    `${ds}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00${easternOffset(ds)}`
   );
 }
 
