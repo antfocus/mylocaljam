@@ -40,7 +40,7 @@ import { enrichWithLastfm } from '@/lib/enrichLastfm';
 export const dynamic = 'force-dynamic';
 
 // Max NEW artists to look up per run (keeps within Vercel timeout)
-const ARTIST_LIMIT = 20;
+const ARTIST_LIMIT = 100;
 
 function isAuthorized(request) {
   const secret = process.env.SYNC_SECRET;
@@ -67,7 +67,7 @@ export async function POST(request) {
     .eq('status', 'published')
     .not('artist_name', 'is', null)
     .or('image_url.is.null,artist_bio.is.null')
-    .limit(500);
+    .limit(1000);
 
   if (fetchErr) {
     return NextResponse.json({ error: fetchErr.message }, { status: 500 });
