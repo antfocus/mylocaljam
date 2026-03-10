@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~850+ events** across 15 scrapers (as of March 9, 2026)
+**~850+ events** across 18 scrapers (as of March 10, 2026)
 
 ---
 
@@ -41,6 +41,9 @@
 | 13 | Brielle House | `brielleHouse.js` | WordPress EventPrime | ❌ Blocked — nonce requires session cookies that can't be replicated server-side. See notes below. | 0 |
 | 14 | ParkStage | `parkStage.js` | HTML (WordPress) | ✅ Working | ~8 |
 | 15 | Monmouth Tourism | `monmouthTourism.js` | API (ImGoing Calendar) | ❌ Removed — venue attribution problem (all events came in as "Monmouth County"). Scraper deleted. | 0 |
+| 16 | 10th Ave Burrito | `tenthAveBurrito.js` | WordPress JetEngine AJAX | ✅ Working (0 events until venue posts spring schedule) | 0 |
+| 17 | Reef & Barrel | `reefAndBoatyard.js` | Google Calendar iCal | ✅ Working | ~10+ |
+| 18 | Palmetto | `palmetto.js` | Hardcoded (image poster) | ⚠️ Working — requires manual monthly update (see notes) | ~21 |
 
 ---
 
@@ -109,6 +112,39 @@
 - **REST API:** `https://brielle-house.com/wp-json/eventprime/v1/events` returns event names/IDs but NO dates
 - **Individual event details:** `/wp-json/eventprime/v1/events/{id}` returns "Route not found"
 - **Possible future approaches:** Browser-based scraping (Puppeteer/Playwright), or contact venue for a public calendar feed
+
+---
+
+## New Scrapers (March 10, 2026)
+
+### 10th Ave Burrito (`tenthAveBurrito.js`)
+- **URL:** https://tenthaveburrito.com/events/
+- **Platform:** WordPress + Elementor + JetEngine Listing Calendar
+- **Approach:** AJAX POST to `jet_engine_calendar_get_month` action — fetches current + next 2 months
+- **Note:** WP REST API (`/wp-json/wp/v2/events-calender`) returns posts but has NO date meta fields; the only way to get dates is through the JetEngine calendar widget
+- **Address:** 801 Belmar Plaza, Belmar NJ 07719
+- **Status:** Scraper works but venue hasn't posted spring 2026 events yet, so returns 0
+
+### Reef & Barrel (`reefAndBoatyard.js` — rewritten)
+- **URL:** https://www.reefandbarrel.com/events
+- **Platform:** Framer site with embedded Google Calendar iframe
+- **Previous version:** Basic HTML parser that didn't work for Framer
+- **Rewritten as:** Google Calendar iCal scraper (same pattern as St. Stephen's Green)
+- **Calendar ID:** `9d075af2fc91346d02e182eab76954878a912755f357e3cafdfc915fd90c0829@group.calendar.google.com`
+- **Address:** 153 Sea Girt Ave, Manasquan NJ 08736
+- **Also exports:** `scrapeBoatyard401()` — returns empty (no calendar found for Boatyard 401)
+
+### Palmetto (`palmetto.js`) — ⚠️ Manual Update Required Monthly
+- **URL:** https://www.palmettoasburypark.com/music
+- **Platform:** Squarespace — music schedule is posted as an IMAGE POSTER only (no structured data, no calendar embed, no events collection, no JSON feed)
+- **Approach:** Hardcoded `MONTHLY_EVENTS` array read from the poster image. Scraper skips past dates and flags itself stale if schedule is >1 month old.
+- **Address:** 1000 Ocean Ave N, Asbury Park, NJ 07712
+- **To update each month:**
+  1. Visit https://www.palmettoasburypark.com/music
+  2. Read the new monthly poster image
+  3. Edit `src/lib/scrapers/palmetto.js`: update `SCHEDULE_MONTH` and `MONTHLY_EVENTS` array
+  4. Commit and push
+- **Current schedule:** March 2026 (21 events — Wednesdays, Fridays, Saturdays, Sundays, + 2 specials)
 
 ---
 
