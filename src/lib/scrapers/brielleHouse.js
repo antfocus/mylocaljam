@@ -156,6 +156,7 @@ export async function scrapeBrielleHouse() {
         price: null,
         source_url: VENUE_URL,
         external_id: externalId,
+        image_url: item.featured_image || item.event_image || item.image || null,
       });
     }
 

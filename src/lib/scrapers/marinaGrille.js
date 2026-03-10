@@ -95,6 +95,7 @@ export async function scrapeMarinaGrille() {
         price: null,
         source_url: VENUE_URL,
         external_id: externalId,
+        image_url: item.assetUrl || null,
       });
     }
 
