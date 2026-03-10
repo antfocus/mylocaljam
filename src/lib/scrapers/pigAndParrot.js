@@ -65,7 +65,7 @@ export async function scrapePigAndParrot() {
       events.push({
         title: ev.name,
         venue: 'Pig & Parrot Brielle',
-        date: ev.startAt,
+        date: ev.startAt ? ev.startAt.slice(0, 10) : null,
         time: secondsToTime(ev.startTime),
         end_time: secondsToTime(ev.endTime),
         description: ev.description || null,
