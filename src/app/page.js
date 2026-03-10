@@ -93,6 +93,7 @@ export default function HomePage() {
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [activeTab,      setActiveTab]      = useState('home');
+  const [mapOpen,        setMapOpen]        = useState(false);
   const [dateKey,        setDateKey]        = useState('all');
   const [dateDropOpen,   setDateDropOpen]   = useState(false);
   const [activeCategory, setActiveCategory] = useState('All');
@@ -448,7 +449,7 @@ export default function HomePage() {
               </span>
 
               {/* Map button */}
-              <button onClick={() => setActiveTab('map')} style={{
+              <button onClick={() => setMapOpen(true)} style={{
                 display: 'flex', alignItems: 'center', gap: '3px',
                 fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '999px',
                 border: `1.5px solid ${t.pillBorder}`, cursor: 'pointer',
@@ -517,10 +518,6 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* ── Map view ─────────────────────────────────────────────────── */}
-        {activeTab === 'map' && (
-          <MapView events={filteredEvents} onClose={() => setActiveTab('home')} />
-        )}
 
         {/* ── Saved view ───────────────────────────────────────────────── */}
         {activeTab === 'saved' && (
@@ -724,6 +721,11 @@ export default function HomePage() {
           </button>
         ))}
       </nav>
+
+      {/* ── Map modal ───────────────────────────────────────────────────── */}
+      {mapOpen && (
+        <MapView events={filteredEvents} onClose={() => setMapOpen(false)} darkMode={darkMode} />
+      )}
 
       {/* ── Modals ────────────────────────────────────────────────────────── */}
       {showSubmit && (
