@@ -16,7 +16,7 @@ const CATEGORY_CONFIG = {
 
 const DEFAULT_CONFIG = { color: '#E8722A', bg: '#E8722A', emoji: '🎵' };
 
-export default function EventCardV2({ event, onReport, isFavorited = false, onToggleFavorite }) {
+export default function EventCardV2({ event, onReport, isFavorited = false, onToggleFavorite, darkMode = true }) {
   const [expanded, setExpanded] = useState(false);
 
   if (!event) return null;
@@ -28,11 +28,24 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
   const config   = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
   const timeStr  = formatTimeRange(event.start_time, event.end_time);
 
+  // Theme colors
+  const cardBg      = darkMode ? '#1A1A24' : '#FFFFFF';
+  const borderColor = darkMode ? '#2A2A3A' : '#F3F4F6';
+  const textPrimary = darkMode ? '#F0F0F5' : '#1F2937';
+  const textMuted   = darkMode ? '#7878A0' : '#6B7280';
+  const textDesc    = darkMode ? '#AAAACC' : '#4B5563';
+  const heartOff    = darkMode ? '#4A4A6A' : '#D1D5DB';
+  const chevronCol  = darkMode ? '#5A5A7A' : '#9CA3AF';
+  const expandedBg  = darkMode ? '#14141E' : '#F9FAFB';
+
   return (
     <div style={{
-      background: 'white', borderRadius: '12px', overflow: 'hidden',
-      boxShadow: '0 1px 6px rgba(0,0,0,0.07)', display: 'flex',
-      borderBottom: '1px solid #F3F4F6',
+      background: cardBg,
+      borderRadius: '12px',
+      overflow: 'hidden',
+      boxShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.35)' : '0 1px 6px rgba(0,0,0,0.07)',
+      display: 'flex',
+      border: `1px solid ${borderColor}`,
     }}>
       {/* Left accent bar */}
       <div style={{ width: '4px', flexShrink: 0, background: config.color }} />
@@ -43,7 +56,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
         {/* Compact row */}
         <div
           onClick={() => setExpanded(e => !e)}
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 10px 9px 10px', cursor: 'pointer' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 10px', cursor: 'pointer' }}
         >
           {/* Colored time badge */}
           <div style={{
@@ -62,7 +75,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
 
           {/* Event name */}
           <span style={{
-            fontSize: '13px', fontWeight: 700, color: '#1F2937',
+            fontSize: '13px', fontWeight: 700, color: textPrimary,
             flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
             {name}
@@ -71,7 +84,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
           {/* Venue name */}
           {venue && (
             <span style={{
-              fontSize: '12px', color: '#6B7280', fontWeight: 500,
+              fontSize: '12px', color: textMuted, fontWeight: 500,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               maxWidth: '90px', flexShrink: 0,
             }}>
@@ -84,7 +97,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
             onClick={e => { e.stopPropagation(); onToggleFavorite?.(event.id); }}
             style={{
               background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px',
-              fontSize: '16px', color: isFavorited ? '#E8722A' : '#D1D5DB', flexShrink: 0,
+              fontSize: '16px', color: isFavorited ? '#E8722A' : heartOff, flexShrink: 0,
               transition: 'transform 0.15s, color 0.15s',
               transform: isFavorited ? 'scale(1.2)' : 'scale(1)',
             }}
@@ -92,7 +105,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
 
           {/* Chevron */}
           <span style={{
-            fontSize: '9px', color: '#9CA3AF', flexShrink: 0,
+            fontSize: '9px', color: chevronCol, flexShrink: 0,
             transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
             transition: 'transform 0.2s',
           }}>▼</span>
@@ -100,22 +113,22 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
 
         {/* Expanded detail panel */}
         {expanded && (
-          <div style={{ padding: '0 12px 12px 12px', borderTop: '1px solid #F3F4F6' }}>
-            <p style={{ fontSize: '14px', fontWeight: 800, color: '#1F2937', margin: '8px 0 4px', lineHeight: 1.3 }}>
+          <div style={{ padding: '0 12px 12px 12px', borderTop: `1px solid ${borderColor}`, background: expandedBg }}>
+            <p style={{ fontSize: '14px', fontWeight: 800, color: textPrimary, margin: '8px 0 4px', lineHeight: 1.3 }}>
               {name}
             </p>
-            <p style={{ fontSize: '13px', color: '#6B7280', fontWeight: 500, margin: '0 0 6px' }}>
+            <p style={{ fontSize: '13px', color: textMuted, fontWeight: 500, margin: '0 0 6px' }}>
               📍 {venue}
             </p>
 
             {desc && (
-              <p style={{ fontSize: '13px', color: '#4B5563', lineHeight: 1.5, marginBottom: '8px' }}>
+              <p style={{ fontSize: '13px', color: textDesc, lineHeight: 1.5, marginBottom: '8px' }}>
                 {desc}
               </p>
             )}
 
             {event.cover_charge != null && (
-              <p style={{ fontSize: '12px', color: '#6B7280', marginBottom: '8px' }}>
+              <p style={{ fontSize: '12px', color: textMuted, marginBottom: '8px' }}>
                 🎟 {event.cover_charge === 0 ? 'Free admission' : `$${event.cover_charge} cover`}
               </p>
             )}
@@ -123,9 +136,9 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
             {onReport && (
               <button
                 onClick={e => { e.stopPropagation(); onReport(event); }}
-                style={{ fontSize: '11px', fontWeight: 600, border: 'none', background: 'none', cursor: 'pointer', color: '#D1D5DB', marginTop: '4px' }}
+                style={{ fontSize: '11px', fontWeight: 600, border: 'none', background: 'none', cursor: 'pointer', color: darkMode ? '#4A4A6A' : '#D1D5DB', marginTop: '4px' }}
                 onMouseEnter={e => e.currentTarget.style.color = '#E8722A'}
-                onMouseLeave={e => e.currentTarget.style.color = '#D1D5DB'}
+                onMouseLeave={e => e.currentTarget.style.color = darkMode ? '#4A4A6A' : '#D1D5DB'}
               >
                 ⚑ Report an issue
               </button>
