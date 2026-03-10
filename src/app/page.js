@@ -441,11 +441,22 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* Event count + venue filter */}
+            {/* Event count + map + venue filter */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '12px', fontWeight: 600, color: t.textMuted }}>
                 {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
               </span>
+
+              {/* Map button */}
+              <button onClick={() => setActiveTab('map')} style={{
+                display: 'flex', alignItems: 'center', gap: '3px',
+                fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '999px',
+                border: `1.5px solid ${t.pillBorder}`, cursor: 'pointer',
+                background: t.pillBg, color: t.textMuted,
+              }}>
+                🗺️ Map
+              </button>
+
               <div style={{ position: 'relative' }}>
                 <button onClick={() => setVenueSheetOpen(o => !o)} style={{
                   display: 'flex', alignItems: 'center', gap: '3px',
@@ -700,7 +711,6 @@ export default function HomePage() {
         {[
           { key: 'home',    icon: '🏠', label: 'Home'    },
           { key: 'saved',   icon: '♥',  label: 'Saved'   },
-          { key: 'map',     icon: '🗺️', label: 'Map'     },
           { key: 'profile', icon: '👤', label: 'Profile' },
         ].map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
