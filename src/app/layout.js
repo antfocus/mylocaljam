@@ -22,7 +22,7 @@ export const metadata = {
   },
   other: {
     'theme-color': '#0D0D12',
-    'apple-mobile-web-app-capable': 'yes',
+    'mobile-web-app-capable': 'yes',
     'apple-mobile-web-app-status-bar-style': 'black-translucent',
   },
 };
