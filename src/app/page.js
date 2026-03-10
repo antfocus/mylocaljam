@@ -171,7 +171,7 @@ export default function HomePage() {
 
       const { data, error } = await supabase
         .from('events')
-        .select('*, venues(name, address, color)')
+        .select('*, venues(name, address, color, photo_url)')
         .gte('event_date', todayLocal)
         .eq('status', 'published')
         .order('event_date', { ascending: true });
@@ -208,6 +208,7 @@ export default function HomePage() {
           venue_name:    e.venues?.name    || e.venue_name    || '',
           venue_address: e.venues?.address || '',
           venue_color:   e.venues?.color   || getVenueColor(e.venues?.name || e.venue_name),
+          venue_photo:   e.venues?.photo_url || null,
         };
       });
 

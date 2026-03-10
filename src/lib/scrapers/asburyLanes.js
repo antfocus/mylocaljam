@@ -70,9 +70,10 @@ function extractTimeFromDescription(desc) {
 }
 
 /**
- * Fetch a detail page and extract time from JSON-LD description.
+ * Fetch a detail page and extract time + image from JSON-LD.
+ * Returns { time: string|null, imageUrl: string|null }
  */
-async function fetchEventTime(eventPath) {
+async function fetchEventDetails(eventPath) {
   try {
     const url = eventPath.startsWith('http') ? eventPath : `${BASE_URL}${eventPath}`;
     const res = await fetch(url, {
@@ -81,29 +82,31 @@ async function fetchEventTime(eventPath) {
       },
       next: { revalidate: 0 },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { time: null, imageUrl: null };
 
     const html = await res.text();
 
     // Extract JSON-LD Event data
     const ldMatch = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi);
-    if (!ldMatch) return null;
+    if (!ldMatch) return { time: null, imageUrl: null };
 
     for (const block of ldMatch) {
       const jsonStr = block.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
       try {
         const data = JSON.parse(jsonStr);
-        if (data['@type'] === 'Event' && data.description) {
-          return extractTimeFromDescription(data.description);
+        if (data['@type'] === 'Event') {
+          const time = data.description ? extractTimeFromDescription(data.description) : null;
+          const imageUrl = data.image?.url || null;
+          return { time, imageUrl };
         }
       } catch {
         // ignore parse errors
       }
     }
 
-    return null;
+    return { time: null, imageUrl: null };
   } catch {
-    return null;
+    return { time: null, imageUrl: null };
   }
 }
 
@@ -182,17 +185,17 @@ export async function scrapeAsburyLanes() {
       });
     }
 
-    // Fetch detail pages in parallel to get door times (limit concurrency to 5)
+    // Fetch detail pages in parallel to get door times + images (limit concurrency to 5)
     const CONCURRENCY = 5;
-    const times = new Array(parsedEvents.length).fill(null);
+    const details = new Array(parsedEvents.length).fill({ time: null, imageUrl: null });
 
     for (let i = 0; i < parsedEvents.length; i += CONCURRENCY) {
       const batch = parsedEvents.slice(i, i + CONCURRENCY);
       const results = await Promise.all(
-        batch.map(ev => fetchEventTime(ev.href))
+        batch.map(ev => fetchEventDetails(ev.href))
       );
       for (let j = 0; j < results.length; j++) {
-        times[i + j] = results[j];
+        details[i + j] = results[j];
       }
     }
 
@@ -201,12 +204,13 @@ export async function scrapeAsburyLanes() {
       title: ev.title,
       venue: VENUE,
       date: ev.dateStr,
-      time: times[idx] || '8:00 PM', // default to 8 PM if no time found
+      time: details[idx].time || '8:00 PM', // default to 8 PM if no time found
       description: null,
       ticket_url: `${BASE_URL}${ev.href}`,
       price: null,
       source_url: LISTING_URL,
       external_id: ev.externalId,
+      image_url: details[idx].imageUrl,
     }));
 
     console.log(`[AsburyLanes] Found ${events.length} upcoming events`);
