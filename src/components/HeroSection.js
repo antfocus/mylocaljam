@@ -2,19 +2,12 @@
 
 /**
  * HeroSection.js — compact featured event banner
- * Defaults to Music. User can tap a dropdown to switch category.
+ * Cycles through upcoming events with spotlight effect.
  * Supports both artist_name/venue_name/event_date and name/venue/date fields.
  */
 
 import { useState, useEffect } from 'react';
 import { formatTimeRange } from '@/lib/utils';
-
-const CATEGORY_OPTIONS = [
-  { key: 'Music',          label: 'Music',          emoji: '🎵' },
-  { key: 'Happy Hours',    label: 'Happy Hours',     emoji: '🍹' },
-  { key: 'Daily Specials', label: 'Daily Specials',  emoji: '⭐' },
-  { key: 'Community',      label: 'Community',       emoji: '🤝' },
-];
 
 const FALLBACK = { name: 'Live Music Tonight', venue: 'Asbury Park', start_time: null, end_time: null, genre: 'Music' };
 
@@ -25,31 +18,14 @@ function genreEmoji(g) {
   if (l.includes('rock'))    return '🎸';
   if (l.includes('folk'))    return '🪕';
   if (l.includes('dj'))      return '🎧';
-  if (l.includes('happy'))   return '🍹';
-  if (l.includes('special')) return '⭐';
-  if (l.includes('communit'))return '🤝';
   return '🎵';
 }
 
-export default function HeroSection({ events = [], defaultCategory = 'Music', isToday = true }) {
-  const [heroCategory, setHeroCategory] = useState(defaultCategory);
-  const [index,        setIndex]        = useState(0);
-  const categoryEvents = events.filter(e => {
-    const g = ((e.genre ?? e.vibe) ?? '').toLowerCase();
-    if (heroCategory === 'Music') {
-      // Music = anything that isn't explicitly a happy hour, special, or community event
-      return !g.includes('happy') && !g.includes('special') && !g.includes('communit');
-    }
-    const search = heroCategory.toLowerCase().replace(/s$/, '');
-    return g.includes(search);
-  });
+export default function HeroSection({ events = [], isToday = true }) {
+  const [index, setIndex] = useState(0);
 
-  // If still empty, just show the first upcoming event
-  const heroPool = categoryEvents.length > 0 ? categoryEvents : events;
-
-  const featured = heroPool.length > 0 ? heroPool.slice(0, 3) : [FALLBACK];
+  const featured = events.length > 0 ? events.slice(0, 3) : [FALLBACK];
   const current  = featured[Math.min(index, featured.length - 1)];
-  useEffect(() => { setIndex(0); }, [heroCategory]);
 
   useEffect(() => {
     if (featured.length <= 1) return;

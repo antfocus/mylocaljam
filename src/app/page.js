@@ -69,13 +69,6 @@ const DATE_OPTIONS = [
   { key: 'weekend',  label: 'This Weekend' },
 ];
 
-const CATEGORIES = [
-  { key: 'All',           label: 'All',           emoji: '' },
-  { key: 'Music',         label: 'Music',         emoji: '🎵' },
-  { key: 'Happy Hours',   label: 'Happy Hours',   emoji: '🍹' },
-  { key: 'Daily Specials',label: 'Daily Specials',emoji: '⭐' },
-  { key: 'Community',     label: 'Community',     emoji: '🤝' },
-];
 
 export default function HomePage() {
   // ── Data state ──────────────────────────────────────────────────────────────
@@ -105,7 +98,6 @@ export default function HomePage() {
   const [mapOpen,        setMapOpen]        = useState(false);
   const [dateKey,        setDateKey]        = useState('all');
   const [dateDropOpen,   setDateDropOpen]   = useState(false);
-  const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery,    setSearchQuery]    = useState('');
   const [activeVenue,    setActiveVenue]    = useState('all');
   const [venueSheetOpen, setVenueSheetOpen] = useState(false);
@@ -280,16 +272,6 @@ export default function HomePage() {
 
     if (activeVenue !== 'all') list = list.filter(e => e.venue === activeVenue);
 
-    if (activeCategory !== 'All') {
-      list = list.filter(e => {
-        const g = ((e.genre ?? e.vibe) ?? '').toLowerCase();
-        if (activeCategory === 'Music') {
-          return !g.includes('happy') && !g.includes('special') && !g.includes('communit');
-        }
-        return g.includes(activeCategory.toLowerCase().replace(/s$/, ''));
-      });
-    }
-
     if (searchQuery.trim()) {
       const q = normalizeVenue(searchQuery);
       list = list.filter(e =>
@@ -305,7 +287,7 @@ export default function HomePage() {
     });
 
     return list;
-  }, [events, dateKey, activeVenue, activeCategory, searchQuery, todayStr, tomorrowStr, fridayStr, sundayStr]);
+  }, [events, dateKey, activeVenue, searchQuery, todayStr, tomorrowStr, fridayStr, sundayStr]);
 
   const groupedEvents = useMemo(() => groupEventsByDate(filteredEvents), [filteredEvents]);
 
@@ -416,24 +398,6 @@ export default function HomePage() {
           <HeroSection events={heroEvents} isToday={heroIsToday} />
         )}
 
-
-        {/* ── Category pills (home tab only) ────────────────────────────── */}
-        {activeTab === 'home' && (
-          <div style={{ display: 'flex', gap: '6px', padding: '8px 16px 10px', overflowX: 'auto', background: t.surface, borderBottom: `1px solid ${t.border}`, scrollbarWidth: 'none' }}>
-            {CATEGORIES.map(cat => (
-              <button key={cat.key} onClick={() => setActiveCategory(cat.key)} style={{
-                padding: '5px 14px', borderRadius: '999px', border: `1.5px solid`, cursor: 'pointer', whiteSpace: 'nowrap',
-                fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px',
-                background: activeCategory === cat.key ? t.accent : t.pillBg,
-                color: activeCategory === cat.key ? 'white' : t.textMuted,
-                borderColor: activeCategory === cat.key ? t.accent : t.pillBorder,
-              }}>
-                {cat.emoji && <span>{cat.emoji}</span>}
-                {cat.label}
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* ── Section header: date dropdown + venue filter (home tab only) ── */}
         {activeTab === 'home' && (
