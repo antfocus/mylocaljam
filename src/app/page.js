@@ -618,8 +618,7 @@ export default function HomePage() {
             <div style={{ margin: '0 16px', borderRadius: '12px', background: t.surface, overflow: 'hidden', boxShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.4)' : '0 1px 6px rgba(0,0,0,0.07)', border: `1px solid ${t.border}` }}>
               {[
                 { icon: '🔔', label: 'Notifications',             toggle: 'notif'  },
-                { icon: darkMode ? '☀️' : '🌙', label: darkMode ? 'Light Mode' : 'Dark Mode', toggle: 'theme'  },
-                { icon: '🎵', label: 'Hero Category Preference',  soon: true       },
+                { icon: '🌙', label: 'Dark Mode', toggle: 'theme'  },
                 { icon: '📍', label: 'Default Location',          soon: true       },
                 { icon: '🎟', label: 'Submit an Event',           action: () => setShowSubmit(true) },
               ].map((item, i, arr) => (
@@ -645,7 +644,7 @@ export default function HomePage() {
                         <div style={{ position: 'absolute', top: '3px', left: notifEnabled ? '23px' : '3px', width: '18px', height: '18px', borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
                       </div>
                     : item.toggle === 'theme'
-                    ? <div style={{ width: '44px', height: '24px', borderRadius: '999px', position: 'relative', background: darkMode ? t.accentAlt : t.textSubtle, transition: 'background 0.2s', flexShrink: 0 }}>
+                    ? <div style={{ width: '44px', height: '24px', borderRadius: '999px', position: 'relative', background: darkMode ? t.accent : t.textSubtle, transition: 'background 0.2s', flexShrink: 0 }}>
                         <div style={{ position: 'absolute', top: '3px', left: darkMode ? '23px' : '3px', width: '18px', height: '18px', borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
                       </div>
                     : <span style={{ color: t.textMuted, fontSize: '12px' }}>›</span>}
