@@ -18,6 +18,7 @@ import { scrapeTenthAveBurrito } from '@/lib/scrapers/tenthAveBurrito';
 import { scrapeReefAndBarrel } from '@/lib/scrapers/reefAndBoatyard';
 import { scrapePalmetto } from '@/lib/scrapers/palmetto';
 import { scrapeIdleHour } from '@/lib/scrapers/idleHour';
+import { scrapeAsburyLanes } from '@/lib/scrapers/asburyLanes';
 
 
 export const dynamic = 'force-dynamic';
@@ -108,7 +109,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, parkStage, tenthAveBurrito, reefAndBarrel, palmetto, idleHour] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, parkStage, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -127,6 +128,7 @@ export async function POST(request) {
     scrapeReefAndBarrel(),
     scrapePalmetto(),
     scrapeIdleHour(),
+    scrapeAsburyLanes(),
   ]);
 
   const scraperResults = {
@@ -148,6 +150,7 @@ export async function POST(request) {
     ReefAndBarrel: { count: reefAndBarrel.events.length, error: reefAndBarrel.error },
     Palmetto: { count: palmetto.events.length, error: palmetto.error },
     IdleHour: { count: idleHour.events.length, error: idleHour.error },
+    AsburyLanes: { count: asburyLanes.events.length, error: asburyLanes.error },
   };
 
   // Combine all events
@@ -170,6 +173,7 @@ export async function POST(request) {
     ...reefAndBarrel.events,
     ...palmetto.events,
     ...idleHour.events,
+    ...asburyLanes.events,
   ].map(ev => mapEvent(ev, venueMap));
 
   // Filter out events with no external_id or date, and deduplicate by external_id
