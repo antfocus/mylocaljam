@@ -24,6 +24,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
   const name     = event.name        || event.artist_name || '';
   const venue    = event.venue       || event.venue_name  || '';
   const desc     = event.description || event.artist_bio  || '';
+  const imageUrl = event.image_url   || null;
   const category = event.genre       || event.vibe        || 'Live Music';
   const config   = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
   const timeStr  = formatTimeRange(event.start_time, event.end_time);
@@ -113,6 +114,20 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
         {/* Expanded detail panel */}
         {expanded && (
           <div style={{ padding: '0 12px 12px 12px', borderTop: `1px solid ${borderColor}`, background: expandedBg }}>
+
+            {/* Event image */}
+            {imageUrl && (
+              <div style={{ margin: '10px 0 8px', borderRadius: '8px', overflow: 'hidden', lineHeight: 0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imageUrl}
+                  alt={name}
+                  style={{ width: '100%', maxHeight: '160px', objectFit: 'cover', display: 'block' }}
+                  onError={e => { e.currentTarget.style.display = 'none'; }}
+                />
+              </div>
+            )}
+
             <p style={{ fontSize: '14px', fontWeight: 800, color: textPrimary, margin: '8px 0 4px', lineHeight: 1.3 }}>
               {name}
             </p>

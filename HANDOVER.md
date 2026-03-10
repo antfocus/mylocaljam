@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~850+ events** across 18 scrapers (as of March 10, 2026)
+**~850+ events** across 20 scrapers (as of March 10, 2026)
 
 ---
 
@@ -148,11 +148,30 @@
   4. Commit and push
 - **Current schedule:** March 2026 (21 events — Wednesdays, Fridays, Saturdays, Sundays, + 2 specials)
 
+### Idle Hour (`idleHour.js`)
+- **URL:** https://www.ihpointpleasant.com/
+- **Platform:** Wix site with embedded Google Calendar on homepage
+- **Approach:** Google Calendar iCal feed (same pattern as St. Stephen's Green, Reef & Barrel)
+- **Calendar ID:** `8f5d0389c430a2be6bc4445bcb064a60609a1e8abe3e176347e9646c215c0df5@group.calendar.google.com`
+- **Address:** 2600 NJ-88, Point Pleasant, NJ 08742
+- **Live music:** Thursdays, Fridays, Saturdays
+
+### Asbury Lanes (`asburyLanes.js`)
+- **URL:** https://www.asburylanes.com/concerts/
+- **Platform:** BentoBox (getbento.com) — no API available
+- **Approach:** Parses listing page HTML for `.card__heading` titles (contain dates in MM.DD.YYYY format), extracts event slugs for external_id, then fetches each detail page in parallel to extract door times from JSON-LD `@type:Event` description field
+- **Fallback time:** 8:00 PM if no door time found in detail page
+- **Address:** 209 4th Ave, Asbury Park, NJ 07712
+- **Note:** Concert venue + bowling alley. Events include concerts, music bingo, and special events.
+
 ---
 
 ## Immediate Action Items
-- **Push DST fixes:** `cd ~/Documents/mylocaljam && git add -A && git commit -m "Fix DST offset in all iCal and HTML scrapers" && git push`
-- **Run sync** after deploy to update all event times with corrected offsets
+- **Push all local commits:** `cd ~/Documents/mylocaljam && git push origin main`
+- **Run sync** to refresh events with corrected DST offsets and image_url passthrough
+- **Run Supabase SQL migrations** (see Schema Notes) to add `image_url` to `events` and create `artists` table
+- **Add LASTFM_API_KEY** to Vercel environment variables (https://www.last.fm/api/account/create — free)
+- **Run artist enrichment** after deploy + migrations: call `/api/enrich-artists` repeatedly until all events are enriched
 - **Clean up Monmouth County** if still showing: run `DELETE FROM events WHERE venue_name = 'Monmouth County';` and `DELETE FROM venues WHERE name = 'Monmouth County';` in Supabase
 
 ---
@@ -165,25 +184,44 @@
 - **Broadway Bar and Grill** — Not yet investigated
 - User may add additional venues not on this list
 
-### Last.fm Artist Enrichment (planned)
-- Many scraped events have no band bio or genre info
-- Plan: Use **Last.fm API** (free, no auth needed) to enrich events
-- Approach:
-  1. After scraping, check if event has an artist name but no description/genre
-  2. Search Last.fm for the artist
-  3. Cache artist info in a new `artists` table in Supabase
-  4. Link events to artists for bio + genre display
-- User confirmed they want Last.fm (not Spotify or MusicBrainz)
-- Build this after adding a few more venues
+### Last.fm Artist Enrichment ✅ Implemented
+- **Module:** `src/lib/enrichLastfm.js` — fetches artist bio, image, and tags from Last.fm API; caches in `artists` table (7-day TTL); skips Last.fm placeholder images
+- **API route:** `src/app/api/enrich-artists/route.js` — POST/GET to run enrichment; processes up to 30 unenriched events per call; updates `image_url` and `artist_bio` on events that are missing them
+- **Dry run:** `POST /api/enrich-artists?dry=true` — counts unenriched events without writing anything
+- **Required env var:** `LASTFM_API_KEY` — add to Vercel environment variables. Get a free key at https://www.last.fm/api/account/create
+- **Auth:** same `SYNC_SECRET` Bearer token as `/api/sync-events`
+- **Manual trigger from browser console:**
+  ```javascript
+  fetch('/api/enrich-artists', {method:'POST', headers:{'Authorization':'Bearer ' + atob('JCp7RyxiJCREZEpseCNDTw==')}}).then(r=>r.json()).then(d => console.log(JSON.stringify(d, null, 2)))
+  ```
+- **Run multiple times** to work through all unenriched events (30 per call limit keeps it within Vercel's timeout)
+- **Supabase SQL required** (see Schema Notes section above)
 
 ---
 
 ## Supabase Schema Notes
 - **Table:** `events`
-- **Key fields:** `artist_name`, `venue_name`, `venue_id`, `event_date` (ISO string), `ticket_link`, `cover`, `source`, `external_id`, `status`, `verified_at`
-- **No `image_url` column** — do not include in mapEvent()
+- **Key fields:** `artist_name`, `venue_name`, `venue_id`, `event_date` (ISO string), `ticket_link`, `cover`, `source`, `image_url`, `external_id`, `status`, `verified_at`
+- **`image_url`** — added March 2026. Populated by scrapers that have images (Ticketmaster, Martells) and/or by `/api/enrich-artists` via Last.fm.
 - **Upsert conflict key:** `external_id`
 - **Venue names with apostrophes** need SQL escaping: use `''` (double single-quote) in raw SQL
+
+### SQL Migrations (run once in Supabase SQL editor)
+```sql
+-- Add image_url to events table
+ALTER TABLE events ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+-- Create artists cache table for Last.fm enrichment
+CREATE TABLE IF NOT EXISTS artists (
+  id           UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name         TEXT UNIQUE NOT NULL,
+  image_url    TEXT,
+  bio          TEXT,
+  tags         TEXT,           -- comma-separated genre tags from Last.fm
+  last_fetched TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+```
 
 ---
 

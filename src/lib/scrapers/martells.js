@@ -46,6 +46,14 @@ export async function scrapeMartells() {
         // start_utc_datetime: "2026-03-15 17:00:00" → ISO UTC string
         const isoDate = item.start_utc_datetime.replace(' ', 'T') + 'Z';
 
+        // Extract image: Timely provides featured_image or image objects
+        const imageUrl =
+          item.featured_image?.large?.url ||
+          item.featured_image?.medium?.url ||
+          item.image?.large?.url ||
+          item.image?.url ||
+          null;
+
         allEvents.push({
           title: item.title,
           venue: VENUE_NAME,
@@ -59,6 +67,7 @@ export async function scrapeMartells() {
             item.cost_display && item.cost_display !== '0'
               ? item.cost_display
               : null,
+          image_url: imageUrl,
           source_url: SOURCE_URL,
         });
       }
