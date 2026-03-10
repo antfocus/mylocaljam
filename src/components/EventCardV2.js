@@ -21,13 +21,15 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
 
   if (!event) return null;
 
-  const name     = event.name        || event.artist_name || '';
-  const venue    = event.venue       || event.venue_name  || '';
-  const desc     = event.description || event.artist_bio  || '';
-  const imageUrl = event.image_url   || null;
-  const category = event.genre       || event.vibe        || 'Live Music';
-  const config   = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
-  const timeStr  = formatTimeRange(event.start_time, event.end_time);
+  const name       = event.name        || event.artist_name || '';
+  const venue      = event.venue       || event.venue_name  || '';
+  const desc       = event.description || event.artist_bio  || '';
+  const imageUrl   = event.image_url   || null;
+  const ticketLink = event.ticket_link || null;
+  const sourceLink = event.source      || null;
+  const category   = event.genre       || event.vibe        || 'Live Music';
+  const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
+  const timeStr    = formatTimeRange(event.start_time, event.end_time);
 
   // Theme colors
   const cardBg      = darkMode ? '#1A1A24' : '#FFFFFF';
@@ -147,10 +149,49 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
               </p>
             )}
 
+            {/* Action buttons row */}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+              {ticketLink && (
+                <a
+                  href={ticketLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '5px',
+                    fontSize: '12px', fontWeight: 700,
+                    padding: '7px 14px', borderRadius: '8px',
+                    background: '#E8722A', color: 'white',
+                    textDecoration: 'none', border: 'none', cursor: 'pointer',
+                  }}
+                >
+                  🎟 Get Tickets
+                </a>
+              )}
+              {sourceLink && (
+                <a
+                  href={sourceLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '5px',
+                    fontSize: '12px', fontWeight: 700,
+                    padding: '7px 14px', borderRadius: '8px',
+                    background: darkMode ? '#2A2A3A' : '#E5E7EB',
+                    color: darkMode ? '#AAAACC' : '#4B5563',
+                    textDecoration: 'none', border: 'none', cursor: 'pointer',
+                  }}
+                >
+                  🔗 Venue Page
+                </a>
+              )}
+            </div>
+
             {onReport && (
               <button
                 onClick={e => { e.stopPropagation(); onReport(event); }}
-                style={{ fontSize: '11px', fontWeight: 600, border: 'none', background: 'none', cursor: 'pointer', color: darkMode ? '#4A4A6A' : '#D1D5DB', marginTop: '4px' }}
+                style={{ fontSize: '11px', fontWeight: 600, border: 'none', background: 'none', cursor: 'pointer', color: darkMode ? '#4A4A6A' : '#D1D5DB', marginTop: '8px' }}
                 onMouseEnter={e => e.currentTarget.style.color = '#E8722A'}
                 onMouseLeave={e => e.currentTarget.style.color = darkMode ? '#4A4A6A' : '#D1D5DB'}
               >

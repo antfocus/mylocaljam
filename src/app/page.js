@@ -13,6 +13,15 @@ import SubmitEventModal  from '@/components/SubmitEventModal';
 import ReportIssueModal  from '@/components/ReportIssueModal';
 import Toast             from '@/components/Toast';
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+// Clean HTML entities that may have leaked through scrapers (e.g. &amp; → &)
+function decodeEntities(str) {
+  if (!str || typeof str !== 'string') return str;
+  const el = typeof document !== 'undefined' ? document.createElement('textarea') : null;
+  if (el) { el.innerHTML = str; return el.value; }
+  return str.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'");
+}
+
 // ── Theme ────────────────────────────────────────────────────────────────────
 const DARK = {
   bg:           '#0D0D12',
@@ -182,7 +191,7 @@ export default function HomePage() {
 
         return {
           ...e,
-          name:       e.artist_name  || e.name  || '',
+          name:       decodeEntities(e.artist_name  || e.name  || ''),
           venue:      e.venues?.name || e.venue_name || e.venue || '',
           date: (() => {
             const raw = e.event_date || '';
@@ -339,10 +348,11 @@ export default function HomePage() {
           {/* Logo */}
           <div style={{ flexShrink: 0 }}>
             <Image
-              src="/myLocaljam_Logo.png"
+              src="/myLocaljam_Logo_104.png"
               alt="myLocalJam"
               width={52}
               height={52}
+              priority
               style={{ objectFit: 'contain', display: 'block' }}
             />
           </div>
