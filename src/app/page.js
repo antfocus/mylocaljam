@@ -336,17 +336,14 @@ export default function HomePage() {
           display: 'flex', alignItems: 'center', gap: '10px',
         }}>
           {/* Logo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-            <Image src="/myLocaljam_Logo_v4.png" alt="myLocalJam" width={36} height={36} style={{ objectFit: 'contain' }} />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-              <div style={{ fontSize: '16px', fontWeight: 900, letterSpacing: '-0.8px', lineHeight: 1 }}>
-                <span style={{ color: t.text }}>mylocal</span>
-                <span style={{ color: t.accent }}>jam</span>
-              </div>
-              <div style={{ fontSize: '7px', fontWeight: 800, letterSpacing: '1px', textTransform: 'uppercase', color: t.textMuted, lineHeight: 1, whiteSpace: 'nowrap' }}>
-                Local Music&nbsp;·&nbsp;Food&nbsp;·&nbsp;Experiences
-              </div>
-            </div>
+          <div style={{ flexShrink: 0 }}>
+            <Image
+              src="/myLocaljam_Logo.png"
+              alt="myLocalJam"
+              width={52}
+              height={52}
+              style={{ objectFit: 'contain', display: 'block' }}
+            />
           </div>
 
           {/* Search bar — center, flex fills remaining space */}
