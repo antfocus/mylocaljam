@@ -26,6 +26,23 @@ function isAuthorized(request) {
   return auth === `Bearer ${secret}`;
 }
 
+// Return the correct Eastern UTC offset for a given date string (YYYY-MM-DD)
+// Accounts for US DST: EDT (UTC-4) from 2nd Sun Mar → 1st Sun Nov, else EST (UTC-5)
+function easternOffset(dateStr) {
+  try {
+    // Use Intl to ask the America/New_York timezone what offset applies on this date
+    const d = new Date(`${dateStr}T12:00:00Z`);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      timeZoneName: 'short',
+    }).formatToParts(d);
+    const tz = parts.find(p => p.type === 'timeZoneName')?.value ?? 'EST';
+    return tz.includes('EDT') ? '-04:00' : '-05:00';
+  } catch {
+    return '-05:00'; // safe fallback
+  }
+}
+
 // Map scraper fields → Supabase schema
 function mapEvent(ev, venueMap) {
   const venueId = venueMap[ev.venue] || null;
@@ -33,10 +50,15 @@ function mapEvent(ev, venueMap) {
   // Combine date + time into a full ISO timestamp (Eastern)
   let eventDate = null;
   if (ev.date) {
-    const dateStr = ev.date.includes('T')
-      ? ev.date // already ISO (PigAndParrot sends full ISO)
-      : `${ev.date}T${ev.time ? convertTo24h(ev.time) : '00:00'}:00-05:00`;
-    eventDate = new Date(dateStr).toISOString();
+    if (ev.date.includes('T')) {
+      // Already a full ISO string — use as-is
+      eventDate = new Date(ev.date).toISOString();
+    } else {
+      // Build with correct Eastern offset (EDT or EST) for the event date
+      const offset  = easternOffset(ev.date);
+      const timeStr = ev.time ? convertTo24h(ev.time) : '00:00';
+      eventDate = new Date(`${ev.date}T${timeStr}:00${offset}`).toISOString();
+    }
   }
 
   return {
