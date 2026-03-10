@@ -76,6 +76,32 @@ async function fetchCalendarMonth(month, year, nonce) {
 }
 
 /**
+ * Try to extract a time from the event title text.
+ * Handles patterns like "8pm", "8 pm", "8:00pm", "8:00 PM", "8 PM - Close".
+ * Returns a formatted time string like "8:00 PM" or null.
+ */
+function extractTimeFromTitle(title) {
+  if (!title) return null;
+  const match = title.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)/i);
+  if (!match) return null;
+
+  let hours = parseInt(match[1]);
+  const minutes = match[2] ? parseInt(match[2]) : 0;
+  const period = match[3].replace(/\./g, '').toLowerCase();
+
+  if (period === 'pm' && hours !== 12) hours += 12;
+  if (period === 'am' && hours === 12) hours = 0;
+
+  const d = new Date(2000, 0, 1, hours, minutes);
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'UTC',
+  });
+}
+
+/**
  * Parse event HTML from simcal calendar grid.
  * Extracts title, Unix timestamp, and event URL.
  */
@@ -122,16 +148,33 @@ function parseEvents(html) {
     else if (lower.includes('special') || lower.includes('$') || lower.includes('mil')) genre = 'Specials';
     else if (lower.includes('dj') || lower.includes('DJ')) genre = 'DJ';
 
+    // Extract time from timestamp; fall back to title if midnight (all-day event)
+    const eastHour = parseInt(eventDate.toLocaleTimeString('en-US', {
+      hour: 'numeric', hour12: false, timeZone: 'America/New_York',
+    }));
+    const eastMin = parseInt(eventDate.toLocaleTimeString('en-US', {
+      minute: '2-digit', timeZone: 'America/New_York',
+    }));
+    const isMidnight = eastHour === 0 && eastMin === 0;
+
+    let time = eventDate.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'America/New_York',
+    });
+
+    // If the timestamp is midnight, the event is likely all-day — try to
+    // pull a real start time from the title (e.g. "Every Tuesday 8pm - Close")
+    if (isMidnight) {
+      time = extractTimeFromTitle(title) || '';
+    }
+
     events.push({
       title,
       venue: VENUE,
       date: eventDate.toISOString().split('T')[0],
-      time: eventDate.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'America/New_York',
-      }),
+      time,
       description: null,
       ticket_url: ticketUrl,
       price: null,
