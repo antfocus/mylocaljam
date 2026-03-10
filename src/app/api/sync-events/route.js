@@ -13,7 +13,7 @@ import { scrapeMarinaGrille } from '@/lib/scrapers/marinaGrille';
 import { scrapeAnchorTavern } from '@/lib/scrapers/anchorTavern';
 import { scrapeRBar } from '@/lib/scrapers/rBar';
 import { scrapeBrielleHouse } from '@/lib/scrapers/brielleHouse';
-import { scrapeParkStage } from '@/lib/scrapers/parkStage';
+// ParkStage HTML scraper removed — now covered by Ticketmaster (venue KovZ917AY7B)
 import { scrapeTenthAveBurrito } from '@/lib/scrapers/tenthAveBurrito';
 import { scrapeReefAndBarrel } from '@/lib/scrapers/reefAndBoatyard';
 import { scrapePalmetto } from '@/lib/scrapers/palmetto';
@@ -125,7 +125,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, parkStage, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -139,7 +139,6 @@ export async function POST(request) {
     scrapeAnchorTavern(),
     scrapeRBar(),
     scrapeBrielleHouse(),
-    scrapeParkStage(),
     scrapeTenthAveBurrito(),
     scrapeReefAndBarrel(),
     scrapePalmetto(),
@@ -161,7 +160,6 @@ export async function POST(request) {
     AnchorTavern: { count: anchorTavern.events.length, error: anchorTavern.error },
     RBar: { count: rBar.events.length, error: rBar.error },
     BrielleHouse: { count: brielleHouse.events.length, error: brielleHouse.error },
-    ParkStage: { count: parkStage.events.length, error: parkStage.error },
     TenthAveBurrito: { count: tenthAveBurrito.events.length, error: tenthAveBurrito.error },
     ReefAndBarrel: { count: reefAndBarrel.events.length, error: reefAndBarrel.error },
     Palmetto: { count: palmetto.events.length, error: palmetto.error },
@@ -184,7 +182,6 @@ export async function POST(request) {
     ...anchorTavern.events,
     ...rBar.events,
     ...brielleHouse.events,
-    ...parkStage.events,
     ...tenthAveBurrito.events,
     ...reefAndBarrel.events,
     ...palmetto.events,
