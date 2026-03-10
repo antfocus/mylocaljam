@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~850+ events** across 13 scrapers (as of March 9, 2026)
+**~850+ events** across 15 scrapers (as of March 9, 2026)
 
 ---
 
@@ -39,10 +39,12 @@
 | 11 | Anchor Tavern | `anchorTavern.js` | Squarespace JSON | ✅ Working | ~6 |
 | 12 | R Bar | `rBar.js` | Squarespace JSON | ✅ Working | ~8 |
 | 13 | Brielle House | `brielleHouse.js` | WordPress EventPrime | ❌ Blocked — nonce requires session cookies that can't be replicated server-side. See notes below. | 0 |
+| 14 | ParkStage | `parkStage.js` | HTML (WordPress) | ✅ Working | ~8 |
+| 15 | Monmouth Tourism | `monmouthTourism.js` | API (ImGoing Calendar) | ❌ Removed — venue attribution problem (all events came in as "Monmouth County"). Scraper deleted. | 0 |
 
 ---
 
-## Key Fixes Applied This Session
+## Key Fixes Applied
 
 ### 1. Timezone bug in date filtering (all iCal + Squarespace scrapers)
 - **Problem:** Vercel runs in UTC. After 7 PM Eastern (midnight UTC), the server thought it was the next day, filtering out same-day events.
@@ -55,9 +57,46 @@
 - **Result:** Jumped from 32 → 211 events.
 - **Important:** After changing Bar A's external_id format, had to run `DELETE FROM events WHERE venue_name = 'Bar Anticipation';` in Supabase to clear old duplicates, then re-sync.
 
-### 3. Jacks on the Tracks duplicate ID fix (previous session)
+### 3. Jacks on the Tracks duplicate ID fix
 - **Problem:** Google Calendar recurring events share the same UID, causing batch upsert failures.
 - **Fix:** Include date in external_id: `jackstracks-${dateStr}-${uidClean}`
+
+### 4. DST (Daylight Saving Time) offset bug — all iCal + HTML scrapers
+- **Problem:** All iCal scrapers (`barAnticipation.js`, `stStephensGreen.js`, `jacksOnTheTracks.js`, `mccanns.js`) had `-05:00` (EST) hardcoded in `parseIcalDate()` for floating/TZID dates. `beachHaus.js` had the same issue in `parseEventDate()`. After DST spring-forward (March 8, 2026), Eastern time is EDT (`-04:00`), so all event times were off by 1 hour.
+- **Fix:** Added `easternOffset()` helper to each scraper that dynamically detects EDT vs EST using `Intl.DateTimeFormat`:
+  ```javascript
+  function easternOffset(dateStr) {
+    try {
+      const d = new Date(`${dateStr}T12:00:00Z`);
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        timeZoneName: 'short',
+      }).formatToParts(d);
+      const tz = parts.find(p => p.type === 'timeZoneName')?.value ?? 'EST';
+      return tz.includes('EDT') ? '-04:00' : '-05:00';
+    } catch { return '-05:00'; }
+  }
+  ```
+- **Files fixed:** `barAnticipation.js`, `stStephensGreen.js`, `jacksOnTheTracks.js`, `mccanns.js`, `beachHaus.js`
+- **Note:** `route.js` already had its own `easternOffset()` for the `mapEvent()` function (added in a previous session).
+
+### 5. Pig & Parrot DST fix
+- **Problem:** `pigAndParrot.js` sent `date: ev.startAt` as a full ISO string, which bypassed the `easternOffset()` logic in route.js's `mapEvent()`.
+- **Fix:** Changed to `date: ev.startAt ? ev.startAt.slice(0, 10) : null` so route.js combines the date-only with the `time` field using the dynamic offset.
+
+### 6. ParkStage scraper wired up
+- **Scraper file** (`parkStage.js`) was created in a previous session but not connected.
+- **Wired into** `route.js`: import, Promise.all entry, scraperResults, allEvents spread.
+- **Venue added to Supabase:** `INSERT INTO venues (name, address) VALUES ('ParkStage', '1500 Kozloski Road, Freehold NJ');`
+- **Supabase schema note:** venues table only has `id, name, address, color, website, created_at` — no `slug` or `location` columns.
+
+### 7. Monmouth County Tourism — investigated and removed
+- **Site:** `https://tourism.visitmonmouth.com/events` (WordPress + ImGoing Calendar API)
+- **API:** `api.imgoingcalendar.com` — rich paginated JSON with ~97 events, 16 per page
+- **Built scraper** with pagination + artist/date deduplication logic in route.js
+- **Removed** because all events came in with venue "Monmouth County" instead of actual venue names — too complicated to resolve
+- **Cleanup:** Deleted scraper file, reverted route.js, ran `DELETE FROM events WHERE external_id LIKE 'monmouthtourism-%';` in Supabase
+- **Residual data:** May need `DELETE FROM events WHERE venue_name = 'Monmouth County';` and `DELETE FROM venues WHERE name = 'Monmouth County';` if old entries persist
 
 ---
 
@@ -70,6 +109,13 @@
 - **REST API:** `https://brielle-house.com/wp-json/eventprime/v1/events` returns event names/IDs but NO dates
 - **Individual event details:** `/wp-json/eventprime/v1/events/{id}` returns "Route not found"
 - **Possible future approaches:** Browser-based scraping (Puppeteer/Playwright), or contact venue for a public calendar feed
+
+---
+
+## Immediate Action Items
+- **Push DST fixes:** `cd ~/Documents/mylocaljam && git add -A && git commit -m "Fix DST offset in all iCal and HTML scrapers" && git push`
+- **Run sync** after deploy to update all event times with corrected offsets
+- **Clean up Monmouth County** if still showing: run `DELETE FROM events WHERE venue_name = 'Monmouth County';` and `DELETE FROM venues WHERE name = 'Monmouth County';` in Supabase
 
 ---
 
