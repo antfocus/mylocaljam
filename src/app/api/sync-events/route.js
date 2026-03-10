@@ -48,6 +48,21 @@ function easternOffset(dateStr) {
   }
 }
 
+// Decode common HTML entities that scrapers may leave in text fields
+function decodeHtmlEntities(str) {
+  if (!str) return str;
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
 // Map scraper fields → Supabase schema
 function mapEvent(ev, venueMap) {
   const venueId = venueMap[ev.venue] || null;
@@ -67,11 +82,11 @@ function mapEvent(ev, venueMap) {
   }
 
   return {
-    artist_name: ev.title,
+    artist_name: decodeHtmlEntities(ev.title),
     venue_name: ev.venue,
     venue_id: venueId,
     event_date: eventDate,
-    artist_bio: ev.description || null,
+    artist_bio: decodeHtmlEntities(ev.description) || null,
     ticket_link: ev.ticket_url || null,
     cover: ev.price || null,
     source: ev.source_url || null,

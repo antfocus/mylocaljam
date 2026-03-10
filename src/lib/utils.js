@@ -99,6 +99,8 @@ export function formatTimeRange(startStr, endStr) {
   }
   const s = parse(startStr);
   if (!s) return '';
+  // Treat midnight (00:00) as "no time provided" — don't display "12a"
+  if (s.h === 0 && s.m === 0) return '';
   const e = parse(endStr);
   if (!e) return fmt(s, true);
   const samePeriod = s.period === e.period;
