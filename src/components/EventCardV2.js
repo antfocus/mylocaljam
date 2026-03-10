@@ -101,7 +101,10 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
         {/* Expanded detail panel */}
         {expanded && (
           <div style={{ padding: '0 12px 12px 12px', borderTop: '1px solid #F3F4F6' }}>
-            <p style={{ fontSize: '13px', color: '#6B7280', fontWeight: 500, margin: '8px 0 6px' }}>
+            <p style={{ fontSize: '14px', fontWeight: 800, color: '#1F2937', margin: '8px 0 4px', lineHeight: 1.3 }}>
+              {name}
+            </p>
+            <p style={{ fontSize: '13px', color: '#6B7280', fontWeight: 500, margin: '0 0 6px' }}>
               📍 {venue}
             </p>
 
