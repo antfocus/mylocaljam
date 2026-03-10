@@ -179,7 +179,7 @@ export default function HomePage() {
       if (error) throw error;
 
       const mapped = (data || []).map(e => {
-        const extractedStartTime = e.start_time || (() => {
+        let extractedStartTime = e.start_time || (() => {
           if (e.event_date && e.event_date.includes('T')) {
             const d = new Date(e.event_date);
             // Use Eastern time, not UTC, so times display correctly
@@ -193,6 +193,21 @@ export default function HomePage() {
           }
           return null;
         })();
+
+        // If time is midnight (00:00), try to extract from the event title
+        // e.g. "Every Tuesday 8pm - Close" → "20:00"
+        if (extractedStartTime === '00:00' || extractedStartTime === '24:00') {
+          const title = e.artist_name || e.name || '';
+          const tm = title.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+          if (tm) {
+            let hr = parseInt(tm[1]);
+            const mn = tm[2] ? parseInt(tm[2]) : 0;
+            const per = tm[3].toLowerCase();
+            if (per === 'pm' && hr !== 12) hr += 12;
+            if (per === 'am' && hr === 12) hr = 0;
+            extractedStartTime = `${String(hr).padStart(2,'0')}:${String(mn).padStart(2,'0')}`;
+          }
+        }
 
         return {
           ...e,
