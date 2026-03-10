@@ -14,6 +14,7 @@ import { scrapeAnchorTavern } from '@/lib/scrapers/anchorTavern';
 import { scrapeRBar } from '@/lib/scrapers/rBar';
 import { scrapeBrielleHouse } from '@/lib/scrapers/brielleHouse';
 import { scrapeParkStage } from '@/lib/scrapers/parkStage';
+import { scrapeMonmouthTourism } from '@/lib/scrapers/monmouthTourism';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,7 +82,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, parkStage] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, parkStage, monmouthTourism] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -96,6 +97,7 @@ export async function POST(request) {
     scrapeRBar(),
     scrapeBrielleHouse(),
     scrapeParkStage(),
+    scrapeMonmouthTourism(),
   ]);
 
   const scraperResults = {
@@ -113,10 +115,11 @@ export async function POST(request) {
     RBar: { count: rBar.events.length, error: rBar.error },
     BrielleHouse: { count: brielleHouse.events.length, error: brielleHouse.error },
     ParkStage: { count: parkStage.events.length, error: parkStage.error },
+    MonmouthTourism: { count: monmouthTourism.events.length, error: monmouthTourism.error },
   };
 
-  // Combine all events
-  const allEvents = [
+  // Combine venue-specific events first (they take priority)
+  const venueEvents = [
     ...pigAndParrot.events,
     ...ticketmaster.events,
     ...joesSurfShack.events,
@@ -132,6 +135,47 @@ export async function POST(request) {
     ...brielleHouse.events,
     ...parkStage.events,
   ].map(ev => mapEvent(ev, venueMap));
+
+  // Build artist+date set from venue scrapers for dedup against tourism aggregator
+  // Normalize: lowercase, strip "the ", "dj ", "live ", common suffixes like "band"
+  function normalizeArtist(name) {
+    if (!name) return '';
+    return name
+      .toLowerCase()
+      .replace(/^(the|dj|live)\s+/g, '')
+      .replace(/\s+(band|trio|duo|quartet|ensemble|orchestra|project)$/g, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim();
+  }
+
+  const artistDateSet = new Set();
+  for (const ev of venueEvents) {
+    if (ev.artist_name && ev.event_date) {
+      const dateOnly = ev.event_date.slice(0, 10); // YYYY-MM-DD from ISO
+      const key = `${normalizeArtist(ev.artist_name)}|${dateOnly}`;
+      artistDateSet.add(key);
+    }
+  }
+
+  // Now process tourism events — skip any that match an existing artist+date
+  let tourismDupsSkipped = 0;
+  const tourismMapped = monmouthTourism.events
+    .map(ev => mapEvent(ev, venueMap))
+    .filter(ev => {
+      if (!ev.artist_name || !ev.event_date) return true; // keep if we can't check
+      const dateOnly = ev.event_date.slice(0, 10);
+      const key = `${normalizeArtist(ev.artist_name)}|${dateOnly}`;
+      if (artistDateSet.has(key)) {
+        tourismDupsSkipped++;
+        return false;
+      }
+      artistDateSet.add(key); // prevent tourism-to-tourism dupes too
+      return true;
+    });
+
+  console.log(`[Dedup] Skipped ${tourismDupsSkipped} tourism events that matched venue scrapers`);
+
+  const allEvents = [...venueEvents, ...tourismMapped];
 
   // Filter out events with no external_id or date, and deduplicate by external_id
   const seen = new Set();
@@ -167,6 +211,7 @@ export async function POST(request) {
     duration,
     totalScraped: validEvents.length,
     totalUpserted,
+    tourismDupsSkipped,
     scrapers: scraperResults,
     errors: upsertErrors.length ? upsertErrors : null,
   });
