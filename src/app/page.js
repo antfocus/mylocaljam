@@ -466,8 +466,13 @@ export default function HomePage() {
                   background: activeVenueLabel ? t.accent : t.pillBg,
                   color: activeVenueLabel ? '#FFFFFF' : t.textMuted,
                   borderColor: activeVenueLabel ? t.accent : t.pillBorder,
+                  maxWidth: '140px', overflow: 'hidden',
                 }}>
-                  📍 {activeVenueLabel ?? 'Venue'} ▾
+                  <span style={{ flexShrink: 0 }}>📍</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                    {activeVenueLabel ?? 'Venue'}
+                  </span>
+                  <span style={{ flexShrink: 0 }}>▾</span>
                 </button>
 
                 {venueSheetOpen && (
@@ -491,22 +496,22 @@ export default function HomePage() {
                       <div style={{ overflowY: 'auto', flex: 1 }}>
                         <button onClick={() => { setActiveVenue('all'); setVenueSheetOpen(false); setVenueSearch(''); }} style={{
                           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer',
+                          width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
                           background: activeVenue === 'all' ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.07)') : t.dropdownBg,
                           borderBottom: `1px solid ${t.border}`,
                         }}>
-                          <span style={{ fontSize: '13px', fontWeight: activeVenue === 'all' ? 700 : 500, color: activeVenue === 'all' ? t.accent : t.text }}>All Venues</span>
-                          {activeVenue === 'all' && <span style={{ color: t.accent, fontSize: '12px' }}>✓</span>}
+                          <span style={{ fontSize: '13px', fontWeight: activeVenue === 'all' ? 700 : 500, color: activeVenue === 'all' ? t.accent : t.text, textAlign: 'left' }}>All Venues</span>
+                          {activeVenue === 'all' && <span style={{ color: t.accent, fontSize: '12px', flexShrink: 0, marginLeft: '8px' }}>✓</span>}
                         </button>
                         {filteredVenues.map(venue => (
                           <button key={venue} onClick={() => { setActiveVenue(venue); setVenueSheetOpen(false); setVenueSearch(''); }} style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer',
+                            width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
                             background: activeVenue === venue ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.07)') : t.dropdownBg,
                             borderBottom: `1px solid ${t.border}`,
                           }}>
-                            <span style={{ fontSize: '13px', fontWeight: activeVenue === venue ? 700 : 500, color: activeVenue === venue ? t.accent : t.text }}>{venue}</span>
-                            {activeVenue === venue && <span style={{ color: t.accent, fontSize: '12px' }}>✓</span>}
+                            <span style={{ fontSize: '13px', fontWeight: activeVenue === venue ? 700 : 500, color: activeVenue === venue ? t.accent : t.text, textAlign: 'left', flex: 1 }}>{venue}</span>
+                            {activeVenue === venue && <span style={{ color: t.accent, fontSize: '12px', flexShrink: 0, marginLeft: '8px' }}>✓</span>}
                           </button>
                         ))}
                       </div>

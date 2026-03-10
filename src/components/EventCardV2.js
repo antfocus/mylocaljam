@@ -73,24 +73,23 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
           {/* Category emoji */}
           <span style={{ fontSize: '13px', flexShrink: 0 }}>{config.emoji}</span>
 
-          {/* Event name */}
-          <span style={{
-            fontSize: '13px', fontWeight: 700, color: textPrimary,
-            flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
-            {name}
-          </span>
-
-          {/* Venue name */}
-          {venue && (
+          {/* Event name + venue stacked */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
             <span style={{
-              fontSize: '12px', color: textMuted, fontWeight: 500,
+              fontSize: '13px', fontWeight: 700, color: textPrimary,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              maxWidth: '90px', flexShrink: 0,
             }}>
-              {venue}
+              {name}
             </span>
-          )}
+            {venue && (
+              <span style={{
+                fontSize: '11px', fontWeight: 500, color: textMuted,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {venue}
+              </span>
+            )}
+          </div>
 
           {/* Save heart */}
           <button
