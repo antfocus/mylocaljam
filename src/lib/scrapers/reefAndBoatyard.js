@@ -1,73 +1,174 @@
-// lib/scrapers/reefAndBoatyard.js
-// Reef & Barrel + Boatyard 401 — best-effort scrapers
-// These sites lack structured event data. Community submissions recommended.
+/**
+ * Reef & Barrel scraper
+ * Events page: https://www.reefandbarrel.com/events
+ *
+ * Framer site with an embedded Google Calendar.
+ * Calendar ID: 9d075af2fc91346d02e182eab76954878a912755f357e3cafdfc915fd90c0829@group.calendar.google.com
+ * Uses the public iCal feed — no API key required.
+ *
+ * If it breaks:
+ *   1. Go to https://www.reefandbarrel.com/events
+ *   2. Inspect the Google Calendar iframe src
+ *   3. Decode the base64 `src=` parameter to get the calendar ID
+ *   4. Update CALENDAR_ID below
+ */
 
-export async function scrapeReefAndBarrel() {
-  const events = [];
-  let error = null;
+const CALENDAR_ID = '9d075af2fc91346d02e182eab76954878a912755f357e3cafdfc915fd90c0829@group.calendar.google.com';
+const ICAL_URL = `https://calendar.google.com/calendar/ical/${encodeURIComponent(CALENDAR_ID)}/public/basic.ics`;
+const VENUE = 'Reef & Barrel';
+const VENUE_URL = 'https://www.reefandbarrel.com/events';
 
+function easternOffset(dateStr) {
   try {
-    const res = await fetch('https://www.reefandbarrel.com/events', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0)',
-        'Accept': 'text/html',
-      },
-    });
+    const d = new Date(`${dateStr}T12:00:00Z`);
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      timeZoneName: 'short',
+    }).formatToParts(d);
+    const tz = parts.find(p => p.type === 'timeZoneName')?.value ?? 'EST';
+    return tz.includes('EDT') ? '-04:00' : '-05:00';
+  } catch {
+    return '-05:00';
+  }
+}
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+function parseIcalDate(str) {
+  if (!str) return null;
 
-    const html = await res.text();
-    const timePattern = /\b(\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm))\b/g;
-    const blockRegex = /<(?:div|section|article)[^>]*>([\s\S]{20,400}?)<\/(?:div|section|article)>/gi;
-    const seen = new Set();
-    let blockMatch;
+  const dateOnly = str.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (dateOnly) {
+    const ds = `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}`;
+    return new Date(`${ds}T00:00:00${easternOffset(ds)}`);
+  }
 
-    while ((blockMatch = blockRegex.exec(html)) !== null) {
-      const text = blockMatch[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-      const dateMatch = text.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:,\s*\d{4})?/i);
-      if (!dateMatch) continue;
+  const utcMatch = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/);
+  if (utcMatch) {
+    return new Date(`${utcMatch[1]}-${utcMatch[2]}-${utcMatch[3]}T${utcMatch[4]}:${utcMatch[5]}:${utcMatch[6]}Z`);
+  }
 
-      const titleMatch = text.match(/^([A-Z][^.!?\n]{5,60})/);
-      if (!titleMatch) continue;
+  const localMatch = str.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})$/);
+  if (localMatch) {
+    const ds = `${localMatch[1]}-${localMatch[2]}-${localMatch[3]}`;
+    return new Date(`${ds}T${localMatch[4]}:${localMatch[5]}:${localMatch[6]}${easternOffset(ds)}`);
+  }
 
-      const title = titleMatch[1].trim();
-      if (seen.has(title)) continue;
-      seen.add(title);
+  return null;
+}
 
-      const parsed = new Date(dateMatch[0]);
-      if (isNaN(parsed.getTime()) || parsed < new Date()) continue;
+function extractValue(line) {
+  const colonIdx = line.indexOf(':');
+  if (colonIdx === -1) return '';
+  return line.slice(colonIdx + 1).trim();
+}
 
-      const date = parsed.toISOString().split('T')[0];
-      const timeMatch = text.match(timePattern);
-      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+function decodeIcalText(str) {
+  return str
+    .replace(/\\n/gi, ' ')
+    .replace(/\\,/g, ',')
+    .replace(/\\;/g, ';')
+    .replace(/\\\\/g, '\\')
+    .trim();
+}
+
+function parseIcal(icalText) {
+  const events = [];
+  const now = new Date();
+
+  const unfolded = icalText.replace(/\r\n[ \t]/g, '').replace(/\n[ \t]/g, '');
+  const lines = unfolded.split(/\r\n|\n|\r/);
+
+  let inEvent = false;
+  let current = {};
+
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') {
+      inEvent = true;
+      current = {};
+      continue;
+    }
+
+    if (line === 'END:VEVENT') {
+      inEvent = false;
+
+      const startDate = parseIcalDate(current.dtstart);
+      if (!startDate) { current = {}; continue; }
+
+      const eventDateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      if (eventDateStr < todayStr) { current = {}; continue; }
+
+      const title = decodeIcalText(current.summary || '');
+      if (!title) { current = {}; continue; }
+
+      // Include date in external_id to handle recurring events with same UID
+      const uid = current.uid || `${title}-${current.dtstart}`;
+      const uidClean = uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 40);
+      const externalId = `reefandbarrel-${eventDateStr}-${uidClean}`;
+
+      const dateStr = eventDateStr;
+      const timeStr = startDate.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'America/New_York',
+      });
 
       events.push({
         title,
-        venue: 'Reef & Barrel',
-        date,
-        time: timeMatch ? timeMatch[0].toUpperCase() : null,
-        end_time: null,
-        description: null,
-        image_url: null,
-        ticket_url: 'https://www.reefandbarrel.com/events',
+        venue: VENUE,
+        date: dateStr,
+        time: timeStr,
+        description: current.description ? decodeIcalText(current.description) : null,
+        ticket_url: current.url || VENUE_URL,
         price: null,
-        source_url: 'https://www.reefandbarrel.com/events',
-        external_id: `reefandbarrel-${date}-${slug}`,
-        approved: true,
+        source_url: VENUE_URL,
+        external_id: externalId,
       });
+
+      current = {};
+      continue;
     }
 
-    console.log(`[ReefAndBarrel] Found ${events.length} events (best-effort)`);
-  } catch (err) {
-    error = err.message;
-    console.error('[ReefAndBarrel] Scraper error:', err.message);
+    if (!inEvent) continue;
+
+    if (line.startsWith('SUMMARY')) current.summary = extractValue(line);
+    else if (line.startsWith('DTSTART')) current.dtstart = extractValue(line);
+    else if (line.startsWith('DTEND')) current.dtend = extractValue(line);
+    else if (line.startsWith('DESCRIPTION')) current.description = extractValue(line);
+    else if (line.startsWith('URL')) current.url = extractValue(line);
+    else if (line.startsWith('UID')) current.uid = extractValue(line);
   }
 
-  return { events, error };
+  return events;
+}
+
+export async function scrapeReefAndBarrel() {
+  try {
+    const res = await fetch(ICAL_URL, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
+      },
+      next: { revalidate: 0 },
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching iCal feed`);
+
+    const icalText = await res.text();
+    if (!icalText.includes('BEGIN:VCALENDAR')) {
+      throw new Error('Response does not appear to be a valid iCal feed');
+    }
+
+    const events = parseIcal(icalText);
+    console.log(`[ReefAndBarrel] Found ${events.length} upcoming events`);
+    return { events, error: null };
+
+  } catch (err) {
+    console.error('[ReefAndBarrel] Scraper error:', err.message);
+    return { events: [], error: err.message };
+  }
 }
 
 // Boatyard 401 has no events calendar — returns empty.
-// Check @boatyard401 on Instagram or use community submissions.
 export async function scrapeBoatyard401() {
   console.log('[Boatyard401] No events calendar found — skipping.');
   return { events: [], error: null };
