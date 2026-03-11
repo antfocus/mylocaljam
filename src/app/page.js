@@ -361,7 +361,7 @@ export default function HomePage() {
           {/* Logo */}
           <div style={{ flexShrink: 0 }}>
             <Image
-              src="/myLocaljam_Logo_104.png"
+              src="/mylocaljam_icon_200.png"
               alt="myLocalJam"
               width={52}
               height={52}

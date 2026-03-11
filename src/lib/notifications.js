@@ -102,8 +102,8 @@ function fireNotification(reminder) {
     const timeLabel = formatTime12(reminder.start_time);
     new Notification(`🎵 Starting in 1 hour: ${reminder.name}`, {
       body:    reminder.venue ? `${timeLabel} at ${reminder.venue}` : timeLabel,
-      icon:    '/myLocaljam_Logo_v4.png',
-      badge:   '/myLocaljam_Logo_v4.png',
+      icon:    '/mylocaljam_icon_200.png',
+      badge:   '/mylocaljam_icon_200.png',
       tag:     `mlj-event-${reminder.id}`,
     });
   } catch (e) {
