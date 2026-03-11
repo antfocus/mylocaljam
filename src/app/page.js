@@ -166,7 +166,8 @@ export default function HomePage() {
         .select('*, venues(name, address, color, photo_url)')
         .gte('event_date', todayLocal)
         .eq('status', 'published')
-        .order('event_date', { ascending: true });
+        .order('event_date', { ascending: true })
+        .limit(5000);
 
       if (error) throw error;
 
