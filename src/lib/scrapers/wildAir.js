@@ -61,17 +61,20 @@ async function fetchEvents() {
   const maxPages = 3; // Safety limit
 
   while (page <= maxPages) {
-    const params = new URLSearchParams({
-      page: String(page),
-      per_page: '50',
-      'visibilities[]': 'visible',
-      product_type: 'event',
-      include: 'images,media_files',
-    });
+    // Build query string manually — URLSearchParams encodes visibilities[]
+    // as visibilities%5B%5D which the Square Online API doesn't recognise
+    const qs = [
+      `page=${page}`,
+      `per_page=50`,
+      `visibilities[]=visible`,
+      `product_type=event`,
+      `include=images,media_files`,
+    ].join('&');
 
-    const res = await fetch(`${API_BASE}?${params}`, {
+    const res = await fetch(`${API_BASE}?${qs}`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
+        'Referer': 'https://www.wildairbeer.com/',
       },
       next: { revalidate: 0 },
     });
