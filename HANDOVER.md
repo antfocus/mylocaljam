@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1010+ events** across 24 scrapers (as of March 11, 2026)
+**~1050+ events** across 25 scrapers (as of March 11, 2026)
 
 ---
 
@@ -50,6 +50,7 @@
 | 22 | River Rock | `riverRock.js` | WordPress EventPrime AJAX | ✅ Working | ~102 |
 | 23 | Wild Air Beerworks | `wildAir.js` | Square Online (HTML + API) | ✅ Working | ~12 |
 | 24 | Asbury Park Brewery | `asburyParkBrewery.js` | Squarespace JSON | ✅ Working | ~54 |
+| 25 | Boatyard 401 | `boatyard401.js` | WordPress Simple Calendar (AJAX) | ✅ Working | ~40+ |
 
 ---
 
@@ -189,6 +190,17 @@
 - **Approach:** Same pattern as Marina Grille, Anchor Tavern, R Bar. Events are in the `upcoming` array (not `items`). Dates are epoch milliseconds in `startDate`, converted to Eastern time.
 - **Address:** 810 Sewall Ave, Asbury Park, NJ 07712
 - **Note:** ~54 upcoming events. Title field contains HTML entities (`&amp;` etc.) — scraper decodes them.
+
+### Boatyard 401 (`boatyard401.js`)
+- **URL:** https://boatyard401.com/events/
+- **Platform:** WordPress + Simple Calendar plugin (simcal) wrapping a Google Calendar
+- **Approach:** Two-step:
+  1. Fetches the `/events/` HTML page to get current month's events + the AJAX nonce
+  2. Uses AJAX POST to `admin-ajax.php` with action `simcal_default_calendar_draw_grid` to fetch next 2 months
+- **Calendar ID:** 66 (from `data-calendar-id` attribute on `.simcal-calendar` element)
+- **Parsing:** Extracts from `.simcal-event-details.simcal-tooltip-content` divs: title, start-date, start-time, description
+- **Address:** 401 South Main St, Manasquan, NJ 08736
+- **Note:** The nonce is publicly available in the page source (`simcal_default_calendar` JS variable). Includes all events (music, DJs, specials). ~39 events per month.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
@@ -394,6 +406,7 @@ Once you've determined the approach:
 | `timely` in scripts | Timely Calendar | Timely API (JSON) — see `martells.js` |
 | `ticketmaster.com` links | Ticketmaster | Discovery API with venue ID |
 | `editmysite.com`, Square Online store | Square Online | Extract `featuredEventIds` from `__BOOTSTRAP_STATE__` + individual product API calls |
+| `simcal-calendar`, Simple Calendar | Simple Calendar (WP) | Parse simcal HTML + AJAX for additional months |
 | `w-dyn-item`, Webflow attributes | Webflow CMS | Parse HTML dynamic list items (`role="listitem"`) |
 | Image poster only (no structured data) | Any | Hardcoded monthly events array |
 
