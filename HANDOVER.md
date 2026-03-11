@@ -182,6 +182,7 @@
 - **Spring Lake Tap House** — Not yet investigated
 - **Wharfside Seafood and Patio Bar** — Not yet investigated
 - **Broadway Bar and Grill** — Not yet investigated
+- **Leggetts Sand Bar** (https://www.leggetts.us/calendar) — ❌ Investigated, cannot scrape. Wix site using Boomtech Boom Event Calendar widget (third-party app running in cross-origin iframe). No public API, no iCal export, no Wix Events API access, no event data in page source. Events are entirely locked inside the Boomtech iframe. Address: 217 1st Ave, Manasquan, NJ 08736. Revisit if they switch to a Google Calendar or other accessible platform.
 - User may add additional venues not on this list
 
 ### Last.fm Artist Enrichment ✅ Implemented
