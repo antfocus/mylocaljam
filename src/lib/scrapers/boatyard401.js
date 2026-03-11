@@ -59,30 +59,25 @@ function normalizeTime(timeStr) {
 function parseSimcalEvents(html) {
   const events = [];
 
-  // Match each simcal-event block with its tooltip content
-  // The tooltip structure contains: title, start-date, start-time, end-date, end-time, description
-  const eventRegex =
-    /class="simcal-event[^"]*"[^>]*>([\s\S]*?)<\/span>\s*<\/span>/g;
+  // Split on each tooltip-content block boundary — much more reliable than
+  // trying to match the closing tag pattern (which varies by event content)
+  const blocks = html.split(/simcal-event-details simcal-tooltip-content/);
 
-  // Alternative: match the tooltip-content div which has all the details
-  const tooltipRegex =
-    /class="simcal-event-details simcal-tooltip-content"[^>]*>([\s\S]*?)<\/div>\s*(?:<\/div>|<div)/g;
-
-  let match;
-  while ((match = tooltipRegex.exec(html)) !== null) {
-    const block = match[1];
+  // Skip first chunk (everything before the first event)
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i];
 
     const titleMatch = block.match(
-      /class="simcal-event-title"[^>]*>([^<]+)</
+      /simcal-event-title"[^>]*>([^<]+)/
     );
     const startDateMatch = block.match(
-      /class="simcal-event-start simcal-event-start-date"[^>]*>([^<]+)</
+      /simcal-event-start-date"[^>]*>([^<]+)/
     );
     const startTimeMatch = block.match(
-      /class="simcal-event-start simcal-event-start-time"[^>]*>([^<]+)</
+      /simcal-event-start-time"[^>]*>([^<]+)/
     );
     const descMatch = block.match(
-      /class="simcal-event-description"[^>]*>([\s\S]*?)<\/span>/
+      /simcal-event-description"[^>]*>([\s\S]*?)<\/span>/
     );
 
     const title = titleMatch?.[1]?.trim();
