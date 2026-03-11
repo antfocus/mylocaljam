@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1050+ events** across 25 scrapers (as of March 11, 2026)
+**~1065+ events** across 26 scrapers (as of March 11, 2026)
 
 ---
 
@@ -51,6 +51,7 @@
 | 23 | Wild Air Beerworks | `wildAir.js` | Square Online (HTML + API) | ✅ Working | ~12 |
 | 24 | Asbury Park Brewery | `asburyParkBrewery.js` | Squarespace JSON | ✅ Working | ~54 |
 | 25 | Boatyard 401 | `boatyard401.js` | WordPress Simple Calendar (AJAX) | ✅ Working | ~40+ |
+| 26 | Tim McLoone's Supper Club | `timMcLoones.js` | Custom PHP HTML | ✅ Working | ~15 |
 
 ---
 
@@ -201,6 +202,16 @@
 - **Parsing:** Extracts from `.simcal-event-details.simcal-tooltip-content` divs: title, start-date, start-time, description
 - **Address:** 401 South Main St, Manasquan, NJ 08736
 - **Note:** The nonce is publicly available in the page source (`simcal_default_calendar` JS variable). Includes all events (music, DJs, specials). ~39 events per month.
+
+### Tim McLoone's Supper Club (`timMcLoones.js`)
+- **URL:** https://www.timmcloonessupperclub.com/events.php
+- **Platform:** Custom PHP site — server-rendered HTML, no CMS or calendar plugin
+- **Approach:** Fetches the events page HTML, splits on `class="events_col2"` boundaries, extracts date (`.event_date`), title (`<h2>`), subtitle (`.event_subtitle`), detail link (`events.php?id=XXXX`), ticket link (`mcloones.ticketbud.com`), and image (`cdn.mcloones.com`)
+- **Date format:** "Thursday, March 12" — no year included, so scraper infers year (current year, bumps to next if date is >2 months in the past)
+- **Times:** Some events have times in the subtitle (e.g. "7:00pm" or "6:30pm - 8:30pm"); extracted via regex
+- **Tickets:** Hosted on Ticketbud (`mcloones.ticketbud.com`)
+- **Address:** 1200 Ocean Ave, Asbury Park, NJ 07712
+- **Note:** ~15 events. Mix of live music, tribute shows, and special events.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
