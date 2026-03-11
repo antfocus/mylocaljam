@@ -22,6 +22,7 @@ import { scrapeAsburyLanes } from '@/lib/scrapers/asburyLanes';
 import { scrapeBakesBrewing } from '@/lib/scrapers/bakesBrewing';
 import { scrapeRiverRock } from '@/lib/scrapers/riverRock';
 import { scrapeWildAir } from '@/lib/scrapers/wildAir';
+import { scrapeAsburyParkBrewery } from '@/lib/scrapers/asburyParkBrewery';
 
 
 export const dynamic = 'force-dynamic';
@@ -128,7 +129,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -150,6 +151,7 @@ export async function POST(request) {
     scrapeBakesBrewing(),
     scrapeRiverRock(),
     scrapeWildAir(),
+    scrapeAsburyParkBrewery(),
   ]);
 
   const scraperResults = {
@@ -174,6 +176,7 @@ export async function POST(request) {
     BakesBrewing: { count: bakesBrewing.events.length, error: bakesBrewing.error },
     RiverRock: { count: riverRock.events.length, error: riverRock.error },
     WildAir: { count: wildAir.events.length, error: wildAir.error },
+    AsburyParkBrewery: { count: asburyParkBrewery.events.length, error: asburyParkBrewery.error },
   };
 
   // Combine all events
@@ -199,6 +202,7 @@ export async function POST(request) {
     ...bakesBrewing.events,
     ...riverRock.events,
     ...wildAir.events,
+    ...asburyParkBrewery.events,
   ].map(ev => mapEvent(ev, venueMap));
 
   // Filter out events with no external_id or date, and deduplicate by external_id

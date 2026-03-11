@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~960+ events** across 23 scrapers (as of March 11, 2026)
+**~1010+ events** across 24 scrapers (as of March 11, 2026)
 
 ---
 
@@ -49,6 +49,7 @@
 | 21 | Bakes Brewing | `bakesBrewing.js` | Webflow CMS HTML | ✅ Working | ~12 |
 | 22 | River Rock | `riverRock.js` | WordPress EventPrime AJAX | ✅ Working | ~102 |
 | 23 | Wild Air Beerworks | `wildAir.js` | Square Online (HTML + API) | ✅ Working | ~12 |
+| 24 | Asbury Park Brewery | `asburyParkBrewery.js` | Squarespace JSON | ✅ Working | ~54 |
 
 ---
 
@@ -181,6 +182,13 @@
 - **Detail pages:** Fetches each event's detail page (`/events/?event={id}`) in parallel batches of 5 to extract descriptions from `#ep_single_event_description`
 - **Filtering:** None — includes all event types (music, trivia, specials, etc.) per user request
 - **Address:** 1600 NJ-70, Brick Township, NJ 08724
+
+### Asbury Park Brewery (`asburyParkBrewery.js`)
+- **URL:** https://www.asburyparkbrewery.com/events
+- **Platform:** Squarespace — uses `?format=json` on the `/events` collection
+- **Approach:** Same pattern as Marina Grille, Anchor Tavern, R Bar. Events are in the `upcoming` array (not `items`). Dates are epoch milliseconds in `startDate`, converted to Eastern time.
+- **Address:** 810 Sewall Ave, Asbury Park, NJ 07712
+- **Note:** ~54 upcoming events. Title field contains HTML entities (`&amp;` etc.) — scraper decodes them.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
