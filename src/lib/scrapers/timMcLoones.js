@@ -1,200 +1,183 @@
 /**
  * Tim McLoone's Supper Club Scraper
- * URL: https://www.timmcloonessupperclub.com/events.php
+ * Source: https://mcloones.ticketbud.com (Ticketbud organizer page)
  *
- * Custom PHP site — server-rendered HTML with event cards.
- * Each event card has two columns:
- *   .events_col1 — image
- *   .events_col2 — date (.event_date), title (h2), subtitle (.event_subtitle),
- *                  DETAILS link (events.php?id=XXXX), TICKETS link (ticketbud.com)
+ * The main site (timmcloonessupperclub.com) is behind Cloudflare + reCAPTCHA
+ * and blocks datacenter IPs (Vercel). Instead we scrape their Ticketbud
+ * organizer page which has the same events, images, and ticket links.
  *
- * Dates are "Thursday, March 12" format (no year — inferred from current/next year).
- * Some events have times in the subtitle (e.g. "7:00pm" or "6:30pm - 8:30pm").
+ * Structure: server-rendered HTML with `.card.vertical` containers.
+ * Each card has:
+ *   .card-section.vox1 — image (S3 hosted)
+ *   .event-title (H6) — event name
+ *   .date — "Thu, Mar 12, 2026"
+ *   .time — "7:00 pm - 10:00 pm"
+ *   a.button — ticket link (mcloones.ticketbud.com/event-slug)
+ *
+ * Pagination: ?page=2, ?page=3, etc.
  *
  * If it breaks:
- *   1. Go to timmcloonessupperclub.com/events.php
- *   2. View source — events are in .events_col2 divs
- *   3. Check that date class is still .event_date and title is still in <h2>
+ *   1. Go to mcloones.ticketbud.com
+ *   2. View source — events are in .card.vertical divs
+ *   3. Check that .event-title, .date, .time classes still exist
+ *   4. Check pagination links at bottom (/?page=N)
  */
 
 const VENUE = "Tim McLoone's Supper Club";
-const EVENTS_URL = 'https://www.timmcloonessupperclub.com/events.php';
-const BASE_URL = 'https://www.timmcloonessupperclub.com';
+const TICKETBUD_URL = 'https://mcloones.ticketbud.com';
+
+const FETCH_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
 
 /**
- * Parse date like "Thursday, March 12" → "2026-03-12"
- * Infers year: if the resulting date is >2 months in the past, use next year.
+ * Parse Ticketbud date like "Thu, Mar 12, 2026" → "2026-03-12"
  */
-function parseEventDate(dateStr) {
+function parseTicketbudDate(dateStr) {
   if (!dateStr) return null;
-
-  // Remove day-of-week prefix: "Thursday, March 12" → "March 12"
-  const cleaned = dateStr.replace(/^[A-Za-z]+,\s*/, '').trim();
-
-  const months = {
-    january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
-    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
-  };
-
-  const m = cleaned.match(/^([A-Za-z]+)\s+(\d{1,2})$/);
-  if (!m) return null;
-
-  const monthName = m[1].toLowerCase();
-  const day = parseInt(m[2]);
-  const monthIdx = months[monthName];
-  if (monthIdx === undefined || isNaN(day)) return null;
-
-  // Determine year — use current year, bump to next if date is >2 months ago
-  const now = new Date();
-  const nowET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  let year = nowET.getFullYear();
-  const candidate = new Date(year, monthIdx, day);
-
-  const twoMonthsAgo = new Date(nowET);
-  twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
-  if (candidate < twoMonthsAgo) {
-    year++;
-  }
-
-  const mm = String(monthIdx + 1).padStart(2, '0');
-  const dd = String(day).padStart(2, '0');
-  return `${year}-${mm}-${dd}`;
+  // "Thu, Mar 12, 2026" or "Fri, Apr  3, 2026"
+  const cleaned = dateStr.replace(/\s+/g, ' ').trim();
+  const d = new Date(cleaned);
+  if (isNaN(d.getTime())) return null;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 /**
- * Extract time from subtitle text. Looks for patterns like:
- *   "7:00pm", "6:30pm - 8:30pm", "NO COVER CHARGE!, 6:30pm - 8:30pm"
+ * Extract start time from Ticketbud time string like "7:00 pm - 10:00 pm"
  */
-function extractTime(subtitle) {
-  if (!subtitle) return null;
-  const m = subtitle.match(/(\d{1,2}:\d{2})\s*(am|pm)/i);
+function extractTime(timeStr) {
+  if (!timeStr) return null;
+  const m = timeStr.match(/(\d{1,2}:\d{2})\s*(am|pm)/i);
   if (!m) return null;
   return `${m[1]} ${m[2].toUpperCase()}`;
 }
 
+/**
+ * Parse events from one page of Ticketbud HTML
+ */
+function parseTicketbudPage(html) {
+  const events = [];
+
+  // Split on card boundaries
+  const blocks = html.split(/class="card vertical"/);
+
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i];
+
+    // Title: <h6 class="event-title">...</h6> or content inside event-title
+    const titleMatch = block.match(/class="event-title"[^>]*>([\s\S]*?)<\/h6>/i);
+    let title = titleMatch?.[1]?.replace(/<[^>]+>/g, '').trim() || null;
+    if (!title) continue;
+
+    // Clean HTML entities
+    title = title
+      .replace(/&amp;/g, '&')
+      .replace(/&#39;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .trim();
+
+    // Date: <p class="date">Thu, Mar 12, 2026</p>
+    const dateMatch = block.match(/class="date"[^>]*>([^<]+)/);
+    const date = parseTicketbudDate(dateMatch?.[1]);
+
+    // Time: <p class="time">7:00 pm - 10:00 pm</p>
+    const timeMatch = block.match(/class="time"[^>]*>([^<]+)/);
+    const time = extractTime(timeMatch?.[1]);
+
+    // Ticket URL: <a class="button primary expanded" href="...">View Event</a>
+    const linkMatch = block.match(/href="(https?:\/\/mcloones\.ticketbud\.com\/[^"]+)"/);
+    const ticketUrl = linkMatch?.[1] || null;
+
+    // Image: <img src="https://s3.amazonaws.com/attachments.ticketbud.com/...">
+    const imgMatch = block.match(/src="(https?:\/\/s3\.amazonaws\.com\/attachments\.ticketbud\.com[^"]+)"/);
+    const imageUrl = imgMatch?.[1] || null;
+
+    // Build slug-based external ID from the ticket URL
+    let eventSlug = null;
+    if (ticketUrl) {
+      const slugMatch = ticketUrl.match(/ticketbud\.com\/(.+)/);
+      eventSlug = slugMatch?.[1]?.replace(/[^a-zA-Z0-9-]/g, '').slice(0, 60);
+    }
+    const externalId = eventSlug
+      ? `timmcloones-${eventSlug}`
+      : `timmcloones-${date}-${title.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 30)}`;
+
+    events.push({
+      title,
+      venue: VENUE,
+      date,
+      time,
+      description: null,
+      ticket_url: ticketUrl || TICKETBUD_URL,
+      price: null,
+      source_url: TICKETBUD_URL,
+      image_url: imageUrl,
+      external_id: externalId,
+    });
+  }
+
+  return events;
+}
+
+/**
+ * Check if there's a next page link
+ */
+function hasNextPage(html, currentPage) {
+  const nextPage = currentPage + 1;
+  return html.includes(`page=${nextPage}`);
+}
+
 export async function scrapeTimMcLoones() {
   try {
-    const res = await fetch(EVENTS_URL, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Sec-Ch-Ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-        'Sec-Ch-Ua-Mobile': '?0',
-        'Sec-Ch-Ua-Platform': '"Windows"',
-        'Sec-Fetch-Dest': 'document',
-        'Sec-Fetch-Mode': 'navigate',
-        'Sec-Fetch-Site': 'none',
-        'Sec-Fetch-User': '?1',
-        'Upgrade-Insecure-Requests': '1',
-      },
-      next: { revalidate: 0 },
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    const html = await res.text();
-    console.log(`[TimMcLoones] Fetched ${html.length} bytes`);
-
-    const todayET = new Date().toLocaleDateString('en-CA', {
-      timeZone: 'America/New_York',
-    });
-
-    // Split on events_col2 boundaries
-    const blocks = html.split(/class="events_col2"/);
-
-    const events = [];
+    const allEvents = [];
     const seen = new Set();
+    let page = 1;
+    const MAX_PAGES = 5;
 
-    for (let i = 1; i < blocks.length; i++) {
-      const block = blocks[i];
-
-      // Date: <div class="event_date">Thursday, March 12</div>
-      const dateMatch = block.match(/class="event_date"[^>]*>([^<]+)/);
-      const dateStr = dateMatch?.[1]?.trim();
-      const date = parseEventDate(dateStr);
-      if (!date || date < todayET) continue;
-
-      // Title: <h2><a href="events.php?id=XXXX">Title Here</a></h2>
-      // or: <h2>Title Here</h2>
-      const h2Match = block.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
-      let title = null;
-      let detailUrl = null;
-
-      if (h2Match) {
-        const h2Content = h2Match[1];
-        // Check if title is wrapped in a link
-        const linkMatch = h2Content.match(/<a[^>]*href="([^"]*)"[^>]*>([^<]+)<\/a>/);
-        if (linkMatch) {
-          detailUrl = linkMatch[1];
-          title = linkMatch[2].trim();
-        } else {
-          title = h2Content.replace(/<[^>]+>/g, '').trim();
-        }
-      }
-
-      if (!title) continue;
-
-      // Clean HTML entities
-      title = title
-        .replace(/&amp;/g, '&')
-        .replace(/&#39;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .trim();
-
-      // Subtitle (may contain time, price info)
-      const subtitleMatch = block.match(/class="event_subtitle"[^>]*>([\s\S]*?)<\/div>/);
-      const subtitle = subtitleMatch?.[1]?.replace(/<[^>]+>/g, '').trim() || null;
-
-      // Time from subtitle
-      const time = extractTime(subtitle);
-
-      // Ticket URL from ticketbud link
-      const ticketMatch = block.match(/href="(https?:\/\/mcloones\.ticketbud\.com[^"]*)"/);
-      const ticketUrl = ticketMatch?.[1] || null;
-
-      // Detail page URL
-      if (detailUrl && !detailUrl.startsWith('http')) {
-        detailUrl = `${BASE_URL}/${detailUrl}`;
-      }
-
-      // Image from preceding events_col1 block
-      // Since we split on events_col2, the image is in the chunk before this block
-      // Look backwards in the original HTML for the nearest image
-      const prevChunk = blocks[i - 1] || '';
-      const imgMatch = prevChunk.match(/src="(https?:\/\/cdn\.mcloones\.com\/images\/calendar\/[^"]+)"/);
-      const imageUrl = imgMatch?.[1] || null;
-
-      // Build external ID from the event page ID if available
-      const idMatch = detailUrl?.match(/id=(\d+)/);
-      const eventId = idMatch ? idMatch[1] : title.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 30);
-      const externalId = `timmcloones-${date}-${eventId}`;
-
-      if (seen.has(externalId)) continue;
-      seen.add(externalId);
-
-      events.push({
-        title,
-        venue: VENUE,
-        date,
-        time,
-        description: subtitle,
-        ticket_url: ticketUrl || detailUrl || EVENTS_URL,
-        price: null,
-        source_url: EVENTS_URL,
-        image_url: imageUrl,
-        external_id: externalId,
+    while (page <= MAX_PAGES) {
+      const url = page === 1 ? TICKETBUD_URL : `${TICKETBUD_URL}/?page=${page}`;
+      const res = await fetch(url, {
+        headers: FETCH_HEADERS,
+        next: { revalidate: 0 },
       });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status} on page ${page}`);
+
+      const html = await res.text();
+      console.log(`[TimMcLoones] Page ${page}: ${html.length} bytes`);
+
+      const pageEvents = parseTicketbudPage(html);
+      console.log(`[TimMcLoones] Page ${page}: ${pageEvents.length} events`);
+
+      if (pageEvents.length === 0) break;
+
+      // Filter today+ and deduplicate
+      const todayET = new Date().toLocaleDateString('en-CA', {
+        timeZone: 'America/New_York',
+      });
+
+      for (const ev of pageEvents) {
+        if (!ev.date || ev.date < todayET) continue;
+        if (seen.has(ev.external_id)) continue;
+        seen.add(ev.external_id);
+        allEvents.push(ev);
+      }
+
+      // Check for next page
+      if (!hasNextPage(html, page)) break;
+      page++;
     }
 
-    console.log(`[TimMcLoones] Found ${events.length} upcoming events`);
-    return { events, error: null };
+    console.log(`[TimMcLoones] Found ${allEvents.length} upcoming events across ${page} page(s)`);
+    return { events: allEvents, error: null };
   } catch (err) {
     console.error('[TimMcLoones] Scraper error:', err.message);
     return { events: [], error: err.message };
