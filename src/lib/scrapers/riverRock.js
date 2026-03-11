@@ -14,7 +14,7 @@
  *   "32" = Specials (happy hour, trivia, BOGO, family night)
  *   "34" = Themed nights (80s power hour, country night)
  *
- * We filter to event_type "31" for music events.
+ * No type filter — we take ALL events from the calendar.
  * Fetches current month + next 2 months to capture upcoming events.
  *
  * If it breaks:
@@ -26,7 +26,6 @@
 const AJAX_URL = 'https://riverrockbricknj.com/wp-admin/admin-ajax.php';
 const VENUE = 'River Rock';
 const EVENTS_URL = 'https://riverrockbricknj.com/events/';
-const MUSIC_TYPE = '31';
 
 /**
  * Normalize time from "05:00 PM" → "5:00 PM"
@@ -93,9 +92,6 @@ export async function scrapeRiverRock() {
 
     for (const monthEvents of allData) {
       for (const ev of monthEvents) {
-        // Filter to music events only
-        if (ev.event_type !== MUSIC_TYPE) continue;
-
         const date = ev.event_start_date; // YYYY-MM-DD
         if (!date || date < todayET) continue;
 
@@ -122,7 +118,7 @@ export async function scrapeRiverRock() {
       }
     }
 
-    console.log(`[RiverRock] Found ${events.length} upcoming music events`);
+    console.log(`[RiverRock] Found ${events.length} upcoming events`);
     return { events, error: null };
 
   } catch (err) {
