@@ -380,16 +380,17 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Profile avatar */}
+          {/* Add to the Jar button */}
           <button
-            onClick={() => setActiveTab('profile')}
+            onClick={() => setShowSubmit(true)}
+            title="Add to the Jar"
             style={{
-              width: '34px', height: '34px', borderRadius: '50%', border: `2px solid ${darkMode ? '#3A3A50' : '#E5E7EB'}`,
-              background: 'linear-gradient(135deg, #E8722A, #3AADA0)',
+              width: '34px', height: '34px', borderRadius: '50%', border: `2px solid ${t.accent}`,
+              background: t.accent,
               cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '16px',
+              fontSize: '20px', fontWeight: 700, color: 'white', lineHeight: 1,
             }}>
-            👤
+            +
           </button>
         </header>
 
