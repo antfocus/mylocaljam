@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~850+ events** across 20 scrapers (as of March 10, 2026)
+**~960+ events** across 23 scrapers (as of March 11, 2026)
 
 ---
 
@@ -46,6 +46,9 @@
 | 18 | Palmetto | `palmetto.js` | Hardcoded (image poster) | ⚠️ Working — requires manual monthly update (see notes) | ~21 |
 | 19 | Idle Hour | `idleHour.js` | Google Calendar iCal | ✅ Working | ~15+ |
 | 20 | Asbury Lanes | `asburyLanes.js` | BentoBox HTML + JSON-LD | ✅ Working | ~12+ |
+| 21 | Bakes Brewing | `bakesBrewing.js` | Webflow CMS HTML | ✅ Working | ~12 |
+| 22 | River Rock | `riverRock.js` | WordPress EventPrime AJAX | ✅ Working | ~102 |
+| 23 | Wild Air Beerworks | `wildAir.js` | Square Online (HTML + API) | ✅ Working | ~12 |
 
 ---
 
@@ -164,6 +167,32 @@
 - **Address:** 209 4th Ave, Asbury Park, NJ 07712
 - **Note:** Concert venue + bowling alley. Events include concerts, music bingo, and special events.
 
+### Bakes Brewing (`bakesBrewing.js`)
+- **URL:** https://www.bakesbrewing.co/events
+- **Platform:** Webflow CMS (dynamic list items with `role="listitem"`)
+- **Approach:** Fetches the HTML page, splits on `role="listitem"` boundaries, extracts title (`.heading-11`), date (`.text-block-12`), time (`.start-time`), price (`.text-block-14`), image (`img`), and slug (`a.link-block`)
+- **Filtering:** Only includes events with titles starting "LIVE MUSIC" or "COMEDY SHOW" — strips the prefix to get the artist name
+- **Address:** 57 Main St, Belmar, NJ 07719
+
+### River Rock (`riverRock.js`)
+- **URL:** https://riverrockbricknj.com/events/
+- **Platform:** WordPress + Elementor + EventPrime plugin
+- **Approach:** AJAX POST to `admin-ajax.php` with `action=ep_get_calendar_event` — fetches current + next 2 months. Unlike Brielle House (same plugin), River Rock's EventPrime does NOT validate nonces, so server-side AJAX works
+- **Detail pages:** Fetches each event's detail page (`/events/?event={id}`) in parallel batches of 5 to extract descriptions from `#ep_single_event_description`
+- **Filtering:** None — includes all event types (music, trivia, specials, etc.) per user request
+- **Address:** 1600 NJ-70, Brick Township, NJ 08724
+
+### Wild Air Beerworks (`wildAir.js`)
+- **URL:** https://www.wildairbeer.com/upcoming-events
+- **Platform:** Square Online (events stored as "products" with product_type=event)
+- **Approach:** Two-step process:
+  1. Fetches the HTML page and extracts `featuredEventIds` array from the inline `__BOOTSTRAP_STATE__` object (the 12 event IDs the page is configured to display)
+  2. Fetches each event's details individually via Square Online Store API (`/products/{id}`) in batches of 5
+- **Why not paginated API?** The Store API's `product_type=event` query param does NOT actually filter — it returns ALL product types (food, merchandise, events) mixed across 7 pages. Using `featuredEventIds` ensures we get exactly the events shown on the page.
+- **API endpoint:** `cdn5.editmysite.com/app/store/api/v28/editor/users/131268749/sites/275806222903239352/products/{id}`
+- **Address:** 801 2nd Ave, Asbury Park, NJ 07712
+- **Note:** If the API domain (`cdn5.editmysite.com`) is blocked from the hosting environment, the HTML page fetch (step 1) still works — the issue would only be in step 2's individual product fetches.
+
 ---
 
 ## Immediate Action Items
@@ -234,6 +263,131 @@ CREATE TABLE IF NOT EXISTS artists (
 5. Deploy and run manual sync to verify
 6. **For Squarespace sites:** Use `?format=json` on the collection URL. Click an event to find the collection name from the URL path.
 7. **For iCal feeds:** Use Eastern time for date comparisons. Handle RDATE if the feed uses recurring events. Include date in external_id for recurring events.
+
+---
+
+## Venue Investigation Playbook — Step-by-Step
+
+When the user provides a new venue URL, follow this investigation workflow to determine the best scraping approach. Every site is different, so work through these steps in order.
+
+### Step 1: Identify the Platform
+
+Visit the venue URL and determine what platform the site is built on. Check these in order:
+
+1. **`<meta name="generator">`** — reveals WordPress, Wix, Squarespace, etc.
+2. **Page source clues:**
+   - `wp-content` or `wp-json` → WordPress
+   - `squarespace-cdn` or `sqs-block` → Squarespace
+   - `wix.com` or `X-Wix` in source → Wix
+   - `getbento.com` in JSON-LD or images → BentoBox
+   - `static.framer.com` or Framer attributes → Framer
+3. **Check for iframes** — Google Calendar embeds, Boomtech widgets, Eventbrite, etc.
+4. **Check for JSON-LD** — `<script type="application/ld+json">` may contain `@type: Event` data
+
+### Step 2: Try the Easy Wins First (platform-specific)
+
+**If Squarespace:**
+- Append `?format=json` to the events/schedule page URL
+- Check for `items` array with `startDate`, `title`, `urlId`
+- Also try `/events?format=json` if the main page doesn't have events
+- This is the fastest scraper type — see "Squarespace Scraper Pattern" below
+- Working examples: Marina Grille, Anchor Tavern, R Bar
+
+**If Google Calendar embed found (iframe with `calendar.google.com`):**
+- Extract the calendar ID from the iframe `src` parameter (look for `src=` query param)
+- The calendar ID may be base64-encoded (decode it)
+- Build iCal feed URL: `https://calendar.google.com/calendar/ical/${encodeURIComponent(calendarId)}/public/basic.ics`
+- Test the iCal URL to make sure the calendar is public (if 404, calendar is private)
+- Use the standard iCal parser pattern with `easternOffset()`, `parseIcalDate()`, `parseIcal()`
+- IMPORTANT: Include date in external_id for recurring events: `venuename-${dateStr}-${uidClean}`
+- Working examples: St. Stephen's Green, Jacks on the Tracks, Reef & Barrel, Idle Hour
+- Failed example: McCann's (private calendar — returns 404 on iCal URL)
+
+**If WordPress:**
+- Try `/wp-json/wp/v2/posts?per_page=50` or `/wp-json/wp/v2/events?per_page=50` for REST API
+- Check for calendar plugins: EventPrime, The Events Calendar, JetEngine, Modern Events Calendar
+- Look for `admin-ajax.php` calls in network tab — these often load calendar data
+- WARNING: WordPress nonces tied to session cookies may block AJAX calls server-side (see Brielle House)
+- Working examples: ParkStage (plain HTML), 10th Ave Burrito (JetEngine AJAX), River Rock (EventPrime AJAX — no nonce required)
+- Failed example: Brielle House (EventPrime nonce blocked)
+- NOTE: EventPrime nonce enforcement varies by site — River Rock works without nonce while Brielle House blocks it. Always test the AJAX call without nonce first.
+
+**If Wix:**
+- Check if they use native Wix Events or a third-party app (Boomtech, etc.)
+- Look for Google Calendar embeds inside iframes — Wix sites often embed them
+- If Boomtech calendar: currently NOT scrapeable (cross-origin iframe, no public API, no iCal export)
+- Working example: Idle Hour (Wix site but uses Google Calendar embed)
+- Failed example: Leggetts Sand Bar (Boomtech widget, completely locked down)
+
+**If BentoBox (getbento.com):**
+- No JSON API available
+- Parse the listing page HTML for event card elements (`.card__heading`, `.card__btn`)
+- Event titles often contain dates embedded in them (e.g., "CKY | 03.15.2026")
+- Fetch each detail page for time/description from JSON-LD `@type: Event`
+- Working example: Asbury Lanes
+
+**If Ticketmaster venue:**
+- Use the Ticketmaster Discovery API with the venue ID
+- Find venue ID: search `https://app.ticketmaster.com/discovery/v2/venues.json?keyword=VENUE_NAME&apikey=KEY`
+- Add the venue ID to the `VENUES` array in `ticketmaster.js`
+- Requires `TICKETMASTER_API_KEY` env var (already set on Vercel)
+- Working examples: Wonder Bar, Stone Pony, ParkStage
+
+### Step 3: Dig Deeper if No Easy Win
+
+If the platform doesn't have an obvious API or feed:
+
+1. **Check network requests** — reload the page with network monitoring active. Look for XHR/Fetch calls to API endpoints that return JSON event data.
+2. **Check for hidden APIs** — some sites load calendar data via AJAX POST (like 10th Ave Burrito's JetEngine `jet_engine_calendar_get_month` action). Inspect the XHR request body and headers.
+3. **Check social media links** — Facebook Events pages or Google Calendar links in the footer may provide an alternative data source.
+4. **Check for Eventbrite/other ticket platforms** — the venue may sell tickets through a platform with a public API.
+5. **Inspect the page source** — look for inline JSON data, `window.__PRELOADED_STATE__`, or SSR-rendered event data.
+
+### Step 4: Fallback Options (when automated scraping isn't possible)
+
+If no structured data source can be found:
+
+1. **Image poster only** (like Palmetto) — read the poster image, create a hardcoded `MONTHLY_EVENTS` array. Add a staleness check so it stops returning events after >1 month. Requires manual monthly update.
+2. **Skip the venue** — document why it can't be scraped in HANDOVER.md under "Venues to Add" so future sessions don't re-investigate.
+3. **Contact the venue** — ask them to make their Google Calendar public or provide an iCal feed.
+
+### Step 5: Build and Wire the Scraper
+
+Once you've determined the approach:
+
+1. Create `src/lib/scrapers/venueName.js` with the appropriate pattern
+2. Every event object must include: `title`, `venue` (exact DB name), `date` (YYYY-MM-DD), `time` (12h format), `external_id` (unique, prefixed with venue slug)
+3. Optionally include: `ticket_url`, `price`, `description`, `source_url`, `image_url`
+4. Wire into `route.js`: import, add to Promise.all destructuring, add to scraperResults, spread into allEvents
+5. Provide Supabase SQL: `INSERT INTO venues (name, address, website) VALUES (...);`
+6. User pushes to git, runs the INSERT, then triggers a manual sync to verify
+
+### Common Pitfalls
+
+- **DST offset:** Always use `easternOffset()` for iCal dates — never hardcode `-05:00`
+- **Duplicate external_ids:** Include date in external_id for recurring events or venues with repeating UIDs
+- **HTML entities:** route.js has `decodeHtmlEntities()` that cleans `&amp;`, `&#039;`, etc. in mapEvent()
+- **CORS/Cookie blocking:** When investigating via browser, JavaScript execution may get blocked by cookie/session data. Try extracting just parameter names or non-sensitive values separately.
+- **Cross-origin iframes:** Cannot access DOM of iframes from different origins (e.g., Boomtech calendar). Must find an alternative data source or API.
+- **Stale data:** For hardcoded scrapers, add a month check to auto-disable when data is stale
+- **Venue name must match exactly** between scraper output and Supabase `venues.name` — otherwise events won't link to the venue
+
+### Platform Detection Quick Reference
+
+| Clue in Page Source | Platform | Best Approach |
+|---|---|---|
+| `squarespace-cdn`, `sqs-block` | Squarespace | `?format=json` on collection URL |
+| `calendar.google.com` iframe | Google Calendar | iCal feed (`.ics` URL) |
+| `wp-content`, `wp-json` | WordPress | REST API or AJAX inspection |
+| `wix.com`, `Wix.com Website Builder` | Wix | Check for Google Calendar embed; native Wix Events API may not be accessible |
+| `getbento.com` in images/JSON-LD | BentoBox | Parse listing HTML + detail page JSON-LD |
+| `static.framer.com` | Framer | Check for embedded Google Calendar or other widgets |
+| `calendar.boomte.ch` iframe | Boomtech (Wix app) | ❌ Currently not scrapeable |
+| `timely` in scripts | Timely Calendar | Timely API (JSON) — see `martells.js` |
+| `ticketmaster.com` links | Ticketmaster | Discovery API with venue ID |
+| `editmysite.com`, Square Online store | Square Online | Extract `featuredEventIds` from `__BOOTSTRAP_STATE__` + individual product API calls |
+| `w-dyn-item`, Webflow attributes | Webflow CMS | Parse HTML dynamic list items (`role="listitem"`) |
+| Image poster only (no structured data) | Any | Hardcoded monthly events array |
 
 ---
 
