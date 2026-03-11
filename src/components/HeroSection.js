@@ -42,8 +42,7 @@ export default function HeroSection({ events = [], isToday = true }) {
     <div style={{
       position: 'relative', flexShrink: 0, overflow: 'hidden',
       background: 'linear-gradient(180deg, #0A0A10 0%, #1A1208 60%, #0D0D0D 100%)',
-      display: 'flex', flexDirection: 'column', padding: '10px 14px 20px', gap: '4px',
-      minHeight: '140px',
+      display: 'flex', flexDirection: 'column', padding: '8px 14px 12px', gap: '2px',
     }}>
       {/* Spotlight beam — cone from top-center */}
       <div style={{
@@ -51,7 +50,7 @@ export default function HeroSection({ events = [], isToday = true }) {
         width: 0, height: 0,
         borderLeft: '90px solid transparent',
         borderRight: '90px solid transparent',
-        borderTop: '160px solid rgba(255,210,100,0.10)',
+        borderTop: '120px solid rgba(255,210,100,0.10)',
         filter: 'blur(18px)',
         pointerEvents: 'none',
       }} />
@@ -59,7 +58,7 @@ export default function HeroSection({ events = [], isToday = true }) {
       {/* Spotlight floor glow */}
       <div style={{
         position: 'absolute', bottom: '0', left: '50%', transform: 'translateX(-50%)',
-        width: '200px', height: '55px',
+        width: '180px', height: '40px',
         background: 'radial-gradient(ellipse, rgba(255,200,80,0.32) 0%, rgba(232,114,42,0.12) 40%, transparent 75%)',
         filter: 'blur(12px)',
         pointerEvents: 'none',
@@ -74,7 +73,7 @@ export default function HeroSection({ events = [], isToday = true }) {
       }} />
 
       {/* Top row: badge + category dropdown */}
-      <div style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+      <div style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2px' }}>
         <span style={{ background: '#E8722A', color: 'white', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', padding: '3px 10px', borderRadius: '999px' }}>
           🔥 {isToday ? 'Featured Tonight' : 'Coming Up'}
         </span>
@@ -84,7 +83,7 @@ export default function HeroSection({ events = [], isToday = true }) {
       {/* Event info */}
       <div style={{ position: 'relative', zIndex: 10 }}>
         {/* Time + event name on same line */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '5px', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px', overflow: 'hidden' }}>
           {timeStr && (
             <span style={{
               fontSize: '13px', fontWeight: 800, flexShrink: 0,
@@ -118,7 +117,7 @@ export default function HeroSection({ events = [], isToday = true }) {
 
       {/* Carousel dots */}
       {featured.length > 1 && (
-        <div style={{ position: 'absolute', bottom: '10px', right: '14px', display: 'flex', gap: '4px', zIndex: 10 }}>
+        <div style={{ position: 'absolute', bottom: '6px', right: '14px', display: 'flex', gap: '4px', zIndex: 10 }}>
           {featured.map((_, i) => (
             <button key={i} onClick={() => setIndex(i)} style={{
               height: '6px', borderRadius: '3px', border: 'none', cursor: 'pointer',
