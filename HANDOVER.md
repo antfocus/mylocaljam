@@ -51,7 +51,7 @@
 | 23 | Wild Air Beerworks | `wildAir.js` | Square Online (HTML + API) | ✅ Working | ~12 |
 | 24 | Asbury Park Brewery | `asburyParkBrewery.js` | Squarespace JSON | ✅ Working | ~54 |
 | 25 | Boatyard 401 | `boatyard401.js` | WordPress Simple Calendar (AJAX) | ✅ Working | ~40+ |
-| 26 | Tim McLoone's Supper Club | `timMcLoones.js` | Custom PHP HTML | ✅ Working | ~15 |
+| 26 | Tim McLoone's Supper Club | _(removed)_ | Ticketbud HTML | ❌ Blocked — all McLoone's domains behind Cloudflare+reCAPTCHA, blocks all datacenter IPs. Scraper removed. | 0 |
 
 ---
 
@@ -203,15 +203,15 @@
 - **Address:** 401 South Main St, Manasquan, NJ 08736
 - **Note:** The nonce is publicly available in the page source (`simcal_default_calendar` JS variable). Includes all events (music, DJs, specials). ~39 events per month.
 
-### Tim McLoone's Supper Club (`timMcLoones.js`)
+### Tim McLoone's Supper Club — ❌ BLOCKED (scraper removed)
 - **URL:** https://www.timmcloonessupperclub.com/events.php
-- **Platform:** Custom PHP site — server-rendered HTML, no CMS or calendar plugin
-- **Approach:** Fetches the events page HTML, splits on `class="events_col2"` boundaries, extracts date (`.event_date`), title (`<h2>`), subtitle (`.event_subtitle`), detail link (`events.php?id=XXXX`), ticket link (`mcloones.ticketbud.com`), and image (`cdn.mcloones.com`)
-- **Date format:** "Thursday, March 12" — no year included, so scraper infers year (current year, bumps to next if date is >2 months in the past)
-- **Times:** Some events have times in the subtitle (e.g. "7:00pm" or "6:30pm - 8:30pm"); extracted via regex
-- **Tickets:** Hosted on Ticketbud (`mcloones.ticketbud.com`)
+- **Alternate source tried:** https://mcloones.ticketbud.com (Ticketbud organizer page)
+- **Platform:** Custom PHP site behind Cloudflare + reCAPTCHA
+- **Problem:** All McLoone's domains (`timmcloonessupperclub.com`, `mcloones.ticketbud.com`, `mcloones.com`) are behind Cloudflare with aggressive bot detection that blocks all datacenter IPs. Tried: browser-like headers, Vercel Edge Runtime proxy (runs on Cloudflare's own network), and Ticketbud as alternate source — all return HTTP 403.
+- **Ticketbud page structure (for future reference):** Server-rendered HTML with `.card.vertical` containers, `.event-title` (H6), `.date`, `.time` classes, images from S3 (`s3.amazonaws.com/attachments.ticketbud.com`), pagination via `?page=N`
+- **Other sources checked:** Bandsintown (no events listed), Facebook (requires auth), parent McLoone's site (also Cloudflare)
 - **Address:** 1200 Ocean Ave, Asbury Park, NJ 07712
-- **Note:** ~15 events. Mix of live music, tribute shows, and special events.
+- **To revisit:** Check if venue gets listed on Ticketmaster or Bandsintown, or if Ticketbud opens a public API. A headless browser (Puppeteer/Playwright) running outside Vercel could also work.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
@@ -419,6 +419,7 @@ Once you've determined the approach:
 | `editmysite.com`, Square Online store | Square Online | Extract `featuredEventIds` from `__BOOTSTRAP_STATE__` + individual product API calls |
 | `simcal-calendar`, Simple Calendar | Simple Calendar (WP) | Parse simcal HTML + AJAX for additional months |
 | `w-dyn-item`, Webflow attributes | Webflow CMS | Parse HTML dynamic list items (`role="listitem"`) |
+| `ticketbud.com` links or embeds | Ticketbud | Parse organizer page HTML (`.card.vertical`, `.event-title`, `.date`, `.time`). ⚠️ May be behind Cloudflare — test from Vercel first |
 | Image poster only (no structured data) | Any | Hardcoded monthly events array |
 
 ---
