@@ -75,7 +75,7 @@ export default function SubmitEventModal({ onClose, onSubmit }) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: 'var(--border)' }}>
-          <h2 className="font-display font-bold text-lg">Submit an Event</h2>
+          <h2 className="font-display font-bold text-lg">Add to the Jar</h2>
           <button className="p-1 rounded-md text-brand-text-muted hover:text-brand-text transition-colors" onClick={onClose}>{Icons.x}</button>
         </div>
 
@@ -149,7 +149,7 @@ export default function SubmitEventModal({ onClose, onSubmit }) {
             onClick={handleSubmit}
             disabled={submitting}
           >
-            {submitting ? 'Submitting...' : 'Submit Event'}
+            {submitting ? 'Adding...' : 'Add to the Jar'}
           </button>
           <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
             Submissions are reviewed before going live. Thank you for helping the community!

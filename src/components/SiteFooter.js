@@ -35,7 +35,7 @@ export default function SiteFooter({ dark, onToggleTheme }) {
           gap: '24px',
           flexWrap: 'wrap',
         }}>
-          {['About', 'Contact', 'Submit Event', 'Privacy', 'Terms'].map(link => (
+          {['About', 'Contact', 'Add to the Jar', 'Privacy', 'Terms'].map(link => (
             <a key={link} href="#" className="footer-link" style={{ fontWeight: 500 }}>
               {link}
             </a>

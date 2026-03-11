@@ -621,7 +621,7 @@ export default function HomePage() {
                 { icon: '🔔', label: 'Notifications',             toggle: 'notif'  },
                 { icon: '🌙', label: 'Dark Mode', toggle: 'theme'  },
                 { icon: '📍', label: 'Default Location',          soon: true       },
-                { icon: '🎟', label: 'Submit an Event',           action: () => setShowSubmit(true) },
+                { icon: '🎟', label: 'Add to the Jar',             action: () => setShowSubmit(true) },
               ].map((item, i, arr) => (
                 <button
                   key={item.label}
@@ -729,7 +729,7 @@ export default function HomePage() {
 
       {/* ── Modals ────────────────────────────────────────────────────────── */}
       {showSubmit && (
-        <SubmitEventModal onClose={() => setShowSubmit(false)} onSubmit={() => setToast('Event submitted for review!')} />
+        <SubmitEventModal onClose={() => setShowSubmit(false)} onSubmit={() => setToast('Added to the Jar! We\'ll review it shortly.')} />
       )}
       {reportEvent && (
         <ReportIssueModal event={reportEvent} onClose={() => setReportEvent(null)} onSubmit={() => { setToast('Report submitted. Thank you!'); setReportEvent(null); }} />
