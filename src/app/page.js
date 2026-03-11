@@ -161,15 +161,24 @@ export default function HomePage() {
       const pad = n => String(n).padStart(2, '0');
       const todayLocal = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
 
-      const { data, error } = await supabase
-        .from('events')
-        .select('*, venues(name, address, color, photo_url)')
-        .gte('event_date', todayLocal)
-        .eq('status', 'published')
-        .order('event_date', { ascending: true })
-        .limit(5000);
-
-      if (error) throw error;
+      // Supabase PostgREST caps at 1000 rows per request — paginate to get all
+      let allData = [];
+      const PAGE_SIZE = 1000;
+      let from = 0;
+      while (true) {
+        const { data: page, error } = await supabase
+          .from('events')
+          .select('*, venues(name, address, color, photo_url)')
+          .gte('event_date', todayLocal)
+          .eq('status', 'published')
+          .order('event_date', { ascending: true })
+          .range(from, from + PAGE_SIZE - 1);
+        if (error) throw error;
+        allData = allData.concat(page || []);
+        if (!page || page.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
+      const data = allData;
 
       const mapped = (data || []).map(e => {
         let extractedStartTime = e.start_time || (() => {
