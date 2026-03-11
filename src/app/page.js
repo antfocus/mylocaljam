@@ -1,20 +1,18 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import Image from 'next/image';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { getVenueColor, groupEventsByDate } from '@/lib/utils';
-import { requestNotificationPermission, scheduleReminder, cancelReminder, rehydrateReminders, notificationsGranted } from '@/lib/notifications';
+import { getVenueColor, groupEventsByDate, formatTimeRange } from '@/lib/utils';
+import { useTheme } from '@/components/ThemeProvider';
 
-import HeroSection       from '@/components/HeroSection';
-import EventCardV2       from '@/components/EventCardV2';
-import MapView           from '@/components/MapView';
-import SubmitEventModal  from '@/components/SubmitEventModal';
-import ReportIssueModal  from '@/components/ReportIssueModal';
-import Toast             from '@/components/Toast';
+import SiteHeader     from '@/components/SiteHeader';
+import SiteHero       from '@/components/SiteHero';
+import SiteEventCard  from '@/components/SiteEventCard';
+import SiteFooter     from '@/components/SiteFooter';
+import AddToJarModal  from '@/components/AddToJarModal';
+import Toast          from '@/components/Toast';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-// Clean HTML entities that may have leaked through scrapers (e.g. &amp; → &)
 function decodeEntities(str) {
   if (!str || typeof str !== 'string') return str;
   const el = typeof document !== 'undefined' ? document.createElement('textarea') : null;
@@ -22,113 +20,42 @@ function decodeEntities(str) {
   return str.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'");
 }
 
-// ── Theme ────────────────────────────────────────────────────────────────────
-const DARK = {
-  bg:           '#0D0D12',
-  surface:      '#1A1A24',
-  surfaceAlt:   '#22222E',
-  border:       '#2A2A3A',
-  borderLight:  '#22222E',
-  text:         '#F0F0F5',
-  textMuted:    '#7878A0',
-  textSubtle:   '#4A4A6A',
-  accent:       '#E8722A',
-  accentAlt:    '#3AADA0',
-  navBg:        '#12121A',
-  inputBg:      '#22222E',
-  pillBg:       '#1A1A24',
-  pillBorder:   '#3A3A50',
-  dropdownBg:   '#1E1E2E',
-  shimmer:      '#22222E',
-};
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 
-const LIGHT = {
-  bg:           '#F7F5F2',
-  surface:      '#FFFFFF',
-  surfaceAlt:   '#F9FAFB',
-  border:       '#E5E7EB',
-  borderLight:  '#F3F4F6',
-  text:         '#1F2937',
-  textMuted:    '#6B7280',
-  textSubtle:   '#9CA3AF',
-  accent:       '#E8722A',
-  accentAlt:    '#3AADA0',
-  navBg:        '#FFFFFF',
-  inputBg:      '#F3F4F6',
-  pillBg:       '#FFFFFF',
-  pillBorder:   '#E5E7EB',
-  dropdownBg:   '#FFFFFF',
-  shimmer:      '#F3F4F6',
-};
+function normalizeSearch(s) {
+  return (s ?? '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
 
-// ── Date filter options ───────────────────────────────────────────────────────
-const DATE_OPTIONS = [
+const DATE_FILTERS = [
   { key: 'all',      label: 'All Upcoming' },
   { key: 'today',    label: 'Today'        },
   { key: 'tomorrow', label: 'Tomorrow'     },
   { key: 'weekend',  label: 'This Weekend' },
+  { key: 'month',    label: 'This Month'   },
 ];
 
+const BATCH_SIZE = 20;
 
 export default function HomePage() {
-  // ── Data state ──────────────────────────────────────────────────────────────
-  const [events,  setEvents]  = useState([]);
+  const { dark, toggle: toggleTheme } = useTheme();
+
+  // ── Data state ────────────────────────────────────────────────────────────
+  const [events, setEvents]   = useState([]);
   const [loading, setLoading] = useState(true);
-  const [toast,   setToast]   = useState(null);
+  const [toast, setToast]     = useState(null);
 
-  // ── Theme ────────────────────────────────────────────────────────────────────
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    const stored = localStorage.getItem('mlj_dark_mode');
-    return stored === null ? true : stored === 'true'; // dark by default
-  });
+  // ── UI state ──────────────────────────────────────────────────────────────
+  const [dateFilter, setDateFilter]     = useState('all');
+  const [searchQuery, setSearchQuery]   = useState('');
+  const [activeVenue, setActiveVenue]   = useState('all');
+  const [showSubmit, setShowSubmit]     = useState(false);
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+  const loadMoreRef = useRef(null);
+  const feedRef = useRef(null);
 
-  const toggleDarkMode = useCallback(() => {
-    setDarkMode(prev => {
-      const next = !prev;
-      localStorage.setItem('mlj_dark_mode', String(next));
-      return next;
-    });
-  }, []);
-
-  const t = darkMode ? DARK : LIGHT;
-
-  // ── UI state ────────────────────────────────────────────────────────────────
-  const [activeTab,      setActiveTab]      = useState('home');
-  const [mapOpen,        setMapOpen]        = useState(false);
-  const [dateKey,        setDateKey]        = useState('all');
-  const [dateDropOpen,   setDateDropOpen]   = useState(false);
-  const [searchQuery,    setSearchQuery]    = useState('');
-  const [activeVenue,    setActiveVenue]    = useState('all');
-  const [venueSheetOpen, setVenueSheetOpen] = useState(false);
-  const [venueSearch,    setVenueSearch]    = useState('');
-  const [showSubmit,     setShowSubmit]     = useState(false);
-  const [reportEvent,    setReportEvent]    = useState(null);
-
-  // ── Notifications preference ─────────────────────────────────────────────────
-  const [notifEnabled, setNotifEnabled] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem('mlj_notif_enabled') === 'true';
-  });
-
-  const toggleNotifications = useCallback(async () => {
-    if (!notifEnabled) {
-      const granted = await requestNotificationPermission();
-      if (granted) {
-        localStorage.setItem('mlj_notif_enabled', 'true');
-        setNotifEnabled(true);
-        setToast('🔔 Notifications on — you\'ll be reminded 1 hour before saved events.');
-      } else {
-        setToast('Notifications blocked. Please enable them in your browser settings.');
-      }
-    } else {
-      localStorage.setItem('mlj_notif_enabled', 'false');
-      setNotifEnabled(false);
-      setToast('🔕 Notifications turned off.');
-    }
-  }, [notifEnabled]);
-
-  // ── Favorites (persisted to localStorage) ───────────────────────────────────
+  // ── Favorites ─────────────────────────────────────────────────────────────
   const [favorites, setFavorites] = useState(() => {
     if (typeof window === 'undefined') return new Set();
     try {
@@ -141,20 +68,13 @@ export default function HomePage() {
     if (!id) return;
     setFavorites(prev => {
       const next = new Set(prev);
-      const adding = !next.has(id);
-      if (adding) { next.add(id); } else { next.delete(id); }
+      if (next.has(id)) next.delete(id); else next.add(id);
       try { localStorage.setItem('mlj_favorites', JSON.stringify([...next])); } catch {}
-      if (adding) {
-        const event = events.find(e => e.id === id);
-        if (event && notifEnabled) scheduleReminder(event);
-      } else {
-        cancelReminder(id);
-      }
       return next;
     });
-  }, [events]);
+  }, []);
 
-  // ── Fetch from Supabase ──────────────────────────────────────────────────────
+  // ── Fetch events from Supabase ────────────────────────────────────────────
   const fetchEvents = useCallback(async () => {
     try {
       const now = new Date();
@@ -174,7 +94,6 @@ export default function HomePage() {
         let extractedStartTime = e.start_time || (() => {
           if (e.event_date && e.event_date.includes('T')) {
             const d = new Date(e.event_date);
-            // Use Eastern time, not UTC, so times display correctly
             const parts = d.toLocaleTimeString('en-US', {
               hour: 'numeric', minute: '2-digit', hour12: false,
               timeZone: 'America/New_York',
@@ -186,8 +105,6 @@ export default function HomePage() {
           return null;
         })();
 
-        // If time is midnight (00:00), try to extract from the event title
-        // e.g. "Every Tuesday 8pm - Close" → "20:00"
         if (extractedStartTime === '00:00' || extractedStartTime === '24:00') {
           const title = e.artist_name || e.name || '';
           const tm = title.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
@@ -209,7 +126,6 @@ export default function HomePage() {
             const raw = e.event_date || '';
             if (!raw) return '';
             if (raw.includes('T')) {
-              // Use Eastern time so dates don't shift when UTC crosses midnight
               const d = new Date(raw);
               return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
             }
@@ -232,16 +148,11 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
-  useEffect(() => { rehydrateReminders(); }, []);
-  useEffect(() => { setDateKey('all'); }, [activeTab]);
 
-  // ── Date boundaries (local time) ─────────────────────────────────────────────
-  function localDateStr(d) {
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  }
-  const todayStr    = localDateStr(new Date());
-  const tomorrowStr = localDateStr(new Date(new Date().setDate(new Date().getDate() + 1)));
-  const fridayStr   = (() => {
+  // ── Date boundaries ───────────────────────────────────────────────────────
+  const todayStr = localDateStr(new Date());
+  const tomorrowStr = localDateStr(new Date(Date.now() + 86400000));
+  const fridayStr = (() => {
     const d = new Date(); const day = d.getDay();
     if (day === 5) return localDateStr(d);
     if (day === 6) { d.setDate(d.getDate() - 1); return localDateStr(d); }
@@ -252,32 +163,36 @@ export default function HomePage() {
     const d = new Date(fridayStr + 'T00:00:00'); d.setDate(d.getDate() + 2);
     return localDateStr(d);
   })();
+  const monthEndStr = (() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1, 0);
+    return localDateStr(d);
+  })();
 
-  // ── Filtered events ──────────────────────────────────────────────────────────
+  // ── Filtered events ───────────────────────────────────────────────────────
   const filteredEvents = useMemo(() => {
     let list = [...events];
 
-    switch (dateKey) {
-      case 'today':   list = list.filter(e => e.date === todayStr); break;
-      case 'tomorrow':list = list.filter(e => e.date === tomorrowStr); break;
+    switch (dateFilter) {
+      case 'today':    list = list.filter(e => e.date === todayStr); break;
+      case 'tomorrow': list = list.filter(e => e.date === tomorrowStr); break;
       case 'weekend': {
         const weekendStart = todayStr > fridayStr ? todayStr : fridayStr;
         list = list.filter(e => e.date >= weekendStart && e.date <= sundayStr);
         break;
       }
-      default:
-        list = list.filter(e => e.date >= todayStr);
-        break;
+      case 'month':    list = list.filter(e => e.date >= todayStr && e.date <= monthEndStr); break;
+      default:         list = list.filter(e => e.date >= todayStr); break;
     }
 
     if (activeVenue !== 'all') list = list.filter(e => e.venue === activeVenue);
 
     if (searchQuery.trim()) {
-      const q = normalizeVenue(searchQuery);
+      const q = normalizeSearch(searchQuery);
       list = list.filter(e =>
-        normalizeVenue(e.name).includes(q) ||
-        normalizeVenue(e.venue).includes(q) ||
-        normalizeVenue(e.genre ?? '').includes(q)
+        normalizeSearch(e.name).includes(q) ||
+        normalizeSearch(e.venue).includes(q) ||
+        normalizeSearch(e.genre ?? '').includes(q)
       );
     }
 
@@ -287,453 +202,254 @@ export default function HomePage() {
     });
 
     return list;
-  }, [events, dateKey, activeVenue, searchQuery, todayStr, tomorrowStr, fridayStr, sundayStr]);
+  }, [events, dateFilter, activeVenue, searchQuery, todayStr, tomorrowStr, fridayStr, sundayStr, monthEndStr]);
 
   const groupedEvents = useMemo(() => groupEventsByDate(filteredEvents), [filteredEvents]);
 
+  // ── Visible events (infinite scroll) ──────────────────────────────────────
+  const visibleEvents = useMemo(() => filteredEvents.slice(0, visibleCount), [filteredEvents, visibleCount]);
+  const visibleGrouped = useMemo(() => groupEventsByDate(visibleEvents), [visibleEvents]);
+  const hasMore = visibleCount < filteredEvents.length;
+
+  // Reset visible count when filters change
+  useEffect(() => { setVisibleCount(BATCH_SIZE); }, [dateFilter, activeVenue, searchQuery]);
+
+  // Infinite scroll observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore) {
+          setVisibleCount(prev => prev + BATCH_SIZE);
+        }
+      },
+      { rootMargin: '200px' }
+    );
+    const el = loadMoreRef.current;
+    if (el) observer.observe(el);
+    return () => { if (el) observer.unobserve(el); };
+  }, [hasMore]);
+
+  // ── Hero events ───────────────────────────────────────────────────────────
   const heroEvents = useMemo(() => {
-    const todayEvents = events
-      .filter(e => e.date === todayStr)
+    const todayEvents = events.filter(e => e.date === todayStr)
       .sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''));
-    if (todayEvents.length > 0) return todayEvents;
-    return events
-      .filter(e => e.date > todayStr)
+    if (todayEvents.length > 0) return todayEvents.slice(0, 5);
+    return events.filter(e => e.date > todayStr)
       .sort((a, b) => {
         const dc = a.date.localeCompare(b.date);
         return dc !== 0 ? dc : (a.start_time ?? '').localeCompare(b.start_time ?? '');
       })
-      .slice(0, 6);
+      .slice(0, 5);
   }, [events, todayStr]);
 
-  const heroIsToday = heroEvents.length > 0 && heroEvents[0]?.date === todayStr;
-
+  // ── All venues ────────────────────────────────────────────────────────────
   const allVenues = useMemo(() => {
-    const set = new Set(events.map(e => e.venue).filter(Boolean));
-    return Array.from(set).sort();
+    return Array.from(new Set(events.map(e => e.venue).filter(Boolean))).sort();
   }, [events]);
 
-  function normalizeVenue(s) {
-    return (s ?? '').toLowerCase()
-      .replace(/&/g, ' and ')
-      .replace(/[^a-z0-9\s]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  const filteredVenues = useMemo(() => {
-    const q = normalizeVenue(venueSearch);
-    if (!q) return allVenues;
-    return allVenues.filter(v => normalizeVenue(v).includes(q));
-  }, [allVenues, venueSearch]);
-
-  const activeDateLabel  = DATE_OPTIONS.find(o => o.key === dateKey)?.label ?? 'All Upcoming';
-  const activeVenueLabel = activeVenue === 'all' ? null : activeVenue;
-
-  // ── Shared styles ────────────────────────────────────────────────────────────
-  const dateSeparatorStyle = {
-    fontSize: '11px', fontWeight: 800, textTransform: 'uppercase',
-    letterSpacing: '1px', color: t.textMuted,
+  // ── Scroll to feed ────────────────────────────────────────────────────────
+  const scrollToFeed = () => {
+    feedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return (
-    <>
-      <div style={{ minHeight: '100svh', display: 'flex', flexDirection: 'column', background: t.bg, maxWidth: '480px', margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <SiteHeader onOpenSubmit={() => setShowSubmit(true)} />
 
-        {/* ── Top Nav ────────────────────────────────────────────────────── */}
-        <header style={{
-          position: 'sticky', top: 0, zIndex: 100,
-          background: darkMode ? '#1E1E2C' : '#FFFFFF',
-          borderBottom: `1px solid ${t.border}`,
-          boxShadow: darkMode ? '0 2px 16px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.08)',
-          padding: '8px 12px',
-          display: 'flex', alignItems: 'center', gap: '10px',
+      {/* ── Hero ───────────────────────────────────────────────────── */}
+      <SiteHero
+        events={heroEvents}
+        onExplore={scrollToFeed}
+        onAddEvent={() => setShowSubmit(true)}
+      />
+
+      {/* ── Main Content ───────────────────────────────────────────── */}
+      <main
+        ref={feedRef}
+        style={{
+          flex: 1,
+          maxWidth: '1200px',
+          width: '100%',
+          margin: '0 auto',
+          padding: '32px 24px 64px',
+        }}
+      >
+        {/* ── Filter Controls ──────────────────────────────────────── */}
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+          marginBottom: '32px',
         }}>
-          {/* Logo */}
-          <div style={{ flexShrink: 0 }}>
-            <Image
-              src="/myLocaljam_Logo_104.png"
-              alt="myLocalJam"
-              width={52}
-              height={52}
-              priority
-              style={{ objectFit: 'contain', display: 'block' }}
-            />
-          </div>
-
-          {/* Search bar — center, flex fills remaining space */}
-          <div style={{
-            flex: 1, display: 'flex', alignItems: 'center', gap: '6px',
-            background: darkMode ? '#14141E' : '#F3F4F6',
-            border: `1px solid ${darkMode ? '#2A2A3A' : '#E5E7EB'}`,
-            borderRadius: '20px', padding: '6px 12px',
-          }}>
-            <span style={{ fontSize: '12px', color: t.textMuted, flexShrink: 0 }}>🔍</span>
-            <input
-              type="text"
-              placeholder="Search artists, venues, events..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ flex: 1, border: 'none', background: 'none', outline: 'none', fontSize: '13px', color: t.text, minWidth: 0 }}
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: '14px', flexShrink: 0, padding: 0 }}>✕</button>
-            )}
-          </div>
-
-          {/* Profile avatar */}
-          <button
-            onClick={() => setActiveTab('profile')}
-            style={{
-              width: '34px', height: '34px', borderRadius: '50%', border: `2px solid ${darkMode ? '#3A3A50' : '#E5E7EB'}`,
-              background: 'linear-gradient(135deg, #E8722A, #3AADA0)',
-              cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '16px',
-            }}>
-            👤
-          </button>
-        </header>
-
-        {/* ── Hero (home tab only) ──────────────────────────────────────── */}
-        {activeTab === 'home' && (
-          <HeroSection events={heroEvents} isToday={heroIsToday} />
-        )}
-
-
-        {/* ── Section header: date dropdown + venue filter (home tab only) ── */}
-        {activeTab === 'home' && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 6px', background: t.bg }}>
-
-            {/* Date dropdown */}
-            <div style={{ position: 'relative' }}>
-              <button onClick={() => setDateDropOpen(o => !o)} style={{
-                display: 'flex', alignItems: 'center', gap: '5px',
-                fontSize: '17px', fontWeight: 800, color: t.text,
-                background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-              }}>
-                {activeDateLabel} <span style={{ fontSize: '11px', color: t.textMuted }}>▼</span>
+          {/* Date filter pills */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {DATE_FILTERS.map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => setDateFilter(opt.key)}
+                className={`filter-pill ${dateFilter === opt.key ? 'active' : ''}`}
+              >
+                {opt.label}
               </button>
-
-              {dateDropOpen && (
-                <>
-                  <div onClick={() => setDateDropOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 199 }} />
-                  <div style={{
-                    position: 'absolute', top: 'calc(100% + 6px)', left: 0,
-                    background: t.dropdownBg, borderRadius: '12px', zIndex: 200,
-                    boxShadow: darkMode ? '0 8px 32px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.12)',
-                    border: `1px solid ${t.border}`,
-                    overflow: 'hidden', minWidth: '160px',
-                  }}>
-                    {DATE_OPTIONS.map(opt => (
-                      <button key={opt.key} onClick={() => { setDateKey(opt.key); setDateDropOpen(false); }} style={{
-                        display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left',
-                        border: 'none', cursor: 'pointer', fontSize: '14px',
-                        fontWeight: dateKey === opt.key ? 700 : 500,
-                        background: dateKey === opt.key ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.07)') : t.dropdownBg,
-                        color: dateKey === opt.key ? t.accent : t.text,
-                      }}>{opt.label}</button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Event count + map + venue filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: t.textMuted }}>
-                {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
-              </span>
-
-              {/* Map button */}
-              <button onClick={() => setMapOpen(true)} style={{
-                display: 'flex', alignItems: 'center', gap: '3px',
-                fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '999px',
-                border: `1.5px solid ${t.pillBorder}`, cursor: 'pointer',
-                background: t.pillBg, color: t.textMuted,
-              }}>
-                🗺️ Map
-              </button>
-
-              <div style={{ position: 'relative' }}>
-                <button onClick={() => setVenueSheetOpen(o => !o)} style={{
-                  display: 'flex', alignItems: 'center', gap: '3px',
-                  fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '999px',
-                  border: `1.5px solid`, cursor: 'pointer',
-                  background: activeVenueLabel ? t.accent : t.pillBg,
-                  color: activeVenueLabel ? '#FFFFFF' : t.textMuted,
-                  borderColor: activeVenueLabel ? t.accent : t.pillBorder,
-                  maxWidth: '140px', overflow: 'hidden',
-                }}>
-                  <span style={{ flexShrink: 0 }}>📍</span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                    {activeVenueLabel ?? 'Venue'}
-                  </span>
-                  <span style={{ flexShrink: 0 }}>▾</span>
-                </button>
-
-                {venueSheetOpen && (
-                  <>
-                    <div onClick={() => { setVenueSheetOpen(false); setVenueSearch(''); }} style={{ position: 'fixed', inset: 0, zIndex: 199 }} />
-                    <div style={{
-                      position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-                      background: t.dropdownBg, borderRadius: '12px', zIndex: 200,
-                      boxShadow: darkMode ? '0 8px 32px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.12)',
-                      border: `1px solid ${t.border}`,
-                      width: '220px', maxHeight: '280px',
-                      display: 'flex', flexDirection: 'column', overflow: 'hidden',
-                    }}>
-                      <div style={{ padding: '8px 10px', borderBottom: `1px solid ${t.border}` }}>
-                        <input
-                          type="text" placeholder="Search venues…"
-                          value={venueSearch} onChange={e => setVenueSearch(e.target.value)} autoFocus
-                          style={{ width: '100%', padding: '6px 10px', border: `1.5px solid ${t.border}`, borderRadius: '8px', fontSize: '13px', outline: 'none', background: t.inputBg, color: t.text }}
-                        />
-                      </div>
-                      <div style={{ overflowY: 'auto', flex: 1 }}>
-                        <button onClick={() => { setActiveVenue('all'); setVenueSheetOpen(false); setVenueSearch(''); }} style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                          background: activeVenue === 'all' ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.07)') : t.dropdownBg,
-                          borderBottom: `1px solid ${t.border}`,
-                        }}>
-                          <span style={{ fontSize: '13px', fontWeight: activeVenue === 'all' ? 700 : 500, color: activeVenue === 'all' ? t.accent : t.text, textAlign: 'left' }}>All Venues</span>
-                          {activeVenue === 'all' && <span style={{ color: t.accent, fontSize: '12px', flexShrink: 0, marginLeft: '8px' }}>✓</span>}
-                        </button>
-                        {filteredVenues.map(venue => (
-                          <button key={venue} onClick={() => { setActiveVenue(venue); setVenueSheetOpen(false); setVenueSearch(''); }} style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                            background: activeVenue === venue ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.07)') : t.dropdownBg,
-                            borderBottom: `1px solid ${t.border}`,
-                          }}>
-                            <span style={{ fontSize: '13px', fontWeight: activeVenue === venue ? 700 : 500, color: activeVenue === venue ? t.accent : t.text, textAlign: 'left', flex: 1 }}>{venue}</span>
-                            {activeVenue === venue && <span style={{ color: t.accent, fontSize: '12px', flexShrink: 0, marginLeft: '8px' }}>✓</span>}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+            ))}
           </div>
-        )}
 
-
-        {/* ── Saved view ───────────────────────────────────────────────── */}
-        {activeTab === 'saved' && (
-          <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg }}>
-            <div style={{ display: 'flex', gap: '6px', padding: '8px 16px 10px', overflowX: 'auto', background: t.surface, borderBottom: `1px solid ${t.border}`, scrollbarWidth: 'none' }}>
-              {DATE_OPTIONS.map(opt => (
-                <button key={opt.key} onClick={() => setDateKey(opt.key)} style={{
-                  padding: '5px 14px', borderRadius: '999px', border: `1.5px solid`, cursor: 'pointer', whiteSpace: 'nowrap',
-                  fontSize: '12px', fontWeight: 700,
-                  background: dateKey === opt.key ? t.accent : t.pillBg,
-                  color: dateKey === opt.key ? 'white' : t.textMuted,
-                  borderColor: dateKey === opt.key ? t.accent : t.pillBorder,
-                }}>
-                  {opt.label}
-                </button>
+          {/* Right controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Near Me / Venue filter */}
+            <select
+              value={activeVenue}
+              onChange={e => setActiveVenue(e.target.value)}
+              aria-label="Filter by venue"
+              style={{
+                padding: '8px 14px',
+                borderRadius: '10px',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                border: '1.5px solid var(--border)',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                outline: 'none',
+                maxWidth: '200px',
+                fontFamily: 'Inter, sans-serif',
+              }}
+            >
+              <option value="all">📍 All Venues</option>
+              {allVenues.map(v => (
+                <option key={v} value={v}>{v}</option>
               ))}
-            </div>
-            {(() => {
-              let savedEvents = events.filter(e => favorites.has(e.id));
+            </select>
 
-              if (searchQuery.trim()) {
-                const q = normalizeVenue(searchQuery);
-                savedEvents = savedEvents.filter(e =>
-                  normalizeVenue(e.name).includes(q) ||
-                  normalizeVenue(e.venue).includes(q) ||
-                  normalizeVenue(e.genre ?? '').includes(q)
-                );
-              }
+            {/* Event count */}
+            <span style={{
+              fontSize: '13px',
+              fontWeight: 600,
+              color: 'var(--text-muted)',
+              whiteSpace: 'nowrap',
+            }}>
+              {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
 
-              switch (dateKey) {
-                case 'today':   savedEvents = savedEvents.filter(e => e.date === todayStr); break;
-                case 'tomorrow':savedEvents = savedEvents.filter(e => e.date === tomorrowStr); break;
-                case 'weekend': {
-                  const weekendStart = todayStr > fridayStr ? todayStr : fridayStr;
-                  savedEvents = savedEvents.filter(e => e.date >= weekendStart && e.date <= sundayStr);
-                  break;
-                }
-                default: break;
-              }
+        {/* ── Events Grid ──────────────────────────────────────────── */}
+        {loading ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '80px 0',
+            gap: '16px',
+          }}>
+            <div className="loading-spinner" />
+            <p style={{ color: 'var(--text-muted)', fontSize: '15px' }}>Loading events...</p>
+          </div>
+        ) : filteredEvents.length === 0 ? (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '80px 32px',
+            textAlign: 'center',
+          }}>
+            <span style={{ fontSize: '56px', marginBottom: '16px' }}>🎵</span>
+            <p className="font-heading" style={{ fontWeight: 700, fontSize: '20px', color: 'var(--text-primary)', marginBottom: '8px' }}>
+              No events found
+            </p>
+            <p style={{ fontSize: '15px', color: 'var(--text-muted)', maxWidth: '400px' }}>
+              Try a different date, venue, or search term. Or add your own event to the jar!
+            </p>
+            <button
+              onClick={() => setShowSubmit(true)}
+              className="btn-glow font-heading"
+              style={{
+                marginTop: '24px',
+                padding: '12px 28px',
+                borderRadius: '999px',
+                background: 'var(--accent-teal)',
+                color: 'white',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 700,
+              }}
+            >
+              🫙 Add an Event
+            </button>
+          </div>
+        ) : (
+          <div>
+            {visibleGrouped.map(group => (
+              <div key={group.date} style={{ marginBottom: '32px' }}>
+                {/* Date separator */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '16px',
+                }}>
+                  <span className="font-heading" style={{
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    letterSpacing: '1.5px',
+                    color: 'var(--text-muted)',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {group.label}
+                  </span>
+                  <div style={{ flex: 1, height: '1px', background: 'var(--border)' }} />
+                </div>
 
-              savedEvents = savedEvents.sort((a, b) => {
-                const dc = a.date.localeCompare(b.date);
-                return dc !== 0 ? dc : (a.start_time ?? '').localeCompare(b.start_time ?? '');
-              });
-
-              if (savedEvents.length === 0) {
-                const hasAnySaved = events.some(e => favorites.has(e.id));
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '64px 32px', textAlign: 'center' }}>
-                    <span style={{ fontSize: '48px', marginBottom: '12px' }}>♡</span>
-                    <p style={{ fontWeight: 700, fontSize: '16px', color: t.text, marginBottom: '4px' }}>
-                      {!hasAnySaved ? 'No saved events yet' : searchQuery ? 'No results found' : `No saved events for ${DATE_OPTIONS.find(o => o.key === dateKey)?.label ?? 'this period'}`}
-                    </p>
-                    <p style={{ fontSize: '14px', color: t.textMuted }}>
-                      {!hasAnySaved ? 'Tap the ♡ on any event to save it here' : searchQuery ? 'Try a different search term' : 'Try a different date filter'}
-                    </p>
-                  </div>
-                );
-              }
-              const savedGroups = groupEventsByDate(savedEvents);
-              return (
-                <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <p style={{ fontSize: '12px', fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '1px', padding: '14px 0 2px' }}>
-                    {savedEvents.length} saved event{savedEvents.length !== 1 ? 's' : ''}
-                  </p>
-                  {savedGroups.map(group => (
-                    <div key={group.date}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0 6px' }}>
-                        <span style={dateSeparatorStyle}>{group.label}</span>
-                        <div style={{ flex: 1, height: '1px', background: t.border }} />
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {group.events.map((event, i) => (
-                          <EventCardV2 key={event.id ?? i} event={event} onReport={setReportEvent} isFavorited={true} onToggleFavorite={toggleFavorite} darkMode={darkMode} />
-                        ))}
-                      </div>
-                    </div>
+                {/* Card grid */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+                  gap: '16px',
+                }}>
+                  {group.events.map((event, i) => (
+                    <SiteEventCard
+                      key={event.id ?? `${group.date}-${i}`}
+                      event={event}
+                      isFavorited={favorites.has(event.id)}
+                      onToggleFavorite={toggleFavorite}
+                    />
                   ))}
                 </div>
-              );
-            })()}
-          </div>
-        )}
+              </div>
+            ))}
 
-        {/* ── Profile view ─────────────────────────────────────────────── */}
-        {activeTab === 'profile' && (
-          <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg }}>
-            <div style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'linear-gradient(135deg, #E8722A, #3AADA0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>
-                👤
-              </div>
-              <p style={{ fontWeight: 800, fontSize: '18px', color: t.text, marginTop: '8px' }}>Your Profile</p>
-              <p style={{ fontSize: '13px', color: t.textMuted }}>Sign in to save events across devices</p>
-              <button style={{ marginTop: '12px', padding: '10px 32px', borderRadius: '999px', border: 'none', background: t.accent, color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
-                Sign In
-              </button>
-            </div>
-            <div style={{ margin: '0 16px', borderRadius: '12px', background: t.surface, overflow: 'hidden', boxShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.4)' : '0 1px 6px rgba(0,0,0,0.07)', border: `1px solid ${t.border}` }}>
-              {[
-                { icon: '🔔', label: 'Notifications',             toggle: 'notif'  },
-                { icon: '🌙', label: 'Dark Mode', toggle: 'theme'  },
-                { icon: '📍', label: 'Default Location',          soon: true       },
-                { icon: '🎟', label: 'Submit an Event',           action: () => setShowSubmit(true) },
-              ].map((item, i, arr) => (
-                <button
-                  key={item.label}
-                  onClick={
-                    item.toggle === 'notif' ? toggleNotifications
-                    : item.toggle === 'theme' ? toggleDarkMode
-                    : (item.action ?? null)
-                  }
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    width: '100%', padding: '14px 16px', border: 'none', cursor: item.soon ? 'default' : 'pointer',
-                    background: t.surface, borderBottom: i < arr.length - 1 ? `1px solid ${t.borderLight}` : 'none',
-                  }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', color: t.text, fontWeight: 500 }}>
-                    <span>{item.icon}</span>{item.label}
-                  </span>
-                  {item.soon
-                    ? <span style={{ fontSize: '10px', fontWeight: 700, color: t.textMuted, background: t.inputBg, padding: '2px 8px', borderRadius: '999px' }}>SOON</span>
-                    : item.toggle === 'notif'
-                    ? <div style={{ width: '44px', height: '24px', borderRadius: '999px', position: 'relative', background: notifEnabled ? t.accent : t.textSubtle, transition: 'background 0.2s', flexShrink: 0 }}>
-                        <div style={{ position: 'absolute', top: '3px', left: notifEnabled ? '23px' : '3px', width: '18px', height: '18px', borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
-                      </div>
-                    : item.toggle === 'theme'
-                    ? <div style={{ width: '44px', height: '24px', borderRadius: '999px', position: 'relative', background: darkMode ? t.accent : t.textSubtle, transition: 'background 0.2s', flexShrink: 0 }}>
-                        <div style={{ position: 'absolute', top: '3px', left: darkMode ? '23px' : '3px', width: '18px', height: '18px', borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
-                      </div>
-                    : <span style={{ color: t.textMuted, fontSize: '12px' }}>›</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Event list (home tab) ─────────────────────────────────────── */}
-        {activeTab === 'home' && (
-          <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg }}>
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: '64px 0', color: t.textMuted, fontSize: '15px' }}>
-                Loading events…
-              </div>
-            ) : filteredEvents.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '64px 32px', textAlign: 'center' }}>
-                <span style={{ fontSize: '48px', marginBottom: '12px' }}>🎵</span>
-                <p style={{ fontWeight: 700, fontSize: '16px', color: t.text, marginBottom: '4px' }}>No events found</p>
-                <p style={{ fontSize: '14px', color: t.textMuted }}>Try a different date, category, or venue</p>
-              </div>
-            ) : (
-              <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {groupedEvents.map(group => (
-                  <div key={group.date}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 0 6px' }}>
-                      <span style={dateSeparatorStyle}>{group.label}</span>
-                      <div style={{ flex: 1, height: '1px', background: t.border }} />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {group.events.map((event, i) => (
-                        <EventCardV2
-                          key={event.id ?? `${group.date}-${i}`}
-                          event={event}
-                          onReport={setReportEvent}
-                          isFavorited={favorites.has(event.id)}
-                          onToggleFavorite={toggleFavorite}
-                          darkMode={darkMode}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
+            {/* Infinite scroll sentinel */}
+            {hasMore && (
+              <div ref={loadMoreRef} style={{
+                display: 'flex',
+                justifyContent: 'center',
+                padding: '32px 0',
+              }}>
+                <div className="loading-spinner" />
               </div>
             )}
           </div>
         )}
-      </div>
+      </main>
 
-      {/* ── Bottom Nav ──────────────────────────────────────────────────── */}
-      <nav style={{
-        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '100%', maxWidth: '480px', zIndex: 100,
-        background: t.navBg, borderTop: `1px solid ${t.border}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-around',
-        padding: '8px 0 calc(8px + env(safe-area-inset-bottom))',
-        boxShadow: darkMode ? '0 -2px 20px rgba(0,0,0,0.5)' : '0 -2px 12px rgba(0,0,0,0.06)',
-      }}>
-        {[
-          { key: 'home',    icon: '🏠', label: 'Home'    },
-          { key: 'saved',   icon: '♥',  label: 'Saved'   },
-          { key: 'profile', icon: '👤', label: 'Profile' },
-        ].map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
-            background: 'none', border: 'none', cursor: 'pointer', padding: '4px 16px',
-            color: activeTab === tab.key ? t.accent : t.textMuted,
-            transition: 'color 0.15s',
-          }}>
-            <span style={{ fontSize: tab.key === 'saved' ? '18px' : '20px', lineHeight: 1 }}>{tab.icon}</span>
-            <span style={{ fontSize: '10px', fontWeight: activeTab === tab.key ? 700 : 500 }}>{tab.label}</span>
-          </button>
-        ))}
-      </nav>
+      {/* ── Footer ─────────────────────────────────────────────────── */}
+      <SiteFooter dark={dark} onToggleTheme={toggleTheme} />
 
-      {/* ── Map modal ───────────────────────────────────────────────────── */}
-      {mapOpen && (
-        <MapView events={filteredEvents} onClose={() => setMapOpen(false)} darkMode={darkMode} />
-      )}
-
-      {/* ── Modals ────────────────────────────────────────────────────────── */}
+      {/* ── Modals ─────────────────────────────────────────────────── */}
       {showSubmit && (
-        <SubmitEventModal onClose={() => setShowSubmit(false)} onSubmit={() => setToast('Event submitted for review!')} />
+        <AddToJarModal
+          onClose={() => setShowSubmit(false)}
+          onSubmit={() => setToast('🫙 Event submitted for review! Thank you!')}
+        />
       )}
-      {reportEvent && (
-        <ReportIssueModal event={reportEvent} onClose={() => setReportEvent(null)} onSubmit={() => { setToast('Report submitted. Thank you!'); setReportEvent(null); }} />
-      )}
+
+      {/* ── Toast ──────────────────────────────────────────────────── */}
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
-    </>
+    </div>
   );
 }
