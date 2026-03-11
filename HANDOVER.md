@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1065+ events** across 26 scrapers (as of March 11, 2026)
+**~1100+ events** across 27 scrapers (as of March 11, 2026)
 
 ---
 
@@ -52,6 +52,8 @@
 | 24 | Asbury Park Brewery | `asburyParkBrewery.js` | Squarespace JSON | ✅ Working | ~54 |
 | 25 | Boatyard 401 | `boatyard401.js` | WordPress Simple Calendar (AJAX) | ✅ Working | ~40+ |
 | 26 | Tim McLoone's Supper Club | _(removed)_ | Ticketbud HTML | ❌ Blocked — all McLoone's domains behind Cloudflare+reCAPTCHA, blocks all datacenter IPs. Scraper removed. | 0 |
+| 27 | Windward Tavern | `windwardTavern.js` | Google Calendar iCal | ✅ Working | ~15+ |
+| 28 | Jamian's Food & Drink | `jamians.js` | Squarespace HTML (plain-text schedule) | ✅ Working | ~30+ |
 
 ---
 
@@ -212,6 +214,24 @@
 - **Other sources checked:** Bandsintown (no events listed), Facebook (requires auth), parent McLoone's site (also Cloudflare)
 - **Address:** 1200 Ocean Ave, Asbury Park, NJ 07712
 - **To revisit:** Check if venue gets listed on Ticketmaster or Bandsintown, or if Ticketbud opens a public API. A headless browser (Puppeteer/Playwright) running outside Vercel could also work.
+
+### Windward Tavern (`windwardTavern.js`)
+- **URL:** https://www.windwardtavern.com/music-events
+- **Platform:** Google Calendar embed on venue website
+- **Approach:** Google Calendar iCal feed (same pattern as St. Stephen's Green, Idle Hour, etc.)
+- **Calendar ID:** `windwardtavern@gmail.com`
+- **Address:** Brick, NJ
+- **Note:** Music on Fri/Sat, food specials on Mondays
+
+### Jamian's Food & Drink (`jamians.js`)
+- **URL:** https://www.jamiansfood.com/music
+- **Platform:** Squarespace — manually typed plain-text schedule (NOT a Squarespace events collection)
+- **Approach:** Fetches HTML page directly and parses schedule text from Squarespace layout blocks (`sqs-block-content` divs). The `?format=json` endpoint returns empty `mainContent` because the schedule lives in layout blocks, not structured event data.
+- **Schedule format:** Month headers ("February", "March") followed by "dayNumber ArtistName" lines (e.g., "5 Skinny Amigo", "6 Black Dog")
+- **Recurring weekly events:** Pat Guadagno Mondays 7pm, Trivia Tuesdays 7:30pm, Karaoke Wednesdays 8pm, Open Mic Sundays 8pm — generated for next 8 weeks
+- **Start time rules:** Thu 8pm, Fri & Sat 9pm (per venue page note "Music starts Thurs 8pm Fri & Sat 9pm")
+- **Address:** 79 Monmouth Street, Red Bank, NJ 07701
+- **Note:** If recurring events duplicate monthly listings on the same date, the monthly listing takes priority (dedup by external_id)
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
