@@ -34,6 +34,47 @@ const FETCH_HEADERS = {
 };
 
 /**
+ * Fetch HTML via direct request first; if Cloudflare blocks (403),
+ * fall back to the Edge Runtime proxy which runs on Cloudflare's
+ * own network and bypasses datacenter-IP blocking.
+ */
+async function fetchWithEdgeFallback(url) {
+  // Try direct fetch first
+  const directRes = await fetch(url, {
+    headers: FETCH_HEADERS,
+    next: { revalidate: 0 },
+  });
+
+  if (directRes.ok) {
+    return directRes.text();
+  }
+
+  console.log(`[TimMcLoones] Direct fetch returned ${directRes.status}, trying Edge proxy...`);
+
+  // Fall back to Edge proxy
+  const proxyUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'https://www.mylocaljam.com'}/api/fetch-proxy`;
+  const proxyRes = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(process.env.SYNC_SECRET ? { Authorization: `Bearer ${process.env.SYNC_SECRET}` } : {}),
+    },
+    body: JSON.stringify({ url }),
+  });
+
+  if (!proxyRes.ok) {
+    throw new Error(`Edge proxy returned ${proxyRes.status}`);
+  }
+
+  const data = await proxyRes.json();
+  if (data.status !== 200) {
+    throw new Error(`Edge proxy: target returned HTTP ${data.status}`);
+  }
+
+  return data.html;
+}
+
+/**
  * Parse Ticketbud date like "Thu, Mar 12, 2026" → "2026-03-12"
  */
 function parseTicketbudDate(dateStr) {
@@ -144,14 +185,7 @@ export async function scrapeTimMcLoones() {
 
     while (page <= MAX_PAGES) {
       const url = page === 1 ? TICKETBUD_URL : `${TICKETBUD_URL}/?page=${page}`;
-      const res = await fetch(url, {
-        headers: FETCH_HEADERS,
-        next: { revalidate: 0 },
-      });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status} on page ${page}`);
-
-      const html = await res.text();
+      const html = await fetchWithEdgeFallback(url);
       console.log(`[TimMcLoones] Page ${page}: ${html.length} bytes`);
 
       const pageEvents = parseTicketbudPage(html);
