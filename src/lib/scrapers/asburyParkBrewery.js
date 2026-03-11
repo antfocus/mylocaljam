@@ -88,6 +88,11 @@ export async function scrapeAsburyParkBrewery() {
         .replace(/&quot;/g, '"')
         .trim();
 
+      // Extract image from body HTML (squarespace-cdn.com URL)
+      // The assetUrl field is a broken static1.squarespace.com path that doesn't resolve
+      const bodyImgMatch = item.body?.match(/src="([^"]*squarespace-cdn[^"]*)"/);
+      const imageUrl = bodyImgMatch ? bodyImgMatch[1] : null;
+
       events.push({
         title: cleanTitle,
         venue: VENUE,
@@ -100,7 +105,7 @@ export async function scrapeAsburyParkBrewery() {
         price: null,
         source_url: VENUE_URL,
         external_id: externalId,
-        image_url: item.assetUrl || null,
+        image_url: imageUrl,
       });
     }
 
