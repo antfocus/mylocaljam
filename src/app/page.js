@@ -659,15 +659,15 @@ export default function HomePage() {
             color: activeTab === tab.key ? t.accent : t.textMuted,
             transition: 'color 0.15s',
           }}>
-            <span style={{
-              fontSize: tab.key === 'saved' ? '24px' : '20px',
-              lineHeight: 1,
-              ...(tab.key === 'saved' ? {
-                color: activeTab === 'saved' ? t.accent : (darkMode ? '#e06050' : '#d4453a'),
-                textShadow: `0 0 8px rgba(232,114,42,0.5), 0 0 16px rgba(232,114,42,0.25)`,
-                WebkitTextStroke: '0.5px currentColor',
-              } : {}),
-            }}>{tab.icon}</span>
+            {tab.key === 'saved' ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" style={{ filter: `drop-shadow(0 0 4px ${activeTab === 'saved' ? 'rgba(232,114,42,0.6)' : (darkMode ? 'rgba(224,96,80,0.4)' : 'rgba(212,69,58,0.35)')})` }}>
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+                  fill={activeTab === 'saved' ? t.accent : (darkMode ? '#e06050' : '#c0392b')}
+                />
+              </svg>
+            ) : (
+              <span style={{ fontSize: '20px', lineHeight: 1 }}>{tab.icon}</span>
+            )}
             <span style={{ fontSize: '10px', fontWeight: activeTab === tab.key ? 700 : 500 }}>{tab.label}</span>
           </button>
         ))}
