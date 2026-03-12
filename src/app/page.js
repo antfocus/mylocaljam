@@ -455,6 +455,7 @@ export default function HomePage() {
               eventCount={filteredEvents.length}
               hasActiveFilters={hasActiveFilters}
               onClearFilters={clearAllFilters}
+              darkMode={darkMode}
             />
           </div>
         )}

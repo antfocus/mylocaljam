@@ -2,23 +2,33 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-// ── Palette ──────────────────────────────────────────────────────────────────
-const C = {
+// ── Palette (theme-aware) ────────────────────────────────────────────────────
+const COLORS = {
   orange:     '#f47c20',
-  orangeBg:   'rgba(244,124,32,0.18)',
+  orangeStrong: '#e06a10',
   teal:       '#2ecac8',
-  tealBg:     'rgba(46,202,200,0.18)',
-  tealTint:   'rgba(46,202,200,0.12)',
+  tealStrong: '#1fb5b3',
   purple:     '#a78bfa',
-  purpleBg:   'rgba(167,139,250,0.18)',
-  purpleTint: 'rgba(167,139,250,0.12)',
-  text:       '#e8e8f0',
-  muted:      '#6b7280',
-  dropBg:     '#181c28',
-  dropBorder: 'rgba(255,255,255,0.10)',
-  divider:    'rgba(255,255,255,0.08)',
-  btnBorder:  'rgba(255,255,255,0.08)',
+  purpleStrong: '#8b6fe0',
 };
+
+function getPalette(dark) {
+  return {
+    ...COLORS,
+    orangeBg:   dark ? 'rgba(244,124,32,0.18)' : 'rgba(244,124,32,0.12)',
+    tealBg:     dark ? 'rgba(46,202,200,0.18)' : 'rgba(46,202,200,0.12)',
+    tealTint:   dark ? 'rgba(46,202,200,0.12)' : 'rgba(46,202,200,0.08)',
+    purpleBg:   dark ? 'rgba(167,139,250,0.18)' : 'rgba(167,139,250,0.12)',
+    purpleTint: dark ? 'rgba(167,139,250,0.12)' : 'rgba(167,139,250,0.08)',
+    text:       dark ? '#e8e8f0' : '#1f2937',
+    muted:      dark ? '#6b7280' : '#9ca3af',
+    dropBg:     dark ? '#181c28' : '#ffffff',
+    dropBorder: dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)',
+    divider:    dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+    btnBorder:  dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+    inputBg:    dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)',
+  };
+}
 
 // ── Chevron SVG ──────────────────────────────────────────────────────────────
 function Chevron({ open, color }) {
@@ -34,7 +44,7 @@ function Chevron({ open, color }) {
 }
 
 // ── Dropdown (compact, positioned relative to button) ────────────────────────
-function Dropdown({ open, children, align = 'left', minWidth = 140 }) {
+function Dropdown({ open, children, align = 'left', minWidth = 140, palette }) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
 
@@ -57,11 +67,11 @@ function Dropdown({ open, children, align = 'left', minWidth = 140 }) {
       top: 'calc(100% + 4px)',
       [align]: 0,
       minWidth,
-      background: C.dropBg,
-      border: `1px solid ${C.dropBorder}`,
+      background: palette.dropBg,
+      border: `1px solid ${palette.dropBorder}`,
       borderRadius: '10px',
       zIndex: 300,
-      boxShadow: '0 8px 28px rgba(0,0,0,0.5)',
+      boxShadow: '0 8px 28px rgba(0,0,0,0.25)',
       opacity: visible ? 1 : 0,
       transform: visible ? 'translateY(0)' : 'translateY(-4px)',
       transition: 'opacity 0.15s ease, transform 0.15s ease',
@@ -81,7 +91,9 @@ export default function FilterBar({
   eventCount,
   hasActiveFilters,
   onClearFilters,
+  darkMode = true,
 }) {
+  const C = getPalette(darkMode);
   const [openPanel, setOpenPanel] = useState(null);
   const [venueSearch, setVenueSearch] = useState('');
   const barRef = useRef(null);
@@ -140,7 +152,7 @@ export default function FilterBar({
   const dropItem = (selected, accentColor, tint) => ({
     display: 'block', width: '100%', padding: '9px 12px',
     border: 'none', cursor: 'pointer', textAlign: 'left',
-    fontSize: '13px', fontWeight: selected ? 600 : 400,
+    fontSize: '13px', fontWeight: selected ? 600 : 500,
     background: selected ? tint : 'transparent',
     color: selected ? accentColor : C.text,
     fontFamily: "'DM Sans', sans-serif",
@@ -167,7 +179,7 @@ export default function FilterBar({
             <Chevron open={openPanel === 'when'} color={C.orange} />
           </button>
 
-          <Dropdown open={openPanel === 'when'} align="left" minWidth={130}>
+          <Dropdown open={openPanel === 'when'} align="left" minWidth={130} palette={C}>
             {dateOptions.map(opt => (
               <button key={opt.key}
                 onClick={() => { setDateKey(opt.key); closeAll(); }}
@@ -194,7 +206,7 @@ export default function FilterBar({
             <Chevron open={openPanel === 'venue'} color={C.purple} />
           </button>
 
-          <Dropdown open={openPanel === 'venue'} align="left" minWidth={200}>
+          <Dropdown open={openPanel === 'venue'} align="left" minWidth={200} palette={C}>
             {/* Sticky "Any" reset option */}
             <button onClick={() => { setActiveVenues([]); closeAll(); }} style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -215,7 +227,7 @@ export default function FilterBar({
                 autoFocus={openPanel === 'venue'}
                 style={{
                   width: '100%', padding: '6px 8px',
-                  background: 'rgba(255,255,255,0.05)',
+                  background: C.inputBg,
                   border: `1px solid ${C.divider}`,
                   borderRadius: '6px', fontSize: '12px',
                   color: C.text, outline: 'none',
@@ -275,7 +287,7 @@ export default function FilterBar({
             <Chevron open={openPanel === 'miles'} color={C.teal} />
           </button>
 
-          <Dropdown open={openPanel === 'miles'} align="right" minWidth={200}>
+          <Dropdown open={openPanel === 'miles'} align="right" minWidth={200} palette={C}>
             <div style={{ padding: '12px 12px 10px' }}>
               <div style={{ marginBottom: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
@@ -291,7 +303,7 @@ export default function FilterBar({
                   style={{
                     width: '100%', height: '4px',
                     appearance: 'none', WebkitAppearance: 'none',
-                    background: `linear-gradient(to right, ${C.teal} ${((milesRadius || 50) - 1) / 49 * 100}%, rgba(255,255,255,0.1) 0%)`,
+                    background: `linear-gradient(to right, ${C.teal} ${((milesRadius || 50) - 1) / 49 * 100}%, ${C.inputBg} 0%)`,
                     borderRadius: '2px', outline: 'none', cursor: 'pointer', accentColor: C.teal,
                   }}
                 />
@@ -303,7 +315,7 @@ export default function FilterBar({
                     <button key={i} onClick={() => { setMilesRadius(p); closeAll(); }} style={{
                       flex: 1, padding: '6px 0', borderRadius: '6px',
                       fontSize: '11px', fontWeight: 600, border: 'none', cursor: 'pointer',
-                      background: sel ? C.tealTint : 'rgba(255,255,255,0.05)',
+                      background: sel ? C.tealTint : C.inputBg,
                       color: sel ? C.teal : C.muted,
                       transition: 'all 0.12s', fontFamily: "'DM Sans', sans-serif",
                     }}>
