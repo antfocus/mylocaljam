@@ -379,9 +379,8 @@ export default function HomePage() {
           background: darkMode ? '#1E1E2C' : '#FFFFFF',
           borderBottom: `1px solid ${t.border}`,
           boxShadow: darkMode ? '0 2px 16px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.08)',
-          padding: '10px 12px',
+          padding: 'calc(10px + env(safe-area-inset-top)) 16px 10px 16px',
           display: 'flex', alignItems: 'center', gap: '10px',
-          position: 'sticky', top: 0,
           minHeight: '60px',
         }}>
           {/* Logo — left */}
@@ -443,7 +442,7 @@ export default function HomePage() {
 
         {/* ── Filter bar (home tab only) ─────────────────────────────── */}
         {activeTab === 'home' && (
-          <div style={{ padding: '10px 12px 0' }}>
+          <div style={{ padding: '10px 16px 0' }}>
             <FilterBar
               dateKey={dateKey}
               setDateKey={setDateKey}

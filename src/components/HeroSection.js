@@ -42,7 +42,7 @@ export default function HeroSection({ events = [], isToday = true }) {
     <div style={{
       position: 'relative', flexShrink: 0, overflow: 'hidden',
       background: 'linear-gradient(180deg, #0A0A10 0%, #1A1208 60%, #0D0D0D 100%)',
-      display: 'flex', flexDirection: 'column', padding: '8px 14px 12px', gap: '2px',
+      display: 'flex', flexDirection: 'column', padding: '8px 16px 12px', gap: '2px',
     }}>
       {/* Spotlight beam — cone from top-center */}
       <div style={{
@@ -117,7 +117,7 @@ export default function HeroSection({ events = [], isToday = true }) {
 
       {/* Carousel dots */}
       {featured.length > 1 && (
-        <div style={{ position: 'absolute', bottom: '6px', right: '14px', display: 'flex', gap: '4px', zIndex: 10 }}>
+        <div style={{ position: 'absolute', bottom: '6px', right: '16px', display: 'flex', gap: '4px', zIndex: 10 }}>
           {featured.map((_, i) => (
             <button key={i} onClick={() => setIndex(i)} style={{
               height: '6px', borderRadius: '3px', border: 'none', cursor: 'pointer',
