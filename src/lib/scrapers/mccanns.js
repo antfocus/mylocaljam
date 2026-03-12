@@ -13,7 +13,7 @@
  *   4. Update CALENDAR_ID below
  */
 
-const CALENDAR_ID = 'jacksbythetracknj@gmail.com';
+const CALENDAR_ID = 'jacksbythetracksnj@gmail.com';
 const ICAL_URL = `https://calendar.google.com/calendar/ical/${encodeURIComponent(CALENDAR_ID)}/public/basic.ics`;
 const VENUE = "McCann's Tavern";
 const VENUE_URL = 'http://www.mccannstavernnj.com';
