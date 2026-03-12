@@ -37,7 +37,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
   const textPrimary = darkMode ? '#F0F0F5' : '#1F2937';
   const textMuted   = darkMode ? '#7878A0' : '#6B7280';
   const textDesc    = darkMode ? '#AAAACC' : '#4B5563';
-  const heartOff    = darkMode ? '#4A4A6A' : '#D1D5DB';
+  const heartOff    = darkMode ? '#6A5A7A' : '#9B8A8E';
   const chevronCol  = darkMode ? '#5A5A7A' : '#9CA3AF';
   const expandedBg  = darkMode ? '#14141E' : '#F9FAFB';
 
@@ -99,7 +99,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
             onClick={e => { e.stopPropagation(); onToggleFavorite?.(event.id); }}
             style={{
               background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px',
-              fontSize: '16px', color: isFavorited ? '#E8722A' : heartOff, flexShrink: 0,
+              fontSize: '18px', color: isFavorited ? '#E8722A' : heartOff, flexShrink: 0,
               transition: 'transform 0.15s, color 0.15s',
               transform: isFavorited ? 'scale(1.2)' : 'scale(1)',
             }}
