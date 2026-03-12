@@ -659,7 +659,15 @@ export default function HomePage() {
             color: activeTab === tab.key ? t.accent : t.textMuted,
             transition: 'color 0.15s',
           }}>
-            <span style={{ fontSize: tab.key === 'saved' ? '24px' : '20px', lineHeight: 1, textShadow: tab.key === 'saved' ? '0 0 8px rgba(232,114,42,0.5), 0 0 16px rgba(232,114,42,0.25)' : 'none', WebkitTextStroke: tab.key === 'saved' ? '0.5px currentColor' : 'none' }}>{tab.icon}</span>
+            <span style={{
+              fontSize: tab.key === 'saved' ? '24px' : '20px',
+              lineHeight: 1,
+              ...(tab.key === 'saved' ? {
+                color: activeTab === 'saved' ? t.accent : (darkMode ? '#e06050' : '#d4453a'),
+                textShadow: `0 0 8px rgba(232,114,42,0.5), 0 0 16px rgba(232,114,42,0.25)`,
+                WebkitTextStroke: '0.5px currentColor',
+              } : {}),
+            }}>{tab.icon}</span>
             <span style={{ fontSize: '10px', fontWeight: activeTab === tab.key ? 700 : 500 }}>{tab.label}</span>
           </button>
         ))}
