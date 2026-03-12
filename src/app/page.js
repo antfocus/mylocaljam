@@ -12,6 +12,8 @@ import MapView           from '@/components/MapView';
 import SubmitEventModal  from '@/components/SubmitEventModal';
 import ReportIssueModal  from '@/components/ReportIssueModal';
 import Toast             from '@/components/Toast';
+import FilterBar         from '@/components/FilterBar';
+import SectionHeading    from '@/components/SectionHeading';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 // Clean HTML entities that may have leaked through scrapers (e.g. &amp; → &)
@@ -97,11 +99,9 @@ export default function HomePage() {
   const [activeTab,      setActiveTab]      = useState('home');
   const [mapOpen,        setMapOpen]        = useState(false);
   const [dateKey,        setDateKey]        = useState('all');
-  const [dateDropOpen,   setDateDropOpen]   = useState(false);
   const [searchQuery,    setSearchQuery]    = useState('');
-  const [activeVenue,    setActiveVenue]    = useState('all');
-  const [venueSheetOpen, setVenueSheetOpen] = useState(false);
-  const [venueSearch,    setVenueSearch]    = useState('');
+  const [activeVenues,   setActiveVenues]   = useState([]);    // multi-select venue filter
+  const [milesRadius,    setMilesRadius]    = useState(null);  // null = any distance
   const [showSubmit,     setShowSubmit]     = useState(false);
   const [reportEvent,    setReportEvent]    = useState(null);
 
@@ -301,7 +301,7 @@ export default function HomePage() {
         break;
     }
 
-    if (activeVenue !== 'all') list = list.filter(e => e.venue === activeVenue);
+    if (activeVenues.length > 0) list = list.filter(e => activeVenues.includes(e.venue));
 
     if (searchQuery.trim()) {
       const q = normalizeVenue(searchQuery);
@@ -318,7 +318,7 @@ export default function HomePage() {
     });
 
     return list;
-  }, [events, dateKey, activeVenue, searchQuery, todayStr, tomorrowStr, fridayStr, sundayStr]);
+  }, [events, dateKey, activeVenues, searchQuery, todayStr, tomorrowStr, fridayStr, sundayStr]);
 
   const groupedEvents = useMemo(() => groupEventsByDate(filteredEvents), [filteredEvents]);
 
@@ -338,9 +338,15 @@ export default function HomePage() {
 
   const heroIsToday = heroEvents.length > 0 && heroEvents[0]?.date === todayStr;
 
-  const allVenues = useMemo(() => {
-    const set = new Set(events.map(e => e.venue).filter(Boolean));
-    return Array.from(set).sort();
+  // Venue list with event counts (for FilterBar)
+  const venueListWithCounts = useMemo(() => {
+    const map = {};
+    events.forEach(e => {
+      if (e.venue) map[e.venue] = (map[e.venue] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [events]);
 
   function normalizeVenue(s) {
@@ -351,14 +357,12 @@ export default function HomePage() {
       .trim();
   }
 
-  const filteredVenues = useMemo(() => {
-    const q = normalizeVenue(venueSearch);
-    if (!q) return allVenues;
-    return allVenues.filter(v => normalizeVenue(v).includes(q));
-  }, [allVenues, venueSearch]);
-
-  const activeDateLabel  = DATE_OPTIONS.find(o => o.key === dateKey)?.label ?? 'All Upcoming';
-  const activeVenueLabel = activeVenue === 'all' ? null : activeVenue;
+  const hasActiveFilters = dateKey !== 'all' || activeVenues.length > 0 || milesRadius !== null;
+  const clearAllFilters = useCallback(() => {
+    setDateKey('all');
+    setActiveVenues([]);
+    setMilesRadius(null);
+  }, []);
 
   // ── Shared styles ────────────────────────────────────────────────────────────
   const dateSeparatorStyle = {
@@ -438,122 +442,24 @@ export default function HomePage() {
         )}
 
 
-        {/* ── Section header: date dropdown + venue filter (home tab only) ── */}
+        {/* ── Filter bar (home tab only) ─────────────────────────────── */}
         {activeTab === 'home' && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 6px', background: t.bg }}>
-
-            {/* Date dropdown */}
-            <div style={{ position: 'relative' }}>
-              <button onClick={() => setDateDropOpen(o => !o)} style={{
-                display: 'flex', alignItems: 'center', gap: '5px',
-                fontSize: '17px', fontWeight: 800, color: t.text,
-                background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-              }}>
-                {activeDateLabel} <span style={{ fontSize: '11px', color: t.textMuted }}>▼</span>
-              </button>
-
-              {dateDropOpen && (
-                <>
-                  <div onClick={() => setDateDropOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 199 }} />
-                  <div style={{
-                    position: 'absolute', top: 'calc(100% + 6px)', left: 0,
-                    background: t.dropdownBg, borderRadius: '12px', zIndex: 200,
-                    boxShadow: darkMode ? '0 8px 32px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.12)',
-                    border: `1px solid ${t.border}`,
-                    overflow: 'hidden', minWidth: '160px',
-                  }}>
-                    {DATE_OPTIONS.map(opt => (
-                      <button key={opt.key} onClick={() => { setDateKey(opt.key); setDateDropOpen(false); }} style={{
-                        display: 'block', width: '100%', padding: '10px 16px', textAlign: 'left',
-                        border: 'none', cursor: 'pointer', fontSize: '14px',
-                        fontWeight: dateKey === opt.key ? 700 : 500,
-                        background: dateKey === opt.key ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.07)') : t.dropdownBg,
-                        color: dateKey === opt.key ? t.accent : t.text,
-                      }}>{opt.label}</button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Event count + map + venue filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: t.textMuted }}>
-                {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
-              </span>
-
-              {/* Map button */}
-              <button onClick={() => setMapOpen(true)} style={{
-                display: 'flex', alignItems: 'center', gap: '3px',
-                fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '999px',
-                border: `1.5px solid ${t.pillBorder}`, cursor: 'pointer',
-                background: t.pillBg, color: t.textMuted,
-              }}>
-                🗺️ Map
-              </button>
-
-              <div style={{ position: 'relative' }}>
-                <button onClick={() => setVenueSheetOpen(o => !o)} style={{
-                  display: 'flex', alignItems: 'center', gap: '3px',
-                  fontSize: '12px', fontWeight: 700, padding: '4px 10px', borderRadius: '999px',
-                  border: `1.5px solid`, cursor: 'pointer',
-                  background: activeVenueLabel ? t.accent : t.pillBg,
-                  color: activeVenueLabel ? '#FFFFFF' : t.textMuted,
-                  borderColor: activeVenueLabel ? t.accent : t.pillBorder,
-                  maxWidth: '140px', overflow: 'hidden',
-                }}>
-                  <span style={{ flexShrink: 0 }}>📍</span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                    {activeVenueLabel ?? 'Venue'}
-                  </span>
-                  <span style={{ flexShrink: 0 }}>▾</span>
-                </button>
-
-                {venueSheetOpen && (
-                  <>
-                    <div onClick={() => { setVenueSheetOpen(false); setVenueSearch(''); }} style={{ position: 'fixed', inset: 0, zIndex: 199 }} />
-                    <div style={{
-                      position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-                      background: t.dropdownBg, borderRadius: '12px', zIndex: 200,
-                      boxShadow: darkMode ? '0 8px 32px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.12)',
-                      border: `1px solid ${t.border}`,
-                      width: '220px', maxHeight: '280px',
-                      display: 'flex', flexDirection: 'column', overflow: 'hidden',
-                    }}>
-                      <div style={{ padding: '8px 10px', borderBottom: `1px solid ${t.border}` }}>
-                        <input
-                          type="text" placeholder="Search venues…"
-                          value={venueSearch} onChange={e => setVenueSearch(e.target.value)} autoFocus
-                          style={{ width: '100%', padding: '6px 10px', border: `1.5px solid ${t.border}`, borderRadius: '8px', fontSize: '13px', outline: 'none', background: t.inputBg, color: t.text }}
-                        />
-                      </div>
-                      <div style={{ overflowY: 'auto', flex: 1 }}>
-                        <button onClick={() => { setActiveVenue('all'); setVenueSheetOpen(false); setVenueSearch(''); }} style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                          width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                          background: activeVenue === 'all' ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.07)') : t.dropdownBg,
-                          borderBottom: `1px solid ${t.border}`,
-                        }}>
-                          <span style={{ fontSize: '13px', fontWeight: activeVenue === 'all' ? 700 : 500, color: activeVenue === 'all' ? t.accent : t.text, textAlign: 'left' }}>All Venues</span>
-                          {activeVenue === 'all' && <span style={{ color: t.accent, fontSize: '12px', flexShrink: 0, marginLeft: '8px' }}>✓</span>}
-                        </button>
-                        {filteredVenues.map(venue => (
-                          <button key={venue} onClick={() => { setActiveVenue(venue); setVenueSheetOpen(false); setVenueSearch(''); }} style={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer', textAlign: 'left',
-                            background: activeVenue === venue ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.07)') : t.dropdownBg,
-                            borderBottom: `1px solid ${t.border}`,
-                          }}>
-                            <span style={{ fontSize: '13px', fontWeight: activeVenue === venue ? 700 : 500, color: activeVenue === venue ? t.accent : t.text, textAlign: 'left', flex: 1 }}>{venue}</span>
-                            {activeVenue === venue && <span style={{ color: t.accent, fontSize: '12px', flexShrink: 0, marginLeft: '8px' }}>✓</span>}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+          <div style={{ paddingTop: '10px' }}>
+            <FilterBar
+              dateKey={dateKey}
+              setDateKey={setDateKey}
+              activeVenues={activeVenues}
+              setActiveVenues={setActiveVenues}
+              venues={venueListWithCounts}
+              milesRadius={milesRadius}
+              setMilesRadius={setMilesRadius}
+            />
+            <SectionHeading
+              dateKey={dateKey}
+              eventCount={filteredEvents.length}
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={clearAllFilters}
+            />
           </div>
         )}
 
