@@ -100,7 +100,7 @@ export default function SiteHeader({ onOpenSubmit }) {
             }}
           >
             <Image
-              src="/myLocaljam_Logo_200.png"
+              src="/myLocaljam_Logo_v4_transparent_031126.png"
               alt="myLocalJam — click to search"
               width={60}
               height={60}
