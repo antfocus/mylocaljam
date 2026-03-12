@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { getVenueColor, groupEventsByDate } from '@/lib/utils';
@@ -104,6 +104,27 @@ export default function HomePage() {
   const [venueSearch,    setVenueSearch]    = useState('');
   const [showSubmit,     setShowSubmit]     = useState(false);
   const [reportEvent,    setReportEvent]    = useState(null);
+
+  // ── Bottom nav hide-on-scroll ───────────────────────────────────────────────
+  const [navHidden, setNavHidden] = useState(false);
+  const lastScrollY = useRef(0);
+
+  useEffect(() => {
+    const threshold = 10; // minimum scroll delta to trigger
+    const handleScroll = () => {
+      const currentY = window.scrollY;
+      if (currentY - lastScrollY.current > threshold) {
+        // Scrolling down → hide
+        setNavHidden(true);
+      } else if (lastScrollY.current - currentY > threshold) {
+        // Scrolling up → show
+        setNavHidden(false);
+      }
+      lastScrollY.current = currentY;
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // ── Notifications preference ─────────────────────────────────────────────────
   const [notifEnabled, setNotifEnabled] = useState(() => {
@@ -715,7 +736,9 @@ export default function HomePage() {
 
       {/* ── Bottom Nav ──────────────────────────────────────────────────── */}
       <nav style={{
-        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        position: 'fixed', bottom: 0, left: '50%',
+        transform: navHidden ? 'translate(-50%, 100%)' : 'translateX(-50%)',
+        transition: 'transform 0.3s ease',
         width: '100%', maxWidth: '480px', zIndex: 100,
         background: t.navBg, borderTop: `1px solid ${t.border}`,
         display: 'flex', alignItems: 'center', justifyContent: 'space-around',
