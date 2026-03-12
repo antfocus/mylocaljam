@@ -371,7 +371,7 @@ export default function HomePage() {
 
   return (
     <>
-      <div style={{ minHeight: '100svh', display: 'flex', flexDirection: 'column', background: t.bg, maxWidth: '480px', margin: '0 auto' }}>
+      <div style={{ minHeight: '100svh', display: 'flex', flexDirection: 'column', background: t.bg, maxWidth: '480px', margin: '0 auto', overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}>
 
         {/* ── Top Nav ────────────────────────────────────────────────────── */}
         <header style={{
@@ -382,17 +382,19 @@ export default function HomePage() {
           padding: 'calc(10px + env(safe-area-inset-top)) 16px 10px 16px',
           display: 'flex', alignItems: 'center', gap: '10px',
           minHeight: '60px',
+          width: '100%', maxWidth: '100%', boxSizing: 'border-box',
         }}>
           {/* Logo — left */}
-          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+          <div style={{ flexShrink: 1, minWidth: '80px', maxWidth: '140px', display: 'flex', alignItems: 'center' }}>
             <Image
               src="/myLocaljam_Logo_v7_transparent_031126.png"
               alt="myLocalJam"
-              width={160}
-              height={52}
+              width={140}
+              height={46}
               priority
               style={{
                 objectFit: 'contain', display: 'block',
+                width: '100%', height: 'auto',
                 filter: darkMode
                   ? 'drop-shadow(0 1px 4px rgba(255,255,255,0.25))'
                   : 'drop-shadow(0 1px 3px rgba(0,0,0,0.2))',
@@ -425,10 +427,10 @@ export default function HomePage() {
             onClick={() => setShowSubmit(true)}
             title="Add to the Jar"
             style={{
-              width: '34px', height: '34px', borderRadius: '50%', border: `2px solid ${t.accent}`,
+              width: '30px', height: '30px', borderRadius: '50%', border: `2px solid ${t.accent}`,
               background: t.accent,
               cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '20px', fontWeight: 700, color: 'white', lineHeight: 1,
+              fontSize: '18px', fontWeight: 700, color: 'white', lineHeight: 1,
             }}>
             +
           </button>

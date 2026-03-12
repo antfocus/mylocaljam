@@ -43,6 +43,7 @@ export default function HeroSection({ events = [], isToday = true }) {
       position: 'relative', flexShrink: 0, overflow: 'hidden',
       background: 'linear-gradient(180deg, #0A0A10 0%, #1A1208 60%, #0D0D0D 100%)',
       display: 'flex', flexDirection: 'column', padding: '8px 16px 12px', gap: '2px',
+      width: '100%', maxWidth: '100%', boxSizing: 'border-box',
     }}>
       {/* Spotlight beam — cone from top-center */}
       <div style={{
