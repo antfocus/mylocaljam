@@ -355,24 +355,14 @@ export default function HomePage() {
           background: darkMode ? '#1E1E2C' : '#FFFFFF',
           borderBottom: `1px solid ${t.border}`,
           boxShadow: darkMode ? '0 2px 16px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.08)',
-          padding: '8px 12px',
+          padding: '10px 12px',
           display: 'flex', alignItems: 'center', gap: '10px',
+          position: 'sticky', top: 0,
+          minHeight: '60px',
         }}>
-          {/* Logo */}
-          <div style={{ flexShrink: 0 }}>
-            <Image
-              src="/myLocaljam_Logo_v7_transparent_031126.png"
-              alt="myLocalJam"
-              width={52}
-              height={52}
-              priority
-              style={{ objectFit: 'contain', display: 'block' }}
-            />
-          </div>
-
-          {/* Search bar — center, flex fills remaining space */}
+          {/* Search bar — left */}
           <div style={{
-            flex: 1, display: 'flex', alignItems: 'center', gap: '6px',
+            width: '120px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px',
             background: darkMode ? '#14141E' : '#F3F4F6',
             border: `1px solid ${darkMode ? '#2A2A3A' : '#E5E7EB'}`,
             borderRadius: '20px', padding: '6px 12px',
@@ -380,7 +370,7 @@ export default function HomePage() {
             <span style={{ fontSize: '12px', color: t.textMuted, flexShrink: 0 }}>🔍</span>
             <input
               type="text"
-              placeholder="Search artists, venues, events..."
+              placeholder="Search..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               style={{ flex: 1, border: 'none', background: 'none', outline: 'none', fontSize: '13px', color: t.text, minWidth: 0 }}
@@ -388,6 +378,23 @@ export default function HomePage() {
             {searchQuery && (
               <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: '14px', flexShrink: 0, padding: 0 }}>✕</button>
             )}
+          </div>
+
+          {/* Logo — truly centered, takes remaining space */}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Image
+              src="/myLocaljam_Logo_v7_transparent_031126.png"
+              alt="myLocalJam"
+              width={160}
+              height={52}
+              priority
+              style={{
+                objectFit: 'contain', display: 'block',
+                filter: darkMode
+                  ? 'drop-shadow(0 1px 4px rgba(255,255,255,0.25))'
+                  : 'drop-shadow(0 1px 3px rgba(0,0,0,0.2))',
+              }}
+            />
           </div>
 
           {/* Add to the Jar button */}

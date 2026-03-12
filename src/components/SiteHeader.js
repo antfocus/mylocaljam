@@ -56,58 +56,37 @@ export default function SiteHeader({ onOpenSubmit }) {
         padding: '0 24px',
       }}
     >
-      {/* Left: Text Logo */}
-      <a
-        href="/"
-        className="logo-text"
-        style={{
-          fontSize: '28px',
-          textDecoration: 'none',
-          flexShrink: 0,
-          lineHeight: 1,
-          display: searchOpen ? 'none' : 'block',
-        }}
-        aria-label="myLocalJam home"
-      >
-        myLocalJam
-      </a>
-
-      {/* Center: Jar Logo / Search Bar */}
+      {/* Left: Search Bar */}
       <div
         ref={containerRef}
         className="search-bar-container"
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          flex: searchOpen ? 1 : 'none',
-          maxWidth: searchOpen ? '600px' : '70px',
-          margin: searchOpen ? '0 16px' : '0',
+          flexShrink: 0,
+          width: searchOpen ? '100%' : 'auto',
+          maxWidth: searchOpen ? '600px' : 'none',
         }}
       >
         {!searchOpen ? (
           <button
             onClick={openSearch}
             aria-label="Open search — search artists, venues, events"
+            className="search-bar-bg"
             style={{
               background: 'none',
-              border: 'none',
+              border: '1.5px solid var(--border)',
               cursor: 'pointer',
-              padding: 0,
+              padding: '6px 14px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
+              gap: '8px',
+              borderRadius: '999px',
+              height: '38px',
             }}
           >
-            <Image
-              src="/myLocaljam_Logo_v7_transparent_031126.png"
-              alt="myLocalJam — click to search"
-              width={60}
-              height={60}
-              priority
-              className="jar-logo"
-              style={{ objectFit: 'contain' }}
-            />
+            <span style={{ fontSize: '14px', color: 'var(--text-muted)' }}>🔍</span>
+            <span style={{ fontSize: '14px', color: 'var(--text-muted)', fontFamily: 'Inter, sans-serif' }}>Search...</span>
           </button>
         ) : (
           <div
@@ -165,6 +144,29 @@ export default function SiteHeader({ onOpenSubmit }) {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Center: Logo — large and prominent */}
+      <div style={{
+        flex: 1,
+        display: searchOpen ? 'none' : 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        <a href="/" aria-label="myLocalJam home" style={{ display: 'flex', alignItems: 'center' }}>
+          <Image
+            src="/myLocaljam_Logo_v7_transparent_031126.png"
+            alt="myLocalJam"
+            width={220}
+            height={56}
+            priority
+            className="jar-logo"
+            style={{
+              objectFit: 'contain',
+              filter: 'drop-shadow(0 1px 4px rgba(0,0,0,0.18))',
+            }}
+          />
+        </a>
       </div>
 
       {/* Right: Add Button */}
