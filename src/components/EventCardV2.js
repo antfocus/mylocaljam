@@ -36,6 +36,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
   const borderColor = darkMode ? '#2A2A3A' : '#F3F4F6';
   const textPrimary = darkMode ? '#F0F0F5' : '#1F2937';
   const textMuted   = darkMode ? '#7878A0' : '#6B7280';
+  const venueColor  = darkMode ? '#4DB8B2' : '#2A8F8A';
   const textDesc    = darkMode ? '#AAAACC' : '#4B5563';
   const heartOff    = darkMode ? '#6A5A7A' : '#9B8A8E';
   const chevronCol  = darkMode ? '#5A5A7A' : '#9CA3AF';
@@ -86,7 +87,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
             </span>
             {venue && (
               <span style={{
-                fontSize: '11px', fontWeight: 500, color: textMuted,
+                fontSize: '11.5px', fontWeight: 600, color: venueColor,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
                 {venue}
@@ -138,7 +139,7 @@ export default function EventCardV2({ event, onReport, isFavorited = false, onTo
             <p style={{ fontSize: '14px', fontWeight: 800, color: textPrimary, margin: '8px 0 4px', lineHeight: 1.3 }}>
               {name}
             </p>
-            <p style={{ fontSize: '13px', color: textMuted, fontWeight: 500, margin: '0 0 6px' }}>
+            <p style={{ fontSize: '13px', color: venueColor, fontWeight: 600, margin: '0 0 6px' }}>
               📍 {venue}
             </p>
 
