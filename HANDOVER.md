@@ -263,6 +263,7 @@
 - **Wharfside Seafood and Patio Bar** — Not yet investigated
 - **Broadway Bar and Grill** — Not yet investigated
 - **Leggetts Sand Bar** (https://www.leggetts.us/calendar) — ❌ Investigated, cannot scrape. Wix site using Boomtech Boom Event Calendar widget (third-party app running in cross-origin iframe). No public API, no iCal export, no Wix Events API access, no event data in page source. Events are entirely locked inside the Boomtech iframe. Address: 217 1st Ave, Manasquan, NJ 08736. Revisit if they switch to a Google Calendar or other accessible platform.
+- **Heights 27** (https://www.heights27.com/calendar) — ❌ Investigated, cannot scrape. Wix site using native Wix Events TPA (third-party app). Events render entirely client-side inside an iframe — no SSR data, no public API, no iCal feed, no JSON-LD, no individual event pages, no sitemap entries. Tried: `_api/events-server/v1/events` (403 — needs instance auth), `_api/wix-one-events-server/html/v2/events` (404), Wix Data collections (404). Facebook page has no upcoming events. Address: 2407 NJ-71, Spring Lake Heights, NJ 07762. Revisit if they add a Google Calendar embed or if Wix opens a public events API.
 - User may add additional venues not on this list
 
 ### Last.fm Artist Enrichment ✅ Implemented
@@ -440,6 +441,7 @@ Once you've determined the approach:
 | `simcal-calendar`, Simple Calendar | Simple Calendar (WP) | Parse simcal HTML + AJAX for additional months |
 | `w-dyn-item`, Webflow attributes | Webflow CMS | Parse HTML dynamic list items (`role="listitem"`) |
 | `ticketbud.com` links or embeds | Ticketbud | Parse organizer page HTML (`.card.vertical`, `.event-title`, `.date`, `.time`). ⚠️ May be behind Cloudflare — test from Vercel first |
+| Wix Events TPA iframe (no `src`, title "Events Calendar") | Wix Events | ❌ Currently not scrapeable — events render client-side in iframe, no public API, needs instance auth |
 | Image poster only (no structured data) | Any | Hardcoded monthly events array |
 
 ---
@@ -454,6 +456,42 @@ const COLLECTION = 'events';  // from the event URL path
 // Slug from: item.urlId || item.fullUrl
 ```
 Working examples: Marina Grille (`schedule`), Anchor Tavern (`schedule`), R Bar (`events`)
+
+---
+
+## Logo Build
+
+### Version History
+| Version | File | Format | Notes |
+|---|---|---|---|
+| v1 (original) | `myLocaljam_Logo_v031126.jpg` | JPG (154K) | Initial logo, project root |
+| v2 | `myLocaljam_Logo_v2_031126.textClipping` | textClipping | macOS text clipping (not usable as image) |
+| v3 | `myLocaljam_Logo_v3_transparent_031126.png` | PNG (6.0M) | Transparent background version, project root |
+| v4 (waveform jar) | `public/myLocaljam_Logo_v4.png` | PNG (5.7M) | Mason jar with rainbow waveform design — used for PWA notifications (icon + badge) |
+| v5 | `public/myLocaljam_Logo_v5.png` | PNG (47K) | Optimized/compressed version in public |
+
+### Production Assets (in `public/`)
+- **`myLocaljam_Logo.png`** (7.8M) — full-size logo
+- **`myLocaljam_Logo_200.png`** (40K) — 200px version, used in site header (jar logo in center nav)
+- **`myLocaljam_Logo_104.png`** (13K) — 104px version, used on homepage hero
+- **`myLocaljam_Logo_v4.png`** (5.7M) — waveform jar design, used for PWA push notification icon & badge
+- **`myLocaljam_Logo_v5.png`** (47K) — latest optimized version
+
+### Where Logos Are Referenced
+- **`SiteHeader.js`** — center jar logo uses `myLocaljam_Logo_200.png`; text logo ("myLocalJam") rendered with CSS class `logo-text`
+- **`page.js` (homepage)** — hero section uses `myLocaljam_Logo_104.png`
+- **`SiteFooter.js`** — text-only logo with `logo-text` CSS class (no image)
+- **`notifications.js`** — PWA notifications use `myLocaljam_Logo_v4.png` for both `icon` and `badge`
+
+### Git History Notes
+- The waveform jar logo (v4) was added, then reverted, then reapplied, then reverted again across multiple commits (`8feadf0` → `41a88a3` → `48f8be4` → `e1689af`). The final state reverted the homepage redesign but kept the waveform logo files in `public/`.
+- Commit `cfe4e6b` (latest) reverted the styled-text logo attempt from `c16507b`.
+- **Revert files backup:** `revert-files/public/` contains copies of `myLocaljam_Logo_104.png` and `myLocaljam_Logo_200.png` from before the redesign attempts.
+
+### Notes
+- Several logo source files sit in the **project root** (v1 JPG, v2 textClipping, v3 transparent PNG) — these are design assets, not served by the app.
+- The full-size logos (v3 at 6MB, v4 at 5.7M, original at 7.8M) are very large for web. The production site uses the pre-sized 104px and 200px versions.
+- v5 (47K) appears to be the most optimized version but is not currently referenced in any component.
 
 ---
 
