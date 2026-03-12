@@ -360,28 +360,8 @@ export default function HomePage() {
           position: 'sticky', top: 0,
           minHeight: '60px',
         }}>
-          {/* Search bar — left */}
-          <div style={{
-            width: '120px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px',
-            background: darkMode ? '#14141E' : '#F3F4F6',
-            border: `1px solid ${darkMode ? '#2A2A3A' : '#E5E7EB'}`,
-            borderRadius: '20px', padding: '6px 12px',
-          }}>
-            <span style={{ fontSize: '12px', color: t.textMuted, flexShrink: 0 }}>🔍</span>
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ flex: 1, border: 'none', background: 'none', outline: 'none', fontSize: '13px', color: t.text, minWidth: 0 }}
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: '14px', flexShrink: 0, padding: 0 }}>✕</button>
-            )}
-          </div>
-
-          {/* Logo — truly centered, takes remaining space */}
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {/* Logo — left */}
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             <Image
               src="/myLocaljam_Logo_v7_transparent_031126.png"
               alt="myLocalJam"
@@ -395,6 +375,26 @@ export default function HomePage() {
                   : 'drop-shadow(0 1px 3px rgba(0,0,0,0.2))',
               }}
             />
+          </div>
+
+          {/* Search bar — center */}
+          <div style={{
+            flex: 1, display: 'flex', alignItems: 'center', gap: '6px',
+            background: darkMode ? '#14141E' : '#F3F4F6',
+            border: `1px solid ${darkMode ? '#2A2A3A' : '#E5E7EB'}`,
+            borderRadius: '20px', padding: '6px 12px',
+          }}>
+            <span style={{ fontSize: '12px', color: t.textMuted, flexShrink: 0 }}>🔍</span>
+            <input
+              type="text"
+              placeholder="Search artists, venues, events..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{ flex: 1, border: 'none', background: 'none', outline: 'none', fontSize: '13px', color: t.text, minWidth: 0 }}
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: '14px', flexShrink: 0, padding: 0 }}>✕</button>
+            )}
           </div>
 
           {/* Add to the Jar button */}
