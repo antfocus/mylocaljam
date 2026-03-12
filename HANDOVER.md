@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1100+ events** across 27 scrapers (as of March 11, 2026)
+**~1200+ events** across 30 scrapers (as of March 12, 2026)
 
 ---
 
@@ -30,7 +30,7 @@
 | 2 | Ticketmaster | `ticketmaster.js` | Ticketmaster API | ✅ Working | ~92 |
 | 3 | Joe's Surf Shack | `joesSurfShack.js` | Custom | ✅ Working | ~56 |
 | 4 | St. Stephen's Green | `stStephensGreen.js` | Google Calendar iCal | ✅ Working | ~65 |
-| 5 | McCann's Tavern | `mccanns.js` | Google Calendar iCal | ⚠️ Private calendar — returns 0. Contact venue to make public. | 0 |
+| 5 | McCann's Tavern | `mccanns.js` | Google Calendar iCal | ✅ Working (calendar ID fixed — was missing 's' in `jacksbythetracksnj`) | ~15+ |
 | 6 | Beach Haus | `beachHaus.js` | Custom | ✅ Working | ~35 |
 | 7 | Martell's Tiki Bar | `martells.js` | Timely API | ✅ Working | ~270 |
 | 8 | Bar Anticipation | `barAnticipation.js` | AILEC iCal + RDATE | ✅ Working | ~211 |
@@ -54,6 +54,8 @@
 | 26 | Tim McLoone's Supper Club | _(removed)_ | Ticketbud HTML | ❌ Blocked — all McLoone's domains behind Cloudflare+reCAPTCHA, blocks all datacenter IPs. Scraper removed. | 0 |
 | 27 | Windward Tavern | `windwardTavern.js` | Google Calendar iCal | ✅ Working | ~15+ |
 | 28 | Jamian's Food & Drink | `jamians.js` | Squarespace HTML (plain-text schedule) | ✅ Working | ~30+ |
+| 29 | The Cabin | `theCabin.js` | Squarespace GetItemsByMonth API | ✅ Working | ~13+ |
+| 30 | The Vogel | `theVogel.js` | WordPress HTML (custom event post type) | ✅ Working | ~51 |
 
 ---
 
@@ -232,6 +234,27 @@
 - **Start time rules:** Thu 8pm, Fri & Sat 9pm (per venue page note "Music starts Thurs 8pm Fri & Sat 9pm")
 - **Address:** 79 Monmouth Street, Red Bank, NJ 07701
 - **Note:** If recurring events duplicate monthly listings on the same date, the monthly listing takes priority (dedup by external_id)
+
+### The Cabin Restaurant (`theCabin.js`)
+- **URL:** https://www.thecabinnj.com/music
+- **Platform:** Squarespace — events displayed via Summary Block on /music page, backed by a hidden events collection
+- **Approach:** The `/music?format=json` endpoint returns type "page" (not "events") with no items. The events collection is referenced by the Summary Block's `data-block-json` attribute containing `collectionId: "6504675f2416e6466afd5e87"`. Uses Squarespace's open API: `/api/open/GetItemsByMonth?collectionId={id}&month={M-YYYY}`
+- **Collection ID:** `6504675f2416e6466afd5e87` (from Summary Block `data-block-json`)
+- **Schedule:** Thursdays 6-9pm, Fridays & Saturdays 8:30-11:30pm
+- **Address:** 839 NJ-71, Spring Lake Heights, NJ 07762
+- **Note:** If collection ID changes, inspect the `summary-v2-block` element on the /music page and check `data-block-json` for the new ID
+
+### The Vogel — Count Basie Center (`theVogel.js`)
+- **URL:** https://thebasie.org/venue/the-vogel/
+- **Platform:** WordPress with custom event post type — no REST API for events (404 on `/wp-json/wp/v2/events`)
+- **Approach:** Fetches venue page HTML, parses `<article class="event">` cards. Each card contains date/time text, title, ticket link, and image — all on one page (no pagination).
+- **Date/time text formats:**
+  - `"MARCH 12 • 7:30PM"` (month day • time)
+  - `"FRI • MARCH 13 • 8PM"` (day-of-week • month day • time)
+  - `"NEW DATE! FRI OCT 23 • 8PM"` (prefix note + day-of-week + month day • time)
+- **Year logic:** If month < current month, assumes next year
+- **Address:** 99 Monmouth St, Red Bank, NJ 07701
+- **Note:** ~51 events on one page. If pagination is added in the future, scraper will need updating.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
