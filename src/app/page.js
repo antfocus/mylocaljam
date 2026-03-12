@@ -13,7 +13,6 @@ import SubmitEventModal  from '@/components/SubmitEventModal';
 import ReportIssueModal  from '@/components/ReportIssueModal';
 import Toast             from '@/components/Toast';
 import FilterBar         from '@/components/FilterBar';
-import SectionHeading    from '@/components/SectionHeading';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 // Clean HTML entities that may have leaked through scrapers (e.g. &amp; → &)
@@ -444,7 +443,7 @@ export default function HomePage() {
 
         {/* ── Filter bar (home tab only) ─────────────────────────────── */}
         {activeTab === 'home' && (
-          <div style={{ paddingTop: '10px' }}>
+          <div style={{ padding: '10px 12px 0' }}>
             <FilterBar
               dateKey={dateKey}
               setDateKey={setDateKey}
@@ -453,9 +452,6 @@ export default function HomePage() {
               venues={venueListWithCounts}
               milesRadius={milesRadius}
               setMilesRadius={setMilesRadius}
-            />
-            <SectionHeading
-              dateKey={dateKey}
               eventCount={filteredEvents.length}
               hasActiveFilters={hasActiveFilters}
               onClearFilters={clearAllFilters}
