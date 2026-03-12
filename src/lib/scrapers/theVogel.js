@@ -97,8 +97,8 @@ function parseDateTimeLine(line) {
 function parseEvents(html) {
   const events = [];
 
-  // Split on article.event boundaries
-  const cardPattern = /<article\s+class="event">([\s\S]*?)<\/article>/gi;
+  // Split on article.event boundaries (may have extra attributes like itemscope)
+  const cardPattern = /<article\s+class="event"[^>]*>([\s\S]*?)<\/article>/gi;
   let match;
 
   while ((match = cardPattern.exec(html)) !== null) {
@@ -113,7 +113,8 @@ function parseEvents(html) {
     const imageUrl = imgMatch ? imgMatch[1] : null;
 
     // Extract title: look for heading tags or specific class
-    const titleMatch = card.match(/<(?:h[1-6])[^>]*class="[^"]*event__title[^"]*"[^>]*>([\s\S]*?)<\/(?:h[1-6])>/i)
+    const titleMatch = card.match(/<(?:h[1-6])[^>]*class="[^"]*event-title[^"]*"[^>]*>([\s\S]*?)<\/(?:h[1-6])>/i)
+      || card.match(/<(?:h[1-6])[^>]*class="[^"]*event__title[^"]*"[^>]*>([\s\S]*?)<\/(?:h[1-6])>/i)
       || card.match(/<(?:h[1-6])[^>]*>([\s\S]*?)<\/(?:h[1-6])>/i);
     let title = null;
     if (titleMatch) {
@@ -121,7 +122,8 @@ function parseEvents(html) {
     }
 
     // Extract date/time: look for the date element or parse from text
-    const dateElMatch = card.match(/<[^>]*class="[^"]*event__date[^"]*"[^>]*>([\s\S]*?)<\/[^>]+>/i);
+    const dateElMatch = card.match(/<[^>]*class="[^"]*event-showDate[^"]*"[^>]*>([\s\S]*?)<\/[^>]+>/i)
+      || card.match(/<[^>]*class="[^"]*event__date[^"]*"[^>]*>([\s\S]*?)<\/[^>]+>/i);
     let dateTimeLine = null;
     if (dateElMatch) {
       dateTimeLine = dateElMatch[1].replace(/<[^>]*>/g, '').trim();
