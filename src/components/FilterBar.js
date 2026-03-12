@@ -195,6 +195,19 @@ export default function FilterBar({
           </button>
 
           <Dropdown open={openPanel === 'venue'} align="left" minWidth={200}>
+            {/* Sticky "Any" reset option */}
+            <button onClick={() => { setActiveVenues([]); closeAll(); }} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              width: '100%', padding: '9px 12px',
+              background: !venueActive ? C.purpleTint : 'transparent',
+              border: 'none', borderBottom: `1px solid ${C.divider}`,
+              cursor: 'pointer', transition: 'background 0.12s',
+            }}>
+              <span style={{ fontSize: '12px', fontWeight: !venueActive ? 700 : 500, color: !venueActive ? C.purple : C.text }}>
+                Any (All Venues)
+              </span>
+              {!venueActive && <span style={{ fontSize: '11px', color: C.purple }}>✓</span>}
+            </button>
             <div style={{ padding: '8px 10px', borderBottom: `1px solid ${C.divider}` }}>
               <input
                 type="text" placeholder="Search venues..."
