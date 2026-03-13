@@ -29,6 +29,7 @@ import { scrapeJamians } from '@/lib/scrapers/jamians';
 import { scrapeTheCabin } from '@/lib/scrapers/theCabin';
 import { scrapeTheVogel } from '@/lib/scrapers/theVogel';
 import { scrapeSunHarbor } from '@/lib/scrapers/sunHarbor';
+import { scrapeBumRogers } from '@/lib/scrapers/bumRogers';
 // Tim McLoone's removed — all McLoone's domains behind Cloudflare+reCAPTCHA, blocks all datacenter IPs
 // Source: mcloones.ticketbud.com (Ticketbud organizer page) — revisit if a workaround is found
 
@@ -137,7 +138,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -166,6 +167,7 @@ export async function POST(request) {
     scrapeTheCabin(),
     scrapeTheVogel(),
     scrapeSunHarbor(),
+    scrapeBumRogers(),
   ]);
 
   const scraperResults = {
@@ -197,6 +199,7 @@ export async function POST(request) {
     TheCabin: { count: theCabin.events.length, error: theCabin.error },
     TheVogel: { count: theVogel.events.length, error: theVogel.error },
     SunHarbor: { count: sunHarbor.events.length, error: sunHarbor.error },
+    BumRogers: { count: bumRogers.events.length, error: bumRogers.error },
   };
 
   // Combine all events
@@ -229,6 +232,7 @@ export async function POST(request) {
     ...theCabin.events,
     ...theVogel.events,
     ...sunHarbor.events,
+    ...bumRogers.events,
   ].map(ev => mapEvent(ev, venueMap));
 
   // Filter out events with no external_id or date, and deduplicate by external_id

@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1200+ events** across 31 scrapers (as of March 12, 2026)
+**~1200+ events** across 32 scrapers (as of March 12, 2026)
 
 ---
 
@@ -57,6 +57,7 @@
 | 29 | The Cabin | `theCabin.js` | Squarespace GetItemsByMonth API | ✅ Working | ~13+ |
 | 30 | The Vogel | `theVogel.js` | WordPress HTML (custom event post type) | ✅ Working | ~51 |
 | 31 | Sun Harbor Seafood and Grill | `sunHarbor.js` | Squarespace JSON API | ✅ Working | ~19 |
+| 32 | Bum Rogers Tavern | `bumRogers.js` | HTML parsing (Astro/BentoBox) | ✅ Working | ~2 |
 
 ---
 
@@ -264,6 +265,14 @@
 - **Collection:** `events` (visible in event link paths: `/events/{slug}`)
 - **Address:** 1 Channel Dr, Monmouth Beach, NJ 07750
 - **Note:** Same pattern as Anchor Tavern scraper. ~19 upcoming events typically. If JSON API stops working, check if collection name changed.
+
+### Bum Rogers Tavern (`bumRogers.js`)
+- **URL:** https://bumrogerstavern.com/events
+- **Platform:** Astro-based site (BentoBox/Mercury restaurant platform) — static HTML
+- **Approach:** Fetches HTML page, parses `<a class="event-card">` elements. Each card has `<h3>` for title and `<p>` for date/time text. Links have individual event URLs.
+- **Date format:** "Tuesday, March 17, 2026 7-10 PM, repeats"
+- **Address:** 80 Shrewsbury Ave, Highlands, NJ 07732
+- **Note:** Currently only ~2 recurring events. Scraper will pick up new events as they're added to the page.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
