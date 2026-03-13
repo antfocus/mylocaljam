@@ -11,7 +11,7 @@ import MapView           from '@/components/MapView';
 import SubmitEventModal  from '@/components/SubmitEventModal';
 import ReportIssueModal  from '@/components/ReportIssueModal';
 import Toast             from '@/components/Toast';
-import FilterBar         from '@/components/FilterBar';
+// FilterBar removed — filters now live in the omnibar panel
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 // Clean HTML entities that may have leaked through scrapers (e.g. &amp; → &)
@@ -102,6 +102,9 @@ export default function HomePage() {
   const [milesRadius,    setMilesRadius]    = useState(null);  // null = any distance
   const [showSubmit,     setShowSubmit]     = useState(false);
   const [reportEvent,    setReportEvent]    = useState(null);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [activeFilterCard, setActiveFilterCard] = useState(null); // 'when' | 'venue' | 'distance'
+  const [venueSearch, setVenueSearch] = useState('');
 
   // ── Bottom nav hide-on-scroll ───────────────────────────────────────────────
   const [navHidden, setNavHidden] = useState(false);
@@ -356,11 +359,26 @@ export default function HomePage() {
   }
 
   const hasActiveFilters = dateKey !== 'all' || activeVenues.length > 0 || milesRadius !== null;
+  const activeFilterCount = [dateKey !== 'all', activeVenues.length > 0, milesRadius !== null].filter(Boolean).length;
   const clearAllFilters = useCallback(() => {
     setDateKey('all');
     setActiveVenues([]);
     setMilesRadius(null);
+    setFiltersExpanded(false);
+    setActiveFilterCard(null);
   }, []);
+
+  // Filter panel labels
+  const whenLabel = DATE_OPTIONS.find(o => o.key === dateKey)?.label || 'All Upcoming';
+  const venueLabel = activeVenues.length === 0 ? 'Any Venue' : activeVenues.length === 1 ? activeVenues[0] : `${activeVenues.length} venues`;
+  const distanceLabel = milesRadius === null ? 'Any distance' : `${milesRadius} mi`;
+
+  // Filtered venues for search inside panel
+  const filteredPanelVenues = useMemo(() => {
+    if (!venueSearch.trim()) return venueListWithCounts;
+    const q = venueSearch.toLowerCase();
+    return venueListWithCounts.filter(v => v.name.toLowerCase().includes(q));
+  }, [venueListWithCounts, venueSearch]);
 
   // ── Shared styles ────────────────────────────────────────────────────────────
   const dateSeparatorStyle = {
@@ -399,39 +417,326 @@ export default function HomePage() {
             </span>
           </div>
 
-          {/* Search bar — center */}
-          <div style={{
-            flex: 1, display: 'flex', alignItems: 'center', gap: '6px',
-            background: darkMode ? '#14141E' : '#F3F4F6',
-            border: `1px solid ${darkMode ? '#2A2A3A' : '#E5E7EB'}`,
-            borderRadius: '20px', padding: '6px 12px',
-          }}>
-            <span style={{ fontSize: '12px', color: t.textMuted, flexShrink: 0 }}>🔍</span>
-            <input
-              type="text"
-              placeholder="Search artists, venues, events..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ flex: 1, border: 'none', background: 'none', outline: 'none', fontSize: '13px', color: t.text, minWidth: 0 }}
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: '14px', flexShrink: 0, padding: 0 }}>✕</button>
-            )}
-          </div>
+          {/* Spacer */}
+          <div style={{ width: '6px', flexShrink: 0 }} />
 
-          {/* Add to the Jar button */}
+          {/* Omnibar pill — Glow & Badge */}
+          <button onClick={() => setFiltersExpanded(e => !e)} style={{
+            display: 'flex', alignItems: 'center', gap: '6px', flex: 1,
+            padding: '7px 10px',
+            background: darkMode ? '#14141E' : '#F3F4F6',
+            border: `1px solid ${
+              filtersExpanded ? t.accentAlt
+              : hasActiveFilters ? t.accentAlt
+              : (darkMode ? '#2A2A3A' : '#E5E7EB')
+            }`,
+            borderRadius: '20px', cursor: 'pointer', position: 'relative',
+            boxShadow: filtersExpanded
+              ? `0 0 0 1px ${t.accentAlt}40, 0 0 8px ${t.accentAlt}25`
+              : hasActiveFilters
+                ? `0 0 6px ${t.accentAlt}30, 0 0 12px ${t.accentAlt}15`
+                : 'none',
+            transition: 'all 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
+          }}>
+            {/* Search icon */}
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={hasActiveFilters ? t.accentAlt : t.textMuted} />
+            </svg>
+            <span style={{
+              fontSize: '12px', fontWeight: 500,
+              color: filtersExpanded ? t.accentAlt : t.textMuted,
+              fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+              transition: 'color 0.2s ease',
+            }}>
+              Search / Filters
+            </span>
+            {/* Active filter pills inline */}
+            {hasActiveFilters && !filtersExpanded && (
+              <div style={{ display: 'flex', gap: '3px', alignItems: 'center', overflow: 'hidden', flex: 1, minWidth: 0 }}>
+                <span style={{ color: t.textMuted, fontSize: '8px', opacity: 0.5, flexShrink: 0 }}>|</span>
+                {dateKey !== 'all' && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: t.accentAlt, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" fill={t.accentAlt} /></svg>
+                    {{ today: 'Today', tomorrow: 'Tmrw', weekend: 'Wknd' }[dateKey] || dateKey}
+                  </span>
+                )}
+                {milesRadius !== null && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: t.accentAlt, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={t.accentAlt} /></svg>
+                    {milesRadius}mi
+                  </span>
+                )}
+                {activeVenues.length > 0 && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: t.accentAlt, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.22 0-4.01 1.79-4.01 4.01S7.79 21 10.01 21 14 19.21 14 17V7h4V3h-6z" fill={t.accentAlt} /></svg>
+                    {activeVenues.length}
+                  </span>
+                )}
+              </div>
+            )}
+            {(!hasActiveFilters || filtersExpanded) && <div style={{ flex: 1 }} />}
+            {/* Right: close, badge, or tune icon */}
+            {filtersExpanded ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.accentAlt} />
+              </svg>
+            ) : hasActiveFilters ? (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: '2px',
+                fontSize: '9px', fontWeight: 700, color: darkMode ? '#1E1E2A' : '#FFFFFF',
+                background: t.accentAlt, borderRadius: '8px',
+                padding: '1px 5px', flexShrink: 0, lineHeight: '14px',
+              }}>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill={darkMode ? '#1E1E2A' : '#FFFFFF'} /></svg>
+                {activeFilterCount}
+              </span>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, opacity: 0.4 }}>
+                <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill={t.textMuted} />
+              </svg>
+            )}
+          </button>
+
+          {/* Add to the Jar FAB */}
           <button
             onClick={() => setShowSubmit(true)}
             title="Add to the Jar"
             style={{
-              width: '30px', height: '30px', borderRadius: '50%', border: `2px solid ${t.accent}`,
+              width: '30px', height: '30px', borderRadius: '50%', border: 'none',
               background: t.accent,
               cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '18px', fontWeight: 700, color: 'white', lineHeight: 1,
             }}>
-            +
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="white" /></svg>
           </button>
         </header>
+
+        {/* ── Filter Panel (expands from header) ─────────────────────── */}
+        <div style={{
+          maxHeight: filtersExpanded ? '500px' : '0px',
+          opacity: filtersExpanded ? 1 : 0,
+          overflow: 'hidden',
+          transition: filtersExpanded
+            ? 'max-height 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease'
+            : 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease',
+          background: darkMode ? '#1A1A28' : '#F2F0ED',
+          borderBottom: filtersExpanded ? `1px solid ${t.border}` : 'none',
+          position: 'relative', zIndex: 99,
+        }}>
+          {activeTab === 'home' && (
+            <div style={{ padding: '6px 12px 8px' }}>
+              <div style={{
+                borderRadius: '12px', overflow: 'hidden',
+                boxShadow: darkMode ? '0 4px 20px rgba(0,0,0,0.4)' : '0 2px 12px rgba(0,0,0,0.08)',
+                background: darkMode ? '#20202E' : '#F5F3F0',
+              }}>
+                {/* Search input */}
+                <div style={{
+                  padding: '8px 12px',
+                  borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  background: darkMode ? '#262636' : '#FFFFFF',
+                  borderRadius: '12px 12px 0 0',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={t.textMuted} /></svg>
+                    <input
+                      type="text"
+                      placeholder="Search artists, venues, events..."
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      style={{
+                        flex: 1, border: 'none', background: 'none', outline: 'none',
+                        fontSize: '12px', color: t.text, fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    />
+                    {searchQuery && (
+                      <button onClick={() => setSearchQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.textMuted} /></svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* WHEN card */}
+                <div style={{
+                  borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  background: darkMode ? '#262636' : '#FFFFFF',
+                }}>
+                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'when' ? null : 'when')} style={{
+                    display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" fill={t.accent} /></svg>
+                    <div style={{ flex: 1, textAlign: 'left' }}>
+                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: t.accent, lineHeight: 1, marginBottom: '2px' }}>When</div>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{whenLabel}</div>
+                    </div>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'when' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accent} strokeWidth="1.5" fill="none" /></svg>
+                  </button>
+                  {activeFilterCard === 'when' && (
+                    <div style={{ padding: '0 12px 8px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {DATE_OPTIONS.map(opt => (
+                          <button key={opt.key} onClick={() => { setDateKey(opt.key); setActiveFilterCard(null); }} style={{
+                            padding: '5px 10px', borderRadius: '14px', border: 'none', cursor: 'pointer',
+                            background: dateKey === opt.key ? t.accent : (darkMode ? '#2A2A3C' : '#E8E6E2'),
+                            color: dateKey === opt.key ? '#fff' : t.text,
+                            fontSize: '10px', fontWeight: dateKey === opt.key ? 700 : 500,
+                            fontFamily: "'DM Sans', sans-serif",
+                          }}>
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* DISTANCE card */}
+                <div style={{
+                  borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  background: darkMode ? '#262636' : '#FFFFFF',
+                }}>
+                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'distance' ? null : 'distance')} style={{
+                    display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={t.accentAlt} /></svg>
+                    <div style={{ flex: 1, textAlign: 'left' }}>
+                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: t.accentAlt, lineHeight: 1, marginBottom: '2px' }}>Distance</div>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{distanceLabel}</div>
+                    </div>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accentAlt} strokeWidth="1.5" fill="none" /></svg>
+                  </button>
+                  {activeFilterCard === 'distance' && (
+                    <div style={{ padding: '0 12px 8px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
+                        {[5, 10, 15, 25, null].map(val => (
+                          <button key={val ?? 'any'} onClick={() => { setMilesRadius(val); setActiveFilterCard(null); }} style={{
+                            padding: '5px 10px', borderRadius: '14px', border: 'none', cursor: 'pointer',
+                            background: milesRadius === val ? t.accentAlt : (darkMode ? '#2A2A3C' : '#E8E6E2'),
+                            color: milesRadius === val ? '#fff' : t.text,
+                            fontSize: '10px', fontWeight: milesRadius === val ? 700 : 500,
+                            fontFamily: "'DM Sans', sans-serif",
+                          }}>
+                            {val === null ? 'Any' : `${val} mi`}
+                          </button>
+                        ))}
+                      </div>
+                      {milesRadius !== null && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '9px', color: t.textMuted }}>1</span>
+                          <input type="range" min="1" max="50" value={milesRadius || 15}
+                            onChange={e => setMilesRadius(parseInt(e.target.value))}
+                            style={{
+                              flex: 1, height: '3px', appearance: 'none', WebkitAppearance: 'none',
+                              background: `linear-gradient(to right, ${t.accentAlt} ${((milesRadius || 15) - 1) / 49 * 100}%, ${darkMode ? '#2A2A3A' : '#DDD'} 0%)`,
+                              borderRadius: '2px', outline: 'none', cursor: 'pointer', accentColor: t.accentAlt,
+                            }}
+                          />
+                          <span style={{ fontSize: '9px', color: t.textMuted }}>50</span>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: t.accentAlt, minWidth: '34px', textAlign: 'right' }}>{milesRadius} mi</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* VENUE card */}
+                <div style={{
+                  background: darkMode ? '#262636' : '#FFFFFF',
+                }}>
+                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'venue' ? null : 'venue')} style={{
+                    display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.22 0-4.01 1.79-4.01 4.01S7.79 21 10.01 21 14 19.21 14 17V7h4V3h-6z" fill="#a78bfa" /></svg>
+                    <div style={{ flex: 1, textAlign: 'left' }}>
+                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: '#a78bfa', lineHeight: 1, marginBottom: '2px' }}>Venue</div>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{venueLabel}</div>
+                    </div>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'venue' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke="#a78bfa" strokeWidth="1.5" fill="none" /></svg>
+                  </button>
+                  {activeFilterCard === 'venue' && (
+                    <div style={{ padding: '0 12px 8px' }}>
+                      <input type="text" placeholder="Search venues..." value={venueSearch} onChange={e => setVenueSearch(e.target.value)} autoFocus
+                        style={{
+                          width: '100%', padding: '5px 8px', borderRadius: '6px',
+                          border: `1px solid ${darkMode ? '#2E2E40' : '#DDD'}`, background: t.inputBg,
+                          color: t.text, fontSize: '11px', outline: 'none', marginBottom: '4px',
+                          fontFamily: "'DM Sans', sans-serif", boxSizing: 'border-box',
+                        }}
+                      />
+                      <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                        {activeVenues.length > 0 && (
+                          <button onClick={() => setActiveVenues([])} style={{
+                            background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', marginBottom: '2px',
+                            fontSize: '10px', color: '#a78bfa', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+                          }}>
+                            <svg width="8" height="8" viewBox="0 0 24 24" style={{ verticalAlign: 'middle', marginRight: '2px' }}><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="#a78bfa" /></svg>
+                            Clear
+                          </button>
+                        )}
+                        {filteredPanelVenues.map(v => {
+                          const checked = activeVenues.includes(v.name);
+                          return (
+                            <button key={v.name} onClick={() => setActiveVenues(prev => checked ? prev.filter(n => n !== v.name) : [...prev, v.name])} style={{
+                              display: 'flex', alignItems: 'center', gap: '6px', width: '100%',
+                              padding: '5px 4px', background: checked ? 'rgba(167,139,250,0.08)' : 'transparent',
+                              border: 'none', cursor: 'pointer', borderRadius: '4px',
+                              fontFamily: "'DM Sans', sans-serif",
+                            }}>
+                              <div style={{
+                                width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0,
+                                border: checked ? 'none' : '1.5px solid #4A4A6A',
+                                background: checked ? '#a78bfa' : 'transparent',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}>
+                                {checked && <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                              </div>
+                              <span style={{ fontSize: '11px', fontWeight: checked ? 600 : 400, color: checked ? '#a78bfa' : t.text, flex: 1, textAlign: 'left' }}>{v.name}</span>
+                              <span style={{ fontSize: '9px', color: t.textMuted }}>{v.count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Action bar */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 12px', background: darkMode ? '#262636' : '#FFFFFF',
+                  borderTop: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
+                  borderRadius: '0 0 12px 12px',
+                }}>
+                  <button onClick={clearAllFilters} style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: '11px', fontWeight: 600, color: t.textMuted,
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    Clear all
+                  </button>
+                  <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
+                    padding: '7px 18px', borderRadius: '8px', border: 'none',
+                    background: t.accent, color: 'white', cursor: 'pointer',
+                    fontSize: '11px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    Show {filteredEvents.length} events
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Scrim overlay when filter panel is open */}
+        {filtersExpanded && (
+          <div onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 98,
+            background: 'rgba(0,0,0,0.3)',
+          }} />
+        )}
 
         {/* ── Hero (home tab only) ──────────────────────────────────────── */}
         {activeTab === 'home' && (
@@ -439,24 +744,7 @@ export default function HomePage() {
         )}
 
 
-        {/* ── Filter bar (home tab only) ─────────────────────────────── */}
-        {activeTab === 'home' && (
-          <div style={{ padding: '10px 16px 0' }}>
-            <FilterBar
-              dateKey={dateKey}
-              setDateKey={setDateKey}
-              activeVenues={activeVenues}
-              setActiveVenues={setActiveVenues}
-              venues={venueListWithCounts}
-              milesRadius={milesRadius}
-              setMilesRadius={setMilesRadius}
-              eventCount={filteredEvents.length}
-              hasActiveFilters={hasActiveFilters}
-              onClearFilters={clearAllFilters}
-              darkMode={darkMode}
-            />
-          </div>
-        )}
+        {/* FilterBar removed — filters now live in the omnibar panel */}
 
 
         {/* ── Saved view ───────────────────────────────────────────────── */}

@@ -296,6 +296,144 @@
 
 ---
 
+## Dev Redesign — Search, Filter & "Saved" Ecosystem
+
+### Overview
+A standalone prototype for the redesigned search, filter, and saved-events experience. Built as a separate component at `/redesign` to iterate without touching the production UI. Mobile-first (480px max-width), dark/light mode, inline styles following the project's existing pattern (no Tailwind/CSS modules).
+
+**File:** `src/components/SearchFilterRedesign.js` (~1290 lines)
+**Route:** `src/app/redesign/page.js` — standalone page that renders the prototype
+**URL:** `localhost:3000/redesign` (dev) or `mylocaljam.com/redesign` (if deployed)
+
+### Architecture
+
+- **Single-file component** with `'use client'` directive
+- **Theme system:** `DARK` and `LIGHT` theme objects with color tokens (`bg`, `surface`, `text`, `textMuted`, `accent` `#E8722A`, `accentAlt` `#3AADA0`, `purple` `#a78bfa`, `border`)
+- **Lifted state pattern:** All filter state lives in the parent `SearchFilterRedesign` component and is passed down to child components (`UnifiedSearchBlock`, `FilterSummary`, `EventCard`, etc.)
+- **Mock data:** 8 sample events across 5 venues for prototype testing
+- **Google Material Design icons:** All icons are inline SVG paths from Material Design (search, tune, close, location_on, event, music_note, person, home, favorite, add) — no emoji used anywhere
+
+### Components
+
+| Component | Purpose |
+|---|---|
+| `SearchFilterRedesign` | Parent container — holds all state, renders hero, filter summary, event list, bottom nav |
+| `UnifiedSearchBlock` | The omnibar search/filter pill + expandable filter panel with Where/When/Venue/Artist sections |
+| `FilterSummary` | **Removed** — was a compact bar below hero; now redundant since the omnibar shows active filter pills inline. "Clear all" lives inside the expanded filter panel instead. |
+| `EventCard` | Individual event row with time badge, venue icon, title, venue name, save heart |
+| `MaterialIcon` | Helper that renders location/calendar/venue/artist SVG icons by name |
+
+### Filter System
+
+**Filter state object:**
+```javascript
+{
+  radius: 15,              // miles (default 15)
+  dateFilter: 'all',       // 'all' | 'today' | 'tomorrow' | 'weekend' | 'pick'
+  pickedDate: '',           // YYYY-MM-DD when dateFilter === 'pick'
+  showDatePicker: false,
+  selectedVenues: [],       // array of venue name strings
+  selectedArtists: [],      // array of artist name strings
+}
+```
+
+**Active filter detection:**
+```javascript
+const hasActiveFilters = filters.radius !== 15 || filters.dateFilter !== 'all' || filters.selectedVenues.length > 0 || filters.selectedArtists.length > 0;
+```
+
+**Dynamic event count:** Uses `useMemo` to filter `MOCK_EVENTS` by date, selected venues, and selected artists. The count updates live as filters change.
+
+**Individual filter clearing:** `clearSingleFilter(filterKey)` switch/case function handles resetting radius, date, venues, or artists independently. Each filter chip in `FilterSummary` has an × button that calls this.
+
+**Clear all:** `clearAllFilters()` resets the entire filter state object to defaults and collapses the filter panel.
+
+### Search Bar (Omnibar) Behavior — "Glow & Badge" Approach
+
+The search bar is a clickable pill that toggles the filter panel open/closed. Uses the brand's secondary **Teal/Mint** (`#3AADA0`) color for the active/filtered state — intentionally avoiding primary Orange to prevent visual competition with the `+` FAB and "Featured" tags. It has three visual states:
+
+1. **Default (no filters):** Dark background (`#1E1E2A`), muted grey text "Search / Filters", muted search and tune icons, subtle dark border
+2. **Filters active, panel closed ("Glow & Badge"):**
+   - Container border changes to solid 1px Teal
+   - Subtle low-opacity Teal `box-shadow` outer glow
+   - Search icon turns Teal
+   - "Search / Filters" text remains visible (never overwritten — preserves search context)
+   - Active filter pills appear inline after the text, each with a small Teal Material Design icon + abbreviated label (e.g., calendar + "Today", music note + "1", person + "2")
+   - Right side shows a solid Teal badge pill with tune icon + active filter count (e.g., "2")
+   - Layout example: `[ Search / Filters | calendar Today  music 1 | badge 2 ]`
+3. **Panel expanded:** Teal border + glow, Teal "Search / Filters" text, close × icon in Teal replaces tune icon, filter pills hidden
+
+**UX Rules:**
+- Rule 1: Never overwrite the user's search text — filter indicators are additive
+- Rule 2: The moment all filters are cleared/reverted to defaults, the Teal border/glow disappears and the bar returns to its inactive dark grey state
+
+### Filter Panel (Expandable)
+
+Opens below the omnibar with a spring-like CSS transition (`max-height` + `opacity` with cubic-bezier curves). Contains four collapsible sections:
+
+- **WHERE:** Location display + radius slider (5–50 miles)
+- **WHEN:** Date filter chips (All Upcoming, Today, Tomorrow, This Weekend, Pick a Date) with optional date picker
+- **VENUE:** Searchable venue list with checkboxes, event counts per venue, "Clear" link
+- **ARTIST:** Searchable artist list with checkboxes, event counts per artist, "Clear" link
+
+Each section has a colored icon (green location, orange calendar, purple venue, teal artist) and expands/collapses independently with the `activeCard` state.
+
+**"Show N events" button** at the bottom closes the panel and shows the filtered count.
+
+### Filter Summary Bar — Removed
+
+Previously a compact row between hero and event list showing event count, teal filter chips, and "Clear all" link. **Removed** to maximize vertical screen real estate — the omnibar's inline filter pills and badge now serve the same purpose. The "Clear all" button remains prominently accessible inside the expanded filter panel (bottom-left, next to "Show N events").
+
+### Bottom Navigation
+
+Three-tab bottom nav bar with Material Design SVG icons: Home (house), Saved (heart), Profile (person). Home tab highlighted in orange accent by default.
+
+### Theme Toggle
+
+Small button in the top bar (next to the omnibar) toggles between dark and light mode. All colors reference the `t` theme object so the entire UI switches instantly.
+
+### Key Design Decisions
+
+- **Color hierarchy:** Primary Orange (`#E8722A`) reserved for CTAs, FAB, featured tags, and event time badges. Secondary Teal/Mint (`#3AADA0`) used for active/filtered states on the omnibar and filter chips — avoids visual competition with primary actions.
+- **No emojis anywhere:** All icons use Google Material Design inline SVG paths (search, tune, close, location, calendar, music_note, person, home, heart, add, sun, moon).
+- **Inline styles over CSS:** Matches the existing project pattern. All styles are computed from the theme object `t` using ternary expressions for dark/light mode.
+- **Container Transform animation:** The filter panel uses CSS `max-height` transitions (0 → 600px) with spring-like `cubic-bezier(0.32, 0.72, 0, 1)` timing for a Material Design feel.
+- **Mobile-first 480px container:** Centered with `margin: '0 auto'` — designed for phone screens first.
+- **Font:** DM Sans throughout, loaded via Google Fonts link in the head.
+
+### Phase 1 — Production Integration (Shipped)
+
+The following elements from the redesign prototype have been integrated into the production `src/app/page.js`:
+
+**What shipped:**
+- **Header Omnibar:** Replaced the old emoji search input + `FilterBar` component with the unified Glow & Badge omnibar pill. Teal active state, inline filter pills, badge count — all wired to production state (`dateKey`, `activeVenues`, `milesRadius`, `searchQuery`).
+- **Expandable filter panel:** Morphs open from the header with spring animation. Contains Search input, When (date chips), Distance (presets + slider), and Venue (searchable checklist with real venue data from Supabase). "Clear all" and "Show N events" buttons at the bottom.
+- **FilterBar removed:** The old horizontal filter bar between hero and event list is gone. The `FilterBar` component import was removed from `page.js`. The component file (`FilterBar.js`) still exists but is no longer used.
+- **Summary row removed:** No secondary filter summary row — the omnibar handles all active filter indication.
+- **Scrim overlay:** Semi-transparent backdrop when filter panel is open; clicking it closes the panel.
+- **`+` FAB:** Replaced the old text "+" button with a Material Design SVG add icon inside the orange circle.
+
+**What was NOT changed:**
+- Hero section ("Featured Tonight" / "Tonight's Spotlight") — completely untouched
+- Event cards, event list rendering, date separators — unchanged
+- Bottom navigation — unchanged
+- Saved/Profile tabs — unchanged
+- All existing filter logic (`filteredEvents`, `groupedEvents`, etc.) — unchanged, just wired to new UI
+
+**New state variables added to `page.js`:**
+- `filtersExpanded` — boolean, controls filter panel open/close
+- `activeFilterCard` — `'when'` | `'venue'` | `'distance'` | null, controls which section is expanded
+- `venueSearch` — string, search text inside the venue filter list
+
+### What's Next
+
+- **Saved/favorites functionality** — wire the heart icons to Supabase `user_favorite_artists` / `user_favorite_venues` tables
+- **Geolocation** — use browser geolocation API for the distance filter instead of hardcoded location
+- **Artist filter** — add an artist search/filter card to the panel (currently only in the prototype, not production)
+- **Clean up** — remove `FilterBar.js` component file if confirmed no longer needed
+
+---
+
 ## Immediate Action Items
 - **Push all local commits:** `cd ~/Documents/mylocaljam && git push origin main`
 - **Run sync** to refresh events with corrected DST offsets and image_url passthrough
