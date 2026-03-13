@@ -647,11 +647,11 @@ export default function HomePage() {
                     <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accentAlt} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'distance' && (
-                    <div style={{ padding: '0 12px 8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {/* Row 1: Location input */}
+                    <div style={{ padding: '0 12px 6px' }}>
+                      {/* Location input */}
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: '6px',
-                        padding: '6px 8px', borderRadius: '8px',
+                        padding: '6px 8px', borderRadius: '8px', marginBottom: '4px',
                         border: `1px solid ${darkMode ? '#2E2E40' : '#DDD'}`,
                         background: t.inputBg,
                       }}>
@@ -674,26 +674,19 @@ export default function HomePage() {
                           </button>
                         )}
                       </div>
-                      {/* Row 2: Radius slider with live value */}
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '10px', fontWeight: 600, color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>Radius</span>
-                          <span style={{ fontSize: '11px', fontWeight: 700, color: t.accentAlt, fontFamily: "'DM Sans', sans-serif" }}>
-                            {milesRadius === null ? 'Any distance' : `${milesRadius} mi`}
-                          </span>
-                        </div>
+                      {/* Slider with inline value */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <input type="range" min="0" max="50" value={milesRadius ?? 0}
                           onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v === 0 ? null : v); }}
                           style={{
-                            width: '100%', height: '4px', appearance: 'none', WebkitAppearance: 'none',
+                            flex: 1, height: '4px', appearance: 'none', WebkitAppearance: 'none',
                             background: `linear-gradient(to right, ${t.accentAlt} ${((milesRadius ?? 0) / 50) * 100}%, ${darkMode ? '#2A2A3A' : '#DDD'} 0%)`,
                             borderRadius: '2px', outline: 'none', cursor: 'pointer', accentColor: t.accentAlt,
                           }}
                         />
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
-                          <span style={{ fontSize: '8px', color: t.textSubtle }}>Any</span>
-                          <span style={{ fontSize: '8px', color: t.textSubtle }}>50 mi</span>
-                        </div>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: t.accentAlt, minWidth: '36px', textAlign: 'right', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>
+                          {milesRadius === null ? 'Any' : `${milesRadius} mi`}
+                        </span>
                       </div>
                     </div>
                   )}
