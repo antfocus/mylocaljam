@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1200+ events** across 30 scrapers (as of March 12, 2026)
+**~1200+ events** across 31 scrapers (as of March 12, 2026)
 
 ---
 
@@ -56,6 +56,7 @@
 | 28 | Jamian's Food & Drink | `jamians.js` | Squarespace HTML (plain-text schedule) | ✅ Working | ~30+ |
 | 29 | The Cabin | `theCabin.js` | Squarespace GetItemsByMonth API | ✅ Working | ~13+ |
 | 30 | The Vogel | `theVogel.js` | WordPress HTML (custom event post type) | ✅ Working | ~51 |
+| 31 | Sun Harbor Seafood and Grill | `sunHarbor.js` | Squarespace JSON API | ✅ Working | ~19 |
 
 ---
 
@@ -255,6 +256,14 @@
 - **Year logic:** If month < current month, assumes next year
 - **Address:** 99 Monmouth St, Red Bank, NJ 07701
 - **Note:** ~51 events on one page. If pagination is added in the future, scraper will need updating.
+
+### Sun Harbor Seafood and Grill (`sunHarbor.js`)
+- **URL:** https://www.sunharborseafoodandgrill.com/events
+- **Platform:** Squarespace — uses built-in JSON API (`/events?format=json`)
+- **Approach:** Fetches Squarespace JSON endpoint. Each item has `title`, `startDate` (epoch ms), `endDate`, `urlId`, `id`, `assetUrl`, `excerpt`. Filters to future events only.
+- **Collection:** `events` (visible in event link paths: `/events/{slug}`)
+- **Address:** 1 Channel Dr, Monmouth Beach, NJ 07750
+- **Note:** Same pattern as Anchor Tavern scraper. ~19 upcoming events typically. If JSON API stops working, check if collection name changed.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
