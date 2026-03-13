@@ -676,7 +676,7 @@ export default function HomePage() {
                       </div>
                       {/* Slider with bookend labels */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ fontSize: '8px', fontWeight: 600, color: t.textSubtle, minWidth: '20px', textAlign: 'left', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>5 mi</span>
+                        <span style={{ fontSize: '9px', fontWeight: 700, color: t.textMuted, minWidth: '20px', textAlign: 'left', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>5 mi</span>
                         <input type="range" min="0" max="50" value={milesRadius ?? 0}
                           onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v === 0 ? null : v < 5 ? 5 : v); }}
                           style={{
@@ -685,7 +685,7 @@ export default function HomePage() {
                             borderRadius: '2px', outline: 'none', cursor: 'pointer', accentColor: t.accentAlt,
                           }}
                         />
-                        <span style={{ fontSize: '8px', fontWeight: 600, color: t.textSubtle, minWidth: '24px', textAlign: 'right', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>50 mi</span>
+                        <span style={{ fontSize: '9px', fontWeight: 700, color: t.textMuted, minWidth: '24px', textAlign: 'right', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>50 mi</span>
                       </div>
                     </div>
                   )}
