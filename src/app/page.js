@@ -637,14 +637,14 @@ export default function HomePage() {
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={t.accentAlt} /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={milesRadius !== null ? t.accentAlt : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: t.accentAlt, lineHeight: 1, marginBottom: '2px' }}>Distance / Location</div>
+                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: milesRadius !== null ? t.accentAlt : t.textMuted, lineHeight: 1, marginBottom: '2px' }}>Distance / Location</div>
                       <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>
                         {milesRadius !== null ? `Within ${milesRadius} miles` : 'Any distance'}
                       </div>
                     </div>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accentAlt} strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={milesRadius !== null ? t.accentAlt : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'distance' && (
                     <div style={{ padding: '0 12px 6px' }}>
@@ -700,12 +700,12 @@ export default function HomePage() {
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" fill={t.accent} /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" fill={dateKey !== 'all' ? t.accent : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: t.accent, lineHeight: 1, marginBottom: '2px' }}>When</div>
+                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: dateKey !== 'all' ? t.accent : t.textMuted, lineHeight: 1, marginBottom: '2px' }}>When</div>
                       <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{whenLabel}</div>
                     </div>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'when' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accent} strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'when' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={dateKey !== 'all' ? t.accent : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'when' && (
                     <div style={{ padding: '0 12px 8px' }}>
@@ -735,12 +735,12 @@ export default function HomePage() {
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill={t.accent} /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill={artistSearch.trim() ? t.accent : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: t.accent, lineHeight: 1, marginBottom: '2px' }}>Artist</div>
+                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: artistSearch.trim() ? t.accent : t.textMuted, lineHeight: 1, marginBottom: '2px' }}>Artist</div>
                       <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{artistLabel}</div>
                     </div>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'artist' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accent} strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'artist' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={artistSearch.trim() ? t.accent : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'artist' && (
                     <div style={{ padding: '0 12px 8px' }}>
@@ -787,12 +787,12 @@ export default function HomePage() {
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.22 0-4.01 1.79-4.01 4.01S7.79 21 10.01 21 14 19.21 14 17V7h4V3h-6z" fill="#a78bfa" /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.22 0-4.01 1.79-4.01 4.01S7.79 21 10.01 21 14 19.21 14 17V7h4V3h-6z" fill={activeVenues.length > 0 ? '#a78bfa' : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: '#a78bfa', lineHeight: 1, marginBottom: '2px' }}>Venue</div>
+                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: activeVenues.length > 0 ? '#a78bfa' : t.textMuted, lineHeight: 1, marginBottom: '2px' }}>Venue</div>
                       <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{venueLabel}</div>
                     </div>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'venue' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke="#a78bfa" strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'venue' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={activeVenues.length > 0 ? '#a78bfa' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'venue' && (
                     <div style={{ padding: '0 12px 8px' }}>
