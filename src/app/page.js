@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { getVenueColor, groupEventsByDate } from '@/lib/utils';
 import { requestNotificationPermission, scheduleReminder, cancelReminder, rehydrateReminders, notificationsGranted } from '@/lib/notifications';
@@ -385,21 +384,19 @@ export default function HomePage() {
           width: '100%', maxWidth: '100%', boxSizing: 'border-box',
         }}>
           {/* Logo — left */}
-          <div style={{ flexShrink: 1, minWidth: '100px', maxWidth: '160px', display: 'flex', alignItems: 'center' }}>
-            <Image
-              src="/myLocaljam_Logo_v7_transparent_031126.png"
-              alt="myLocalJam"
-              width={160}
-              height={52}
-              priority
-              style={{
-                objectFit: 'contain', display: 'block',
-                width: '100%', height: 'auto',
-                filter: darkMode
-                  ? 'drop-shadow(0 1px 3px rgba(255,255,255,0.35)) drop-shadow(0 0 8px rgba(255,255,255,0.15))'
-                  : 'drop-shadow(0 1px 2px rgba(0,0,0,0.3)) drop-shadow(0 0 6px rgba(0,0,0,0.1))',
-              }}
-            />
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+            <span style={{
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: '20px',
+              fontWeight: 800,
+              letterSpacing: '-0.5px',
+              lineHeight: 1,
+              whiteSpace: 'nowrap',
+            }}>
+              <span style={{ color: darkMode ? '#FFFFFF' : '#1F2937' }}>my</span>
+              <span style={{ color: '#E8722A' }}>Local</span>
+              <span style={{ color: '#3AADA0' }}>Jam</span>
+            </span>
           </div>
 
           {/* Search bar — center */}
