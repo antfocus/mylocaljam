@@ -19,8 +19,9 @@ export async function scrapeBumRogers() {
   try {
     const res = await fetch(VENUE_URL, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
-        'Accept': 'text/html',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
       },
       next: { revalidate: 0 },
     });
@@ -29,16 +30,23 @@ export async function scrapeBumRogers() {
 
     const html = await res.text();
 
-    // Match event cards: <a class="event-card ... " href="..."> ... </a>
-    const cardPattern = /<a[^>]*class="[^"]*event-card[^"]*"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+    console.log(`[BumRogers] Fetched ${html.length} bytes, contains event-card: ${html.includes('event-card')}`);
+
+    // Match event cards: <a href="..." class="event-card ..."> ... </a>
+    // Note: href comes BEFORE class in the actual HTML
+    const cardPattern = /<a[^>]*class="[^"]*event-card[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
     const events = [];
     const now = new Date();
     const seen = new Set();
     let match;
 
     while ((match = cardPattern.exec(html)) !== null) {
-      const eventUrl = match[1].startsWith('http') ? match[1] : `https://bumrogerstavern.com${match[1]}`;
-      const cardHtml = match[2];
+      const cardHtml = match[1];
+
+      // Extract href from the full match (the <a> opening tag)
+      const hrefMatch = match[0].match(/<a[^>]*href="([^"]*)"[^>]*/i);
+      const href = hrefMatch ? hrefMatch[1] : '';
+      const eventUrl = href.startsWith('http') ? href : `https://bumrogerstavern.com${href}`;
 
       // Extract title from <h3>
       const titleMatch = cardHtml.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
