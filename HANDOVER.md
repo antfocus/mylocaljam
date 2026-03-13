@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1200+ events** across 32 scrapers (as of March 12, 2026)
+**~1300+ events** across 33 scrapers (as of March 12, 2026)
 
 ---
 
@@ -58,6 +58,7 @@
 | 30 | The Vogel | `theVogel.js` | WordPress HTML (custom event post type) | ✅ Working | ~51 |
 | 31 | Sun Harbor Seafood and Grill | `sunHarbor.js` | Squarespace JSON API | ✅ Working | ~19 |
 | 32 | Bum Rogers Tavern | `bumRogers.js` | HTML parsing (Astro/BentoBox) | ✅ Working | ~2 |
+| 33 | The Columns | `theColumns.js` | WordPress HTML (custom schedule block) | ✅ Working | ~112 |
 
 ---
 
@@ -273,6 +274,14 @@
 - **Date format:** "Tuesday, March 17, 2026 7-10 PM, repeats"
 - **Address:** 80 Shrewsbury Ave, Highlands, NJ 07732
 - **Note:** Currently only ~2 recurring events. Scraper will pick up new events as they're added to the page.
+
+### The Columns (`theColumns.js`)
+- **URL:** https://thecolumnsnj.com/entertainment-schedule/
+- **Platform:** WordPress with custom `entertainment_schedule_block` section
+- **Approach:** Fetches HTML page, extracts the `entertainment_schedule_block` section, then parses `<h5>` (title) + `<span class="bold-weight">` (date/time) pairs.
+- **Date format:** "May 1, 2026 8:00 pm"
+- **Address:** 601 Ocean Ave, Avon-by-the-Sea, NJ 07717
+- **Note:** Huge schedule — ~112 events from May through September (summer season). No individual event pages, all events link back to the schedule page.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
