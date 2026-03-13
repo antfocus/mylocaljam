@@ -647,72 +647,54 @@ export default function HomePage() {
                     <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accentAlt} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'distance' && (
-                    <div style={{ padding: '0 12px 8px' }}>
-                      {/* Origin / Location input */}
-                      <div style={{ marginBottom: '8px' }}>
-                        <div style={{ fontSize: '9px', fontWeight: 600, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>From</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <div style={{
-                            flex: 1, display: 'flex', alignItems: 'center', gap: '6px',
-                            padding: '6px 8px', borderRadius: '8px',
-                            border: `1px solid ${darkMode ? '#2E2E40' : '#DDD'}`,
-                            background: t.inputBg,
-                          }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" fill={t.accentAlt} /></svg>
-                            <input
-                              type="text"
-                              placeholder={locationDisplayLabel}
-                              value={locationOrigin}
-                              onChange={e => setLocationOrigin(e.target.value)}
-                              onBlur={e => { if (e.target.value.trim()) geocodeLocation(e.target.value.trim()); }}
-                              onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { geocodeLocation(e.target.value.trim()); e.target.blur(); } }}
-                              style={{
-                                flex: 1, border: 'none', background: 'none', outline: 'none',
-                                fontSize: '11px', color: t.text, fontFamily: "'DM Sans', sans-serif",
-                              }}
-                            />
-                            {locationOrigin && (
-                              <button onClick={() => { setLocationOrigin(''); geocodeLocation(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                                <svg width="10" height="10" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.textMuted} /></svg>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        {!locationOrigin && (
-                          <div style={{ fontSize: '9px', color: t.textMuted, marginTop: '3px', fontStyle: 'italic' }}>
-                            {geolocating ? 'Detecting your location...' : `Using: ${locationDisplayLabel}`}
-                          </div>
+                    <div style={{ padding: '0 12px 8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {/* Row 1: Location input */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        padding: '6px 8px', borderRadius: '8px',
+                        border: `1px solid ${darkMode ? '#2E2E40' : '#DDD'}`,
+                        background: t.inputBg,
+                      }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" fill={t.accentAlt} /></svg>
+                        <input
+                          type="text"
+                          placeholder={locationDisplayLabel}
+                          value={locationOrigin}
+                          onChange={e => setLocationOrigin(e.target.value)}
+                          onBlur={e => { if (e.target.value.trim()) geocodeLocation(e.target.value.trim()); }}
+                          onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { geocodeLocation(e.target.value.trim()); e.target.blur(); } }}
+                          style={{
+                            flex: 1, border: 'none', background: 'none', outline: 'none',
+                            fontSize: '11px', color: t.text, fontFamily: "'DM Sans', sans-serif",
+                          }}
+                        />
+                        {locationOrigin && (
+                          <button onClick={() => { setLocationOrigin(''); geocodeLocation(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                            <svg width="10" height="10" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.textMuted} /></svg>
+                          </button>
                         )}
                       </div>
-                      {/* Distance presets */}
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
-                        {[5, 10, 15, 25, null].map(val => (
-                          <button key={val ?? 'any'} onClick={() => { setMilesRadius(val); if (val === null) setActiveFilterCard(null); }} style={{
-                            padding: '5px 10px', borderRadius: '14px', border: 'none', cursor: 'pointer',
-                            background: milesRadius === val ? t.accentAlt : (darkMode ? '#2A2A3C' : '#E8E6E2'),
-                            color: milesRadius === val ? '#fff' : t.text,
-                            fontSize: '10px', fontWeight: milesRadius === val ? 700 : 500,
-                            fontFamily: "'DM Sans', sans-serif",
-                          }}>
-                            {val === null ? 'Any' : `${val} mi`}
-                          </button>
-                        ))}
-                      </div>
-                      {milesRadius !== null && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontSize: '9px', color: t.textMuted }}>1</span>
-                          <input type="range" min="1" max="50" value={milesRadius || 15}
-                            onChange={e => setMilesRadius(parseInt(e.target.value))}
-                            style={{
-                              flex: 1, height: '3px', appearance: 'none', WebkitAppearance: 'none',
-                              background: `linear-gradient(to right, ${t.accentAlt} ${((milesRadius || 15) - 1) / 49 * 100}%, ${darkMode ? '#2A2A3A' : '#DDD'} 0%)`,
-                              borderRadius: '2px', outline: 'none', cursor: 'pointer', accentColor: t.accentAlt,
-                            }}
-                          />
-                          <span style={{ fontSize: '9px', color: t.textMuted }}>50</span>
-                          <span style={{ fontSize: '11px', fontWeight: 700, color: t.accentAlt, minWidth: '34px', textAlign: 'right' }}>{milesRadius} mi</span>
+                      {/* Row 2: Radius slider with live value */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '10px', fontWeight: 600, color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>Radius</span>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: t.accentAlt, fontFamily: "'DM Sans', sans-serif" }}>
+                            {milesRadius === null ? 'Any distance' : `${milesRadius} mi`}
+                          </span>
                         </div>
-                      )}
+                        <input type="range" min="0" max="50" value={milesRadius ?? 0}
+                          onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v === 0 ? null : v); }}
+                          style={{
+                            width: '100%', height: '4px', appearance: 'none', WebkitAppearance: 'none',
+                            background: `linear-gradient(to right, ${t.accentAlt} ${((milesRadius ?? 0) / 50) * 100}%, ${darkMode ? '#2A2A3A' : '#DDD'} 0%)`,
+                            borderRadius: '2px', outline: 'none', cursor: 'pointer', accentColor: t.accentAlt,
+                          }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2px' }}>
+                          <span style={{ fontSize: '8px', color: t.textSubtle }}>Any</span>
+                          <span style={{ fontSize: '8px', color: t.textSubtle }}>50 mi</span>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -875,8 +857,12 @@ export default function HomePage() {
                   borderRadius: '0 0 12px 12px',
                 }}>
                   <button onClick={clearAllFilters} style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: '11px', fontWeight: 600, color: t.textMuted,
+                    background: 'transparent',
+                    border: `1px solid ${t.accentAlt}`,
+                    borderRadius: '8px',
+                    padding: '7px 16px',
+                    cursor: 'pointer',
+                    fontSize: '11px', fontWeight: 700, color: t.accentAlt,
                     fontFamily: "'DM Sans', sans-serif",
                   }}>
                     Clear all
