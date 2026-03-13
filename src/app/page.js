@@ -103,8 +103,65 @@ export default function HomePage() {
   const [showSubmit,     setShowSubmit]     = useState(false);
   const [reportEvent,    setReportEvent]    = useState(null);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [activeFilterCard, setActiveFilterCard] = useState(null); // 'when' | 'venue' | 'distance'
+  const [activeFilterCard, setActiveFilterCard] = useState(null); // 'distance' | 'when' | 'artist' | 'venue'
   const [venueSearch, setVenueSearch] = useState('');
+  const [locationOrigin, setLocationOrigin] = useState('');       // zip or city text
+  const [locationLabel, setLocationLabel] = useState('Current Location');  // display label
+  const [locationCoords, setLocationCoords] = useState(null);     // { lat, lng } from geolocation or geocode
+  const [geolocating, setGeolocating] = useState(false);
+  const [artistSearch, setArtistSearch] = useState('');            // artist filter text
+
+  // ── Geolocation: auto-detect user's location on mount ─────────────────────
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      setGeolocating(true);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLocationCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          // Reverse geocode to get town name
+          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json&zoom=10`)
+            .then(r => r.json())
+            .then(data => {
+              const town = data.address?.town || data.address?.city || data.address?.village || data.address?.hamlet || 'Current Location';
+              setLocationLabel(town);
+              setGeolocating(false);
+            })
+            .catch(() => { setLocationLabel('Current Location'); setGeolocating(false); });
+        },
+        () => {
+          // Permission denied or error — stay at default
+          setLocationLabel('Current Location');
+          setGeolocating(false);
+        },
+        { timeout: 8000, maximumAge: 300000 }
+      );
+    }
+  }, []);
+
+  // Geocode a zip/city string to coordinates
+  const geocodeLocation = useCallback(async (query) => {
+    if (!query.trim()) {
+      // Reset to device location
+      setLocationLabel('Current Location');
+      setLocationOrigin('');
+      if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => setLocationCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => {}
+        );
+      }
+      return;
+    }
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', NJ')}&format=json&limit=1`);
+      const results = await res.json();
+      if (results.length > 0) {
+        setLocationCoords({ lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) });
+        const name = results[0].display_name.split(',')[0];
+        setLocationLabel(name);
+      }
+    } catch {}
+  }, []);
 
   // ── Bottom nav hide-on-scroll ───────────────────────────────────────────────
   const [navHidden, setNavHidden] = useState(false);
@@ -304,6 +361,12 @@ export default function HomePage() {
 
     if (activeVenues.length > 0) list = list.filter(e => activeVenues.includes(e.venue));
 
+    // Artist filter
+    if (artistSearch.trim()) {
+      const aq = normalizeVenue(artistSearch);
+      list = list.filter(e => normalizeVenue(e.name).includes(aq));
+    }
+
     if (searchQuery.trim()) {
       const q = normalizeVenue(searchQuery);
       list = list.filter(e =>
@@ -319,7 +382,7 @@ export default function HomePage() {
     });
 
     return list;
-  }, [events, dateKey, activeVenues, searchQuery, todayStr, tomorrowStr, fridayStr, sundayStr]);
+  }, [events, dateKey, activeVenues, artistSearch, searchQuery, todayStr, tomorrowStr, fridayStr, sundayStr]);
 
   const groupedEvents = useMemo(() => groupEventsByDate(filteredEvents), [filteredEvents]);
 
@@ -358,12 +421,13 @@ export default function HomePage() {
       .trim();
   }
 
-  const hasActiveFilters = dateKey !== 'all' || activeVenues.length > 0 || milesRadius !== null;
-  const activeFilterCount = [dateKey !== 'all', activeVenues.length > 0, milesRadius !== null].filter(Boolean).length;
+  const hasActiveFilters = dateKey !== 'all' || activeVenues.length > 0 || milesRadius !== null || artistSearch.trim() !== '';
+  const activeFilterCount = [dateKey !== 'all', activeVenues.length > 0, milesRadius !== null, artistSearch.trim() !== ''].filter(Boolean).length;
   const clearAllFilters = useCallback(() => {
     setDateKey('all');
     setActiveVenues([]);
     setMilesRadius(null);
+    setArtistSearch('');
     setFiltersExpanded(false);
     setActiveFilterCard(null);
   }, []);
@@ -372,6 +436,8 @@ export default function HomePage() {
   const whenLabel = DATE_OPTIONS.find(o => o.key === dateKey)?.label || 'All Upcoming';
   const venueLabel = activeVenues.length === 0 ? 'Any Venue' : activeVenues.length === 1 ? activeVenues[0] : `${activeVenues.length} venues`;
   const distanceLabel = milesRadius === null ? 'Any distance' : `${milesRadius} mi`;
+  const artistLabel = artistSearch.trim() ? artistSearch.trim() : 'Any Artist';
+  const locationDisplayLabel = geolocating ? 'Locating...' : locationLabel;
 
   // Filtered venues for search inside panel
   const filteredPanelVenues = useMemo(() => {
@@ -466,6 +532,12 @@ export default function HomePage() {
                     {milesRadius}mi
                   </span>
                 )}
+                {artistSearch.trim() && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: t.accentAlt, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill={t.accentAlt} /></svg>
+                    {artistSearch.trim()}
+                  </span>
+                )}
                 {activeVenues.length > 0 && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: t.accentAlt, whiteSpace: 'nowrap', flexShrink: 0 }}>
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.22 0-4.01 1.79-4.01 4.01S7.79 21 10.01 21 14 19.21 14 17V7h4V3h-6z" fill={t.accentAlt} /></svg>
@@ -556,7 +628,96 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* WHEN card */}
+                {/* 1. DISTANCE / LOCATION card (broadest) */}
+                <div style={{
+                  borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  background: darkMode ? '#262636' : '#FFFFFF',
+                }}>
+                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'distance' ? null : 'distance')} style={{
+                    display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
+                  }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={t.accentAlt} /></svg>
+                    <div style={{ flex: 1, textAlign: 'left' }}>
+                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: t.accentAlt, lineHeight: 1, marginBottom: '2px' }}>Distance / Location</div>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>
+                        {milesRadius !== null ? `${milesRadius} mi from ${locationDisplayLabel}` : 'Any distance'}
+                      </div>
+                    </div>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accentAlt} strokeWidth="1.5" fill="none" /></svg>
+                  </button>
+                  {activeFilterCard === 'distance' && (
+                    <div style={{ padding: '0 12px 8px' }}>
+                      {/* Origin / Location input */}
+                      <div style={{ marginBottom: '8px' }}>
+                        <div style={{ fontSize: '9px', fontWeight: 600, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>From</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div style={{
+                            flex: 1, display: 'flex', alignItems: 'center', gap: '6px',
+                            padding: '6px 8px', borderRadius: '8px',
+                            border: `1px solid ${darkMode ? '#2E2E40' : '#DDD'}`,
+                            background: t.inputBg,
+                          }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" fill={t.accentAlt} /></svg>
+                            <input
+                              type="text"
+                              placeholder={locationDisplayLabel}
+                              value={locationOrigin}
+                              onChange={e => setLocationOrigin(e.target.value)}
+                              onBlur={e => { if (e.target.value.trim()) geocodeLocation(e.target.value.trim()); }}
+                              onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { geocodeLocation(e.target.value.trim()); e.target.blur(); } }}
+                              style={{
+                                flex: 1, border: 'none', background: 'none', outline: 'none',
+                                fontSize: '11px', color: t.text, fontFamily: "'DM Sans', sans-serif",
+                              }}
+                            />
+                            {locationOrigin && (
+                              <button onClick={() => { setLocationOrigin(''); geocodeLocation(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                                <svg width="10" height="10" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.textMuted} /></svg>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {!locationOrigin && (
+                          <div style={{ fontSize: '9px', color: t.textMuted, marginTop: '3px', fontStyle: 'italic' }}>
+                            {geolocating ? 'Detecting your location...' : `Using: ${locationDisplayLabel}`}
+                          </div>
+                        )}
+                      </div>
+                      {/* Distance presets */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
+                        {[5, 10, 15, 25, null].map(val => (
+                          <button key={val ?? 'any'} onClick={() => { setMilesRadius(val); if (val === null) setActiveFilterCard(null); }} style={{
+                            padding: '5px 10px', borderRadius: '14px', border: 'none', cursor: 'pointer',
+                            background: milesRadius === val ? t.accentAlt : (darkMode ? '#2A2A3C' : '#E8E6E2'),
+                            color: milesRadius === val ? '#fff' : t.text,
+                            fontSize: '10px', fontWeight: milesRadius === val ? 700 : 500,
+                            fontFamily: "'DM Sans', sans-serif",
+                          }}>
+                            {val === null ? 'Any' : `${val} mi`}
+                          </button>
+                        ))}
+                      </div>
+                      {milesRadius !== null && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '9px', color: t.textMuted }}>1</span>
+                          <input type="range" min="1" max="50" value={milesRadius || 15}
+                            onChange={e => setMilesRadius(parseInt(e.target.value))}
+                            style={{
+                              flex: 1, height: '3px', appearance: 'none', WebkitAppearance: 'none',
+                              background: `linear-gradient(to right, ${t.accentAlt} ${((milesRadius || 15) - 1) / 49 * 100}%, ${darkMode ? '#2A2A3A' : '#DDD'} 0%)`,
+                              borderRadius: '2px', outline: 'none', cursor: 'pointer', accentColor: t.accentAlt,
+                            }}
+                          />
+                          <span style={{ fontSize: '9px', color: t.textMuted }}>50</span>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: t.accentAlt, minWidth: '34px', textAlign: 'right' }}>{milesRadius} mi</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. WHEN card */}
                 <div style={{
                   borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
                   background: darkMode ? '#262636' : '#FFFFFF',
@@ -591,57 +752,60 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* DISTANCE card */}
+                {/* 3. ARTIST card */}
                 <div style={{
                   borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
                   background: darkMode ? '#262636' : '#FFFFFF',
                 }}>
-                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'distance' ? null : 'distance')} style={{
+                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'artist' ? null : 'artist')} style={{
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={t.accentAlt} /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill={t.accent} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: t.accentAlt, lineHeight: 1, marginBottom: '2px' }}>Distance</div>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{distanceLabel}</div>
+                      <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: t.accent, lineHeight: 1, marginBottom: '2px' }}>Artist</div>
+                      <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{artistLabel}</div>
                     </div>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accentAlt} strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'artist' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accent} strokeWidth="1.5" fill="none" /></svg>
                   </button>
-                  {activeFilterCard === 'distance' && (
+                  {activeFilterCard === 'artist' && (
                     <div style={{ padding: '0 12px 8px' }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
-                        {[5, 10, 15, 25, null].map(val => (
-                          <button key={val ?? 'any'} onClick={() => { setMilesRadius(val); setActiveFilterCard(null); }} style={{
-                            padding: '5px 10px', borderRadius: '14px', border: 'none', cursor: 'pointer',
-                            background: milesRadius === val ? t.accentAlt : (darkMode ? '#2A2A3C' : '#E8E6E2'),
-                            color: milesRadius === val ? '#fff' : t.text,
-                            fontSize: '10px', fontWeight: milesRadius === val ? 700 : 500,
-                            fontFamily: "'DM Sans', sans-serif",
-                          }}>
-                            {val === null ? 'Any' : `${val} mi`}
-                          </button>
-                        ))}
-                      </div>
-                      {milesRadius !== null && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontSize: '9px', color: t.textMuted }}>1</span>
-                          <input type="range" min="1" max="50" value={milesRadius || 15}
-                            onChange={e => setMilesRadius(parseInt(e.target.value))}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{
+                          flex: 1, display: 'flex', alignItems: 'center', gap: '6px',
+                          padding: '6px 8px', borderRadius: '8px',
+                          border: `1px solid ${darkMode ? '#2E2E40' : '#DDD'}`,
+                          background: t.inputBg,
+                        }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={t.textMuted} /></svg>
+                          <input
+                            type="text"
+                            placeholder="Type an artist or band name..."
+                            value={artistSearch}
+                            onChange={e => setArtistSearch(e.target.value)}
+                            autoFocus
                             style={{
-                              flex: 1, height: '3px', appearance: 'none', WebkitAppearance: 'none',
-                              background: `linear-gradient(to right, ${t.accentAlt} ${((milesRadius || 15) - 1) / 49 * 100}%, ${darkMode ? '#2A2A3A' : '#DDD'} 0%)`,
-                              borderRadius: '2px', outline: 'none', cursor: 'pointer', accentColor: t.accentAlt,
+                              flex: 1, border: 'none', background: 'none', outline: 'none',
+                              fontSize: '11px', color: t.text, fontFamily: "'DM Sans', sans-serif",
                             }}
                           />
-                          <span style={{ fontSize: '9px', color: t.textMuted }}>50</span>
-                          <span style={{ fontSize: '11px', fontWeight: 700, color: t.accentAlt, minWidth: '34px', textAlign: 'right' }}>{milesRadius} mi</span>
+                          {artistSearch && (
+                            <button onClick={() => setArtistSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                              <svg width="10" height="10" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.textMuted} /></svg>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {artistSearch.trim() && (
+                        <div style={{ fontSize: '9px', color: t.textMuted, marginTop: '4px', fontStyle: 'italic' }}>
+                          Showing events matching &ldquo;{artistSearch.trim()}&rdquo;
                         </div>
                       )}
                     </div>
                   )}
                 </div>
 
-                {/* VENUE card */}
+                {/* 4. VENUE card (most specific) */}
                 <div style={{
                   background: darkMode ? '#262636' : '#FFFFFF',
                 }}>

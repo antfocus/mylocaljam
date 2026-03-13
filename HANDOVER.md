@@ -406,8 +406,10 @@ Small button in the top bar (next to the omnibar) toggles between dark and light
 The following elements from the redesign prototype have been integrated into the production `src/app/page.js`:
 
 **What shipped:**
-- **Header Omnibar:** Replaced the old emoji search input + `FilterBar` component with the unified Glow & Badge omnibar pill. Teal active state, inline filter pills, badge count — all wired to production state (`dateKey`, `activeVenues`, `milesRadius`, `searchQuery`).
-- **Expandable filter panel:** Morphs open from the header with spring animation. Contains Search input, When (date chips), Distance (presets + slider), and Venue (searchable checklist with real venue data from Supabase). "Clear all" and "Show N events" buttons at the bottom.
+- **Header Omnibar:** Replaced the old emoji search input + `FilterBar` component with the unified Glow & Badge omnibar pill. Teal active state, inline filter pills (distance, date, artist, venue), badge count — all wired to production state (`dateKey`, `activeVenues`, `milesRadius`, `searchQuery`, `artistSearch`).
+- **Expandable filter panel:** Morphs open from the header with spring animation. Card order follows broad-to-specific funnel: **Distance/Location → When → Artist → Venue**. "Clear all" and "Show N events" buttons at the bottom.
+- **Distance/Location card:** Combined location + distance into one card. Has an origin input (defaults to device geolocation via browser API, reverse-geocoded to town name via Nominatim). User can override with a zip code or city name. Distance presets (5/10/15/25/Any) + slider below.
+- **Artist card:** New text input filter that matches against event names (artist/band). Shows inline pill in omnibar when active.
 - **FilterBar removed:** The old horizontal filter bar between hero and event list is gone. The `FilterBar` component import was removed from `page.js`. The component file (`FilterBar.js`) still exists but is no longer used.
 - **Summary row removed:** No secondary filter summary row — the omnibar handles all active filter indication.
 - **Scrim overlay:** Semi-transparent backdrop when filter panel is open; clicking it closes the panel.
@@ -422,14 +424,18 @@ The following elements from the redesign prototype have been integrated into the
 
 **New state variables added to `page.js`:**
 - `filtersExpanded` — boolean, controls filter panel open/close
-- `activeFilterCard` — `'when'` | `'venue'` | `'distance'` | null, controls which section is expanded
+- `activeFilterCard` — `'distance'` | `'when'` | `'artist'` | `'venue'` | null, controls which section is expanded
 - `venueSearch` — string, search text inside the venue filter list
+- `locationOrigin` — string, user-entered zip/city override for distance origin
+- `locationLabel` — string, display label (reverse-geocoded town or "Current Location")
+- `locationCoords` — `{ lat, lng }` | null, coordinates from geolocation or geocode
+- `geolocating` — boolean, true while detecting device location
+- `artistSearch` — string, artist/band name filter text
 
 ### What's Next
 
 - **Saved/favorites functionality** — wire the heart icons to Supabase `user_favorite_artists` / `user_favorite_venues` tables
-- **Geolocation** — use browser geolocation API for the distance filter instead of hardcoded location
-- **Artist filter** — add an artist search/filter card to the panel (currently only in the prototype, not production)
+- **Geolocation distance filtering** — the UI and geocoding are wired up, but actual haversine distance calculation against venue lat/lng is not yet implemented in `filteredEvents`. Needs venue coordinates in Supabase and client-side distance math.
 - **Clean up** — remove `FilterBar.js` component file if confirmed no longer needed
 
 ---
