@@ -385,19 +385,19 @@ export default function HomePage() {
           width: '100%', maxWidth: '100%', boxSizing: 'border-box',
         }}>
           {/* Logo — left */}
-          <div style={{ flexShrink: 1, minWidth: '80px', maxWidth: '140px', display: 'flex', alignItems: 'center' }}>
+          <div style={{ flexShrink: 1, minWidth: '100px', maxWidth: '160px', display: 'flex', alignItems: 'center' }}>
             <Image
               src="/myLocaljam_Logo_v7_transparent_031126.png"
               alt="myLocalJam"
-              width={140}
-              height={46}
+              width={160}
+              height={52}
               priority
               style={{
                 objectFit: 'contain', display: 'block',
                 width: '100%', height: 'auto',
                 filter: darkMode
-                  ? 'drop-shadow(0 1px 4px rgba(255,255,255,0.25))'
-                  : 'drop-shadow(0 1px 3px rgba(0,0,0,0.2))',
+                  ? 'drop-shadow(0 1px 3px rgba(255,255,255,0.35)) drop-shadow(0 0 8px rgba(255,255,255,0.15))'
+                  : 'drop-shadow(0 1px 2px rgba(0,0,0,0.3)) drop-shadow(0 0 6px rgba(0,0,0,0.1))',
               }}
             />
           </div>
