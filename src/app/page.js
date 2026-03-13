@@ -641,7 +641,7 @@ export default function HomePage() {
                     <div style={{ flex: 1, textAlign: 'left' }}>
                       <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: t.accentAlt, lineHeight: 1, marginBottom: '2px' }}>Distance / Location</div>
                       <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>
-                        {milesRadius !== null ? `${milesRadius} mi from ${locationDisplayLabel}` : 'Any distance'}
+                        {milesRadius !== null ? `Within ${milesRadius} miles` : 'Any distance'}
                       </div>
                     </div>
                     <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={t.accentAlt} strokeWidth="1.5" fill="none" /></svg>
@@ -674,19 +674,18 @@ export default function HomePage() {
                           </button>
                         )}
                       </div>
-                      {/* Slider with inline value */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {/* Slider with bookend labels */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '8px', fontWeight: 600, color: t.textSubtle, minWidth: '20px', textAlign: 'left', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>5 mi</span>
                         <input type="range" min="0" max="50" value={milesRadius ?? 0}
-                          onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v === 0 ? null : v); }}
+                          onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v === 0 ? null : v < 5 ? 5 : v); }}
                           style={{
                             flex: 1, height: '4px', appearance: 'none', WebkitAppearance: 'none',
                             background: `linear-gradient(to right, ${t.accentAlt} ${((milesRadius ?? 0) / 50) * 100}%, ${darkMode ? '#2A2A3A' : '#DDD'} 0%)`,
                             borderRadius: '2px', outline: 'none', cursor: 'pointer', accentColor: t.accentAlt,
                           }}
                         />
-                        <span style={{ fontSize: '10px', fontWeight: 700, color: t.accentAlt, minWidth: '36px', textAlign: 'right', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>
-                          {milesRadius === null ? 'Any' : `${milesRadius} mi`}
-                        </span>
+                        <span style={{ fontSize: '8px', fontWeight: 600, color: t.textSubtle, minWidth: '24px', textAlign: 'right', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>50 mi</span>
                       </div>
                     </div>
                   )}
