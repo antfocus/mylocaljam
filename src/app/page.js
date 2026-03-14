@@ -9,7 +9,7 @@ import HeroSection       from '@/components/HeroSection';
 import EventCardV2       from '@/components/EventCardV2';
 import MapView           from '@/components/MapView';
 import SubmitEventModal  from '@/components/SubmitEventModal';
-import ReportIssueModal  from '@/components/ReportIssueModal';
+// ReportIssueModal replaced by inline flag bottom-sheet in EventCardV2
 import Toast             from '@/components/Toast';
 import FollowingTab      from '@/components/FollowingTab';
 // FilterBar removed — filters now live in the omnibar panel
@@ -243,7 +243,7 @@ export default function HomePage() {
   const [activeVenues,   setActiveVenues]   = useState([]);    // multi-select venue filter
   const [milesRadius,    setMilesRadius]    = useState(null);  // null = any distance
   const [showSubmit,     setShowSubmit]     = useState(false);
-  const [reportEvent,    setReportEvent]    = useState(null);
+  // reportEvent state removed — flagging now handled inline in EventCardV2
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [activeFilterCard, setActiveFilterCard] = useState(null); // 'distance' | 'when' | 'artist' | 'venue'
   const [venueSearch, setVenueSearch] = useState('');
@@ -1363,7 +1363,6 @@ export default function HomePage() {
                               <EventCardV2
                                 key={event.id ?? i}
                                 event={event}
-                                onReport={setReportEvent}
                                 isFavorited={true}
                                 onToggleFavorite={toggleFavorite}
                                 darkMode={darkMode}
@@ -1371,12 +1370,8 @@ export default function HomePage() {
                                   if (isFollowing('artist', artistName)) unfollowEntity('artist', artistName);
                                   else followEntity('artist', artistName);
                                 }}
-                                onFollowVenue={(venueName) => {
-                                  if (isFollowing('venue', venueName)) unfollowEntity('venue', venueName);
-                                  else followEntity('venue', venueName);
-                                }}
                                 isArtistFollowed={isFollowing('artist', event.name || event.artist_name || '')}
-                                isVenueFollowed={isFollowing('venue', event.venue || event.venue_name || '')}
+                                onFlag={(msg) => setToast(msg)}
                               />
                             ))}
                           </div>
@@ -1482,7 +1477,6 @@ export default function HomePage() {
                         <EventCardV2
                           key={event.id ?? `${group.date}-${i}`}
                           event={event}
-                          onReport={setReportEvent}
                           isFavorited={favorites.has(event.id)}
                           onToggleFavorite={toggleFavorite}
                           darkMode={darkMode}
@@ -1490,12 +1484,8 @@ export default function HomePage() {
                             if (isFollowing('artist', artistName)) unfollowEntity('artist', artistName);
                             else followEntity('artist', artistName);
                           }}
-                          onFollowVenue={(venueName) => {
-                            if (isFollowing('venue', venueName)) unfollowEntity('venue', venueName);
-                            else followEntity('venue', venueName);
-                          }}
                           isArtistFollowed={isFollowing('artist', event.name || event.artist_name || '')}
-                          isVenueFollowed={isFollowing('venue', event.venue || event.venue_name || '')}
+                          onFlag={(msg) => setToast(msg)}
                         />
                       ))}
                     </div>
@@ -1558,9 +1548,7 @@ export default function HomePage() {
       {showSubmit && (
         <SubmitEventModal onClose={() => setShowSubmit(false)} onSubmit={() => setToast('Added to the Jar! We\'ll review it shortly.')} />
       )}
-      {reportEvent && (
-        <ReportIssueModal event={reportEvent} onClose={() => setReportEvent(null)} onSubmit={() => { setToast('Report submitted. Thank you!'); setReportEvent(null); }} />
-      )}
+      {/* ReportIssueModal removed — flagging now handled inline in EventCardV2 */}
       {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
     </>
   );

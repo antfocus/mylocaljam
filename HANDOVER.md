@@ -839,6 +839,51 @@ UPDATE venues SET latitude = ?, longitude = ? WHERE name = '?';
 
 ---
 
+## Expanded Event Card Redesign (March 14, 2026)
+
+### UI De-cluttering
+- **Removed** redundant artist name + venue name text that appeared below the hero image (already shown in compact header row)
+- **Removed** bottom row with large `+ Follow Artist` and `+ Follow Venue` buttons
+- **Dropped** Follow Venue feature entirely — `onFollowVenue` and `isVenueFollowed` props removed from EventCardV2
+- **Image fix**: Hero image now uses 16:9 aspect ratio container (`paddingBottom: 56.25%`) with `object-fit: cover` and `position: absolute` — no more awkward cropping
+
+### Dynamic Buttons (Action Row)
+- **Venue Website** (primary): Renamed from "Venue Page" to "🌐 Venue Website" — always shows if `source` URL exists
+- **Get Tickets** (conditional): Only renders if `ticket_link` exists in DB — hidden by default
+- **Follow Artist** (inline pill): Small `+ Follow Artist` / `✓ Following` pill button, orange outline when unfollowed, green bg when followed. Sits inline next to Venue/Tickets buttons
+- **Flag icon** (⚑): Positioned far-right with `marginLeft: auto`. Opens the flag bottom-sheet
+
+### Public Status Badges
+- **Cover Charge pill**: Subtle rounded pill above description. Dark mode: dark grey bg + light text. Light mode: light grey bg + dark text. Shows "💵 $X Cover" or "🎵 Free Admission"
+- **CANCELED badge**: Red `#DC2626` pill centered over the hero image with dark overlay. If no image, shows as centered badge. When canceled:
+  - Left accent bar turns red
+  - Time badge turns red with "✕"
+  - Artist name gets `text-decoration: line-through`
+  - Card opacity drops to 0.6
+  - Venue/Tickets/Follow buttons hidden entirely
+- Both badges are admin-controlled via the `status` and `cover_charge` columns in the events table
+
+### Report Issue (Crowdsourced Flagging)
+- **Old**: Tiny grey "⚑ Report an issue" text at bottom → opened full ReportIssueModal
+- **New**: Clean flag icon button (⚑) in the action row → slides up a bottom-sheet modal titled "What's up with this event?"
+- **Two options**: "🛑 Band Canceled" and "💵 Cover Charge Added" (plus Close)
+- **Backend**: Tapping an option calls `POST /api/flag-event` with `{ event_id, flag_type: 'cancel' | 'cover' }`. This increments `cancel_flag_count` or `cover_flag_count` on the events table. Does NOT change the public UI — routes to admin review
+- **ReportIssueModal** is no longer triggered from EventCardV2 (dead code, can be removed later)
+
+### New Files
+- `src/app/api/flag-event/route.js` — Public POST endpoint for flag increments
+- `supabase-event-flags.sql` — Adds `cancel_flag_count` and `cover_flag_count` columns to events table
+
+### Modified Files
+- `src/components/EventCardV2.js` — Full rewrite with all above changes
+- `src/app/page.js` — Removed `onFollowVenue`, `isVenueFollowed`, `onReport` props; added `onFlag` prop; cleaned up ReportIssueModal references
+
+### Setup Required
+1. Run `supabase-event-flags.sql` in Supabase SQL Editor (adds flag count columns)
+2. To mark an event canceled: UPDATE events SET status = 'cancelled' WHERE id = '...';
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.
