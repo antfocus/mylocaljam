@@ -31,6 +31,7 @@ import { scrapeTheVogel } from '@/lib/scrapers/theVogel';
 import { scrapeSunHarbor } from '@/lib/scrapers/sunHarbor';
 import { scrapeBumRogers } from '@/lib/scrapers/bumRogers';
 import { scrapeTheColumns } from '@/lib/scrapers/theColumns';
+import { enrichWithLastfm } from '@/lib/enrichLastfm';
 // Tim McLoone's removed — all McLoone's domains behind Cloudflare+reCAPTCHA, blocks all datacenter IPs
 // Source: mcloones.ticketbud.com (Ticketbud organizer page) — revisit if a workaround is found
 
@@ -101,7 +102,19 @@ function mapEvent(ev, venueMap) {
     venue_id: venueId,
     event_date: eventDate,
     artist_bio: decodeHtmlEntities(ev.description) || null,
-    ticket_link: ev.ticket_url || null,
+    // Only store ticket_link if it points to a real external ticketing site
+    // (different domain than the venue's own source_url)
+    ticket_link: (() => {
+      const t = ev.ticket_url || null;
+      const s = ev.source_url || null;
+      if (!t) return null;
+      if (!s) return t;
+      try {
+        const tHost = new URL(t).hostname.replace(/^www\./, '');
+        const sHost = new URL(s).hostname.replace(/^www\./, '');
+        return tHost === sHost ? null : t;
+      } catch { return t; }
+    })(),
     cover: ev.price || null,
     source: ev.source_url || null,
     image_url: ev.image_url || null,
@@ -266,6 +279,66 @@ export async function POST(request) {
     }
   }
 
+  // --- Auto-enrich new artists via Last.fm ---
+  let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, errors: [] };
+  try {
+    // Find unenriched events (missing image_url or artist_bio)
+    const { data: unenriched } = await supabase
+      .from('events')
+      .select('id, artist_name, image_url, artist_bio')
+      .eq('status', 'published')
+      .not('artist_name', 'is', null)
+      .or('image_url.is.null,artist_bio.is.null')
+      .limit(500);
+
+    if (unenriched?.length) {
+      const uniqueNames = [...new Set(unenriched.map(e => e.artist_name.trim()))];
+
+      // Check which are already cached
+      const { data: cached } = await supabase
+        .from('artists')
+        .select('name, image_url, bio')
+        .in('name', uniqueNames.slice(0, 200));
+
+      const cachedMap = {};
+      for (const a of (cached || [])) cachedMap[a.name.toLowerCase()] = a;
+
+      // Look up uncached artists (max 30 per sync to stay within timeout)
+      const uncached = uniqueNames.filter(n => !cachedMap[n.toLowerCase()]).slice(0, 30);
+      for (const name of uncached) {
+        try {
+          await enrichWithLastfm(name, supabase);
+          enrichResult.artistsLookedUp++;
+          await new Promise(r => setTimeout(r, 200));
+        } catch (err) {
+          enrichResult.errors.push(`${name}: ${err.message}`);
+        }
+      }
+
+      // Reload cache and update events
+      const { data: freshCached } = await supabase
+        .from('artists')
+        .select('name, image_url, bio')
+        .in('name', uniqueNames.slice(0, 200));
+
+      const freshMap = {};
+      for (const a of (freshCached || [])) freshMap[a.name.toLowerCase()] = a;
+
+      for (const ev of unenriched) {
+        const artistData = freshMap[ev.artist_name.trim().toLowerCase()];
+        if (!artistData) continue;
+        const update = {};
+        if (!ev.image_url && artistData.image_url) update.image_url = artistData.image_url;
+        if (!ev.artist_bio && artistData.bio) update.artist_bio = artistData.bio;
+        if (Object.keys(update).length === 0) continue;
+        const { error: upErr } = await supabase.from('events').update(update).eq('id', ev.id);
+        if (!upErr) enrichResult.eventsEnriched++;
+      }
+    }
+  } catch (enrichErr) {
+    enrichResult.errors.push(`Enrichment failed: ${enrichErr.message}`);
+  }
+
   const duration = ((Date.now() - start) / 1000).toFixed(2) + 's';
 
   return NextResponse.json({
@@ -274,6 +347,11 @@ export async function POST(request) {
     totalScraped: validEvents.length,
     totalUpserted,
     scrapers: scraperResults,
+    enrichment: {
+      artistsLookedUp: enrichResult.artistsLookedUp,
+      eventsEnriched: enrichResult.eventsEnriched,
+      errors: enrichResult.errors.length ? enrichResult.errors : null,
+    },
     errors: upsertErrors.length ? upsertErrors : null,
   });
 }
