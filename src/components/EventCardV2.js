@@ -27,8 +27,21 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
   const venue      = event.venue       || event.venue_name  || '';
   const desc       = event.description || event.artist_bio  || '';
   const imageUrl   = event.image_url   || event.venue_photo || null;
-  const ticketLink = event.ticket_link || null;
+  const rawTicket  = event.ticket_link || null;
   const sourceLink = event.source      || null;
+  // Only show Tickets if it's a real external ticketing link (e.g. Ticketmaster),
+  // not a venue-URL fallback. Compare hostnames — if same domain, it's not a real ticket link.
+  const ticketLink = (() => {
+    if (!rawTicket) return null;
+    if (!sourceLink) return rawTicket; // no source to compare, show it
+    try {
+      const ticketHost = new URL(rawTicket).hostname.replace(/^www\./, '');
+      const sourceHost = new URL(sourceLink).hostname.replace(/^www\./, '');
+      return ticketHost === sourceHost ? null : rawTicket;
+    } catch {
+      return rawTicket; // malformed URL, show it anyway
+    }
+  })();
   const category   = event.genre       || event.vibe        || 'Live Music';
   const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
   const timeStr    = formatTimeRange(event.start_time, event.end_time);
