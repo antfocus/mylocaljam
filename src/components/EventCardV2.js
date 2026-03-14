@@ -151,11 +151,12 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
         }}>
           <div style={{ padding: '0 12px 12px 12px', borderTop: expanded ? `1px solid ${borderColor}` : '1px solid transparent', background: expandedBg }}>
 
-            {/* Hero image — full visible height, capped at 220px */}
+            {/* Hero image — 16:9 aspect ratio, no clipping */}
             {imageUrl && (
               <div style={{
-                margin: '10px 0 8px', borderRadius: '8px', overflow: 'hidden', lineHeight: 0,
+                margin: '10px 0 8px', borderRadius: '8px', overflow: 'hidden',
                 position: 'relative',
+                aspectRatio: '16 / 9',
               }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -163,8 +164,8 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                   alt={name}
                   loading="lazy"
                   style={{
-                    width: '100%', maxHeight: '220px',
-                    objectFit: 'cover', objectPosition: 'center top',
+                    width: '100%', height: '100%',
+                    objectFit: 'cover', objectPosition: 'center center',
                     display: 'block',
                   }}
                   onError={e => { e.currentTarget.parentElement.style.display = 'none'; }}
@@ -272,7 +273,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                   </a>
                 )}
 
-                {/* 3. Get Tickets — ONLY if ticket_link exists in DB */}
+                {/* 3. Get Tickets — ONLY if ticket_link exists in DB, styled same as Venue Website */}
                 {ticketLink && (
                   <a
                     href={ticketLink}
@@ -283,7 +284,8 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                       display: 'inline-flex', alignItems: 'center', gap: '5px',
                       fontSize: '11px', fontWeight: 700,
                       padding: '7px 14px', borderRadius: '8px',
-                      background: '#E8722A', color: '#1A1A24',
+                      background: darkMode ? '#2A2A3A' : '#E5E7EB',
+                      color: darkMode ? '#AAAACC' : '#4B5563',
                       textDecoration: 'none', border: 'none', cursor: 'pointer',
                       fontFamily: "'DM Sans', sans-serif",
                     }}
@@ -292,16 +294,18 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                   </a>
                 )}
 
-                {/* 4. Flag icon (far right, muted standalone icon) */}
+                {/* 4. Flag icon (near right, muted, larger touch target) */}
                 <button
                   onClick={e => { e.stopPropagation(); setFlagSheet(true); }}
                   style={{
                     marginLeft: 'auto',
+                    marginRight: '2px',
                     background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: '16px', padding: '4px',
-                    color: darkMode ? '#A0A0A0' : '#A0A0A0',
+                    fontSize: '24px', padding: '4px 6px',
+                    color: '#A0A0A0',
                     transition: 'color 0.15s',
                     display: 'flex', alignItems: 'center', flexShrink: 0,
+                    lineHeight: 1,
                   }}
                   onMouseEnter={e => { e.currentTarget.style.color = '#E8722A'; }}
                   onMouseLeave={e => { e.currentTarget.style.color = '#A0A0A0'; }}
