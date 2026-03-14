@@ -820,8 +820,22 @@ CREATE TABLE spotlight_events (
 - **User location sources**: (1) Browser geolocation on mount → reverse geocode for town name; (2) Text input → forward geocode via Nominatim (appends ", NJ").
 
 ### Setup Required
-1. Run `supabase-geocode.sql` in Supabase SQL Editor
-2. For new venues, run geocoding: `POST /api/geocode-venues` with admin auth header
+1. ~~Run `supabase-geocode.sql` in Supabase SQL Editor~~ ✅ Done
+2. ~~For new venues, run geocoding: `POST /api/geocode-venues` with admin auth header~~ ✅ Done (32/37 geocoded)
+
+### Known Issues — Venues Not Geocoded (Nominatim "not_found")
+These 5 venues need manual lat/lng coordinates added in Supabase. Nominatim could not resolve their addresses. Fix by running an UPDATE query in the SQL Editor for each:
+```sql
+UPDATE venues SET latitude = ?, longitude = ? WHERE name = '?';
+```
+
+1. **Jacks on the Tracks** — needs correct street address or manual coords
+2. **10th Ave Burrito** — needs correct street address or manual coords
+3. **Bakes Brewing** — needs correct street address or manual coords
+4. **Boatyard 401** — needs correct street address or manual coords
+5. **Jacks on the Tracks** (duplicate entry?) — check if duplicate venue in DB
+
+> **Note:** Any future venues added by scrapers will also need geocoding. Re-run `POST /api/geocode-venues` with admin auth after new venues are added, or manually insert coords.
 
 ---
 

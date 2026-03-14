@@ -985,13 +985,13 @@ export default function HomePage() {
                       </div>
                       {/* Slider with bookend labels */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 2px' }}>
-                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#A0A0A0', minWidth: '24px', textAlign: 'left', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>5 mi</span>
-                        <input type="range" min="5" max="50" value={milesRadius ?? 5}
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#A0A0A0', minWidth: '24px', textAlign: 'left', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>0 mi</span>
+                        <input type="range" min="0" max="50" value={milesRadius ?? 0}
                           className="distance-slider"
-                          onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v <= 5 ? null : v); }}
+                          onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v === 0 ? null : v); }}
                           style={{
                             flex: 1, height: '6px',
-                            background: `linear-gradient(to right, ${t.accentAlt} ${(((milesRadius ?? 5) - 5) / 45) * 100}%, ${darkMode ? '#3A3A4A' : '#DDD'} 0%)`,
+                            background: `linear-gradient(to right, ${t.accentAlt} ${((milesRadius ?? 0) / 50) * 100}%, ${darkMode ? '#3A3A4A' : '#DDD'} 0%)`,
                             borderRadius: '3px',
                           }}
                         />
