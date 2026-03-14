@@ -845,13 +845,13 @@ UPDATE venues SET latitude = ?, longitude = ? WHERE name = '?';
 - **Removed** redundant artist name + venue name text that appeared below the hero image (already shown in compact header row)
 - **Removed** bottom row with large `+ Follow Artist` and `+ Follow Venue` buttons
 - **Dropped** Follow Venue feature entirely — `onFollowVenue` and `isVenueFollowed` props removed from EventCardV2
-- **Image fix**: Hero image now uses 16:9 aspect ratio container (`paddingBottom: 56.25%`) with `object-fit: cover` and `position: absolute` — no more awkward cropping
+- **Image fix**: Hero image uses `object-fit: cover` with `object-position: center top` and `maxHeight: 220px`. Full image width visible, text baked into bottom of photos is preserved. No fixed aspect ratio padding trick — natural image height up to 220px cap.
 
-### Dynamic Buttons (Action Row)
-- **Venue Website** (primary): Renamed from "Venue Page" to "🌐 Venue Website" — always shows if `source` URL exists
-- **Get Tickets** (conditional): Only renders if `ticket_link` exists in DB — hidden by default
-- **Follow Artist** (inline pill): Small `+ Follow Artist` / `✓ Following` pill button, orange outline when unfollowed, green bg when followed. Sits inline next to Venue/Tickets buttons
-- **Flag icon** (⚑): Positioned far-right with `marginLeft: auto`. Opens the flag bottom-sheet
+### Action Row (Single Flex Line, Left-to-Right Order)
+1. **+ Follow Artist** (far left, primary): Orange outlined pill when unfollowed, green bg when followed. 11px/700 weight.
+2. **🌐 Venue Website** (middle): Always shows if `source` URL exists. Subtle grey bg button.
+3. **🎟 Tickets** (conditional): ONLY renders if `ticket_link` exists in DB. Orange bg button. Hidden by default.
+4. **⚑ Flag** (far right): Pushed right via `marginLeft: auto`. Standalone icon only — no background, no border, no text. Muted grey `#A0A0A0`, turns orange on hover. Opens flag bottom-sheet.
 
 ### Public Status Badges
 - **Cover Charge pill**: Subtle rounded pill above description. Dark mode: dark grey bg + light text. Light mode: light grey bg + dark text. Shows "💵 $X Cover" or "🎵 Free Admission"

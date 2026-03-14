@@ -151,13 +151,11 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
         }}>
           <div style={{ padding: '0 12px 12px 12px', borderTop: expanded ? `1px solid ${borderColor}` : '1px solid transparent', background: expandedBg }}>
 
-            {/* Hero image with 16:9 aspect ratio */}
+            {/* Hero image — full visible height, capped at 220px */}
             {imageUrl && (
               <div style={{
                 margin: '10px 0 8px', borderRadius: '8px', overflow: 'hidden', lineHeight: 0,
                 position: 'relative',
-                paddingBottom: '56.25%', /* 16:9 aspect ratio */
-                height: 0,
               }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -165,9 +163,9 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                   alt={name}
                   loading="lazy"
                   style={{
-                    position: 'absolute', top: 0, left: 0,
-                    width: '100%', height: '100%',
-                    objectFit: 'cover', display: 'block',
+                    width: '100%', maxHeight: '220px',
+                    objectFit: 'cover', objectPosition: 'center top',
+                    display: 'block',
                   }}
                   onError={e => { e.currentTarget.parentElement.style.display = 'none'; }}
                 />
@@ -231,10 +229,29 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               </p>
             )}
 
-            {/* Action buttons row — hide Venue/Tickets if canceled */}
+            {/* Action row — single flex line: Follow | Venue | Tickets | Flag */}
             {!isCanceled && (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px', alignItems: 'center' }}>
-                {/* Primary: Venue Website */}
+              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                {/* 1. Follow Artist (far left, primary action) */}
+                {onFollowArtist && name && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onFollowArtist(name); }}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      fontSize: '11px', fontWeight: 700,
+                      padding: '7px 14px', borderRadius: '999px', cursor: 'pointer',
+                      border: isArtistFollowed ? 'none' : '1.5px solid #E8722A',
+                      background: isArtistFollowed ? (darkMode ? '#1E3A1E' : '#DCFCE7') : 'transparent',
+                      color: isArtistFollowed ? (darkMode ? '#8DD888' : '#16A34A') : '#E8722A',
+                      transition: 'all 0.2s ease',
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}
+                  >
+                    {isArtistFollowed ? '✓ Following' : '+ Follow Artist'}
+                  </button>
+                )}
+
+                {/* 2. Venue Website */}
                 {sourceLink && (
                   <a
                     href={sourceLink}
@@ -243,7 +260,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                     onClick={e => e.stopPropagation()}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '5px',
-                      fontSize: '12px', fontWeight: 700,
+                      fontSize: '11px', fontWeight: 700,
                       padding: '7px 14px', borderRadius: '8px',
                       background: darkMode ? '#2A2A3A' : '#E5E7EB',
                       color: darkMode ? '#AAAACC' : '#4B5563',
@@ -255,7 +272,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                   </a>
                 )}
 
-                {/* Conditional: Get Tickets — only if ticket_link exists */}
+                {/* 3. Get Tickets — ONLY if ticket_link exists in DB */}
                 {ticketLink && (
                   <a
                     href={ticketLink}
@@ -264,49 +281,30 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                     onClick={e => e.stopPropagation()}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '5px',
-                      fontSize: '12px', fontWeight: 700,
+                      fontSize: '11px', fontWeight: 700,
                       padding: '7px 14px', borderRadius: '8px',
                       background: '#E8722A', color: '#1A1A24',
                       textDecoration: 'none', border: 'none', cursor: 'pointer',
                       fontFamily: "'DM Sans', sans-serif",
                     }}
                   >
-                    🎟 Get Tickets
+                    🎟 Tickets
                   </a>
                 )}
 
-                {/* Small Follow Artist button */}
-                {onFollowArtist && name && (
-                  <button
-                    onClick={e => { e.stopPropagation(); onFollowArtist(name); }}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '4px',
-                      fontSize: '11px', fontWeight: 700,
-                      padding: '6px 12px', borderRadius: '999px', cursor: 'pointer',
-                      border: isArtistFollowed ? 'none' : `1.5px solid ${darkMode ? '#E8722A' : '#E8722A'}`,
-                      background: isArtistFollowed ? (darkMode ? '#1E3A1E' : '#DCFCE7') : 'transparent',
-                      color: isArtistFollowed ? (darkMode ? '#8DD888' : '#16A34A') : '#E8722A',
-                      transition: 'all 0.2s ease',
-                      fontFamily: "'DM Sans', sans-serif",
-                    }}
-                  >
-                    {isArtistFollowed ? '✓ Following' : '+ Follow Artist'}
-                  </button>
-                )}
-
-                {/* Flag icon button */}
+                {/* 4. Flag icon (far right, muted standalone icon) */}
                 <button
                   onClick={e => { e.stopPropagation(); setFlagSheet(true); }}
                   style={{
                     marginLeft: 'auto',
                     background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: '18px', padding: '4px 6px', borderRadius: '6px',
-                    color: flagIconCol,
-                    transition: 'color 0.15s, background 0.15s',
-                    display: 'flex', alignItems: 'center',
+                    fontSize: '16px', padding: '4px',
+                    color: darkMode ? '#A0A0A0' : '#A0A0A0',
+                    transition: 'color 0.15s',
+                    display: 'flex', alignItems: 'center', flexShrink: 0,
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.color = flagIconHov; e.currentTarget.style.background = darkMode ? '#2A2A3A' : '#F3F4F6'; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = flagIconCol; e.currentTarget.style.background = 'none'; }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#E8722A'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#A0A0A0'; }}
                   title="Report an issue"
                 >
                   ⚑
