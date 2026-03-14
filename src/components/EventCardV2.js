@@ -91,7 +91,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           {/* Colored time badge */}
           <div style={{
             background: isCanceled ? '#DC2626' : config.bg,
-            color: isCanceled ? '#FFFFFF' : '#111111',
+            color: isCanceled ? '#FFFFFF' : (darkMode ? '#FFFFFF' : '#000000'),
             fontSize: '14px', fontWeight: 700,
             padding: '5px 0', borderRadius: '6px',
             width: '62px', flexShrink: 0, textAlign: 'center',
