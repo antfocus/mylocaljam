@@ -19,6 +19,7 @@
   fetch('/api/sync-events', {method:'POST', headers:{'Authorization':'Bearer ' + atob('JCp7RyxiJCREZEpseCNDTw==')}}).then(r=>r.json()).then(d => console.log(JSON.stringify(d, null, 2)))
   ```
 - **Global deduplication:** `seen` Set in route.js prevents "ON CONFLICT DO UPDATE" batch errors from duplicate external_ids
+- **Auto artist enrichment:** After upserting events, the sync route automatically enriches new artists via Last.fm. Finds unenriched events (missing `image_url` or `artist_bio`), looks up to 30 new artists per sync on Last.fm, caches results in the `artists` table, and updates matching events. The sync response includes an `enrichment` field with `artistsLookedUp`, `eventsEnriched`, and any errors. Wrapped in try/catch so enrichment failures don't break the sync.
 
 ---
 
@@ -408,8 +409,11 @@ The following elements from the redesign prototype have been integrated into the
 **What shipped:**
 - **Header Omnibar:** Replaced the old emoji search input + `FilterBar` component with the unified Glow & Badge omnibar pill. Teal active state, inline filter pills (distance, date, artist, venue), badge count — all wired to production state (`dateKey`, `activeVenues`, `milesRadius`, `searchQuery`, `artistSearch`).
 - **Expandable filter panel:** Morphs open from the header with spring animation. Card order follows broad-to-specific funnel: **Distance/Location → When → Artist → Venue**. "Clear all" and "Show N events" buttons at the bottom.
-- **Distance/Location card:** Combined location + distance into one card. Has an origin input (defaults to device geolocation via browser API, reverse-geocoded to town name via Nominatim). User can override with a zip code or city name. Distance presets (5/10/15/25/Any) + slider below.
+- **Distance/Location card:** Combined location + distance into one card. Compact 2-row layout: origin input on top (defaults to device geolocation via browser API, reverse-geocoded to town name via Nominatim; user can override with zip/city), distance slider below with "5 mi" / "50 mi" bookend labels. Dynamic header text shows "Within X miles" when slider is active, "Any distance" at default. No pills, no FROM label — ultra-compact footprint.
 - **Artist card:** New text input filter that matches against event names (artist/band). Shows inline pill in omnibar when active.
+- **Icon color system:** All four filter card icons (Distance, When, Artist, Venue) use neutral grey (`t.textMuted`) by default. Icons switch to their brand color only when that filter is actively modified: Teal for Distance, Teal for When, Teal for Artist, Purple for Venue. Reduces visual clutter in default state.
+- **"Clear all" button:** Styled as a teal ghost button with border (`1px solid` teal, transparent background, bold weight) instead of muted text link — more prominent and tappable.
+- **"Pick a Date" in WHEN card:** 5th pill option added after "This Weekend." Tapping it keeps the card open and reveals a native `<input type="date">` picker below the pills. Selecting a date auto-closes the card and filters events to that single day. The WHEN card header and omnibar pill show the formatted date (e.g., "Fri, Mar 20" / "Mar 20"). Also wired into the Saved tab's date pills. Resets on "Clear all" and tab change.
 - **FilterBar removed:** The old horizontal filter bar between hero and event list is gone. The `FilterBar` component import was removed from `page.js`. The component file (`FilterBar.js`) still exists but is no longer used.
 - **Summary row removed:** No secondary filter summary row — the omnibar handles all active filter indication.
 - **Scrim overlay:** Semi-transparent backdrop when filter panel is open; clicking it closes the panel.
@@ -431,12 +435,18 @@ The following elements from the redesign prototype have been integrated into the
 - `locationCoords` — `{ lat, lng }` | null, coordinates from geolocation or geocode
 - `geolocating` — boolean, true while detecting device location
 - `artistSearch` — string, artist/band name filter text
+- `pickedDate` — string (YYYY-MM-DD), custom date selection when `dateKey === 'pick'`
 
 ### What's Next
 
 - **Saved/favorites functionality** — wire the heart icons to Supabase `user_favorite_artists` / `user_favorite_venues` tables
 - **Geolocation distance filtering** — the UI and geocoding are wired up, but actual haversine distance calculation against venue lat/lng is not yet implemented in `filteredEvents`. Needs venue coordinates in Supabase and client-side distance math.
 - **Clean up** — remove `FilterBar.js` component file if confirmed no longer needed
+
+### Deployment Notes
+
+- **Vercel CLI deploy:** If `git push` deployments get stuck at "Initializing" (known Vercel issue), use `npx vercel --prod` from the project directory as a reliable alternative. Requires `npx vercel login` first if token has expired.
+- **Last successful deploy method:** CLI direct deploy via `npx vercel --prod` (March 13, 2026), which bypasses the GitHub integration.
 
 ---
 
@@ -445,7 +455,7 @@ The following elements from the redesign prototype have been integrated into the
 - **Run sync** to refresh events with corrected DST offsets and image_url passthrough
 - **Run Supabase SQL migrations** (see Schema Notes) to add `image_url` to `events` and create `artists` table
 - **Add LASTFM_API_KEY** to Vercel environment variables (https://www.last.fm/api/account/create — free)
-- **Run artist enrichment** after deploy + migrations: call `/api/enrich-artists` repeatedly until all events are enriched
+- **Run initial artist enrichment backfill** (optional): call `/api/enrich-artists` a few times to catch up any unenriched events. After that, auto-enrichment runs with every sync.
 - **Clean up Monmouth County** if still showing: run `DELETE FROM events WHERE venue_name = 'Monmouth County';` and `DELETE FROM venues WHERE name = 'Monmouth County';` in Supabase
 
 ---
@@ -494,17 +504,18 @@ The following elements from the redesign prototype have been integrated into the
 - **Notifications:** Add a step at end of existing sync cron — after upserting events, query for newly inserted events, check if any match a user's favorited artists/venues, send web-push notification via existing PWA setup (`notifications.js`).
 - **UX for adding favorites:** Heart icon on event cards saves that event's `artist_name`. Manual artist search can be added later.
 
-### Last.fm Artist Enrichment ✅ Implemented
+### Last.fm Artist Enrichment ✅ Implemented (Auto + Manual)
 - **Module:** `src/lib/enrichLastfm.js` — fetches artist bio, image, and tags from Last.fm API; caches in `artists` table (7-day TTL); skips Last.fm placeholder images
-- **API route:** `src/app/api/enrich-artists/route.js` — POST/GET to run enrichment; processes up to 30 unenriched events per call; updates `image_url` and `artist_bio` on events that are missing them
+- **Auto-enrichment:** Built into `sync-events/route.js` — runs automatically after every sync (6 AM & 6 PM). Looks up to 30 new artists per sync, caches results, and updates events. No manual intervention needed for new artists.
+- **Standalone API route:** `src/app/api/enrich-artists/route.js` — POST/GET for manual bulk enrichment; processes up to 100 unenriched events per call. Useful for initial backfill or catching up after adding many new venues.
 - **Dry run:** `POST /api/enrich-artists?dry=true` — counts unenriched events without writing anything
 - **Required env var:** `LASTFM_API_KEY` — add to Vercel environment variables. Get a free key at https://www.last.fm/api/account/create
 - **Auth:** same `SYNC_SECRET` Bearer token as `/api/sync-events`
-- **Manual trigger from browser console:**
+- **Manual trigger from browser console (for bulk backfill):**
   ```javascript
   fetch('/api/enrich-artists', {method:'POST', headers:{'Authorization':'Bearer ' + atob('JCp7RyxiJCREZEpseCNDTw==')}}).then(r=>r.json()).then(d => console.log(JSON.stringify(d, null, 2)))
   ```
-- **Run multiple times** to work through all unenriched events (30 per call limit keeps it within Vercel's timeout)
+- **Run multiple times** for initial backfill to work through all unenriched events (100 per call). After backfill, the auto-enrichment in the sync cron handles new artists automatically.
 - **Supabase SQL required** (see Schema Notes section above)
 
 ---
@@ -720,6 +731,97 @@ Working examples: Marina Grille (`schedule`), Anchor Tavern (`schedule`), R Bar 
 - Several logo source files sit in the **project root** (v1 JPG, v2 textClipping, v3 transparent PNG) — these are design assets, not served by the app.
 - The full-size logos (v3 at 6MB, v4 at 5.7M, original at 7.8M) are very large for web. The production site uses the pre-sized 104px and 200px versions.
 - v5 (47K) appears to be the most optimized version but is not currently referenced in any component.
+
+---
+
+## UI Adjustments (March 14, 2026)
+
+### Typography & Contrast Improvements
+- **Event titles** (`EventCardV2`): 13px → 15px, fontWeight 700 → 600 (semi-bold)
+- **Event titles** (`SiteEventCard`): 17px → 19px, fontWeight 700 → 600
+- **Event titles** (`SiteHero` carousel): 15px → 17px, fontWeight 700 → 600
+- **Venue names** (`EventCardV2`): 11.5px → 13px
+- **Venue names** (`SiteEventCard`, `SiteHero`): 13px → 14px
+- **Date dividers** (`dateSeparatorStyle` in `page.js` + `redesign/page.js`): 11px → 13px, fontWeight 800 → 700, color lightened from `textMuted` (#7878A0) to `#9898B8` (dark mode) / `#6B7280` (light mode)
+- **Section headings** (`SectionHeading.js`): 18px → 20px
+- **Orange badges — contrast fix**: All white-on-orange text changed to dark `#1A1A24` (or `#111111`) across `EventCardV2` time badge, `HeroSection` pill, `EventCardV2` "Get Tickets" button, `SiteEventCard` "Tickets" button
+
+### Event Card Time Badge — Fixed Width Alignment
+- **Problem:** Orange time badges changed width based on text content (e.g., '8:30p' wider than '8p'), causing jagged alignment of artist names
+- **Fix:** Set fixed `width: 62px` on the time badge (comfortably fits "11:30p"), removed `minWidth`, used `padding: 5px 0` with flexbox centering (`display: flex, alignItems: center, justifyContent: center`)
+- **Result:** All badges same width, music note icons and artist names form a clean vertical line
+
+---
+
+## Hero Carousel Redesign — "Tonight's Spotlight" (March 14, 2026)
+
+### UI Overhaul (`src/components/HeroSection.js`)
+- **Label:** "Featured Tonight" → "Tonight's Spotlight" (or "Coming Up" for non-today)
+- **Pill styling:** Vibrant orange `#FF6600` background, pure black `#000000` text + bolt icon (Material Design bolt as inline SVG), font 9px weight 700, compact badge size
+- **Green genre pill:** Removed entirely
+- **Time + venue:** Removed boxed orange time badge. Combined into single clean line: `🕒 2:00 PM • 📍 Venue Name` using full time format (e.g., "7:00 PM" not "7p")
+- **Padding:** Increased from `8px 16px 12px` → `20px 20px 24px`
+- **Background:** Replaced solid gradient with background image (from `venue.photo_url`, `event.image_url`, or Unsplash placeholders) + heavy dark gradient overlay (`rgba(0,0,0,0.55)` → `rgba(0,0,0,0.80)`)
+- **Carousel:** Supports up to 5 items (was 3), dots slightly larger (7px, active 18px)
+
+### Spotlight Admin — Manual Carousel Pinning
+
+#### Database Table (`supabase-spotlight.sql`)
+```sql
+CREATE TABLE spotlight_events (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  spotlight_date DATE NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  UNIQUE(event_id, spotlight_date)
+);
+```
+**⚠️ Must run this SQL in Supabase SQL Editor before the spotlight feature works.**
+
+#### API (`src/app/api/spotlight/route.js`)
+- `GET /api/spotlight?date=YYYY-MM-DD` — public, returns pinned event IDs for a date
+- `POST /api/spotlight` — admin auth required, body: `{ date, event_ids: [] }`, replaces all pins for that date (max 5)
+- `DELETE /api/spotlight?date=YYYY-MM-DD` — admin auth required, clears all pins for that date
+
+#### Admin Panel (`src/app/admin/page.js`)
+- New **Spotlight** tab added between Events and Submissions
+- Date picker to select which day to configure
+- Shows all published events for that date — click to pin/unpin (star icon toggles)
+- Pinned events list with reorder buttons (↑↓) and remove (✕)
+- "Save Spotlight" and "Clear Pins" buttons
+- Status indicator: "No pins — using auto fallback" or "3/5 pinned"
+
+#### Carousel Priority Logic (`page.js` + `redesign/page.js`)
+1. **Priority 1:** Manual spotlight pins from admin (fetched from `/api/spotlight?date=today`)
+2. **Priority 2:** Algorithmic fallback — today's events sorted by start_time
+3. **Priority 3:** Next upcoming events (up to 6), sorted by date then time
+
+---
+
+## Distance / Location Filter Overhaul (March 14, 2026)
+
+### UI Changes
+- **Active container wraps everything**: When the Distance dropdown is open, a teal border (`1.5px solid accentAlt`) and subtle background tint (`#1E1E30` dark / `#F0FFFE` light) encloses the header, location input, AND slider — not just the header row. Rounded corners (`10px`) and small margin separate it visually from other filter cards.
+- **Slider labels**: Bumped to `10px`/`600` weight, color `#A0A0A0` for visibility. Min label shows "5 mi", max shows "50 mi".
+- **Slider min value**: Changed from `0` to `5` (a 0-mile radius is useless). Dragging to minimum (5) resets filter to `null` (any distance).
+- **Custom slider thumb**: CSS class `.distance-slider` in `globals.css` — 22px teal circle with 2.5px white border and drop shadow. Cursor changes to `grab`/`grabbing`. Track thickened to 6px.
+- **Radius display**: When active, shows "X miles from [location]" below the slider in teal.
+
+### Backend: Venue Geocoding
+- **Migration**: `supabase-geocode.sql` — adds `latitude`/`longitude` columns to `venues` table, seeds 6 default Asbury Park venue coordinates, creates `idx_venues_lat_lng` index.
+- **API Route**: `src/app/api/geocode-venues/route.js`
+  - `POST` (admin auth): Batch geocodes all venues missing lat/lng using Nominatim. Rate-limited to 1 req/sec.
+  - `GET` (public): Returns all venues with coordinates.
+- **Event data mapping**: Both `page.js` and `redesign/page.js` now select `venues(... latitude, longitude)` and map to `venue_lat`/`venue_lng` on each event.
+
+### Backend: Haversine Distance Filtering
+- **Haversine function**: `haversineDistance(lat1, lng1, lat2, lng2)` returns distance in miles. Added to both `page.js` and `redesign/page.js`.
+- **Filter logic**: In `filteredEvents` useMemo, when `milesRadius !== null && locationCoords` is set, events are filtered by `haversineDistance(userLat, userLng, venueLat, venueLng) <= milesRadius`. Events without venue coordinates are excluded.
+- **User location sources**: (1) Browser geolocation on mount → reverse geocode for town name; (2) Text input → forward geocode via Nominatim (appends ", NJ").
+
+### Setup Required
+1. Run `supabase-geocode.sql` in Supabase SQL Editor
+2. For new venues, run geocoding: `POST /api/geocode-venues` with admin auth header
 
 ---
 

@@ -45,3 +45,51 @@ body {
   background: var(--accent);
   color: white;
 }
+
+/* ── Distance slider custom thumb & track ──────────────────────────── */
+input[type="range"].distance-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"].distance-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #3AADA0;
+  border: 2.5px solid #FFFFFF;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  cursor: grab;
+  margin-top: -8px;
+}
+input[type="range"].distance-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.1);
+  box-shadow: 0 2px 12px rgba(58,173,160,0.5);
+}
+input[type="range"].distance-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #3AADA0;
+  border: 2.5px solid #FFFFFF;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  cursor: grab;
+}
+input[type="range"].distance-slider::-moz-range-thumb:active {
+  cursor: grabbing;
+  box-shadow: 0 2px 12px rgba(58,173,160,0.5);
+}
+input[type="range"].distance-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+}
+input[type="range"].distance-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+}
