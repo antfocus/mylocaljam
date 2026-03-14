@@ -1009,8 +1009,15 @@ export default function HomePage() {
 
                 {/* 2. WHEN card */}
                 <div style={{
-                  borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
-                  background: darkMode ? '#262636' : '#FFFFFF',
+                  background: activeFilterCard === 'when'
+                    ? (darkMode ? '#1E1E30' : '#FFF8F4')
+                    : (darkMode ? '#262636' : '#FFFFFF'),
+                  border: activeFilterCard === 'when'
+                    ? `1.5px solid ${t.accent}`
+                    : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  borderRadius: activeFilterCard === 'when' ? '10px' : '0',
+                  margin: activeFilterCard === 'when' ? '4px 6px' : '0',
+                  transition: 'all 0.2s ease',
                 }}>
                   <button onClick={() => setActiveFilterCard(activeFilterCard === 'when' ? null : 'when')} style={{
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
@@ -1060,8 +1067,15 @@ export default function HomePage() {
 
                 {/* 3. ARTIST card */}
                 <div style={{
-                  borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
-                  background: darkMode ? '#262636' : '#FFFFFF',
+                  background: activeFilterCard === 'artist'
+                    ? (darkMode ? '#1E1E30' : '#FFF8F4')
+                    : (darkMode ? '#262636' : '#FFFFFF'),
+                  border: activeFilterCard === 'artist'
+                    ? `1.5px solid ${t.accent}`
+                    : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  borderRadius: activeFilterCard === 'artist' ? '10px' : '0',
+                  margin: activeFilterCard === 'artist' ? '4px 6px' : '0',
+                  transition: 'all 0.2s ease',
                 }}>
                   <button onClick={() => setActiveFilterCard(activeFilterCard === 'artist' ? null : 'artist')} style={{
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
@@ -1113,7 +1127,15 @@ export default function HomePage() {
 
                 {/* 4. VENUE card (most specific) */}
                 <div style={{
-                  background: darkMode ? '#262636' : '#FFFFFF',
+                  background: activeFilterCard === 'venue'
+                    ? (darkMode ? '#1E1E30' : '#F8F0FF')
+                    : (darkMode ? '#262636' : '#FFFFFF'),
+                  border: activeFilterCard === 'venue'
+                    ? `1.5px solid #a78bfa`
+                    : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  borderRadius: activeFilterCard === 'venue' ? '10px' : '0',
+                  margin: activeFilterCard === 'venue' ? '4px 6px' : '0',
+                  transition: 'all 0.2s ease',
                 }}>
                   <button onClick={() => setActiveFilterCard(activeFilterCard === 'venue' ? null : 'venue')} style={{
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
