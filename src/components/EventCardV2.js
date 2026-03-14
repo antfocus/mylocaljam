@@ -27,9 +27,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
   const venue      = event.venue       || event.venue_name  || '';
   const desc       = event.description || event.artist_bio  || '';
   const imageUrl   = event.image_url   || event.venue_photo || null;
-  // Two independent URL fields — no fallback or override logic between them
-  const sourceLink = event.source       || null;  // venue website (always render if present)
-  const ticketLink = event.ticket_link  || null;   // ticketing URL (render only if non-null/non-empty)
+  const sourceLink = event.source       || null;
   const category   = event.genre       || event.vibe        || 'Live Music';
   const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
   const timeStr    = formatTimeRange(event.start_time, event.end_time);
@@ -274,28 +272,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                   </a>
                 )}
 
-                {/* 3. Get Tickets — ONLY if ticket_link exists in DB, styled same as Venue Website */}
-                {ticketLink && (
-                  <a
-                    href={ticketLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={e => e.stopPropagation()}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '5px',
-                      fontSize: '11px', fontWeight: 700,
-                      padding: '7px 14px', borderRadius: '8px',
-                      background: darkMode ? '#2A2A3A' : '#E5E7EB',
-                      color: darkMode ? '#AAAACC' : '#4B5563',
-                      textDecoration: 'none', border: 'none', cursor: 'pointer',
-                      fontFamily: "'DM Sans', sans-serif",
-                    }}
-                  >
-                    🎟 Tickets
-                  </a>
-                )}
-
-                {/* 4. Flag icon (near right, muted, larger touch target) */}
+                {/* 3. Flag icon (far right, muted, larger touch target) */}
                 <button
                   onClick={e => { e.stopPropagation(); setFlagSheet(true); }}
                   style={{
