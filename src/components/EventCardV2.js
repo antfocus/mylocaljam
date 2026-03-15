@@ -88,15 +88,18 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           onClick={() => setExpanded(e => !e)}
           style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 10px', cursor: 'pointer' }}
         >
-          {/* Colored time badge */}
+          {/* Colored time block — fixed square, full-bleed text */}
           <div style={{
             background: isCanceled ? '#DC2626' : config.bg,
             color: isCanceled ? '#FFFFFF' : (darkMode ? '#FFFFFF' : '#000000'),
-            fontSize: '15px', fontWeight: 700,
-            padding: '5px 0', borderRadius: '6px',
-            width: '66px', flexShrink: 0, textAlign: 'center',
-            lineHeight: 1.3,
+            fontSize: '18px', fontWeight: 900,
+            width: '48px', height: '48px',
+            borderRadius: '8px', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
+            fontVariantNumeric: 'tabular-nums',
+            lineHeight: 1,
+            letterSpacing: '-0.5px',
           }}>
             {isCanceled ? '✕' : (timeStr || '—')}
           </div>
