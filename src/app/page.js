@@ -64,10 +64,10 @@ const LIGHT = {
 
 // ── Date filter options ───────────────────────────────────────────────────────
 const DATE_OPTIONS = [
-  { key: 'all',      label: 'All Upcoming' },
+  { key: 'all',      label: 'ALL'          },
   { key: 'today',    label: 'Today'        },
   { key: 'tomorrow', label: 'Tomorrow'     },
-  { key: 'weekend',  label: 'This Weekend' },
+  { key: 'weekend',  label: 'Weekend'      },
   { key: 'pick',     label: 'Pick a Date'  },
 ];
 
@@ -732,7 +732,7 @@ export default function HomePage() {
   // Filter panel labels
   const whenLabel = dateKey === 'pick' && pickedDate
     ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    : DATE_OPTIONS.find(o => o.key === dateKey)?.label || 'All Upcoming';
+    : DATE_OPTIONS.find(o => o.key === dateKey)?.label || 'ALL';
   const venueLabel = activeVenues.length === 0 ? 'Any Venue' : activeVenues.length === 1 ? activeVenues[0] : `${activeVenues.length} venues`;
   const distanceLabel = milesRadius === null ? 'Any distance' : `${milesRadius} mi`;
   const artistLabel = artistSearch.trim() ? artistSearch.trim() : 'Any Artist';
@@ -948,8 +948,8 @@ export default function HomePage() {
                   }}>
                     <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={milesRadius !== null ? t.accentAlt : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: milesRadius !== null ? t.accentAlt : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Distance / Location</div>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: milesRadius !== null ? t.accentAlt : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Distance / Location</div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>
                         {milesRadius !== null ? `Within ${milesRadius} miles` : 'Any distance'}
                       </div>
                     </div>
@@ -1025,42 +1025,50 @@ export default function HomePage() {
                   }}>
                     <svg width="18" height="18" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" fill={dateKey !== 'all' ? t.accent : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: dateKey !== 'all' ? t.accent : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>When</div>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{whenLabel}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: dateKey !== 'all' ? t.accent : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>When</div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{whenLabel}</div>
                     </div>
                     <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'when' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={dateKey !== 'all' ? t.accent : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'when' && (
                     <div style={{ padding: '0 12px 8px' }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {DATE_OPTIONS.map(opt => (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {DATE_OPTIONS.filter(o => o.key !== 'pick').map(opt => (
                           <button key={opt.key} onClick={() => {
                             setDateKey(opt.key);
-                            if (opt.key !== 'pick') { setPickedDate(''); setActiveFilterCard(null); }
+                            setPickedDate(''); setActiveFilterCard(null);
                           }} style={{
-                            padding: '5px 10px', borderRadius: '14px', border: 'none', cursor: 'pointer',
+                            padding: '10px 16px', borderRadius: '20px', border: 'none', cursor: 'pointer',
                             background: dateKey === opt.key ? t.accent : (darkMode ? '#2A2A3C' : '#E8E6E2'),
                             color: dateKey === opt.key ? '#fff' : t.text,
-                            fontSize: '10px', fontWeight: dateKey === opt.key ? 700 : 500,
+                            fontSize: '14px', fontWeight: dateKey === opt.key ? 700 : 500,
                             fontFamily: "'DM Sans', sans-serif",
+                            minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                           }}>
                             {opt.label}
                           </button>
                         ))}
+                        <label style={{
+                          padding: '10px 16px', borderRadius: '20px', border: `1px dashed ${t.textMuted}40`, cursor: 'pointer',
+                          background: dateKey === 'pick' ? t.accent : 'transparent',
+                          color: dateKey === 'pick' ? '#fff' : t.textMuted,
+                          fontSize: '14px', fontWeight: dateKey === 'pick' ? 700 : 500,
+                          fontFamily: "'DM Sans', sans-serif",
+                          minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          position: 'relative', overflow: 'hidden',
+                        }}>
+                          {dateKey === 'pick' && pickedDate
+                            ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                            : 'Pick a Date'}
+                          <input type="date" value={pickedDate} min={todayStr}
+                            onChange={e => { setPickedDate(e.target.value); setDateKey('pick'); if (e.target.value) setActiveFilterCard(null); }}
+                            style={{
+                              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                              opacity: 0, cursor: 'pointer', fontSize: '16px',
+                            }}
+                          />
+                        </label>
                       </div>
-                      {dateKey === 'pick' && (
-                        <input type="date" value={pickedDate} min={todayStr}
-                          onChange={e => { setPickedDate(e.target.value); if (e.target.value) setActiveFilterCard(null); }}
-                          style={{
-                            marginTop: '8px', width: '100%', padding: '8px 10px', borderRadius: '8px',
-                            border: `1px solid ${darkMode ? '#3A3A4A' : '#CCC'}`,
-                            background: darkMode ? '#1E1E2E' : '#F8F7F5',
-                            color: t.text, fontSize: '13px', fontFamily: "'DM Sans', sans-serif",
-                            outline: 'none', cursor: 'pointer',
-                            colorScheme: darkMode ? 'dark' : 'light',
-                          }}
-                        />
-                      )}
                     </div>
                   )}
                 </div>
@@ -1083,8 +1091,8 @@ export default function HomePage() {
                   }}>
                     <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill={artistSearch.trim() ? t.accent : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: artistSearch.trim() ? t.accent : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Artist</div>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{artistLabel}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: artistSearch.trim() ? t.accent : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Artist</div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{artistLabel}</div>
                     </div>
                     <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'artist' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={artistSearch.trim() ? t.accent : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
@@ -1143,8 +1151,8 @@ export default function HomePage() {
                   }}>
                     <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.22 0-4.01 1.79-4.01 4.01S7.79 21 10.01 21 14 19.21 14 17V7h4V3h-6z" fill={activeVenues.length > 0 ? '#a78bfa' : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: activeVenues.length > 0 ? '#a78bfa' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Venue</div>
-                      <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{venueLabel}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: activeVenues.length > 0 ? '#a78bfa' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Venue</div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{venueLabel}</div>
                     </div>
                     <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'venue' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={activeVenues.length > 0 ? '#a78bfa' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
@@ -1273,33 +1281,42 @@ export default function HomePage() {
             {savedSegment === 'events' && (
               <>
                 <div style={{ display: 'flex', gap: '6px', padding: '10px 16px 10px', overflowX: 'auto', scrollbarWidth: 'none' }}>
-                  {DATE_OPTIONS.map(opt => (
+                  {DATE_OPTIONS.filter(o => o.key !== 'pick').map(opt => (
                     <button key={opt.key} onClick={() => {
                       setDateKey(opt.key);
-                      if (opt.key !== 'pick') setPickedDate('');
+                      setPickedDate('');
                     }} style={{
-                      padding: '5px 14px', borderRadius: '999px', border: `1.5px solid`, cursor: 'pointer', whiteSpace: 'nowrap',
-                      fontSize: '12px', fontWeight: 700,
+                      padding: '10px 16px', borderRadius: '20px', border: `1.5px solid`, cursor: 'pointer', whiteSpace: 'nowrap',
+                      fontSize: '14px', fontWeight: 700,
                       background: dateKey === opt.key ? t.accent : t.pillBg,
                       color: dateKey === opt.key ? 'white' : t.textMuted,
                       borderColor: dateKey === opt.key ? t.accent : t.pillBorder,
+                      minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
-                      {opt.key === 'pick' && pickedDate
-                        ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                        : opt.label}
+                      {opt.label}
                     </button>
                   ))}
-                  {dateKey === 'pick' && (
+                  <label style={{
+                    padding: '10px 16px', borderRadius: '20px', border: `1.5px solid`,
+                    cursor: 'pointer', whiteSpace: 'nowrap',
+                    fontSize: '14px', fontWeight: 700,
+                    background: dateKey === 'pick' ? t.accent : t.pillBg,
+                    color: dateKey === 'pick' ? 'white' : t.textMuted,
+                    borderColor: dateKey === 'pick' ? t.accent : t.pillBorder,
+                    minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    position: 'relative', overflow: 'hidden',
+                  }}>
+                    {dateKey === 'pick' && pickedDate
+                      ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                      : 'Pick a Date'}
                     <input type="date" value={pickedDate} min={todayStr}
-                      onChange={e => setPickedDate(e.target.value)}
+                      onChange={e => { setPickedDate(e.target.value); setDateKey('pick'); }}
                       style={{
-                        padding: '4px 10px', borderRadius: '999px', border: `1.5px solid ${t.accent}`,
-                        background: darkMode ? '#1E1E2E' : '#F8F7F5', color: t.text,
-                        fontSize: '12px', fontFamily: "'DM Sans', sans-serif", outline: 'none', cursor: 'pointer',
-                        colorScheme: darkMode ? 'dark' : 'light',
+                        position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                        opacity: 0, cursor: 'pointer', fontSize: '16px',
                       }}
                     />
-                  )}
+                  </label>
                 </div>
                 {(() => {
                   let savedEvents = events.filter(e => favorites.has(e.id));

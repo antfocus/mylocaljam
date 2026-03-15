@@ -150,19 +150,47 @@ function UnifiedSearchBlock({
   const setPickedDate = (v) => setFilters(f => ({ ...f, pickedDate: v }));
   const setShowDatePicker = (v) => setFilters(f => ({ ...f, showDatePicker: v }));
   const dateInputRef = useRef(null);
+  const datePickInputRef = useRef(null);
 
   // Outside click is now handled by the scrim in the parent component
+
+  // ── Swipe-down-to-dismiss ──────────────────────────────────────────
+  const touchStartY = useRef(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+
+  const handleTouchStart = useCallback((e) => {
+    touchStartY.current = e.touches[0].clientY;
+    setSwipeOffset(0);
+  }, []);
+
+  const handleTouchMove = useCallback((e) => {
+    if (touchStartY.current === null) return;
+    const deltaY = e.touches[0].clientY - touchStartY.current;
+    // Only allow downward swipe
+    if (deltaY > 0) {
+      setSwipeOffset(deltaY);
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    // If swiped down more than 80px, dismiss
+    if (swipeOffset > 80) {
+      onClose?.();
+    }
+    setSwipeOffset(0);
+    touchStartY.current = null;
+  }, [swipeOffset, onClose]);
 
   const toggleCard = (card) => {
     setActiveCard(activeCard === card ? null : card);
   };
 
   const dateOptions = [
-    { key: 'all', label: 'All Upcoming' },
+    { key: 'all', label: 'ALL' },
     { key: 'today', label: 'Today' },
     { key: 'tomorrow', label: 'Tomorrow' },
-    { key: 'weekend', label: 'This Weekend' },
-    { key: 'pick', label: 'Choose a Date...' },
+    { key: 'weekend', label: 'Weekend' },
+    { key: 'pick', label: 'Pick a Date' },
   ];
 
   const filteredMockVenues = MOCK_VENUES.filter(v =>
@@ -191,7 +219,7 @@ function UnifiedSearchBlock({
   const distanceLabel = `${radius} mi`;
   const whenLabel = dateFilter === 'pick' && pickedDate
     ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    : dateOptions.find(o => o.key === dateFilter)?.label || 'All Upcoming';
+    : dateOptions.find(o => o.key === dateFilter)?.label || 'ALL';
   const venueLabel = selectedVenues.length === 0 ? 'Any Venue' : selectedVenues.length === 1
     ? MOCK_VENUES.find(v => v.id === selectedVenues[0])?.name
     : `${selectedVenues.length} venues`;
@@ -233,15 +261,33 @@ function UnifiedSearchBlock({
     }}>
       <MaterialIcon type={icon} color={accentColor || t.textMuted} />
       <div style={{ flex: 1, textAlign: 'left' }}>
-        <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: accentColor || t.textMuted, lineHeight: 1, marginBottom: '2px' }}>{label}</div>
-        <div style={{ fontSize: '12px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{value}</div>
+        <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: accentColor || t.textMuted, lineHeight: 1, marginBottom: '3px' }}>{label}</div>
+        <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{value}</div>
       </div>
       <Chevron open={isActive} color={accentColor || t.textMuted} size={10} />
     </button>
   );
 
   return (
-    <div ref={containerRef} style={{ padding: '6px 12px 8px' }}>
+    <div ref={containerRef}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={{
+        padding: '6px 12px 8px',
+        transform: swipeOffset > 0 ? `translateY(${Math.min(swipeOffset * 0.5, 60)}px)` : 'none',
+        opacity: swipeOffset > 60 ? 0.5 : 1,
+        transition: swipeOffset === 0 ? 'transform 0.25s ease, opacity 0.25s ease' : 'none',
+      }}>
+      {/* ── Drag handle indicator (swipe down to dismiss) ── */}
+      <div style={{
+        display: 'flex', justifyContent: 'center', padding: '4px 0 2px', cursor: 'grab',
+      }}>
+        <div style={{
+          width: '36px', height: '4px', borderRadius: '2px',
+          background: darkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+        }} />
+      </div>
       {/* ── Filter panel ── */}
         <div style={{
           borderRadius: '12px', overflow: 'hidden',
@@ -294,6 +340,7 @@ function UnifiedSearchBlock({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ fontSize: '9px', color: t.textMuted }}>5</span>
                   <input type="range" min="5" max="55" value={radius}
+                    className="distance-slider"
                     onChange={e => setRadius(parseInt(e.target.value))}
                     style={{
                       flex: 1, height: '3px', appearance: 'none', WebkitAppearance: 'none',
@@ -318,46 +365,42 @@ function UnifiedSearchBlock({
             {activeCard === 'when' && (
               <div style={{ padding: '0 12px 8px' }}>
                 {/* Chip row */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {dateOptions.filter(o => o.key !== 'pick').map(opt => (
                     <button key={opt.key} onClick={() => {
                       setDateFilter(opt.key); setPickedDate(''); setShowDatePicker(false); setActiveCard(null);
                     }} style={{
-                      padding: '5px 10px', borderRadius: '14px', border: 'none', cursor: 'pointer',
+                      padding: '10px 16px', borderRadius: '20px', border: 'none', cursor: 'pointer',
                       background: dateFilter === opt.key ? t.accent : (darkMode ? '#2A2A3C' : '#E8E6E2'),
                       color: dateFilter === opt.key ? '#fff' : t.text,
-                      fontSize: '10px', fontWeight: dateFilter === opt.key ? 700 : 500,
+                      fontSize: '14px', fontWeight: dateFilter === opt.key ? 700 : 500,
                       fontFamily: "'DM Sans', sans-serif", transition: 'all 0.12s',
+                      minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
                       {opt.label}
                     </button>
                   ))}
-                  <button onClick={() => setShowDatePicker(s => !s)} style={{
-                    padding: '5px 10px', borderRadius: '14px', border: `1px dashed ${t.textMuted}40`, cursor: 'pointer',
+                  <label style={{
+                    padding: '10px 16px', borderRadius: '20px', border: `1px dashed ${t.textMuted}40`, cursor: 'pointer',
                     background: dateFilter === 'pick' ? t.accent : 'transparent',
                     color: dateFilter === 'pick' ? '#fff' : t.textMuted,
-                    fontSize: '10px', fontWeight: dateFilter === 'pick' ? 700 : 500,
+                    fontSize: '14px', fontWeight: dateFilter === 'pick' ? 700 : 500,
                     fontFamily: "'DM Sans', sans-serif",
+                    minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    position: 'relative', overflow: 'hidden',
                   }}>
                     {dateFilter === 'pick' && pickedDate
                       ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                      : 'Pick...'}
-                  </button>
-                </div>
-                {showDatePicker && (
-                  <div style={{ marginTop: '6px' }}>
-                    <input ref={dateInputRef} type="date" value={pickedDate} autoFocus
+                      : 'Pick a Date'}
+                    <input ref={datePickInputRef} type="date" value={pickedDate}
                       onChange={(e) => { setPickedDate(e.target.value); setDateFilter('pick'); setShowDatePicker(false); setActiveCard(null); }}
                       style={{
-                        width: '100%', padding: '6px 8px', borderRadius: '6px',
-                        border: `1px solid ${darkMode ? '#2E2E40' : '#DDD'}`, background: panelCardBg,
-                        color: t.text, fontSize: '12px', fontWeight: 600,
-                        outline: 'none', fontFamily: "'DM Sans', sans-serif",
-                        boxSizing: 'border-box', colorScheme: darkMode ? 'dark' : 'light',
+                        position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+                        opacity: 0, cursor: 'pointer', fontSize: '16px',
                       }}
                     />
-                  </div>
-                )}
+                  </label>
+                </div>
               </div>
             )}
           </div>
@@ -1006,7 +1049,7 @@ export default function SearchFilterRedesign() {
           }}>
             {/* Material Search icon */}
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-              <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={hasActiveFilters ? t.accentAlt : t.textMuted} />
+              <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={t.textMuted} />
             </svg>
 
             {/* Search text — always visible, never overwritten */}

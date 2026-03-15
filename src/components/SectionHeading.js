@@ -7,13 +7,13 @@ export default function SectionHeading({
   onClearFilters,
 }) {
   const dateLabels = {
-    all:      'All Upcoming',
+    all:      'All Shows',
     today:    'Today',
     tomorrow: 'Tomorrow',
-    weekend:  'This Weekend',
+    weekend:  'Weekend',
   };
 
-  const heading = dateLabels[dateKey] || 'All Upcoming';
+  const heading = dateLabels[dateKey] || 'All Shows';
 
   return (
     <div style={{
@@ -25,7 +25,7 @@ export default function SectionHeading({
       {/* Left: heading + count */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
         <h2 style={{
-          fontSize: '18px',
+          fontSize: '20px',
           fontWeight: 700,
           fontFamily: "'Syne', sans-serif",
           color: '#e8e8f0',

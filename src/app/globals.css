@@ -58,32 +58,37 @@ input[type="range"].distance-slider {
 input[type="range"].distance-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 22px;
-  height: 22px;
+  /* 48×48 touch target with visual 22px thumb via background + border trick */
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: #3AADA0;
-  border: 2.5px solid #FFFFFF;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  border: 13px solid transparent;
+  background-clip: padding-box;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35), 0 0 0 2.5px #FFFFFF inset;
   cursor: grab;
-  margin-top: -8px;
+  margin-top: -21px;
+  position: relative;
 }
 input[type="range"].distance-slider::-webkit-slider-thumb:active {
   cursor: grabbing;
-  transform: scale(1.1);
-  box-shadow: 0 2px 12px rgba(58,173,160,0.5);
+  transform: scale(1.08);
+  box-shadow: 0 2px 12px rgba(58,173,160,0.5), 0 0 0 2.5px #FFFFFF inset;
 }
 input[type="range"].distance-slider::-moz-range-thumb {
-  width: 22px;
-  height: 22px;
+  /* 48×48 touch target with visual 22px thumb via background + border trick */
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: #3AADA0;
-  border: 2.5px solid #FFFFFF;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  border: 13px solid transparent;
+  background-clip: padding-box;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35), 0 0 0 2.5px #FFFFFF inset;
   cursor: grab;
 }
 input[type="range"].distance-slider::-moz-range-thumb:active {
   cursor: grabbing;
-  box-shadow: 0 2px 12px rgba(58,173,160,0.5);
+  box-shadow: 0 2px 12px rgba(58,173,160,0.5), 0 0 0 2.5px #FFFFFF inset;
 }
 input[type="range"].distance-slider::-webkit-slider-runnable-track {
   height: 6px;

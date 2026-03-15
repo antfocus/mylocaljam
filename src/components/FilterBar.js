@@ -298,6 +298,7 @@ export default function FilterBar({
                   <span style={{ fontSize: '10px', color: C.muted }}>50 mi</span>
                 </div>
                 <input type="range" min="1" max="50"
+                  className="distance-slider"
                   value={milesRadius || 50}
                   onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v >= 50 ? null : v); }}
                   style={{
