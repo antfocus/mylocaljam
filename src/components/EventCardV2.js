@@ -108,8 +108,11 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
             <span style={{
               fontSize: '17px', fontWeight: 600, color: textPrimary,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               textDecoration: isCanceled ? 'line-through' : 'none',
+              ...(expanded
+                ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'normal' }
+                : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+              ),
             }}>
               {name}
             </span>
