@@ -101,12 +101,9 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             lineHeight: 0.85,
             letterSpacing: '-0.5px',
           }}>
-            {isCanceled ? '✕' : (() => {
-              const t = timeStr || '—';
-              if (!t.includes(':')) return t;
-              const idx = t.indexOf(':');
-              return (<>{t.slice(0, idx)}<br/>{t.slice(idx + 1)}</>);
-            })()}
+            {isCanceled ? '✕' : (timeStr && timeStr.includes(':'))
+              ? <><span>{timeStr.slice(0, timeStr.indexOf(':'))}</span><span>{timeStr.slice(timeStr.indexOf(':') + 1)}</span></>
+              : (timeStr || '—')}
           </div>
 
           {/* Category emoji */}
