@@ -92,9 +92,9 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           <div style={{
             background: isCanceled ? '#DC2626' : config.bg,
             color: isCanceled ? '#FFFFFF' : (darkMode ? '#FFFFFF' : '#000000'),
-            fontSize: '14px', fontWeight: 700,
+            fontSize: '15px', fontWeight: 700,
             padding: '5px 0', borderRadius: '6px',
-            width: '62px', flexShrink: 0, textAlign: 'center',
+            width: '66px', flexShrink: 0, textAlign: 'center',
             lineHeight: 1.3,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
@@ -102,12 +102,12 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           </div>
 
           {/* Category emoji */}
-          <span style={{ fontSize: '13px', flexShrink: 0 }}>{config.emoji}</span>
+          <span style={{ fontSize: '15px', flexShrink: 0 }}>{config.emoji}</span>
 
           {/* Event name + venue stacked */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
             <span style={{
-              fontSize: '15px', fontWeight: 600, color: textPrimary,
+              fontSize: '17px', fontWeight: 600, color: textPrimary,
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               textDecoration: isCanceled ? 'line-through' : 'none',
             }}>
@@ -115,7 +115,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             </span>
             {venue && (
               <span style={{
-                fontSize: '13px', fontWeight: 600, color: venueColor,
+                fontSize: '14px', fontWeight: 600, color: venueColor,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
                 {venue}
