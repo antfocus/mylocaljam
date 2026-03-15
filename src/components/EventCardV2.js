@@ -88,20 +88,25 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           onClick={() => setExpanded(e => !e)}
           style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 10px', cursor: 'pointer' }}
         >
-          {/* Colored time block — fixed square, full-bleed text */}
+          {/* Colored time block — fixed square, stacked text for times with colon */}
           <div style={{
             background: isCanceled ? '#DC2626' : config.bg,
             color: isCanceled ? '#FFFFFF' : (darkMode ? '#FFFFFF' : '#000000'),
             fontSize: '18px', fontWeight: 900,
             width: '48px', height: '48px',
             borderRadius: '8px', flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
             fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
             fontVariantNumeric: 'tabular-nums',
-            lineHeight: 1,
+            lineHeight: 0.85,
             letterSpacing: '-0.5px',
           }}>
-            {isCanceled ? '✕' : (timeStr || '—')}
+            {isCanceled ? '✕' : (() => {
+              const t = timeStr || '—';
+              if (!t.includes(':')) return t;
+              const idx = t.indexOf(':');
+              return (<>{t.slice(0, idx)}<br/>{t.slice(idx + 1)}</>);
+            })()}
           </div>
 
           {/* Category emoji */}

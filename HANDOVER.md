@@ -845,13 +845,16 @@ UPDATE venues SET latitude = ?, longitude = ? WHERE name = '?';
 - **Removed** redundant artist name + venue name text that appeared below the hero image (already shown in compact header row)
 - **Removed** bottom row with large `+ Follow Artist` and `+ Follow Venue` buttons
 - **Dropped** Follow Venue feature entirely — `onFollowVenue` and `isVenueFollowed` props removed from EventCardV2
-- **Image fix**: Hero image uses `object-fit: cover` with `object-position: center top` and `maxHeight: 220px`. Full image width visible, text baked into bottom of photos is preserved. No fixed aspect ratio padding trick — natural image height up to 220px cap.
+- **Image fix**: Hero image uses `aspect-ratio: 16/9` with `object-fit: cover` and `object-position: center center`. Proportional rendering without bottom clipping.
 
 ### Action Row (Single Flex Line, Left-to-Right Order)
-1. **+ Follow Artist** (far left, primary): Orange outlined pill when unfollowed, green bg when followed. 11px/700 weight.
-2. **🌐 Venue Website** (middle): Always shows if `source` URL exists. Subtle grey bg button.
-3. **🎟 Tickets** (conditional): ONLY renders if `ticket_link` exists in DB. Orange bg button. Hidden by default.
-4. **⚑ Flag** (far right): Pushed right via `marginLeft: auto`. Standalone icon only — no background, no border, no text. Muted grey `#A0A0A0`, turns orange on hover. Opens flag bottom-sheet.
+1. **+ Follow Artist** (far left, primary): Orange outlined pill when unfollowed, green bg when followed. 11px/700 weight. Only element with standout accent color.
+2. **🌐 Venue Website** (middle): Always shows if `source` URL exists. Subtle grey bg button (`#2A2A3A` dark / `#E5E7EB` light).
+3. **⚑ Flag** (far right): Pushed right via `marginLeft: auto`. 24px icon, `marginRight: 2px`. No background, no border. Muted `#A0A0A0`, turns orange on hover. Opens flag bottom-sheet.
+- **Tickets button removed** — users can find tickets via the Venue Website link. Removed from EventCardV2 entirely.
+
+### Sync Route — Ticket Link Filtering
+- `sync-events/route.js` now compares `ticket_url` hostname against `source_url` hostname at ingest time. If same domain (scraper venue-URL fallback), stores `null` for `ticket_link` instead of the fallback URL.
 
 ### Public Status Badges
 - **Cover Charge pill**: Subtle rounded pill above description. Dark mode: dark grey bg + light text. Light mode: light grey bg + dark text. Shows "💵 $X Cover" or "🎵 Free Admission"
@@ -877,6 +880,25 @@ UPDATE venues SET latitude = ?, longitude = ? WHERE name = '?';
 ### Modified Files
 - `src/components/EventCardV2.js` — Full rewrite with all above changes
 - `src/app/page.js` — Removed `onFollowVenue`, `isVenueFollowed`, `onReport` props; added `onFlag` prop; cleaned up ReportIssueModal references
+
+### Styling Tweaks (March 14, 2026)
+- **Search bar icon + text**: Magnifying glass and "Search / Filters" label both use `t.textMuted` — no longer switches to teal accent when expanded. Matches placeholder text color.
+- **Time pill text**: White (`#FFFFFF`) in dark mode, black (`#000000`) in light mode. Previously was `#111111` in both modes which looked muddy on dark backgrounds.
+
+### Time Block Redesign (March 15, 2026)
+- **Uniform squircle blocks**: Fixed 48×48px with 8px border-radius, `flex-direction: column` layout
+- **Font**: Arial Black / Anton / Archivo Black, weight 900, 18px, tabular-nums, letter-spacing -0.5px
+- **Stacked text for colon times**: If `timeStr` contains `:`, splits into two lines — top line is everything before the colon (e.g., `5`), bottom line is everything after (e.g., `30p`). Colon stripped for clean stacking. Uses `<br/>` to split. `line-height: 0.85` keeps lines hugging tightly inside the squircle.
+- **Single-line times**: Times without colons (e.g., `7p`, `12p`) render normally on one line at 18px
+- **Canceled state**: Red `#DC2626` background with white '✕' symbol
+
+### Filter UI Overhaul (March 15, 2026)
+- **Pill labels shortened**: "All Upcoming" → "ALL", "This Weekend" → "Weekend", "Choose a Date..." → "Pick a Date"
+- **Font sizes bumped**: Pill text 10px → 14px, card header labels 9px → 11px (SearchFilterRedesign) / 11px → 13px (page.js), card header subtext 12px → 14px
+- **Touch targets increased**: Pill padding 5px 10px → 10px 16px, minHeight 40px, border-radius 14px → 20px, gap 4px → 8px
+- **Pick a Date — native calendar**: Uses `<label>` wrapping a hidden `<input type="date">` (opacity 0, absolute positioned). Tapping the pill immediately opens the native OS date picker (iOS date wheel, Android material calendar, desktop browser picker). No two-step process. Applied to all 3 instances: main filter panel (page.js), SearchFilterRedesign component, and Saved Events tab
+- **SectionHeading labels**: Updated to match — "All Upcoming" → "All Shows", "This Weekend" → "Weekend"
+- **Modified files**: `src/app/page.js`, `src/components/SearchFilterRedesign.js`, `src/components/SectionHeading.js`
 
 ### Setup Required
 1. Run `supabase-event-flags.sql` in Supabase SQL Editor (adds flag count columns)
