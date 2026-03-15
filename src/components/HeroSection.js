@@ -92,10 +92,12 @@ export default function HeroSection({ events = [], isToday = true }) {
 
       {/* Event info */}
       <div style={{ position: 'relative', zIndex: 10 }}>
-        {/* Artist name */}
+        {/* Artist name — 2-line clamp with ellipsis */}
         <h2 style={{
-          color: 'white', fontSize: '22px', fontWeight: 900, lineHeight: 1.2,
-          margin: '0 0 6px 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          color: 'white', fontSize: `clamp(18px, 5vw, 22px)`, fontWeight: 900, lineHeight: 1.2,
+          margin: '0 0 6px 0',
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          overflow: 'hidden', textOverflow: 'ellipsis',
           textShadow: '0 2px 8px rgba(0,0,0,0.5)',
         }}>
           {name}
