@@ -151,6 +151,56 @@ function UnifiedSearchBlock({
   const setShowDatePicker = (v) => setFilters(f => ({ ...f, showDatePicker: v }));
   const dateInputRef = useRef(null);
   const datePickInputRef = useRef(null);
+  const datePickOpenVal = useRef('');
+  const todayStrLocal = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const [locSuggestions, setLocSuggestions] = useState([]);
+  const [locFocused, setLocFocused] = useState(false);
+  const [locCoords, setLocCoords] = useState(null);
+  const [locGeolocating, setLocGeolocating] = useState(false);
+  const locDebounceRef = useRef(null);
+
+  const triggerGPSLocal = useCallback(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    setLocGeolocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json&zoom=10`)
+          .then(r => r.json())
+          .then(data => {
+            const town = data.address?.town || data.address?.city || data.address?.village || data.address?.hamlet || 'Current Location';
+            setLocation(town); setCustomZip(town); setUseCurrentLocation(true); setLocGeolocating(false);
+          })
+          .catch(() => { setLocGeolocating(false); });
+      },
+      () => { setLocCoords(null); setLocGeolocating(false); },
+      { timeout: 8000, maximumAge: 300000 }
+    );
+  }, [setLocation, setCustomZip, setUseCurrentLocation]);
+
+  // Auto-detect on mount
+  useEffect(() => { triggerGPSLocal(); }, [triggerGPSLocal]);
+
+  const fetchLocSuggestions = useCallback((query) => {
+    if (locDebounceRef.current) clearTimeout(locDebounceRef.current);
+    if (!query.trim() || query.trim().length < 2) { setLocSuggestions([]); return; }
+    locDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', NJ')}&format=json&limit=5&addressdetails=1`);
+        const results = await res.json();
+        setLocSuggestions(results.map(r => ({
+          name: [r.address?.town || r.address?.city || r.address?.village || r.address?.hamlet || r.display_name.split(',')[0], r.address?.state || 'NJ'].filter(Boolean).join(', '),
+          lat: parseFloat(r.lat), lng: parseFloat(r.lon),
+        })));
+      } catch { setLocSuggestions([]); }
+    }, 300);
+  }, []);
+
+  const selectLocSuggestion = useCallback((s) => {
+    setLocCoords({ lat: s.lat, lng: s.lng });
+    setLocation(s.name.split(',')[0]); setCustomZip(s.name.split(',')[0]); setUseCurrentLocation(false);
+    setLocSuggestions([]); setLocFocused(false);
+  }, [setLocation, setCustomZip, setUseCurrentLocation]);
 
   // Outside click is now handled by the scrim in the parent component
 
@@ -190,7 +240,7 @@ function UnifiedSearchBlock({
     { key: 'today', label: 'Today' },
     { key: 'tomorrow', label: 'Tomorrow' },
     { key: 'weekend', label: 'Weekend' },
-    { key: 'pick', label: 'Pick a Date' },
+    { key: 'pick', label: 'Date' },
   ];
 
   const filteredMockVenues = MOCK_VENUES.filter(v =>
@@ -303,54 +353,89 @@ function UnifiedSearchBlock({
               accentColor={t.accentAlt}
             />
             {activeCard === 'distance' && (
-              <div style={{ padding: '0 12px 8px' }}>
-                {/* Location row */}
-                <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
-                  <button onClick={() => setUseCurrentLocation(true)} style={{
-                    flex: 1, padding: '5px 6px', borderRadius: '6px', border: `1px solid ${useCurrentLocation ? t.accentAlt + '60' : (darkMode ? '#2E2E40' : '#DDD')}`,
-                    background: useCurrentLocation ? `${t.accentAlt}12` : 'transparent',
-                    cursor: 'pointer', fontSize: '10px', fontWeight: 600,
-                    color: useCurrentLocation ? t.accentAlt : t.textMuted,
-                    fontFamily: "'DM Sans', sans-serif",
+              <div style={{ padding: '0 12px 8px', position: 'relative' }}>
+                {/* Location input with crosshairs GPS button */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  padding: '10px 12px', borderRadius: '8px', marginBottom: '10px',
+                  border: `1px solid ${locFocused ? (darkMode ? '#4A6A68' : t.accentAlt) : (darkMode ? '#2E2E40' : '#DDD')}`,
+                  background: darkMode ? '#22222E' : t.inputBg,
+                  transition: 'border-color 0.2s',
+                  colorScheme: darkMode ? 'dark' : 'light',
+                }}>
+                  <button onClick={() => { triggerGPSLocal(); setLocSuggestions([]); }} title="Use current location" style={{
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', borderRadius: '50%',
                   }}>
-                    {useCurrentLocation ? location : 'Current'}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" fill={locGeolocating ? t.accent : t.accentAlt} /></svg>
                   </button>
-                  <button onClick={() => setUseCurrentLocation(false)} style={{
-                    padding: '5px 8px', borderRadius: '6px', border: `1px solid ${!useCurrentLocation ? t.accentAlt + '60' : (darkMode ? '#2E2E40' : '#DDD')}`,
-                    background: !useCurrentLocation ? `${t.accentAlt}12` : 'transparent',
-                    cursor: 'pointer', fontSize: '10px', fontWeight: 600,
-                    color: !useCurrentLocation ? t.accentAlt : t.textMuted,
-                    fontFamily: "'DM Sans', sans-serif", flexShrink: 0,
-                  }}>
-                    ZIP
-                  </button>
-                </div>
-                {!useCurrentLocation && (
-                  <input type="text" placeholder="Zip or city..."
-                    value={customZip} onChange={e => setCustomZip(e.target.value)}
+                  <input type="text"
+                    placeholder={locGeolocating ? 'Locating...' : 'Search city, town, or zip...'}
+                    value={customZip}
+                    onChange={e => { setCustomZip(e.target.value); fetchLocSuggestions(e.target.value); }}
+                    onFocus={() => setLocFocused(true)}
+                    onBlur={() => { setTimeout(() => { setLocFocused(false); setLocSuggestions([]); }, 200); }}
                     style={{
-                      width: '100%', padding: '5px 8px', borderRadius: '6px',
-                      border: `1px solid ${darkMode ? '#2E2E40' : '#DDD'}`, background: t.inputBg,
-                      color: t.text, fontSize: '11px', outline: 'none', marginBottom: '6px',
-                      fontFamily: "'DM Sans', sans-serif", boxSizing: 'border-box',
+                      flex: 1, border: 'none', background: 'transparent', outline: 'none',
+                      fontSize: '16px', color: t.text, fontFamily: "'DM Sans', sans-serif",
+                      WebkitTextFillColor: t.text,
+                      WebkitAppearance: 'none',
+                      colorScheme: darkMode ? 'dark' : 'light',
                     }}
                   />
+                  {customZip && (
+                    <button onClick={() => { setCustomZip(''); setLocSuggestions([]); triggerGPSLocal(); }} style={{
+                      background: darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+                      border: 'none', cursor: 'pointer',
+                      width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={darkMode ? '#FFFFFF' : '#666'} /></svg>
+                    </button>
+                  )}
+                </div>
+                {/* Autocomplete dropdown */}
+                {locSuggestions.length > 0 && locFocused && (
+                  <div style={{
+                    position: 'absolute', left: '12px', right: '12px', zIndex: 200,
+                    background: darkMode ? '#2A2A3C' : '#FFFFFF',
+                    border: `1px solid ${darkMode ? '#3A3A50' : '#DDD'}`,
+                    borderRadius: '8px', boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                    overflow: 'hidden', marginTop: '-6px',
+                  }}>
+                    {locSuggestions.map((s, i) => (
+                      <button key={i} onMouseDown={() => selectLocSuggestion(s)} style={{
+                        display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                        padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer',
+                        borderBottom: i < locSuggestions.length - 1 ? `1px solid ${darkMode ? '#3A3A50' : '#EEE'}` : 'none',
+                        textAlign: 'left',
+                      }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={t.accentAlt} /></svg>
+                        <span style={{ fontSize: '14px', color: t.text, fontFamily: "'DM Sans', sans-serif" }}>{s.name}</span>
+                      </button>
+                    ))}
+                  </div>
                 )}
-                {/* Radius — single compact row */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ fontSize: '9px', color: t.textMuted }}>5</span>
-                  <input type="range" min="5" max="55" value={radius}
+                {/* Radius slider — disabled when no location */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', opacity: locCoords ? 1 : 0.4, pointerEvents: locCoords ? 'auto' : 'none' }}>
+                  <span style={{ fontSize: '9px', color: t.textMuted }}>0</span>
+                  <input type="range" min="0" max="50" value={radius}
                     className="distance-slider"
+                    disabled={!locCoords}
                     onChange={e => setRadius(parseInt(e.target.value))}
                     style={{
                       flex: 1, height: '3px', appearance: 'none', WebkitAppearance: 'none',
-                      background: `linear-gradient(to right, ${t.accentAlt} ${(radius - 5) / 50 * 100}%, ${darkMode ? '#2A2A3A' : '#DDD'} 0%)`,
+                      background: `linear-gradient(to right, ${t.accentAlt} ${(radius / 50) * 100}%, ${darkMode ? '#2A2A3A' : '#DDD'} 0%)`,
                       borderRadius: '2px', outline: 'none', cursor: 'pointer', accentColor: t.accentAlt,
                     }}
                   />
-                  <span style={{ fontSize: '9px', color: t.textMuted }}>50+</span>
+                  <span style={{ fontSize: '9px', color: t.textMuted }}>50</span>
                   <span style={{ fontSize: '11px', fontWeight: 700, color: t.accentAlt, minWidth: '34px', textAlign: 'right' }}>{radius} mi</span>
                 </div>
+                {!locCoords && !locGeolocating && (
+                  <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '11px', fontWeight: 500, color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+                    Enter a location or tap the crosshairs to enable distance filtering
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -363,43 +448,67 @@ function UnifiedSearchBlock({
               accentColor={t.accent}
             />
             {activeCard === 'when' && (
-              <div style={{ padding: '0 12px 8px' }}>
-                {/* Chip row */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ padding: '0 12px 8px 12px' }}>
+                {/* Row 1: Quick-select pills — forced single line */}
+                <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px' }}>
                   {dateOptions.filter(o => o.key !== 'pick').map(opt => (
                     <button key={opt.key} onClick={() => {
                       setDateFilter(opt.key); setPickedDate(''); setShowDatePicker(false); setActiveCard(null);
                     }} style={{
-                      padding: '10px 16px', borderRadius: '20px', border: 'none', cursor: 'pointer',
+                      flex: 1, padding: '10px 6px', borderRadius: '20px', border: 'none', cursor: 'pointer',
                       background: dateFilter === opt.key ? t.accent : (darkMode ? '#2A2A3C' : '#E8E6E2'),
                       color: dateFilter === opt.key ? '#fff' : t.text,
-                      fontSize: '14px', fontWeight: dateFilter === opt.key ? 700 : 500,
+                      fontSize: '13px', fontWeight: dateFilter === opt.key ? 700 : 500,
                       fontFamily: "'DM Sans', sans-serif", transition: 'all 0.12s',
                       minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      whiteSpace: 'nowrap',
                     }}>
                       {opt.label}
                     </button>
                   ))}
-                  <label style={{
-                    padding: '10px 16px', borderRadius: '20px', border: `1px dashed ${t.textMuted}40`, cursor: 'pointer',
-                    background: dateFilter === 'pick' ? t.accent : 'transparent',
-                    color: dateFilter === 'pick' ? '#fff' : t.textMuted,
+                </div>
+                {/* Row 2: Full-width date picker — invisible input overlay */}
+                <div style={{ position: 'relative', marginTop: '8px' }}>
+                  <div style={{
+                    width: '100%', padding: '12px 16px', borderRadius: '12px',
+                    background: dateFilter === 'pick' ? t.accent : (darkMode ? '#2A2A3C' : '#E8E6E2'),
+                    color: dateFilter === 'pick' ? '#fff' : t.text,
                     fontSize: '14px', fontWeight: dateFilter === 'pick' ? 700 : 500,
                     fontFamily: "'DM Sans', sans-serif",
-                    minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    position: 'relative', overflow: 'hidden',
+                    minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    pointerEvents: 'none',
                   }}>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                      <rect x="1" y="2.5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+                      <path d="M1 6.5h14" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M4.5 1v3M11.5 1v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
                     {dateFilter === 'pick' && pickedDate
                       ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                      : 'Pick a Date'}
-                    <input ref={datePickInputRef} type="date" value={pickedDate}
-                      onChange={(e) => { setPickedDate(e.target.value); setDateFilter('pick'); setShowDatePicker(false); setActiveCard(null); }}
-                      style={{
-                        position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-                        opacity: 0, cursor: 'pointer', fontSize: '16px',
-                      }}
-                    />
-                  </label>
+                      : 'Pick a Specific Date'}
+                  </div>
+                  <input ref={datePickInputRef} type="date" value={todayStrLocal} min={todayStrLocal}
+                    onFocus={e => { datePickOpenVal.current = e.target.value; }}
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (v && v !== datePickOpenVal.current) {
+                        setPickedDate(v); setDateFilter('pick'); setShowDatePicker(false); setActiveCard(null);
+                        datePickOpenVal.current = v;
+                      }
+                    }}
+                    onBlur={e => {
+                      const v = e.target.value;
+                      if (v && v !== datePickOpenVal.current) {
+                        setPickedDate(v); setDateFilter('pick'); setShowDatePicker(false); setActiveCard(null);
+                        datePickOpenVal.current = v;
+                      }
+                    }}
+                    style={{
+                      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                      width: '100%', height: '100%',
+                      opacity: 0, cursor: 'pointer', zIndex: 10,
+                    }}
+                  />
                 </div>
               </div>
             )}

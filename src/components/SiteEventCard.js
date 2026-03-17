@@ -76,7 +76,7 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
             </p>
           )}
           <p style={{
-            fontSize: '13px',
+            fontSize: '14px',
             color: 'var(--text-muted)',
             fontWeight: 500,
             display: 'flex',
@@ -90,8 +90,8 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
         {/* Center: Event info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <h3 className="font-heading" style={{
-            fontSize: '17px',
-            fontWeight: 700,
+            fontSize: '19px',
+            fontWeight: 600,
             color: 'var(--text-primary)',
             marginBottom: '6px',
             lineHeight: 1.3,
@@ -188,10 +188,10 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
               target="_blank"
               rel="noopener noreferrer"
               style={{
-                fontSize: '12px', fontWeight: 700,
+                fontSize: '12px', fontWeight: 800,
                 padding: '6px 14px', borderRadius: '8px',
                 background: 'var(--accent-orange)',
-                color: 'white',
+                color: '#1A1A24',
                 textDecoration: 'none',
                 transition: 'opacity 0.2s',
               }}

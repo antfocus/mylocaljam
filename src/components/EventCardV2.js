@@ -27,7 +27,8 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
   const venue      = event.venue       || event.venue_name  || '';
   const desc       = event.description || event.artist_bio  || '';
   const imageUrl   = event.image_url   || event.venue_photo || null;
-  const sourceLink = event.source       || null;
+  const rawSource  = event.source       || null;
+  const sourceLink = rawSource && /^https?:\/\//i.test(rawSource) ? rawSource : null;
   const category   = event.genre       || event.vibe        || 'Live Music';
   const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
   const timeStr    = formatTimeRange(event.start_time, event.end_time);
@@ -88,22 +89,32 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           onClick={() => setExpanded(e => !e)}
           style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 10px', cursor: 'pointer' }}
         >
-          {/* Colored time block — fixed square, stacked text for times with colon */}
+          {/* Colored time block — flat for top-of-hour, stacked for half-hours */}
           <div style={{
             background: isCanceled ? '#DC2626' : config.bg,
-            color: isCanceled ? '#FFFFFF' : (darkMode ? '#FFFFFF' : '#000000'),
-            fontSize: '18px', fontWeight: 900,
+            color: isCanceled ? '#FFFFFF' : '#1C1917',
+            fontWeight: 900,
             width: '48px', height: '48px',
             borderRadius: '8px', flexShrink: 0,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            display: 'flex',
+            flexDirection: (timeStr && timeStr.includes(':')) ? 'column' : 'row',
+            alignItems: 'center', justifyContent: 'center',
+            gap: (timeStr && timeStr.includes(':')) ? '1px' : '0px',
             fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
             fontVariantNumeric: 'tabular-nums',
-            lineHeight: 0.85,
             letterSpacing: '-0.5px',
           }}>
-            {isCanceled ? '✕' : (timeStr && timeStr.includes(':'))
-              ? <><span>{timeStr.slice(0, timeStr.indexOf(':'))}</span><span>{timeStr.slice(timeStr.indexOf(':') + 1)}</span></>
-              : (timeStr || '—')}
+            {isCanceled ? <span style={{ fontSize: '18px', lineHeight: 1 }}>✕</span> : (() => {
+              const raw = timeStr || '—';
+              if (raw === '—') return <span style={{ fontSize: '18px', lineHeight: 1 }}>—</span>;
+              if (!raw.includes(':')) return <span style={{ fontSize: '18px', lineHeight: 1 }}>{raw}</span>;
+              const period = raw.toLowerCase().includes('a') ? 'AM' : 'PM';
+              const nums = raw.replace(/[apAP][mM]?$/, '');
+              return (<>
+                <span style={{ fontSize: '15px', lineHeight: 1 }}>{nums}</span>
+                <span style={{ fontSize: '9px', lineHeight: 1, letterSpacing: '0.5px', opacity: 0.85 }}>{period}</span>
+              </>);
+            })()}
           </div>
 
           {/* Category emoji */}

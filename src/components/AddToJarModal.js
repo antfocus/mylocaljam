@@ -166,7 +166,8 @@ export default function AddToJarModal({ onClose, onSubmit }) {
                 style={inputStyle}
                 value={form.date}
                 onChange={e => update('date', e.target.value)}
-                onFocus={e => e.target.style.borderColor = 'var(--accent-teal)'}
+                onClick={e => { try { e.target.showPicker(); } catch {} }}
+                onFocus={e => { e.target.style.borderColor = 'var(--accent-teal)'; try { e.target.showPicker(); } catch {} }}
                 onBlur={e => e.target.style.borderColor = 'var(--border)'}
               />
             </div>

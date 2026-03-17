@@ -26,12 +26,17 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   font-family: 'DM Sans', sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 /* Scrollbar */
@@ -40,10 +45,26 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
+
 /* Selection */
 ::selection {
   background: var(--accent);
   color: white;
+}
+
+/* ── Force dark color-scheme for form elements (prevents iOS white override) ── */
+input, select, textarea {
+  color-scheme: dark;
+  -webkit-text-fill-color: inherit;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+}
+/* Prevent iOS auto-styling on focused inputs */
+input[type="text"], input[type="search"] {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
 }
 
 /* ── Distance slider custom thumb & track ──────────────────────────── */
@@ -54,41 +75,43 @@ input[type="range"].distance-slider {
   border-radius: 3px;
   outline: none;
   cursor: pointer;
+  /* Inset so thumb is flush with track edges at 0 and max */
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0;
 }
 input[type="range"].distance-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  /* 48×48 touch target with visual 22px thumb via background + border trick */
-  width: 48px;
-  height: 48px;
+  /* 20px visual thumb — sleek and clean */
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: #3AADA0;
-  border: 13px solid transparent;
-  background-clip: padding-box;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.35), 0 0 0 2.5px #FFFFFF inset;
+  border: 2px solid #FFFFFF;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3), 0 2px 8px rgba(58,173,160,0.25);
   cursor: grab;
-  margin-top: -21px;
+  margin-top: -7px;
   position: relative;
 }
 input[type="range"].distance-slider::-webkit-slider-thumb:active {
   cursor: grabbing;
-  transform: scale(1.08);
-  box-shadow: 0 2px 12px rgba(58,173,160,0.5), 0 0 0 2.5px #FFFFFF inset;
+  transform: scale(1.12);
+  box-shadow: 0 2px 8px rgba(58,173,160,0.5), 0 0 0 2px #FFFFFF;
 }
 input[type="range"].distance-slider::-moz-range-thumb {
-  /* 48×48 touch target with visual 22px thumb via background + border trick */
-  width: 48px;
-  height: 48px;
+  /* 20px visual thumb — sleek and clean */
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: #3AADA0;
-  border: 13px solid transparent;
-  background-clip: padding-box;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.35), 0 0 0 2.5px #FFFFFF inset;
+  border: 2px solid #FFFFFF;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3), 0 2px 8px rgba(58,173,160,0.25);
   cursor: grab;
 }
 input[type="range"].distance-slider::-moz-range-thumb:active {
   cursor: grabbing;
-  box-shadow: 0 2px 12px rgba(58,173,160,0.5), 0 0 0 2.5px #FFFFFF inset;
+  box-shadow: 0 2px 8px rgba(58,173,160,0.5), 0 0 0 2px #FFFFFF;
 }
 input[type="range"].distance-slider::-webkit-slider-runnable-track {
   height: 6px;

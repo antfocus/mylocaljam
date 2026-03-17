@@ -6,9 +6,12 @@ import { getVenueColor, groupEventsByDate } from '@/lib/utils';
 import { requestNotificationPermission, scheduleReminder, cancelReminder, rehydrateReminders, notificationsGranted } from '@/lib/notifications';
 
 import HeroSection       from '@/components/HeroSection';
+import SpotlightCarousel from '@/components/SpotlightCarousel';
 import EventCardV2       from '@/components/EventCardV2';
 import MapView           from '@/components/MapView';
 import SubmitEventModal  from '@/components/SubmitEventModal';
+import AuthModal         from '@/components/AuthModal';
+import WelcomeModal      from '@/components/WelcomeModal';
 // ReportIssueModal replaced by inline flag bottom-sheet in EventCardV2
 import Toast             from '@/components/Toast';
 import FollowingTab      from '@/components/FollowingTab';
@@ -64,11 +67,11 @@ const LIGHT = {
 
 // ── Date filter options ───────────────────────────────────────────────────────
 const DATE_OPTIONS = [
-  { key: 'all',      label: 'ALL'          },
+  { key: 'all',      label: 'Anytime'      },
   { key: 'today',    label: 'Today'        },
   { key: 'tomorrow', label: 'Tomorrow'     },
   { key: 'weekend',  label: 'Weekend'      },
-  { key: 'pick',     label: 'Pick a Date'  },
+  { key: 'pick',     label: 'Date'          },
 ];
 
 
@@ -216,6 +219,8 @@ export default function HomePage() {
   const [events,  setEvents]  = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast,   setToast]   = useState(null);
+  const [toastVariant, setToastVariant] = useState(null);
+  const [toastAction, setToastAction] = useState(null);           // callback for upsell toast tap
 
   // ── Theme ────────────────────────────────────────────────────────────────────
   const [darkMode, setDarkMode] = useState(() => {
@@ -252,46 +257,50 @@ export default function HomePage() {
   const [locationCoords, setLocationCoords] = useState(null);     // { lat, lng } from geolocation or geocode
   const [geolocating, setGeolocating] = useState(false);
   const [artistSearch, setArtistSearch] = useState('');            // artist filter text
+  // ── Auth state ────────────────────────────────────────────────────────────
+  const [user, setUser] = useState(null);                          // Supabase user object
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authTrigger, setAuthTrigger] = useState(null);            // 'save' | 'submit' | 'profile' | null
+  const [guestBannerDismissed, setGuestBannerDismissed] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);  // autocomplete dropdown
+  const [locationFocused, setLocationFocused] = useState(false);       // show dropdown when focused
+  const locationDebounceRef = useRef(null);
+
+  // ── GPS helper: request location & reverse-geocode ──────────────────────────
+  const triggerGPS = useCallback(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    setGeolocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocationCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json&zoom=10`)
+          .then(r => r.json())
+          .then(data => {
+            const town = data.address?.town || data.address?.city || data.address?.village || data.address?.hamlet || 'Current Location';
+            setLocationLabel(town);
+            setLocationOrigin(town);
+            setGeolocating(false);
+          })
+          .catch(() => { setLocationLabel('Current Location'); setLocationOrigin(''); setGeolocating(false); });
+      },
+      () => {
+        setLocationLabel('');
+        setLocationCoords(null);
+        setGeolocating(false);
+      },
+      { timeout: 8000, maximumAge: 300000 }
+    );
+  }, []);
 
   // ── Geolocation: auto-detect user's location on mount ─────────────────────
-  useEffect(() => {
-    if (typeof navigator !== 'undefined' && navigator.geolocation) {
-      setGeolocating(true);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setLocationCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-          // Reverse geocode to get town name
-          fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json&zoom=10`)
-            .then(r => r.json())
-            .then(data => {
-              const town = data.address?.town || data.address?.city || data.address?.village || data.address?.hamlet || 'Current Location';
-              setLocationLabel(town);
-              setGeolocating(false);
-            })
-            .catch(() => { setLocationLabel('Current Location'); setGeolocating(false); });
-        },
-        () => {
-          // Permission denied or error — stay at default
-          setLocationLabel('Current Location');
-          setGeolocating(false);
-        },
-        { timeout: 8000, maximumAge: 300000 }
-      );
-    }
-  }, []);
+  useEffect(() => { triggerGPS(); }, [triggerGPS]);
 
   // Geocode a zip/city string to coordinates
   const geocodeLocation = useCallback(async (query) => {
     if (!query.trim()) {
-      // Reset to device location
-      setLocationLabel('Current Location');
-      setLocationOrigin('');
-      if (typeof navigator !== 'undefined' && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => setLocationCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          () => {}
-        );
-      }
+      triggerGPS();
       return;
     }
     try {
@@ -303,11 +312,48 @@ export default function HomePage() {
         setLocationLabel(name);
       }
     } catch {}
+  }, [triggerGPS]);
+
+  // Autocomplete: fetch location suggestions from Nominatim (debounced)
+  const fetchLocationSuggestions = useCallback((query) => {
+    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
+    if (!query.trim() || query.trim().length < 2) { setLocationSuggestions([]); return; }
+    locationDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', NJ')}&format=json&limit=5&addressdetails=1`
+        );
+        const results = await res.json();
+        setLocationSuggestions(results.map(r => ({
+          name: [r.address?.town || r.address?.city || r.address?.village || r.address?.hamlet || r.display_name.split(',')[0], r.address?.state || 'NJ'].filter(Boolean).join(', '),
+          lat: parseFloat(r.lat),
+          lng: parseFloat(r.lon),
+          full: r.display_name,
+        })));
+      } catch { setLocationSuggestions([]); }
+    }, 300);
+  }, []);
+
+  // Select a suggestion from the autocomplete dropdown
+  const selectLocationSuggestion = useCallback((suggestion) => {
+    setLocationCoords({ lat: suggestion.lat, lng: suggestion.lng });
+    setLocationLabel(suggestion.name.split(',')[0]);
+    setLocationOrigin(suggestion.name.split(',')[0]);
+    setLocationSuggestions([]);
+    setLocationFocused(false);
   }, []);
 
   // ── Bottom nav hide-on-scroll ───────────────────────────────────────────────
   const [navHidden, setNavHidden] = useState(false);
   const lastScrollY = useRef(0);
+  const datePickRef = useRef(null);
+  const savedDatePickRef = useRef(null);
+  const datePickOpenVal = useRef('');       // value when picker opened — guards iOS auto-fire
+  const savedDatePickOpenVal = useRef('');
+  const searchInputRef = useRef(null);
+  const pendingSearchFocus = useRef(false);    // fallback for tab-switch focus
+  const [searchFocused, setSearchFocused] = useState(false);  // visual threading
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   useEffect(() => {
     const threshold = 10; // minimum scroll delta to trigger
@@ -325,6 +371,14 @@ export default function HomePage() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // ── Debounce searchQuery → debouncedSearch (300ms) ─────────────────────────
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // (Auto-focus is now triggered synchronously in the omnibar onClick handler)
 
   // ── Notifications preference ─────────────────────────────────────────────────
   const [notifEnabled, setNotifEnabled] = useState(() => {
@@ -349,6 +403,20 @@ export default function HomePage() {
     }
   }, [notifEnabled]);
 
+  // ── Auth helper: open modal with trigger context ────────────────────────────
+  const openAuth = useCallback((trigger = null) => {
+    setAuthTrigger(trigger);
+    setShowAuthModal(true);
+  }, []);
+
+  // ── Sign out helper ────────────────────────────────────────────────────────
+  const handleSignOut = useCallback(async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setIsLoggedIn(false);
+    setToast('Signed out');
+  }, []);
+
   // ── Favorites (persisted to localStorage) ───────────────────────────────────
   const [favorites, setFavorites] = useState(() => {
     if (typeof window === 'undefined') return new Set();
@@ -368,12 +436,18 @@ export default function HomePage() {
       if (adding) {
         const event = events.find(e => e.id === id);
         if (event && notifEnabled) scheduleReminder(event);
+        // Guest upsell toast — only on add, only when logged out
+        if (!isLoggedIn) {
+          setToastVariant('upsell');
+          setToastAction(() => () => openAuth('save'));
+          setToast('Saved locally! Want a reminder before the show?');
+        }
       } else {
         cancelReminder(id);
       }
       return next;
     });
-  }, [events]);
+  }, [events, isLoggedIn, openAuth]);
 
   // ── Saved tab segment toggle (persisted per-session) ──────────────────────
   const [savedSegment, setSavedSegment] = useState(() => {
@@ -439,6 +513,12 @@ export default function HomePage() {
       if (exists) return prev;
       return [newFollow, ...prev];
     });
+    // Guest upsell toast — only on follow, only when logged out
+    if (!isLoggedIn) {
+      setToastVariant('upsell');
+      setToastAction(() => () => openAuth('save'));
+      setToast('Following locally! Get alerts when they announce a new gig —');
+    }
     // Sync to API
     try {
       await fetch('/api/follows', {
@@ -447,7 +527,7 @@ export default function HomePage() {
         body: JSON.stringify({ device_id: deviceId, entity_type: entityType, entity_name: entityName, entity_id: entityId }),
       });
     } catch {}
-  }, [deviceId]);
+  }, [deviceId, isLoggedIn, openAuth]);
 
   const unfollowEntity = useCallback(async (entityType, entityName) => {
     // Optimistic removal
@@ -578,20 +658,82 @@ export default function HomePage() {
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
   useEffect(() => { rehydrateReminders(); }, []);
+
+  // ── Supabase Auth listener ─────────────────────────────────────────────────
+  useEffect(() => {
+    // Check current session on mount
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setIsLoggedIn(!!session?.user);
+    });
+    // Listen for auth changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      setIsLoggedIn(!!u);
+      if (u && showAuthModal) {
+        // User just signed in — close modal
+        setShowAuthModal(false);
+        setAuthTrigger(null);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Welcome modal for first-time visitors ──────────────────────────────────
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem('mlj_hasSeenWelcomeModal')) {
+        // Small delay so the app renders first, feels intentional
+        const timer = setTimeout(() => setShowWelcome(true), 800);
+        return () => clearTimeout(timer);
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => { setDateKey('all'); setPickedDate(''); }, [activeTab]);
+
+  // ── Unified search opener — single handler for both header pill & bottom nav ──
+  const openSearch = useCallback(() => {
+    if (activeTab === 'home') {
+      // Already on home — open panel and focus synchronously (iOS user-gesture)
+      setFiltersExpanded(true);
+      if (searchInputRef.current) {
+        searchInputRef.current.focus();
+      }
+      // Belt-and-suspenders: retry after panel animation for browsers that block focus on hidden elements
+      setTimeout(() => { searchInputRef.current?.focus(); }, 80);
+    } else {
+      // Switching tabs — input not in DOM yet, set flag for effect below
+      setActiveTab('home');
+      setFiltersExpanded(true);
+      pendingSearchFocus.current = true;
+    }
+  }, [activeTab]);
+
+  // Pick up pending search focus after tab switch renders the input
+  useEffect(() => {
+    if (activeTab === 'home' && filtersExpanded && pendingSearchFocus.current) {
+      pendingSearchFocus.current = false;
+      // Use rAF to fire after React paints the input into the DOM
+      requestAnimationFrame(() => { searchInputRef.current?.focus(); });
+    }
+  }, [activeTab, filtersExpanded]);
 
   // Fetch spotlight pins for today
   useEffect(() => {
     const now = new Date();
     const pad = n => String(n).padStart(2, '0');
     const today = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-    fetch(`/api/spotlight?date=${today}`)
+    const params = new URLSearchParams({ date: today });
+    if (deviceId) params.set('device_id', deviceId);
+    fetch(`/api/spotlight?${params}`)
       .then(r => r.json())
       .then(data => {
         if (Array.isArray(data)) setSpotlightIds(data.map(d => d.event_id));
       })
       .catch(() => setSpotlightIds([]));
-  }, []);
+  }, [deviceId]);
 
   // ── Date boundaries (local time) ─────────────────────────────────────────────
   function localDateStr(d) {
@@ -640,8 +782,8 @@ export default function HomePage() {
       list = list.filter(e => normalizeVenue(e.name).includes(aq));
     }
 
-    if (searchQuery.trim()) {
-      const q = normalizeVenue(searchQuery);
+    if (debouncedSearch.trim()) {
+      const q = normalizeVenue(debouncedSearch);
       list = list.filter(e =>
         normalizeVenue(e.name).includes(q) ||
         normalizeVenue(e.venue).includes(q) ||
@@ -667,7 +809,7 @@ export default function HomePage() {
     });
 
     return list;
-  }, [events, dateKey, pickedDate, activeVenues, artistSearch, searchQuery, milesRadius, locationCoords, todayStr, tomorrowStr, fridayStr, sundayStr]);
+  }, [events, dateKey, pickedDate, activeVenues, artistSearch, debouncedSearch, milesRadius, locationCoords, todayStr, tomorrowStr, fridayStr, sundayStr]);
 
   const groupedEvents = useMemo(() => groupEventsByDate(filteredEvents), [filteredEvents]);
 
@@ -698,6 +840,11 @@ export default function HomePage() {
 
   const heroIsToday = heroEvents.length > 0 && heroEvents[0]?.date === todayStr;
 
+  // Spotlight carousel events — manually flagged by admin
+  const spotlightCarouselEvents = useMemo(() => {
+    return events.filter(e => e.is_spotlight === true);
+  }, [events]);
+
   // Venue list with event counts (for FilterBar)
   const venueListWithCounts = useMemo(() => {
     const map = {};
@@ -717,14 +864,15 @@ export default function HomePage() {
       .trim();
   }
 
-  const hasActiveFilters = dateKey !== 'all' || activeVenues.length > 0 || milesRadius !== null || artistSearch.trim() !== '';
-  const activeFilterCount = [dateKey !== 'all', activeVenues.length > 0, milesRadius !== null, artistSearch.trim() !== ''].filter(Boolean).length;
+  const hasActiveFilters = dateKey !== 'all' || activeVenues.length > 0 || milesRadius !== null || artistSearch.trim() !== '' || searchQuery.trim() !== '';
+  const activeFilterCount = [dateKey !== 'all', activeVenues.length > 0, milesRadius !== null, artistSearch.trim() !== '', searchQuery.trim() !== ''].filter(Boolean).length;
   const clearAllFilters = useCallback(() => {
     setDateKey('all');
     setPickedDate('');
     setActiveVenues([]);
     setMilesRadius(null);
     setArtistSearch('');
+    setSearchQuery('');
     setFiltersExpanded(false);
     setActiveFilterCard(null);
   }, []);
@@ -732,11 +880,11 @@ export default function HomePage() {
   // Filter panel labels
   const whenLabel = dateKey === 'pick' && pickedDate
     ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    : DATE_OPTIONS.find(o => o.key === dateKey)?.label || 'ALL';
+    : DATE_OPTIONS.find(o => o.key === dateKey)?.label || 'Anytime';
   const venueLabel = activeVenues.length === 0 ? 'Any Venue' : activeVenues.length === 1 ? activeVenues[0] : `${activeVenues.length} venues`;
   const distanceLabel = milesRadius === null ? 'Any distance' : `${milesRadius} mi`;
   const artistLabel = artistSearch.trim() ? artistSearch.trim() : 'Any Artist';
-  const locationDisplayLabel = geolocating ? 'Locating...' : locationLabel;
+
 
   // Filtered venues for search inside panel
   const filteredPanelVenues = useMemo(() => {
@@ -753,7 +901,7 @@ export default function HomePage() {
 
   return (
     <>
-      <div style={{ minHeight: '100svh', display: 'flex', flexDirection: 'column', background: t.bg, maxWidth: '480px', margin: '0 auto', overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ minHeight: '100svh', display: 'flex', flexDirection: 'column', background: t.bg, maxWidth: '480px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
 
         {/* ── Top Nav ────────────────────────────────────────────────────── */}
         <header style={{
@@ -785,87 +933,116 @@ export default function HomePage() {
           {/* Spacer */}
           <div style={{ width: '6px', flexShrink: 0 }} />
 
-          {/* Omnibar pill — Glow & Badge */}
-          <button onClick={() => setFiltersExpanded(e => !e)} style={{
+          {/* Omnibar pill — Fake search bar (button only, never a text input) */}
+          <button onClick={() => {
+            if (filtersExpanded) {
+              setFiltersExpanded(false);
+              setActiveFilterCard(null);
+            } else {
+              openSearch();
+            }
+          }} style={{
             display: 'flex', alignItems: 'center', gap: '6px', flex: 1,
-            padding: '7px 10px',
-            background: darkMode ? 'rgba(255, 255, 255, 0.12)' : '#F3F4F6',
+            padding: filtersExpanded ? '0 10px' : '7px 10px',
+            background: darkMode ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.95)',
             border: `1px solid ${
-              filtersExpanded ? t.accentAlt
-              : hasActiveFilters ? t.accentAlt
-              : (darkMode ? 'rgba(255, 255, 255, 0.2)' : '#E5E7EB')
+              hasActiveFilters ? t.accent
+              : (darkMode ? 'rgba(255, 255, 255, 0.25)' : '#D1D5DB')
             }`,
             borderRadius: '20px', cursor: 'pointer', position: 'relative',
-            boxShadow: filtersExpanded
-              ? `0 0 0 1px ${t.accentAlt}40, 0 0 8px ${t.accentAlt}25`
-              : hasActiveFilters
-                ? `0 0 6px ${t.accentAlt}30, 0 0 12px ${t.accentAlt}15`
-                : 'none',
+            boxShadow: hasActiveFilters
+                ? `0 0 6px ${t.accent}30, 0 0 12px ${t.accent}15`
+                : (darkMode ? '0 1px 6px rgba(0,0,0,0.3)' : '0 1px 4px rgba(0,0,0,0.08)'),
             transition: 'all 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
+            // Hide pill when panel is open — user only sees the modal's search input
+            opacity: filtersExpanded ? 0 : 1,
+            pointerEvents: filtersExpanded ? 'none' : 'auto',
+            maxHeight: filtersExpanded ? '0px' : '40px',
+            overflow: 'hidden',
           }}>
-            {/* Search icon — muted to match placeholder text */}
+            {/* Search icon — crisp white for visibility */}
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-              <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={t.textMuted} />
+              <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={darkMode ? '#F0F0F5' : '#374151'} />
             </svg>
-            <span style={{
-              fontSize: '12px', fontWeight: 500,
-              color: t.textMuted,
-              fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
-              transition: 'color 0.2s ease',
-            }}>
-              Search / Filters
-            </span>
-            {/* Active filter pills inline */}
-            {hasActiveFilters && !filtersExpanded && (
+            {searchQuery.trim() ? (
+              <span style={{
+                display: 'flex', alignItems: 'center', gap: '4px',
+                fontSize: '12px', fontWeight: 600,
+                color: t.text,
+                fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px',
+              }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{searchQuery.trim()}</span>
+                <span
+                  role="button"
+                  onClick={e => { e.stopPropagation(); setSearchQuery(''); }}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
+                    background: darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <svg width="8" height="8" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.text} /></svg>
+                </span>
+              </span>
+            ) : (
+              <span style={{
+                fontSize: '12px', fontWeight: 500,
+                color: darkMode ? 'rgba(255, 255, 255, 0.7)' : '#4B5563',
+                fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+                transition: 'color 0.2s ease',
+              }}>
+                Search / Filters
+              </span>
+            )}
+            {/* Active filter pills inline — category-colored */}
+            {hasActiveFilters && (
               <div style={{ display: 'flex', gap: '3px', alignItems: 'center', overflow: 'hidden', flex: 1, minWidth: 0 }}>
                 <span style={{ color: t.textMuted, fontSize: '8px', opacity: 0.5, flexShrink: 0 }}>|</span>
                 {dateKey !== 'all' && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: t.accentAlt, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" fill={t.accentAlt} /></svg>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" fill="#E8722A" /></svg>
                     {dateKey === 'pick' && pickedDate
                       ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
                       : ({ today: 'Today', tomorrow: 'Tmrw', weekend: 'Wknd' }[dateKey] || dateKey)}
                   </span>
                 )}
                 {milesRadius !== null && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: t.accentAlt, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={t.accentAlt} /></svg>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill="#E8722A" /></svg>
                     {milesRadius}mi
                   </span>
                 )}
                 {artistSearch.trim() && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: t.accentAlt, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill={t.accentAlt} /></svg>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="#E8722A" /></svg>
                     {artistSearch.trim()}
                   </span>
                 )}
                 {activeVenues.length > 0 && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: t.accentAlt, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.22 0-4.01 1.79-4.01 4.01S7.79 21 10.01 21 14 19.21 14 17V7h4V3h-6z" fill={t.accentAlt} /></svg>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.22 0-4.01 1.79-4.01 4.01S7.79 21 10.01 21 14 19.21 14 17V7h4V3h-6z" fill="#E8722A" /></svg>
                     {activeVenues.length}
                   </span>
                 )}
               </div>
             )}
-            {(!hasActiveFilters || filtersExpanded) && <div style={{ flex: 1 }} />}
-            {/* Right: close, badge, or tune icon */}
-            {filtersExpanded ? (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.accentAlt} />
-              </svg>
-            ) : hasActiveFilters ? (
+            {!hasActiveFilters && <div style={{ flex: 1 }} />}
+            {/* Right: badge or tune icon */}
+            {hasActiveFilters ? (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: '2px',
-                fontSize: '9px', fontWeight: 700, color: darkMode ? '#1E1E2A' : '#FFFFFF',
-                background: t.accentAlt, borderRadius: '8px',
+                fontSize: '9px', fontWeight: 700, color: '#FFFFFF',
+                background: t.accent, borderRadius: '8px',
                 padding: '1px 5px', flexShrink: 0, lineHeight: '14px',
               }}>
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill={darkMode ? '#1E1E2A' : '#FFFFFF'} /></svg>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="#FFFFFF" /></svg>
                 {activeFilterCount}
               </span>
             ) : (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, opacity: 0.4 }}>
-                <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill={t.textMuted} />
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, opacity: 0.5 }}>
+                <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill={darkMode ? 'rgba(255,255,255,0.5)' : '#6B7280'} />
               </svg>
             )}
           </button>
@@ -887,7 +1064,7 @@ export default function HomePage() {
         <div style={{
           maxHeight: filtersExpanded ? '600px' : '0px',
           opacity: filtersExpanded ? 1 : 0,
-          overflow: 'hidden',
+          overflow: filtersExpanded ? 'visible' : 'hidden',
           transition: filtersExpanded
             ? 'max-height 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease'
             : 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease',
@@ -902,20 +1079,27 @@ export default function HomePage() {
                 boxShadow: darkMode ? '0 4px 20px rgba(0,0,0,0.4)' : '0 2px 12px rgba(0,0,0,0.08)',
                 background: darkMode ? '#20202E' : '#F5F3F0',
               }}>
-                {/* Search input */}
+                {/* Search input — the only search field the user sees */}
                 <div style={{
                   padding: '12px 14px',
                   borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
                   background: darkMode ? '#262636' : '#FFFFFF',
                   borderRadius: '12px 12px 0 0',
+                  boxShadow: 'none',
+                  transition: 'box-shadow 0.2s ease',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={t.textMuted} /></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={darkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF'} /></svg>
                     <input
-                      type="text"
+                      ref={searchInputRef}
+                      type="search"
+                      enterKeyHint="search"
                       placeholder="Search artists, venues, events..."
                       value={searchQuery}
                       onChange={e => setSearchQuery(e.target.value)}
+                      onFocus={() => { setSearchFocused(true); setActiveFilterCard(null); }}
+                      onBlur={() => setSearchFocused(false)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.target.blur(); setFiltersExpanded(false); setActiveFilterCard(null); } }}
                       style={{
                         flex: 1, border: 'none', background: 'none', outline: 'none',
                         fontSize: '16px', color: t.text, fontFamily: "'DM Sans', sans-serif",
@@ -926,94 +1110,147 @@ export default function HomePage() {
                         <svg width="14" height="14" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.textMuted} /></svg>
                       </button>
                     )}
+                    {/* Close / collapse panel */}
+                    <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      marginLeft: '2px', flexShrink: 0,
+                    }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.accent} /></svg>
+                    </button>
                   </div>
                 </div>
 
-                {/* 1. DISTANCE / LOCATION card (broadest) */}
+                {/* 1. WHERE card — Blue accent (#E8722A) */}
                 <div style={{
-                  borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
                   background: activeFilterCard === 'distance'
-                    ? (darkMode ? '#1E1E30' : '#F0FFFE')
+                    ? (darkMode ? '#2A1E14' : '#FFF8F3')
                     : (darkMode ? '#262636' : '#FFFFFF'),
                   border: activeFilterCard === 'distance'
-                    ? `1.5px solid ${t.accentAlt}`
+                    ? `1.5px solid ${darkMode ? '#E8722A80' : '#E8722A'}`
                     : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
                   borderRadius: activeFilterCard === 'distance' ? '10px' : '0',
                   margin: activeFilterCard === 'distance' ? '4px 6px' : '0',
                   transition: 'all 0.2s ease',
+                  colorScheme: darkMode ? 'dark' : 'light',
                 }}>
                   <button onClick={() => setActiveFilterCard(activeFilterCard === 'distance' ? null : 'distance')} style={{
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={milesRadius !== null ? t.accentAlt : t.textMuted} /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={milesRadius !== null ? '#E8722A' : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: milesRadius !== null ? t.accentAlt : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Distance / Location</div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: milesRadius !== null ? '#E8722A' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Where</div>
                       <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>
                         {milesRadius !== null ? `Within ${milesRadius} miles` : 'Any distance'}
                       </div>
                     </div>
-                    <svg width="12" height="12" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={milesRadius !== null ? t.accentAlt : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="12" height="12" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={milesRadius !== null ? '#E8722A' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'distance' && (
-                    <div style={{ padding: '0 12px 10px' }}>
-                      {/* Location input */}
+                    <div style={{ padding: '0 12px 10px', position: 'relative' }}>
+                      {/* Location input with crosshairs GPS button */}
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: '8px',
                         padding: '10px 12px', borderRadius: '8px', marginBottom: '10px',
-                        border: `1px solid ${darkMode ? '#2E2E40' : '#DDD'}`,
-                        background: t.inputBg,
+                        border: `1px solid ${locationFocused ? (darkMode ? '#E8722A80' : '#E8722A') : (darkMode ? '#2E2E40' : '#DDD')}`,
+                        background: darkMode ? '#22222E' : t.inputBg,
+                        transition: 'border-color 0.2s',
+                        colorScheme: darkMode ? 'dark' : 'light',
                       }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" fill={t.accentAlt} /></svg>
+                        {/* Crosshairs — tappable to re-trigger GPS */}
+                        <button onClick={() => { triggerGPS(); setLocationSuggestions([]); }} title="Use current location" style={{
+                          background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex',
+                          borderRadius: '50%', transition: 'background 0.15s',
+                        }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" fill={geolocating ? t.accent : '#E8722A'} /></svg>
+                        </button>
                         <input
                           type="text"
-                          placeholder={locationDisplayLabel}
+                          placeholder={geolocating ? 'Locating...' : 'Search city, town, or zip...'}
                           value={locationOrigin}
-                          onChange={e => setLocationOrigin(e.target.value)}
-                          onBlur={e => { if (e.target.value.trim()) geocodeLocation(e.target.value.trim()); }}
-                          onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { geocodeLocation(e.target.value.trim()); e.target.blur(); } }}
+                          onChange={e => { setLocationOrigin(e.target.value); fetchLocationSuggestions(e.target.value); }}
+                          onFocus={() => setLocationFocused(true)}
+                          onBlur={() => { setTimeout(() => { setLocationFocused(false); setLocationSuggestions([]); }, 200); }}
+                          onKeyDown={e => { if (e.key === 'Enter' && locationOrigin.trim()) { geocodeLocation(locationOrigin.trim()); setLocationSuggestions([]); e.target.blur(); } }}
                           style={{
-                            flex: 1, border: 'none', background: 'none', outline: 'none',
+                            flex: 1, border: 'none', background: 'transparent', outline: 'none',
                             fontSize: '16px', color: t.text, fontFamily: "'DM Sans', sans-serif",
+                            WebkitTextFillColor: t.text,
+                            WebkitAppearance: 'none',
+                            colorScheme: darkMode ? 'dark' : 'light',
                           }}
                         />
                         {locationOrigin && (
-                          <button onClick={() => { setLocationOrigin(''); geocodeLocation(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                            <svg width="10" height="10" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.textMuted} /></svg>
+                          <button onClick={() => { setLocationOrigin(''); setLocationSuggestions([]); triggerGPS(); }} style={{
+                            background: darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+                            border: 'none', cursor: 'pointer',
+                            width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <svg width="10" height="10" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={darkMode ? '#FFFFFF' : '#666'} strokeWidth="1" /></svg>
                           </button>
                         )}
                       </div>
-                      {/* Slider with bookend labels */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 2px' }}>
+                      {/* Autocomplete dropdown */}
+                      {locationSuggestions.length > 0 && locationFocused && (
+                        <div style={{
+                          position: 'absolute', left: '12px', right: '12px', zIndex: 200,
+                          background: darkMode ? '#2A2A3C' : '#FFFFFF',
+                          border: `1px solid ${darkMode ? '#3A3A50' : '#DDD'}`,
+                          borderRadius: '8px', boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                          overflow: 'hidden', marginTop: '-6px',
+                        }}>
+                          {locationSuggestions.map((s, i) => (
+                            <button key={i} onMouseDown={() => selectLocationSuggestion(s)} style={{
+                              display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+                              padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer',
+                              borderBottom: i < locationSuggestions.length - 1 ? `1px solid ${darkMode ? '#3A3A50' : '#EEE'}` : 'none',
+                              textAlign: 'left',
+                            }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill="#E8722A" /></svg>
+                              <span style={{ fontSize: '14px', color: t.text, fontFamily: "'DM Sans', sans-serif" }}>{s.name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {/* Slider with bookend labels — disabled when no valid location */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 2px', opacity: locationCoords ? 1 : 0.4, pointerEvents: locationCoords ? 'auto' : 'none' }}>
                         <span style={{ fontSize: '10px', fontWeight: 600, color: '#A0A0A0', minWidth: '24px', textAlign: 'left', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>0 mi</span>
                         <input type="range" min="0" max="50" value={milesRadius ?? 0}
                           className="distance-slider"
+                          disabled={!locationCoords}
                           onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v === 0 ? null : v); }}
                           style={{
                             flex: 1, height: '6px',
-                            background: `linear-gradient(to right, ${t.accentAlt} ${((milesRadius ?? 0) / 50) * 100}%, ${darkMode ? '#3A3A4A' : '#DDD'} 0%)`,
+                            background: `linear-gradient(to right, #E8722A ${((milesRadius ?? 0) / 50) * 100}%, ${darkMode ? '#3A3A4A' : '#DDD'} 0%)`,
                             borderRadius: '3px',
                           }}
                         />
                         <span style={{ fontSize: '10px', fontWeight: 600, color: '#A0A0A0', minWidth: '28px', textAlign: 'right', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>50 mi</span>
                       </div>
                       {/* Current radius display */}
-                      {milesRadius !== null && (
-                        <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '11px', fontWeight: 700, color: t.accentAlt, fontFamily: "'DM Sans', sans-serif" }}>
+                      {milesRadius !== null && locationCoords && (
+                        <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '11px', fontWeight: 700, color: '#E8722A', fontFamily: "'DM Sans', sans-serif" }}>
                           {milesRadius} miles from {locationLabel}
+                        </div>
+                      )}
+                      {!locationCoords && !geolocating && (
+                        <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '11px', fontWeight: 500, color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+                          Enter a location or tap the crosshairs to enable distance filtering
                         </div>
                       )}
                     </div>
                   )}
                 </div>
 
-                {/* 2. WHEN card */}
+                {/* 2. WHEN card — Green accent (#E8722A) */}
                 <div style={{
                   background: activeFilterCard === 'when'
-                    ? (darkMode ? '#1E1E30' : '#FFF8F4')
+                    ? (darkMode ? '#2A1E14' : '#FFF8F3')
                     : (darkMode ? '#262636' : '#FFFFFF'),
                   border: activeFilterCard === 'when'
-                    ? `1.5px solid ${t.accent}`
+                    ? `1.5px solid ${darkMode ? '#E8722A80' : '#E8722A'}`
                     : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
                   borderRadius: activeFilterCard === 'when' ? '10px' : '0',
                   margin: activeFilterCard === 'when' ? '4px 6px' : '0',
@@ -1023,63 +1260,90 @@ export default function HomePage() {
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" fill={dateKey !== 'all' ? t.accent : t.textMuted} /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z" fill={dateKey !== 'all' ? '#E8722A' : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: dateKey !== 'all' ? t.accent : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>When</div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: dateKey !== 'all' ? '#E8722A' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>When</div>
                       <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{whenLabel}</div>
                     </div>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'when' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={dateKey !== 'all' ? t.accent : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'when' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={dateKey !== 'all' ? '#E8722A' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'when' && (
-                    <div style={{ padding: '0 12px 8px' }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ padding: '0 12px 8px 12px' }}>
+                      {/* Row 1: Quick-select pills — forced single line */}
+                      <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px' }}>
                         {DATE_OPTIONS.filter(o => o.key !== 'pick').map(opt => (
                           <button key={opt.key} onClick={() => {
                             setDateKey(opt.key);
                             setPickedDate(''); setActiveFilterCard(null);
                           }} style={{
-                            padding: '10px 16px', borderRadius: '20px', border: 'none', cursor: 'pointer',
-                            background: dateKey === opt.key ? t.accent : (darkMode ? '#2A2A3C' : '#E8E6E2'),
+                            flex: 1, padding: '10px 6px', borderRadius: '20px', border: 'none', cursor: 'pointer',
+                            background: dateKey === opt.key ? '#E8722A' : (darkMode ? '#2A2A3C' : '#E8E6E2'),
                             color: dateKey === opt.key ? '#fff' : t.text,
-                            fontSize: '14px', fontWeight: dateKey === opt.key ? 700 : 500,
+                            fontSize: '13px', fontWeight: dateKey === opt.key ? 700 : 500,
                             fontFamily: "'DM Sans', sans-serif",
                             minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            whiteSpace: 'nowrap',
                           }}>
                             {opt.label}
                           </button>
                         ))}
-                        <label style={{
-                          padding: '10px 16px', borderRadius: '20px', border: `1px dashed ${t.textMuted}40`, cursor: 'pointer',
-                          background: dateKey === 'pick' ? t.accent : 'transparent',
-                          color: dateKey === 'pick' ? '#fff' : t.textMuted,
+                      </div>
+                      {/* Row 2: Full-width date picker — invisible input overlay */}
+                      <div style={{ position: 'relative', marginTop: '8px' }}>
+                        <div style={{
+                          width: '100%', padding: '12px 16px', borderRadius: '12px',
+                          background: dateKey === 'pick' ? '#E8722A' : (darkMode ? '#2A2A3C' : '#E8E6E2'),
+                          color: dateKey === 'pick' ? '#fff' : t.text,
                           fontSize: '14px', fontWeight: dateKey === 'pick' ? 700 : 500,
                           fontFamily: "'DM Sans', sans-serif",
-                          minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          position: 'relative', overflow: 'hidden',
+                          minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                          pointerEvents: 'none',
                         }}>
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                            <rect x="1" y="2.5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+                            <path d="M1 6.5h14" stroke="currentColor" strokeWidth="1.5"/>
+                            <path d="M4.5 1v3M11.5 1v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                          </svg>
                           {dateKey === 'pick' && pickedDate
                             ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                            : 'Pick a Date'}
-                          <input type="date" value={pickedDate} min={todayStr}
-                            onChange={e => { setPickedDate(e.target.value); setDateKey('pick'); if (e.target.value) setActiveFilterCard(null); }}
-                            style={{
-                              position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-                              opacity: 0, cursor: 'pointer', fontSize: '16px',
-                            }}
-                          />
-                        </label>
+                            : 'Pick a Specific Date'}
+                        </div>
+                        <input ref={datePickRef} type="date" value={todayStr} min={todayStr}
+                          onClick={e => { try { e.target.showPicker(); } catch {} }}
+                          onFocus={e => { datePickOpenVal.current = e.target.value; try { e.target.showPicker(); } catch {} }}
+                          onChange={e => {
+                            const v = e.target.value;
+                            if (v && v !== datePickOpenVal.current) {
+                              setPickedDate(v); setDateKey('pick'); setActiveFilterCard(null);
+                              datePickOpenVal.current = v;
+                            }
+                          }}
+                          onBlur={e => {
+                            const v = e.target.value;
+                            if (v && v !== datePickOpenVal.current) {
+                              setPickedDate(v); setDateKey('pick'); setActiveFilterCard(null);
+                              datePickOpenVal.current = v;
+                            }
+                          }}
+                          style={{
+                            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                            width: '100%', height: '100%',
+                            opacity: 0, cursor: 'pointer', zIndex: 10,
+                            WebkitAppearance: 'none',
+                          }}
+                        />
                       </div>
                     </div>
                   )}
                 </div>
 
-                {/* 3. ARTIST card */}
+                {/* 3. ARTIST card — Orange accent (#E8722A) */}
                 <div style={{
                   background: activeFilterCard === 'artist'
-                    ? (darkMode ? '#1E1E30' : '#FFF8F4')
+                    ? (darkMode ? '#2A1E14' : '#FFF8F3')
                     : (darkMode ? '#262636' : '#FFFFFF'),
                   border: activeFilterCard === 'artist'
-                    ? `1.5px solid ${t.accent}`
+                    ? `1.5px solid ${darkMode ? '#E8722A80' : '#E8722A'}`
                     : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
                   borderRadius: activeFilterCard === 'artist' ? '10px' : '0',
                   margin: activeFilterCard === 'artist' ? '4px 6px' : '0',
@@ -1089,12 +1353,12 @@ export default function HomePage() {
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill={artistSearch.trim() ? t.accent : t.textMuted} /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill={artistSearch.trim() ? '#E8722A' : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: artistSearch.trim() ? t.accent : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Artist</div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: artistSearch.trim() ? '#E8722A' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Artist</div>
                       <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{artistLabel}</div>
                     </div>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'artist' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={artistSearch.trim() ? t.accent : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'artist' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={artistSearch.trim() ? '#E8722A' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'artist' && (
                     <div style={{ padding: '0 12px 8px' }}>
@@ -1133,13 +1397,13 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* 4. VENUE card (most specific) */}
+                {/* 4. VENUE card — Purple accent (#E8722A) */}
                 <div style={{
                   background: activeFilterCard === 'venue'
-                    ? (darkMode ? '#1E1E30' : '#F8F0FF')
+                    ? (darkMode ? '#2A1E14' : '#FFF8F3')
                     : (darkMode ? '#262636' : '#FFFFFF'),
                   border: activeFilterCard === 'venue'
-                    ? `1.5px solid #a78bfa`
+                    ? `1.5px solid ${darkMode ? '#E8722A80' : '#E8722A'}`
                     : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
                   borderRadius: activeFilterCard === 'venue' ? '10px' : '0',
                   margin: activeFilterCard === 'venue' ? '4px 6px' : '0',
@@ -1149,12 +1413,12 @@ export default function HomePage() {
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.22 0-4.01 1.79-4.01 4.01S7.79 21 10.01 21 14 19.21 14 17V7h4V3h-6z" fill={activeVenues.length > 0 ? '#a78bfa' : t.textMuted} /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.22 0-4.01 1.79-4.01 4.01S7.79 21 10.01 21 14 19.21 14 17V7h4V3h-6z" fill={activeVenues.length > 0 ? '#E8722A' : t.textMuted} /></svg>
                     <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: activeVenues.length > 0 ? '#a78bfa' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Venue</div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: activeVenues.length > 0 ? '#E8722A' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Venue</div>
                       <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{venueLabel}</div>
                     </div>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'venue' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={activeVenues.length > 0 ? '#a78bfa' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'venue' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={activeVenues.length > 0 ? '#E8722A' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'venue' && (
                     <div style={{ padding: '0 12px 8px' }}>
@@ -1170,9 +1434,9 @@ export default function HomePage() {
                         {activeVenues.length > 0 && (
                           <button onClick={() => setActiveVenues([])} style={{
                             background: 'none', border: 'none', cursor: 'pointer', padding: '3px 4px', marginBottom: '2px',
-                            fontSize: '10px', color: '#a78bfa', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+                            fontSize: '10px', color: '#E8722A', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
                           }}>
-                            <svg width="8" height="8" viewBox="0 0 24 24" style={{ verticalAlign: 'middle', marginRight: '2px' }}><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="#a78bfa" /></svg>
+                            <svg width="8" height="8" viewBox="0 0 24 24" style={{ verticalAlign: 'middle', marginRight: '2px' }}><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="#E8722A" /></svg>
                             Clear
                           </button>
                         )}
@@ -1181,19 +1445,19 @@ export default function HomePage() {
                           return (
                             <button key={v.name} onClick={() => setActiveVenues(prev => checked ? prev.filter(n => n !== v.name) : [...prev, v.name])} style={{
                               display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
-                              padding: '10px 6px', background: checked ? 'rgba(167,139,250,0.08)' : 'transparent',
+                              padding: '10px 6px', background: checked ? 'rgba(232,114,42,0.08)' : 'transparent',
                               border: 'none', cursor: 'pointer', borderRadius: '6px',
                               fontFamily: "'DM Sans', sans-serif",
                             }}>
                               <div style={{
                                 width: '22px', height: '22px', borderRadius: '5px', flexShrink: 0,
                                 border: checked ? 'none' : '1.5px solid #4A4A6A',
-                                background: checked ? '#a78bfa' : 'transparent',
+                                background: checked ? '#E8722A' : 'transparent',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                               }}>
                                 {checked && <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                               </div>
-                              <span style={{ fontSize: '15px', fontWeight: checked ? 600 : 400, color: checked ? '#a78bfa' : t.text, flex: 1, textAlign: 'left' }}>{v.name}</span>
+                              <span style={{ fontSize: '15px', fontWeight: checked ? 600 : 400, color: checked ? '#E8722A' : t.text, flex: 1, textAlign: 'left' }}>{v.name}</span>
                               <span style={{ fontSize: '12px', color: t.textMuted }}>{v.count}</span>
                             </button>
                           );
@@ -1211,15 +1475,17 @@ export default function HomePage() {
                   borderRadius: '0 0 12px 12px',
                 }}>
                   <button onClick={clearAllFilters} style={{
-                    background: 'transparent',
-                    border: `1px solid ${t.accentAlt}`,
+                    background: darkMode ? 'rgba(255, 255, 255, 0.1)' : '#E5E7EB',
+                    border: 'none',
                     borderRadius: '8px',
                     padding: '7px 16px',
                     cursor: 'pointer',
-                    fontSize: '11px', fontWeight: 700, color: t.accentAlt,
+                    fontSize: '11px', fontWeight: 600, color: darkMode ? '#F0F0F5' : '#374151',
                     fontFamily: "'DM Sans', sans-serif",
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.8px',
                   }}>
-                    Clear all
+                    Clear All
                   </button>
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                     padding: '7px 18px', borderRadius: '8px', border: 'none',
@@ -1247,6 +1513,10 @@ export default function HomePage() {
           <HeroSection events={heroEvents} isToday={heroIsToday} />
         )}
 
+        {/* Spotlight Carousel — admin-curated premium events */}
+        {activeTab === 'home' && spotlightCarouselEvents.length > 0 && (
+          <SpotlightCarousel events={spotlightCarouselEvents} darkMode={darkMode} />
+        )}
 
         {/* FilterBar removed — filters now live in the omnibar panel */}
 
@@ -1260,8 +1530,8 @@ export default function HomePage() {
               background: t.inputBg, borderRadius: '12px',
             }}>
               {[
-                { key: 'events', label: 'Saved Events' },
-                { key: 'following', label: 'Following' },
+                { key: 'events', label: 'Upcoming Gigs' },
+                { key: 'following', label: 'Followed Artists' },
               ].map(seg => (
                 <button key={seg.key} onClick={() => handleSetSavedSegment(seg.key)} style={{
                   flex: 1, padding: '9px 0', borderRadius: '10px', border: 'none', cursor: 'pointer',
@@ -1277,48 +1547,45 @@ export default function HomePage() {
               ))}
             </div>
 
+            {/* Guest mode banner */}
+            {!isLoggedIn && !guestBannerDismissed && (
+              <div style={{
+                margin: '10px 16px 0', padding: '12px 14px',
+                borderRadius: '10px', display: 'flex', alignItems: 'flex-start', gap: '10px',
+                background: darkMode ? '#2A2A24' : '#FFFBEB',
+                border: `1px solid ${darkMode ? '#3D3D30' : '#FDE68A'}`,
+              }}>
+                <span style={{ fontSize: '14px', flexShrink: 0, marginTop: '1px' }}>⚠️</span>
+                <p style={{ flex: 1, fontSize: '13px', color: darkMode ? '#D4D4AA' : '#92400E', lineHeight: 1.5, margin: 0, fontFamily: "'DM Sans', sans-serif" }}>
+                  You are browsing as a guest.{' '}
+                  <button
+                    onClick={() => openAuth('save')}
+                    style={{
+                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                      color: t.accent, fontWeight: 700, fontSize: '13px',
+                      fontFamily: "'DM Sans', sans-serif",
+                      textDecoration: 'underline', textUnderlineOffset: '2px',
+                    }}
+                  >
+                    Sign in
+                  </button>{' '}
+                  to sync your saved gigs across devices so you don't lose them.
+                </p>
+                <button
+                  onClick={() => setGuestBannerDismissed(true)}
+                  aria-label="Dismiss"
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                    color: darkMode ? '#7878A0' : '#9CA3AF', fontSize: '16px', flexShrink: 0,
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
             {/* View A: Saved Events */}
-            {savedSegment === 'events' && (
-              <>
-                <div style={{ display: 'flex', gap: '6px', padding: '10px 16px 10px', overflowX: 'auto', scrollbarWidth: 'none' }}>
-                  {DATE_OPTIONS.filter(o => o.key !== 'pick').map(opt => (
-                    <button key={opt.key} onClick={() => {
-                      setDateKey(opt.key);
-                      setPickedDate('');
-                    }} style={{
-                      padding: '10px 16px', borderRadius: '20px', border: `1.5px solid`, cursor: 'pointer', whiteSpace: 'nowrap',
-                      fontSize: '14px', fontWeight: 700,
-                      background: dateKey === opt.key ? t.accent : t.pillBg,
-                      color: dateKey === opt.key ? 'white' : t.textMuted,
-                      borderColor: dateKey === opt.key ? t.accent : t.pillBorder,
-                      minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      {opt.label}
-                    </button>
-                  ))}
-                  <label style={{
-                    padding: '10px 16px', borderRadius: '20px', border: `1.5px solid`,
-                    cursor: 'pointer', whiteSpace: 'nowrap',
-                    fontSize: '14px', fontWeight: 700,
-                    background: dateKey === 'pick' ? t.accent : t.pillBg,
-                    color: dateKey === 'pick' ? 'white' : t.textMuted,
-                    borderColor: dateKey === 'pick' ? t.accent : t.pillBorder,
-                    minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    position: 'relative', overflow: 'hidden',
-                  }}>
-                    {dateKey === 'pick' && pickedDate
-                      ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                      : 'Pick a Date'}
-                    <input type="date" value={pickedDate} min={todayStr}
-                      onChange={e => { setPickedDate(e.target.value); setDateKey('pick'); }}
-                      style={{
-                        position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-                        opacity: 0, cursor: 'pointer', fontSize: '16px',
-                      }}
-                    />
-                  </label>
-                </div>
-                {(() => {
+            {savedSegment === 'events' && (() => {
                   let savedEvents = events.filter(e => favorites.has(e.id));
 
                   if (searchQuery.trim()) {
@@ -1330,20 +1597,6 @@ export default function HomePage() {
                     );
                   }
 
-                  switch (dateKey) {
-                    case 'today':   savedEvents = savedEvents.filter(e => e.date === todayStr); break;
-                    case 'tomorrow':savedEvents = savedEvents.filter(e => e.date === tomorrowStr); break;
-                    case 'weekend': {
-                      const weekendStart = todayStr > fridayStr ? todayStr : fridayStr;
-                      savedEvents = savedEvents.filter(e => e.date >= weekendStart && e.date <= sundayStr);
-                      break;
-                    }
-                    case 'pick':
-                      if (pickedDate) savedEvents = savedEvents.filter(e => e.date === pickedDate);
-                      break;
-                    default: break;
-                  }
-
                   savedEvents = savedEvents.sort((a, b) => {
                     const dc = a.date.localeCompare(b.date);
                     return dc !== 0 ? dc : (a.start_time ?? '').localeCompare(b.start_time ?? '');
@@ -1351,14 +1604,36 @@ export default function HomePage() {
 
                   if (savedEvents.length === 0) {
                     const hasAnySaved = events.some(e => favorites.has(e.id));
+                    // Logged-out empty state
+                    if (!isLoggedIn && !hasAnySaved) {
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '64px 32px', textAlign: 'center' }}>
+                          <span style={{ fontSize: '48px', marginBottom: '12px' }}>🔒</span>
+                          <p style={{ fontWeight: 700, fontSize: '16px', color: t.text, marginBottom: '4px' }}>
+                            Sign in to save events
+                          </p>
+                          <p style={{ fontSize: '14px', color: t.textMuted, lineHeight: 1.5, marginBottom: '16px' }}>
+                            Keep track of your favorite local bands and venues all in one place.
+                          </p>
+                          <button onClick={() => openAuth('save')} style={{
+                            padding: '12px 36px', borderRadius: '999px', border: 'none',
+                            background: t.accent, color: 'white', fontWeight: 700, fontSize: '15px',
+                            cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                          }}>
+                            Sign In
+                          </button>
+                        </div>
+                      );
+                    }
+                    // Logged-in empty state (has saves but filtered to zero, or no saves yet)
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '64px 32px', textAlign: 'center' }}>
                         <span style={{ fontSize: '48px', marginBottom: '12px' }}>♡</span>
                         <p style={{ fontWeight: 700, fontSize: '16px', color: t.text, marginBottom: '4px' }}>
-                          {!hasAnySaved ? "You haven't saved any events yet" : searchQuery ? 'No results found' : `No saved events for ${DATE_OPTIONS.find(o => o.key === dateKey)?.label ?? 'this period'}`}
+                          {!hasAnySaved ? "You haven't saved any events yet" : searchQuery ? 'No results found' : 'No upcoming saved events'}
                         </p>
                         <p style={{ fontSize: '14px', color: t.textMuted, lineHeight: 1.5 }}>
-                          {!hasAnySaved ? 'Tap the heart icon on an event to keep track of it here.' : searchQuery ? 'Try a different search term' : 'Try a different date filter'}
+                          {!hasAnySaved ? 'Tap the heart icon on an event to keep track of it here.' : searchQuery ? 'Try a different search term' : 'Check back as new events are added'}
                         </p>
                       </div>
                     );
@@ -1396,9 +1671,7 @@ export default function HomePage() {
                       ))}
                     </div>
                   );
-                })()}
-              </>
-            )}
+            })()}
 
             {/* View B: Following */}
             {savedSegment === 'following' && (
@@ -1421,13 +1694,24 @@ export default function HomePage() {
           <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg }}>
             <div style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
               <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'linear-gradient(135deg, #E8722A, #3AADA0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>
-                👤
+                {isLoggedIn && user?.user_metadata?.avatar_url
+                  ? <img src={user.user_metadata.avatar_url} alt="" style={{ width: '72px', height: '72px', borderRadius: '50%', objectFit: 'cover' }} />
+                  : '👤'
+                }
               </div>
-              <p style={{ fontWeight: 800, fontSize: '18px', color: t.text, marginTop: '8px' }}>Your Profile</p>
-              <p style={{ fontSize: '13px', color: t.textMuted }}>Sign in to save events across devices</p>
-              <button style={{ marginTop: '12px', padding: '10px 32px', borderRadius: '999px', border: 'none', background: t.accent, color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
-                Sign In
-              </button>
+              <p style={{ fontWeight: 800, fontSize: '18px', color: t.text, marginTop: '8px' }}>
+                {isLoggedIn ? (user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Your Profile') : 'Your Profile'}
+              </p>
+              {isLoggedIn ? (
+                <p style={{ fontSize: '13px', color: t.textMuted }}>{user?.email}</p>
+              ) : (
+                <>
+                  <p style={{ fontSize: '13px', color: t.textMuted }}>Sign in to save events across devices</p>
+                  <button onClick={() => openAuth('profile')} style={{ marginTop: '12px', padding: '10px 32px', borderRadius: '999px', border: 'none', background: t.accent, color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                    Sign In
+                  </button>
+                </>
+              )}
             </div>
             <div style={{ margin: '0 16px', borderRadius: '12px', background: t.surface, overflow: 'hidden', boxShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.4)' : '0 1px 6px rgba(0,0,0,0.07)', border: `1px solid ${t.border}` }}>
               {[
@@ -1435,6 +1719,7 @@ export default function HomePage() {
                 { icon: '🌙', label: 'Dark Mode', toggle: 'theme'  },
                 { icon: '📍', label: 'Default Location',          soon: true       },
                 { icon: '🎟', label: 'Add to the Jar',             action: () => setShowSubmit(true) },
+                ...(isLoggedIn ? [{ icon: '🚪', label: 'Sign Out', action: handleSignOut, danger: true }] : []),
               ].map((item, i, arr) => (
                 <button
                   key={item.label}
@@ -1448,7 +1733,7 @@ export default function HomePage() {
                     width: '100%', padding: '14px 16px', border: 'none', cursor: item.soon ? 'default' : 'pointer',
                     background: t.surface, borderBottom: i < arr.length - 1 ? `1px solid ${t.borderLight}` : 'none',
                   }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', color: t.text, fontWeight: 500 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', color: item.danger ? '#EF4444' : t.text, fontWeight: 500 }}>
                     <span>{item.icon}</span>{item.label}
                   </span>
                   {item.soon
@@ -1527,17 +1812,28 @@ export default function HomePage() {
       }}>
         {[
           { key: 'home',    icon: '🏠', label: 'Home'    },
-          { key: 'saved',   icon: '♥',  label: 'Saved'   },
+          { key: 'search',  icon: '🔍', label: 'Search'  },
+          { key: 'saved',   icon: '♥',  label: 'My Jam'  },
           { key: 'profile', icon: '👤', label: 'Profile' },
         ].map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+          <button key={tab.key} onClick={() => {
+            if (tab.key === 'search') {
+              openSearch();
+            } else if (tab.key === 'home' && activeTab === 'home') {
+              // Already on Home — reset everything: blur keyboard, clear search, collapse omnibar, clear filters
+              document.activeElement?.blur();
+              clearAllFilters();
+            } else {
+              setActiveTab(tab.key);
+            }
+          }} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
             background: 'none', border: 'none', cursor: 'pointer', padding: '4px 16px',
-            color: activeTab === tab.key ? t.accent : t.textMuted,
+            color: (tab.key === 'search' ? (searchFocused || (activeTab === 'home' && filtersExpanded)) : activeTab === tab.key) ? t.accent : t.textMuted,
             transition: 'color 0.15s',
           }}>
-            <span style={{ fontSize: tab.key === 'saved' ? '22px' : '20px', lineHeight: 1, textShadow: tab.key === 'saved' ? '0 0 6px rgba(232,114,42,0.3)' : 'none' }}>{tab.icon}</span>
-            <span style={{ fontSize: '10px', fontWeight: activeTab === tab.key ? 700 : 500 }}>{tab.label}</span>
+            <span style={{ fontSize: tab.key === 'saved' ? '22px' : '20px', lineHeight: 1, textShadow: tab.key === 'search' && searchFocused ? `0 0 8px ${t.accent}60` : tab.key === 'saved' ? '0 0 6px rgba(232,114,42,0.3)' : 'none' }}>{tab.icon}</span>
+            <span style={{ fontSize: '10px', fontWeight: (tab.key === 'search' ? (searchFocused || (activeTab === 'home' && filtersExpanded)) : activeTab === tab.key) ? 700 : 500 }}>{tab.label}</span>
           </button>
         ))}
       </nav>
@@ -1563,10 +1859,36 @@ export default function HomePage() {
 
       {/* ── Modals ────────────────────────────────────────────────────────── */}
       {showSubmit && (
-        <SubmitEventModal onClose={() => setShowSubmit(false)} onSubmit={() => setToast('Added to the Jar! We\'ll review it shortly.')} />
+        <SubmitEventModal darkMode={darkMode} onClose={() => setShowSubmit(false)} onSubmit={() => { setToastVariant('success'); setToast('Dropped in the Jar! We\'ll review it shortly.'); }} />
       )}
       {/* ReportIssueModal removed — flagging now handled inline in EventCardV2 */}
-      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
+
+      {/* ── Welcome Modal (first-time visitors) ─────────────────────────── */}
+      {showWelcome && (
+        <WelcomeModal
+          darkMode={darkMode}
+          onSignIn={() => {
+            try { localStorage.setItem('mlj_hasSeenWelcomeModal', 'true'); } catch {}
+            setShowWelcome(false);
+            openAuth('profile');
+          }}
+          onDismiss={() => {
+            try { localStorage.setItem('mlj_hasSeenWelcomeModal', 'true'); } catch {}
+            setShowWelcome(false);
+          }}
+        />
+      )}
+
+      {/* ── Auth Modal ──────────────────────────────────────────────────── */}
+      {showAuthModal && (
+        <AuthModal
+          darkMode={darkMode}
+          trigger={authTrigger}
+          onClose={() => { setShowAuthModal(false); setAuthTrigger(null); }}
+        />
+      )}
+
+      {toast && <Toast message={toast} variant={toastVariant} onAction={toastAction} onDismiss={() => { setToast(null); setToastVariant(null); setToastAction(null); }} />}
     </>
   );
 }

@@ -54,7 +54,7 @@ export default function HeroSection({ events = [], isToday = true }) {
     }}>
       {/* Background image */}
       <div style={{
-        position: 'absolute', inset: 0,
+        position: 'absolute', inset: 0, pointerEvents: 'none',
         backgroundImage: `url(${bgImage})`,
         backgroundSize: 'cover', backgroundPosition: 'center',
         transition: 'opacity 0.5s',
@@ -62,7 +62,7 @@ export default function HeroSection({ events = [], isToday = true }) {
 
       {/* Dark gradient overlay */}
       <div style={{
-        position: 'absolute', inset: 0,
+        position: 'absolute', inset: 0, pointerEvents: 'none',
         background: 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.80) 100%)',
       }} />
 

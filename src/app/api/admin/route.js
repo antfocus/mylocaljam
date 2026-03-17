@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase';
 
 function checkAuth(request) {
@@ -6,23 +7,42 @@ function checkAuth(request) {
   return authHeader === `Bearer ${process.env.ADMIN_PASSWORD}`;
 }
 
-// GET all events (including drafts)
+// GET events with pagination support
+// Query params: page (1-based), limit (default 100), sort (column), order (asc/desc)
 export async function GET(request) {
   if (!checkAuth(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const { searchParams } = new URL(request.url);
+  const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+  const limit = Math.min(500, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
+  const sort = searchParams.get('sort') || 'event_date';
+  const order = searchParams.get('order') === 'desc' ? false : true; // ascending by default
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
   const supabase = getAdminClient();
+
+  // Get total count
+  const { count } = await supabase
+    .from('events')
+    .select('id', { count: 'exact', head: true });
+
   const { data, error } = await supabase
     .from('events')
     .select('*, venues(name, address, color)')
-    .order('event_date', { ascending: true });
+    .order(sort, { ascending: order })
+    .range(from, to);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  return NextResponse.json({
+    events: data,
+    pagination: { page, limit, total: count || 0, totalPages: Math.ceil((count || 0) / limit) },
+  });
 }
 
 // CREATE event
@@ -47,6 +67,7 @@ export async function POST(request) {
       cover: body.cover || null,
       ticket_link: body.ticket_link || null,
       recurring: body.recurring || false,
+      is_spotlight: body.is_spotlight || false,
       status: body.status || 'published',
       source: body.source || 'Admin',
       verified_at: new Date().toISOString(),
@@ -82,6 +103,10 @@ export async function PUT(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Invalidate live feed cache after any event update
+  revalidatePath('/');
+  revalidatePath('/api/events');
+
   return NextResponse.json(data[0]);
 }
 
@@ -103,6 +128,9 @@ export async function DELETE(request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  revalidatePath('/');
+  revalidatePath('/api/events');
 
   return NextResponse.json({ success: true });
 }

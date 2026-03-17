@@ -199,7 +199,7 @@ export default function SiteHero({ events = [], onExplore, onAddEvent }) {
                     <span className="tag-badge tag-live" style={{ fontSize: '10px', padding: '2px 6px' }}>LIVE</span>
                   </div>
                   <p className="font-heading" style={{
-                    fontSize: '15px', fontWeight: 700,
+                    fontSize: '17px', fontWeight: 600,
                     color: 'var(--text-primary)',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     marginBottom: '4px',
@@ -207,7 +207,7 @@ export default function SiteHero({ events = [], onExplore, onAddEvent }) {
                     {name}
                   </p>
                   <p style={{
-                    fontSize: '13px', color: 'var(--text-muted)',
+                    fontSize: '14px', color: 'var(--text-muted)',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     📍 {venue}

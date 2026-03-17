@@ -906,7 +906,325 @@ UPDATE venues SET latitude = ?, longitude = ? WHERE name = '?';
 
 ---
 
+## Known Issues — Git / Deploy Workflow
+
+### Git out of sync with Vercel deploy
+- **Problem:** `npx vercel --prod` deploys directly from local disk files, bypassing git. So the live site can be ahead of what's committed to GitHub. Meanwhile, the Claude sandbox edits files at `/sessions/.../mnt/mylocaljam` which syncs to the user's local folder, but git commands run from the user's terminal at `~/mylocaljam` (not `~/Documents/mylocaljam`). Path mismatches in `cd` commands cause commit failures.
+- **Symptoms:** Red "modified" files in `git status` that are already deployed and working on the live site. Commits fail with `cd: no such file or directory`.
+- **Current state (March 15, 2026):** Several files may have uncommitted changes that are already live: `.gitignore`, `src/app/admin/page.js`, `src/components/SiteEventCard.js`, `src/components/SiteHero.js`. Plus untracked files: `ARCHITECTURE-PLAN.md`, `src/app/api/follows/`, `src/app/api/spotlight/`, `src/components/FollowingTab.js`, `supabase-phase2-follows.sql`, `supabase-spotlight.sql`.
+- **Fix needed:** Run `git add` and `git commit` from the user's terminal to catch git up with what's deployed. Do NOT use `cd /Users/anthony/mylocaljam` — the user's terminal is already in the `mylocaljam` directory. Just use `git add` and `git commit` directly.
+- **Prevention:** Future sessions should omit the `cd` prefix from git commands since the user's terminal is already in the project directory.
+
+---
+
+## Session: March 15, 2026 — Submission Flow, Admin Queue, Filter Cleanup
+
+### Saved Tab — Date Filters Removed
+- **Removed entirely** — no date pills (ALL/Today/Tomorrow/Pick a Date) on Saved tab, any screen size
+- Removed corresponding date-filtering switch/case from the saved events IIFE
+- Simplified from nested double-IIFE to single IIFE
+- Updated empty state messages (no longer references date filters)
+- **Files changed:** `src/app/page.js`
+
+### "Add to the Jar" Submission Modal — Complete Rewrite
+- **File:** `src/components/SubmitEventModal.js` — replaced heavy 10-field form with minimalist two-path design
+- **Primary path:** Photo upload via `<label htmlFor>` pointing to hidden `<input type="file">` (reliable on iOS — no programmatic `.click()`)
+- **Secondary path:** "or enter manually" toggle reveals 3 fields: Artist, Venue, Date
+- Uses inline `DARK`/`LIGHT` theme tokens (not CSS vars) matching page.js pattern
+- Bottom-sheet modal style with drag handle, slides up from bottom
+- `handleClose()` callback resets ALL state (photo, form fields, submittedRef) on X or backdrop tap
+- Double-submit prevention via `submittedRef` (useRef guard) + `disabled={submitting}`
+- Error messages now surface actual DB error from API response
+- Input `fontSize: 16px` prevents iOS Safari auto-zoom on focus
+- `scrollIntoView({ block: 'center' })` on input focus with 300ms delay for iOS keyboard
+- 40vh spacer div at bottom for keyboard scroll clearance
+- **DB status:** All submissions use `status: 'pending'` (DB constraint `submissions_status_check` only allows pending/approved/rejected)
+
+### Submissions API Update
+- **File:** `src/app/api/submissions/route.js`
+- Handles both photo path (`image_url` present) and manual entry path
+- Normalizes bare `YYYY-MM-DD` dates to full ISO timestamps (`T00:00:00`)
+- `console.error` with details/hint on DB errors for debugging
+- Uses `getAdminClient()` (service role key, bypasses RLS)
+
+### Admin Approval Queue — New Feature
+- **Page:** `src/app/admin/queue/page.js` — desktop-optimized split-screen dashboard
+- **API:** `src/app/api/admin/queue/route.js` — GET pending, POST approve, PUT reject/block
+- **Duplicate check API:** `src/app/api/admin/duplicate-check/route.js`
+- **Layout:** Three-panel split-screen:
+  - Left sidebar: scrollable queue list sorted oldest-first, status badges (📷 Flyer / ✏️ Manual)
+  - Middle: source panel with flyer image (clickable lightbox + "Open in New Tab") or manual entry details, submission metadata
+  - Right: editor panel with editable fields (Artist, Venue with datalist, Date, Time, Genre, Vibe, Cover, Ticket Link)
+- **Duplicate check:** Live warning when venue+date matches existing published event (500ms debounce)
+- **Actions:** Approve (creates event + marks submission approved), Reject, Block Submitter (rejects + flags email)
+- **Auto-advance:** After approve/reject/block, automatically loads next queue item
+- **Auth:** Same `ADMIN_PASSWORD` env var pattern as existing admin page
+- **Admin page updated:** Orange "Approval Queue" button added to `/admin` header
+- **Password:** `freshdoily` (in `.env.local`)
+
+### Toast Component Upgrade
+- **File:** `src/components/Toast.js` — now supports `variant="success"` prop
+- Success variant: full-width green bar (#16A34A), large white text, party emoji, 4-second duration
+- Default variant unchanged (small dark pill with accent border)
+- `toastVariant` state added to page.js, reset on dismiss
+
+### Profile Tab Sign In Button
+- Wired `onClick={() => setShowAuthModal(true)}` on the Profile tab's orange Sign In button
+- Added `fontFamily: "'DM Sans', sans-serif"` to match Saved tab button
+
+### DB Schema Requirements
+```sql
+-- Required for photo uploads and block feature:
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS blocked BOOLEAN DEFAULT FALSE;
+
+-- Required for block submitter action:
+CREATE TABLE IF NOT EXISTS blocked_submitters (
+  email TEXT PRIMARY KEY,
+  blocked_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Supabase Storage: create a public bucket named "flyers"
+```
+
+### Known Bugs (To Fix Later)
+1. **Submit modal — Date field buried under keyboard on iOS:** `scrollIntoView` + 40vh spacer not fully working on iOS Safari. Needs more aggressive fix (possibly `visualViewport` API or repositioning modal from `position: fixed` to `absolute`).
+2. **Submit modal — Date-to-button spacing on mobile Safari:** Explicit `marginBottom: 24px` on Date wrapper visually collapsing on mobile despite working on desktop. Needs Safari remote inspector debugging to find override.
+
+### State Variables Added to page.js
+```javascript
+const [isLoggedIn, setIsLoggedIn] = useState(false);
+const [showAuthModal, setShowAuthModal] = useState(false);
+const [toastVariant, setToastVariant] = useState(null);
+```
+
+### New Files Created
+- `src/app/admin/queue/page.js`
+- `src/app/api/admin/queue/route.js`
+- `src/app/api/admin/duplicate-check/route.js`
+
+### Files Modified
+- `src/app/page.js` — Saved tab filter removal, auth state, toastVariant, Profile Sign In wiring
+- `src/components/SubmitEventModal.js` — complete rewrite
+- `src/components/Toast.js` — success variant
+- `src/app/api/submissions/route.js` — photo + manual paths, error logging
+- `src/app/admin/page.js` — Approval Queue button in header
+
+---
+
+## Session: March 16, 2026 — Data Architecture & Artist Audit Dashboard
+
+### Database Changes
+
+#### `events` table — new `category` column
+```sql
+ALTER TABLE events ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Live Music';
+```
+Standard values: `'Live Music'`, `'Drink/Food Special'`, `'Trivia/Games'`, `'DJ/Nightlife'`. Defaults to `'Live Music'` so all existing events are unaffected. The "Convert to Special" tool in the admin panel writes `'Drink/Food Special'` when cleaning junk artist entries.
+
+#### `artists` table — schema alignment
+The enrichment pipeline originally created a simpler schema (`name, image_url, bio, tags, last_fetched`). These ALTERs add the columns the admin dashboard expects:
+```sql
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS genres TEXT[];
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS vibes TEXT[];
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS instagram_url TEXT;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS is_claimed BOOLEAN DEFAULT false;
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+```
+
+### Artist Backfill Endpoint
+- **Route:** `src/app/api/admin/artists/backfill/route.js`
+- **Purpose:** One-time (safe to re-run) backfill that scans ALL events, extracts every unique `artist_name`, and upserts into the `artists` table. Maps over `image_url`, `artist_bio`, and `genre` from events. Paginates in 1000-row chunks to bypass Supabase's default 1000-row cap.
+- **Trigger from browser console:**
+  ```javascript
+  fetch('/api/admin/artists/backfill', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer freshdoily' }
+  }).then(r => r.json()).then(d => console.log(d))
+  ```
+- **Results (March 16):** Scanned 1,652 events → 679 unique artists → inserted ~311 new artists across two runs, backfilled image/bio data on existing rows.
+
+### Admin Artists Tab — Rebuilt as Audit Dashboard
+**File:** `src/app/admin/page.js`
+
+New state variables:
+```javascript
+const [artistsNeedsInfo, setArtistsNeedsInfo] = useState(false);
+const [editingArtist, setEditingArtist] = useState(null);
+const [artistForm, setArtistForm] = useState({ bio: '', genres: '', image_url: '', instagram_url: '' });
+const [artistActionLoading, setArtistActionLoading] = useState(null);
+```
+
+Features:
+- **"Needs Info Only" toggle** — filters to artists missing bio, image, genres, or social. Uses `?needsInfo=true` query param on the API.
+- **Health badges** on every row: `Bio`, `Img`, `Genre`, `Social` — teal (#3AADA0) when populated, muted grey at 50% opacity when null. Font size 12px, padding 3px 10px.
+- **Inline edit panel** — click ✎ to open a form for bio (textarea), genres (comma-separated input → array), image URL, Instagram URL. Saves via PUT to `/api/admin/artists`.
+- **🍺 Convert to Special** — confirms, then calls `DELETE /api/admin/artists?id=X&action=convert-to-special`. Backend finds linked events by `artist_name` (ilike match), sets their `category` to `'Drink/Food Special'` and nulls `artist_name`/`artist_bio`, then deletes the artist row.
+- **🗑 Delete** — standard permanent delete from the artists table.
+- **↓ Export CSV** — downloads currently visible rows (respects search + needsInfo filter) as CSV with columns: Artist Name, Has Bio, Has Image, Has Genres, Has Socials, Database ID. Filename includes filter state and date.
+
+### API Changes
+
+#### `/api/admin/artists/route.js`
+- GET: Added `.limit(5000)` to bypass Supabase default 1000-row cap. Added `?needsInfo=true` query param for server-side filtering.
+- DELETE: Added `?action=convert-to-special` mode that re-categorizes linked events before deleting the artist. Added `revalidatePath('/')` and `revalidatePath('/api/events')` after delete.
+
+### Files Created
+- `src/app/api/admin/artists/backfill/route.js`
+
+### Files Modified
+- `src/app/api/admin/artists/route.js` — needsInfo filter, limit(5000), convert-to-special action, cache invalidation
+- `src/app/admin/page.js` — Full Artists tab rebuild (audit dashboard), new state variables, Export CSV button
+
+### Pending / Not Yet Deployed
+- SQL migrations (category column + artists schema alignment) — user needs to run in Supabase SQL Editor
+- Future: `artist_id` foreign key on events table (preparing for relational shift)
+- Future: Admin page layout/design improvements
+- Known bugs from prior sessions: Date field buried under keyboard on iOS, Date-to-button spacing on mobile Safari
+- 5 ungeocodable venues need manual lat/lng in Supabase
+- Supabase Storage: Create public bucket named "flyers"
+
+---
+
+## Session: March 17, 2026 — AI Auto-Fill (Perplexity Integration)
+
+### What Changed
+1. **New API Route: `/api/admin/artists/ai-lookup`** (`src/app/api/admin/artists/ai-lookup/route.js`)
+   - POST endpoint, admin-auth protected (Bearer token)
+   - Accepts `{ artistName }`, calls Perplexity `sonar-pro` model with live web search
+   - System prompt forces structured JSON response: `bio`, `genres[]`, `vibes[]`, `instagram_url`
+   - Strips markdown code fences, validates JSON, normalizes shape before returning
+   - Returns 502 with descriptive error on API failure, parse failure, or empty response
+
+2. **Admin Edit Panel — ✨ Auto-Fill with AI button**
+   - Added at top-right of edit panel header, gradient orange styling
+   - Shows "⏳ Searching..." with disabled state during API call
+   - On success: maps AI response into form fields (bio, genres, vibes, instagram_url) — only fills non-empty values, preserves existing data
+   - Does NOT auto-save — user reviews and clicks "Save Changes" manually
+
+3. **Admin Edit Panel — Vibes field added**
+   - New "Vibes (comma-separated)" input field in edit panel (left column under Bio)
+   - Vibes saved as array to artists table on Save
+   - Populated from existing `artist.vibes` on edit open
+
+4. **Toast notification system**
+   - Fixed-position toast at top-right of screen
+   - Green for success ("AI fields populated — review & save!")
+   - Red for error ("Could not auto-fill. Manual entry required.")
+   - Auto-dismisses after 4-5 seconds
+
+### Env Var Required
+- `PERPLEXITY_API_KEY` — must be set in Vercel environment variables before deploying
+
+### Files Created
+- `src/app/api/admin/artists/ai-lookup/route.js` (new)
+
+### Files Modified
+- `src/app/admin/page.js` — new state vars (aiLoading, artistToast), vibes in artistForm, Auto-Fill button, vibes input, toast UI
+- `HANDOVER.md` — this section
+
+### Deploy Steps
+1. Add `PERPLEXITY_API_KEY` env var in Vercel dashboard (Settings → Environment Variables)
+2. Run `npx vercel --prod` from `~/mylocaljam`
+
+---
+
+## Session: March 17, 2026 — Image Upload Pipeline & Posters Bucket
+
+### What Changed
+1. **SubmitEventModal — switched to `posters` bucket with UUID rename**
+   - Uploads now go to the `posters` Supabase Storage bucket (was `flyers`)
+   - Files auto-renamed to `{uuid}.{ext}` using `crypto.randomUUID()` to prevent overwrites
+   - Added client-side validation: max 10MB, only JPG/PNG/WebP/GIF allowed
+   - File rejected with user-friendly alert before upload attempt
+
+2. **Queue Approve — image_url now carries to events table**
+   - On approve, fetches `image_url` from the submission record
+   - Saves it to the new event's `image_url` column so the poster appears on the public feed
+   - Previously this link was lost — submitted posters were never visible on published events
+
+3. **Queue Reject — storage cleanup**
+   - On reject, extracts the file name from the submission's `image_url`
+   - Deletes the file from `posters` bucket to prevent junk file accumulation
+   - Wrapped in try/catch so storage failures don't block the reject action
+   - Only triggers for URLs containing `/posters/` (safe for legacy `flyers` URLs)
+
+4. **Public feed already secure**
+   - `GET /api/events` already filters `status = 'published'` — no pending submissions leak to users
+
+### RLS Policies — Run in Supabase SQL Editor
+```sql
+-- Allow public/anon users to upload to posters bucket (insert only)
+CREATE POLICY "Allow public uploads to posters"
+ON storage.objects FOR INSERT
+TO anon, authenticated
+WITH CHECK (bucket_id = 'posters');
+
+-- Allow public to read poster images (needed for public URLs)
+CREATE POLICY "Allow public read of posters"
+ON storage.objects FOR SELECT
+TO anon, authenticated
+USING (bucket_id = 'posters');
+
+-- Admin (service role) already bypasses RLS — full CRUD by default
+-- No explicit policy needed for admin operations
+```
+
+### Files Modified
+- `src/components/SubmitEventModal.js` — posters bucket, UUID rename, file validation
+- `src/app/api/admin/queue/route.js` — image_url linking on approve, storage delete on reject
+- `HANDOVER.md` — this section
+
+### Deploy Steps
+1. Run the RLS policies SQL above in Supabase SQL Editor
+2. Run `npx vercel --prod` from `~/mylocaljam`
+
+---
+
+## Session: March 17, 2026 — Spotlight Carousel
+
+### What Changed
+1. **New component: `SpotlightCarousel.js`**
+   - Horizontal swipeable carousel using native CSS `scroll-snap-type: x mandatory`
+   - Cards are 85% width with "peek" effect showing the next card edge
+   - `image_url` from posters bucket used as full-bleed background with gradient overlay
+   - Artist name, venue, date, and time overlaid at bottom
+   - Active dot pagination indicator tracks scroll position
+   - Dark/light mode support, scrollbar hidden
+   - Only renders when at least one spotlight event exists
+
+2. **Admin EventFormModal — ★ Spotlight Carousel toggle**
+   - New checkbox next to "Recurring event" in the event edit form
+   - Sets `is_spotlight: true/false` on the event row
+   - Orange styling to distinguish from regular checkbox
+
+3. **Admin API** — `is_spotlight` field added to POST (create event) handler. PUT already passes through all fields.
+
+4. **Main page** — imports SpotlightCarousel, filters events by `is_spotlight === true`, renders between HeroSection and the event feed
+
+### SQL Migration — Run in Supabase SQL Editor
+```sql
+ALTER TABLE events ADD COLUMN IF NOT EXISTS is_spotlight BOOLEAN DEFAULT FALSE;
+```
+
+### Files Created
+- `src/components/SpotlightCarousel.js`
+
+### Files Modified
+- `src/app/page.js` — import SpotlightCarousel, spotlightCarouselEvents memo, render carousel
+- `src/app/admin/page.js` — is_spotlight in EventFormModal form state + checkbox
+- `src/app/api/admin/route.js` — is_spotlight in POST insert
+- `HANDOVER.md` — this section
+
+### Deploy Steps
+1. Run the ALTER TABLE SQL above in Supabase SQL Editor
+2. Run `npx vercel --prod` from `~/mylocaljam`
+3. Edit any event in Admin, check ★ Spotlight Carousel, save — it appears on the public feed
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.
-User's local path: `~/Documents/mylocaljam`
+User's local path: `~/mylocaljam` (NOT `~/Documents/mylocaljam`)
+
