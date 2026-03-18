@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1500+ events** across 34 scrapers (as of March 18, 2026)
+**~1500+ events** across 35 scrapers (as of March 18, 2026)
 
 ---
 
@@ -61,6 +61,7 @@
 | 32 | Bum Rogers Tavern | `bumRogers.js` | HTML parsing (Astro/BentoBox) | ✅ Working | 2 |
 | 33 | The Columns | `theColumns.js` | WordPress HTML (custom schedule block) | ✅ Working | 112 |
 | 34 | The Roost | `theRoost.js` | HTML plain-text parsing (Beacon CMS) | ✅ Working | ~10+ |
+| 35 | Deal Lake Bar + Co. | `dealLakeBar.js` | Squarespace JSON API | ✅ Working | ~23 |
 
 ---
 
@@ -337,6 +338,13 @@
 - **Default time:** 9:00 PM (Friday & Saturday live music per page header)
 - **Address:** Cream Ridge, NJ
 - **Note:** Also has recurring weekly acts (Wednesday Joe Vadala, Thursday DC DUO) but these are not scraped as they lack specific dates. The page lists ~2 months of Friday/Saturday performers.
+
+### Deal Lake Bar + Co. (`dealLakeBar.js`)
+- **URL:** https://www.deallakebarco.com/music-events
+- **Platform:** Squarespace (JSON API)
+- **Approach:** Same pattern as Anchor Tavern / Sun Harbor — fetches `/music-events?format=json`, parses the `upcoming` array with `title`, `startDate` (epoch ms), `endDate`, `urlId`, `id`, `assetUrl`, `excerpt`.
+- **Address:** 601 Main Street, Loch Arbour, NJ
+- **Note:** Mix of live music (Charlie Brown, Quincy Mumford, Kevin Hill, etc.), trivia nights, and special events (March Madness). ~23 upcoming events.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events

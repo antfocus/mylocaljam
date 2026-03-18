@@ -32,6 +32,7 @@ import { scrapeSunHarbor } from '@/lib/scrapers/sunHarbor';
 import { scrapeBumRogers } from '@/lib/scrapers/bumRogers';
 import { scrapeTheColumns } from '@/lib/scrapers/theColumns';
 import { scrapeTheRoost } from '@/lib/scrapers/theRoost';
+import { scrapeDealLakeBar } from '@/lib/scrapers/dealLakeBar';
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
 // Tim McLoone's removed — all McLoone's domains behind Cloudflare+reCAPTCHA, blocks all datacenter IPs
 // Source: mcloones.ticketbud.com (Ticketbud organizer page) — revisit if a workaround is found
@@ -154,7 +155,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -186,6 +187,7 @@ export async function POST(request) {
     scrapeBumRogers(),
     scrapeTheColumns(),
     scrapeTheRoost(),
+    scrapeDealLakeBar(),
   ]);
 
   const scraperResults = {
@@ -220,6 +222,7 @@ export async function POST(request) {
     BumRogers: { count: bumRogers.events.length, error: bumRogers.error },
     TheColumns: { count: theColumns.events.length, error: theColumns.error },
     TheRoost: { count: theRoost.events.length, error: theRoost.error },
+    DealLakeBar: { count: dealLakeBar.events.length, error: dealLakeBar.error },
   };
 
   // Combine all events
@@ -255,6 +258,7 @@ export async function POST(request) {
     ...bumRogers.events,
     ...theColumns.events,
     ...theRoost.events,
+    ...dealLakeBar.events,
   ].map(ev => mapEvent(ev, venueMap));
 
   // Filter out events with no external_id or date, and deduplicate by external_id
