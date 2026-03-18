@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1500+ events** across 38 scrapers (as of March 18, 2026)
+**~1500+ events** across 39 scrapers (as of March 18, 2026)
 
 ---
 
@@ -66,6 +66,7 @@
 | 37 | Water Street Bar & Grill | `waterStreet.js` | Squarespace JSON API | ✅ Working | ~5 |
 | 38 | Crossroads | `crossroads.js` | Eventbrite JSON-LD | ✅ Working | ~24 |
 | ~~39~~ | ~~Algonquin Arts Theatre~~ | ~~`algonquinArts.js`~~ | ~~Custom PHP HTML~~ | ❌ Blocked (403) | — |
+| 39 | Starland Ballroom | `starlandBallroom.js` | HTML parsing (AXS-ticketed) | ✅ Working | ~22 |
 
 ---
 
@@ -372,6 +373,13 @@
 - **Approach:** Fetches the Eventbrite organizer page HTML, extracts JSON-LD `<script type="application/ld+json">` containing `itemListElement` array with full event data (name, startDate, endDate, url, image, description).
 - **Address:** 78 North Ave, Garwood, NJ 07027
 - **Note:** Active music venue with ~24 upcoming events. Tickets sold via Eventbrite with prices. Events include live bands, tribute acts, comedy shows, and festivals.
+
+### Starland Ballroom (`starlandBallroom.js`)
+- **URL:** https://www.starlandballroom.com/events/all
+- **Platform:** Custom venue site, ticketed by AXS
+- **Approach:** Fetches the events page HTML, parses `div.entry.starland` blocks. Each entry has h3 (headliner), h4 (support acts), `.date` span, `.time` span, thumb image from AXS CDN, and detail/buy links. Combines headliner + support into title.
+- **Address:** 570 Jernee Mill Rd, Sayreville, NJ 08872
+- **Note:** Major concert venue with ~22 upcoming shows. Events include rock, metal, tribute bands, and family shows. Images hosted on `images.discovery-prod.axs.com`. Event IDs from detail page URLs used for external_id dedup.
 
 ### Algonquin Arts Theatre — ❌ BLOCKED
 - **URL:** https://www.algonquinarts.org/calendar.php?s=14
