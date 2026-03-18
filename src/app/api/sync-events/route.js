@@ -31,6 +31,7 @@ import { scrapeTheVogel } from '@/lib/scrapers/theVogel';
 import { scrapeSunHarbor } from '@/lib/scrapers/sunHarbor';
 import { scrapeBumRogers } from '@/lib/scrapers/bumRogers';
 import { scrapeTheColumns } from '@/lib/scrapers/theColumns';
+import { scrapeTheRoost } from '@/lib/scrapers/theRoost';
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
 // Tim McLoone's removed — all McLoone's domains behind Cloudflare+reCAPTCHA, blocks all datacenter IPs
 // Source: mcloones.ticketbud.com (Ticketbud organizer page) — revisit if a workaround is found
@@ -101,7 +102,8 @@ function mapEvent(ev, venueMap) {
     venue_name: ev.venue,
     venue_id: venueId,
     event_date: eventDate,
-    artist_bio: decodeHtmlEntities(ev.description) || null,
+    // artist_bio intentionally omitted — that column is managed exclusively
+    // by the Last.fm enrichment step below, not by scraper descriptions.
     // Only store ticket_link if it points to a real external ticketing site
     // (different domain than the venue's own source_url)
     ticket_link: (() => {
@@ -152,7 +154,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -183,6 +185,7 @@ export async function POST(request) {
     scrapeSunHarbor(),
     scrapeBumRogers(),
     scrapeTheColumns(),
+    scrapeTheRoost(),
   ]);
 
   const scraperResults = {
@@ -216,6 +219,7 @@ export async function POST(request) {
     SunHarbor: { count: sunHarbor.events.length, error: sunHarbor.error },
     BumRogers: { count: bumRogers.events.length, error: bumRogers.error },
     TheColumns: { count: theColumns.events.length, error: theColumns.error },
+    TheRoost: { count: theRoost.events.length, error: theRoost.error },
   };
 
   // Combine all events
@@ -250,6 +254,7 @@ export async function POST(request) {
     ...sunHarbor.events,
     ...bumRogers.events,
     ...theColumns.events,
+    ...theRoost.events,
   ].map(ev => mapEvent(ev, venueMap));
 
   // Filter out events with no external_id or date, and deduplicate by external_id
@@ -279,16 +284,16 @@ export async function POST(request) {
     }
   }
 
-  // --- Auto-enrich new artists via Last.fm ---
-  let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, errors: [] };
+  // --- Auto-enrich new artists via Last.fm + link events → artists via artist_id ---
+  let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, eventsLinked: 0, errors: [] };
   try {
-    // Find unenriched events (missing image_url or artist_bio)
+    // Fetch all future published events for enrichment + artist linking
     const { data: unenriched } = await supabase
       .from('events')
-      .select('id, artist_name, image_url, artist_bio')
+      .select('id, artist_name, image_url, artist_bio, artist_id')
       .eq('status', 'published')
       .not('artist_name', 'is', null)
-      .or('image_url.is.null,artist_bio.is.null')
+      .gte('event_date', new Date().toISOString())
       .limit(500);
 
     if (unenriched?.length) {
@@ -297,7 +302,7 @@ export async function POST(request) {
       // Check which are already cached
       const { data: cached } = await supabase
         .from('artists')
-        .select('name, image_url, bio')
+        .select('id, name, image_url, bio')
         .in('name', uniqueNames.slice(0, 200));
 
       const cachedMap = {};
@@ -315,10 +320,10 @@ export async function POST(request) {
         }
       }
 
-      // Reload cache and update events
+      // Reload cache (with id for FK linking) and update events
       const { data: freshCached } = await supabase
         .from('artists')
-        .select('name, image_url, bio')
+        .select('id, name, image_url, bio')
         .in('name', uniqueNames.slice(0, 200));
 
       const freshMap = {};
@@ -329,10 +334,20 @@ export async function POST(request) {
         if (!artistData) continue;
         const update = {};
         if (!ev.image_url && artistData.image_url) update.image_url = artistData.image_url;
-        if (!ev.artist_bio && artistData.bio) update.artist_bio = artistData.bio;
+        // Only overwrite bio if event has NO bio or a short scraper stub (<100 chars).
+        // Protects good bios (from Perplexity AI or curated) from being clobbered.
+        const existingBioLen = (ev.artist_bio || '').length;
+        if (artistData.bio && (existingBioLen === 0 || existingBioLen < 100)) {
+          update.artist_bio = artistData.bio;
+        }
+        // Link event → artist via FK if not already linked
+        if (!ev.artist_id && artistData.id) update.artist_id = artistData.id;
         if (Object.keys(update).length === 0) continue;
         const { error: upErr } = await supabase.from('events').update(update).eq('id', ev.id);
-        if (!upErr) enrichResult.eventsEnriched++;
+        if (!upErr) {
+          if (update.image_url || update.artist_bio) enrichResult.eventsEnriched++;
+          if (update.artist_id) enrichResult.eventsLinked++;
+        }
       }
     }
   } catch (enrichErr) {
@@ -350,6 +365,7 @@ export async function POST(request) {
     enrichment: {
       artistsLookedUp: enrichResult.artistsLookedUp,
       eventsEnriched: enrichResult.eventsEnriched,
+      eventsLinked: enrichResult.eventsLinked,
       errors: enrichResult.errors.length ? enrichResult.errors : null,
     },
     errors: upsertErrors.length ? upsertErrors : null,

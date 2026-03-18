@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1500+ events** across 33 scrapers (as of March 12, 2026)
+**~1500+ events** across 34 scrapers (as of March 18, 2026)
 
 ---
 
@@ -60,6 +60,7 @@
 | 31 | Sun Harbor Seafood and Grill | `sunHarbor.js` | Squarespace JSON API | ✅ Working | 19 |
 | 32 | Bum Rogers Tavern | `bumRogers.js` | HTML parsing (Astro/BentoBox) | ✅ Working | 2 |
 | 33 | The Columns | `theColumns.js` | WordPress HTML (custom schedule block) | ✅ Working | 112 |
+| 34 | The Roost | `theRoost.js` | HTML plain-text parsing (Beacon CMS) | ✅ Working | ~10+ |
 
 ---
 
@@ -116,6 +117,50 @@
 - **Removed** because all events came in with venue "Monmouth County" instead of actual venue names — too complicated to resolve
 - **Cleanup:** Deleted scraper file, reverted route.js, ran `DELETE FROM events WHERE external_id LIKE 'monmouthtourism-%';` in Supabase
 - **Residual data:** May need `DELETE FROM events WHERE venue_name = 'Monmouth County';` and `DELETE FROM venues WHERE name = 'Monmouth County';` if old entries persist
+
+### 8. iOS Safari swipe — `overflow-x: hidden` blocks ALL horizontal scroll
+
+> **CRITICAL — read this before building any swipeable/carousel component.**
+
+- **Root cause:** `overflow-x: hidden` on `html` and/or `body` (set in `globals.css` to prevent horizontal page overflow) **blocks ALL horizontal scrolling in every child container** on iOS Safari. This includes native CSS `overflow-x: scroll`, CSS `scroll-snap-type`, and JS carousel libraries (e.g. Embla Carousel). Desktop Chrome/Firefox are unaffected — the bug is iOS Safari only.
+- **What does NOT work on iOS Safari when html/body has `overflow-x: hidden`:**
+  - `overflow-x: auto` or `overflow-x: scroll` on a child container
+  - CSS `scroll-snap-type: x mandatory` with `scroll-snap-align`
+  - JS carousel libraries that rely on native scroll (Embla, Swiper in scroll mode, etc.)
+  - `overflow: clip` on html/body (breaks vertical page scrolling entirely)
+  - `touch-action: pan-x` / `touch-action: manipulation` on the carousel
+- **What DOES work:** Custom touch event handlers + CSS `transform: translateX()` on a non-scrolling container.
+- **The proven pattern:**
+  1. Viewport wrapper: `overflow: hidden` (NOT `auto` or `scroll`)
+  2. Track (flex row of slides): moved via `style.transform = translateX(Npx)`
+  3. Raw `addEventListener` on the viewport for `touchstart`, `touchmove` (with `{ passive: false }`), `touchend`, `touchcancel`
+  4. Direction locking: after 5px of movement, lock to horizontal (`x`) or vertical (`y`). If vertical, abort swipe and let page scroll normally. If horizontal, call `e.preventDefault()` + `e.stopPropagation()` and update `translateX`.
+  5. On `touchend`: if drag > 50px threshold, snap to next/prev slide; otherwise snap back.
+  6. Smooth snap: `transition: 'transform 0.5s cubic-bezier(0.25, 1, 0.5, 1)'` on the track during snap, `transition: 'none'` during active drag.
+
+- **DO NOT change `overflow-x: hidden` on html/body in `globals.css`.** It prevents the page from having horizontal scroll on all browsers. The custom touch handler approach works around it.
+
+- **Auto-rotate with pause/resume pattern:**
+  - `setInterval` every 5000ms advances to next slide (loops at end)
+  - `clearInterval` on `touchstart` / `mousedown` (pause immediately)
+  - `setTimeout` 2000ms after `touchend` / `mouseup` to restart the interval
+  - Use a `useRef` mirror of the active slide index (`activeRef`) so the `setInterval` callback always has the latest value (avoids stale closure from `useState`)
+
+- **Reference implementation:** `src/components/HeroSection.js` — the "Tonight's Spotlight" hero carousel with swipe + auto-rotate.
+- **Unused file:** `src/components/SpotlightCarousel.js` — an older separate carousel; still on disk but no longer imported in `page.js`. Contains the same touch handler pattern.
+
+### 9. Admin PUT route — silent failure from unknown DB columns
+- **Problem:** The admin API PUT handler used `const { id, ...updates } = body` to pass all form fields to Supabase. The admin form includes `event_time` (a UI-only field not in the database schema), causing Supabase PostgREST to reject the entire UPDATE silently. This meant `is_spotlight` and other changes never saved when editing events.
+- **Fix:** Rewrote PUT handler to explicitly pick only known database columns using conditional spread:
+  ```javascript
+  const updates = {
+    ...(body.artist_name !== undefined && { artist_name: body.artist_name }),
+    ...(body.is_spotlight !== undefined && { is_spotlight: body.is_spotlight }),
+    // ... (only known DB columns)
+    verified_at: new Date().toISOString(),
+  };
+  ```
+- **Rule:** When adding new fields to the admin form, always update the PUT handler's allowlist in `src/app/api/admin/route.js` to include the new column. Never spread the entire request body into Supabase.
 
 ---
 
@@ -283,6 +328,15 @@
 - **Date format:** "May 1, 2026 8:00 pm"
 - **Address:** 601 Ocean Ave, Avon-by-the-Sea, NJ 07717
 - **Note:** Huge schedule — ~112 events from May through September (summer season). No individual event pages, all events link back to the schedule page.
+
+### The Roost (`theRoost.js`)
+- **URL:** https://theroostrestaurant.com/events
+- **Platform:** Custom CMS (Beacon/CoreGolf)
+- **Approach:** Fetches HTML page, finds the `<p>` containing month headers (FEBRUARY, MARCH, etc.), splits by `<br>` tags, then parses `M/D Performer Name` lines under each month header.
+- **Date format:** "3/6 Sean Cox" (month/day performer)
+- **Default time:** 9:00 PM (Friday & Saturday live music per page header)
+- **Address:** Cream Ridge, NJ
+- **Note:** Also has recurring weekly acts (Wednesday Joe Vadala, Thursday DC DUO) but these are not scraped as they lack specific dates. The page lists ~2 months of Friday/Saturday performers.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
@@ -1181,45 +1235,133 @@ USING (bucket_id = 'posters');
 
 ---
 
-## Session: March 17, 2026 — Spotlight Carousel
+## Session: March 17, 2026 — Spotlight Carousel + iOS Swipe Fix
 
 ### What Changed
-1. **New component: `SpotlightCarousel.js`**
-   - Horizontal swipeable carousel using native CSS `scroll-snap-type: x mandatory`
-   - Cards are 85% width with "peek" effect showing the next card edge
-   - `image_url` from posters bucket used as full-bleed background with gradient overlay
-   - Artist name, venue, date, and time overlaid at bottom
-   - Active dot pagination indicator tracks scroll position
-   - Dark/light mode support, scrollbar hidden
-   - Only renders when at least one spotlight event exists
+1. **`HeroSection.js` — rewritten with swipe + auto-rotate**
+   - The "Tonight's Spotlight" hero is now a swipeable carousel using custom touch handlers + `translateX` transforms (the only approach that works on iOS Safari — see Key Fix #8 above)
+   - Auto-rotates every 5s, pauses on touch/mouse interaction, resumes 2s after release
+   - Accepts `spotlightEvents` prop: uses those if available, falls back to `events` prop
+   - Dot pagination in bottom-right corner
+   - `SpotlightCarousel.js` (separate orange ★ Spotlight section) was removed from `page.js` — there is now ONE swipeable hero only
 
 2. **Admin EventFormModal — ★ Spotlight Carousel toggle**
    - New checkbox next to "Recurring event" in the event edit form
    - Sets `is_spotlight: true/false` on the event row
    - Orange styling to distinguish from regular checkbox
 
-3. **Admin API** — `is_spotlight` field added to POST (create event) handler. PUT already passes through all fields.
+3. **Admin API PUT handler fixed** — was silently failing because it sent non-database fields (like `event_time`) to Supabase. Rewritten to only include known DB columns (see Key Fix #9 above).
 
-4. **Main page** — imports SpotlightCarousel, filters events by `is_spotlight === true`, renders between HeroSection and the event feed
+4. **Admin API POST** — `is_spotlight` field added to create event handler.
+
+5. **Main page (`page.js`)** — `SpotlightCarousel` import removed. `HeroSection` now receives `spotlightEvents` prop. Single hero at top.
 
 ### SQL Migration — Run in Supabase SQL Editor
 ```sql
 ALTER TABLE events ADD COLUMN IF NOT EXISTS is_spotlight BOOLEAN DEFAULT FALSE;
 ```
 
-### Files Created
-- `src/components/SpotlightCarousel.js`
-
 ### Files Modified
-- `src/app/page.js` — import SpotlightCarousel, spotlightCarouselEvents memo, render carousel
+- `src/components/HeroSection.js` — full rewrite with custom touch swipe + auto-rotate
+- `src/app/page.js` — removed SpotlightCarousel import, pass spotlightEvents to HeroSection
 - `src/app/admin/page.js` — is_spotlight in EventFormModal form state + checkbox
-- `src/app/api/admin/route.js` — is_spotlight in POST insert
-- `HANDOVER.md` — this section
+- `src/app/api/admin/route.js` — is_spotlight in POST, fixed PUT to allowlist DB columns only
+- `HANDOVER.md` — this section + Key Fixes #8 and #9
+
+### Files on Disk (unused)
+- `src/components/SpotlightCarousel.js` — older separate carousel, no longer imported. Safe to delete.
 
 ### Deploy Steps
 1. Run the ALTER TABLE SQL above in Supabase SQL Editor
 2. Run `npx vercel --prod` from `~/mylocaljam`
-3. Edit any event in Admin, check ★ Spotlight Carousel, save — it appears on the public feed
+3. Edit any event in Admin, check ★ Spotlight Carousel, save — it appears in the hero on the public feed
+
+---
+
+## Session: March 17, 2026 — Database Taxonomy & Dynamic Pills (Phase 4-5)
+
+### What Changed
+
+1. **SQL Migration: `supabase-phase4-taxonomy.sql`** (NEW FILE)
+   - `venues` table: Added `venue_type TEXT` and `tags TEXT[]` columns
+   - `artists` table: Added `is_tribute BOOLEAN DEFAULT false`
+   - `events` table: Added `artist_id UUID REFERENCES artists(id)` foreign key + index
+   - Created `shortcut_pills` table (dynamic, admin-managed filter pills) with `filter_type`, `filter_config JSONB`, `seasonal_start/end` dates
+   - Backfill: links existing events → artists by matching `artist_name`
+   - Seeds venue types (Beach Bar, Brewery, Restaurant, Bar, Venue) for known venues
+   - Seeds 7 initial pills (6 standard + 1 seasonal St. Patty's example)
+
+2. **Frontend Query: Relational Join** (`src/app/page.js`)
+   - Event query now joins `artists(name, bio, genres, vibes, is_tribute, image_url, instagram_url)` alongside existing `venues()` join
+   - Event mapping pulls `artist_genres`, `artist_vibes`, `is_tribute`, `venue_type` from joined data
+   - Bio now prefers joined `artists.bio` over legacy `events.artist_bio`
+
+3. **Dynamic Shortcut Pills** (`src/app/page.js`)
+   - Replaced hardcoded `SHORTCUT_PILLS` array with `dbPills` state fetched from `shortcut_pills` Supabase table
+   - Added `MATERIAL_ICON_PATHS` lookup (icon name → SVG path) for rendering DB-stored icon names
+   - Pill filtering now uses `filter_type` switch: `trending`, `venue_type`, `genre`, `is_tribute`, `search`, `time`
+   - Seasonal pills auto-filtered by `seasonal_start`/`seasonal_end` dates
+   - To add a new pill: INSERT into `shortcut_pills` table via Supabase dashboard — no deploy needed
+
+4. **EventCardV2: Genre Chips + Tribute Badge** (`src/components/EventCardV2.js`)
+   - Shows genre tags as small rounded chips below the bio
+   - Shows purple "🎭 Tribute" badge for tribute/cover bands
+   - Falls back to artist image if event has no image
+
+5. **Perplexity AI Lookup: Structured Output** (`src/app/api/admin/artists/ai-lookup/route.js`)
+   - Updated system prompt to return `is_tribute` boolean (true for cover/tribute bands)
+   - Response normalization now includes `is_tribute` field
+
+6. **Sync Route: artist_id Linking** (`src/app/api/sync-events/route.js`)
+   - Enrichment loop now links events → artists via `artist_id` FK
+   - Tracks `eventsLinked` count in enrichment response
+   - Admin artists POST route now accepts `is_tribute` field
+
+### SQL Migration — Run BEFORE deploying
+```sql
+-- Run supabase-phase4-taxonomy.sql in Supabase SQL Editor
+-- (file is in repo root)
+```
+
+### Shortcut Pills Config
+Each pill in the `shortcut_pills` table has:
+- `filter_type`: One of `trending`, `venue_type`, `genre`, `is_tribute`, `search`, `time`
+- `filter_config` (JSONB): Type-specific config, e.g.:
+  - `{"venue_types": ["Beach Bar"]}` for venue_type pills
+  - `{"genres": ["Acoustic"], "terms": ["acoustic", "solo"]}` for genre pills
+  - `{"terms": ["st. patrick", "irish"]}` for keyword search pills
+  - `{"before_hour": 17}` for time-based pills
+- `seasonal_start` / `seasonal_end`: Optional DATE fields for auto-activate/deactivate
+
+### Deploy Steps
+1. Run `supabase-phase4-taxonomy.sql` in Supabase SQL Editor
+2. Deploy code: `npx vercel --prod` or push to main
+3. Trigger a sync to backfill `artist_id` FKs on events
+
+### Files Modified
+- `src/app/page.js` — relational join, dynamic pills, `MATERIAL_ICON_PATHS` lookup, header clear-all X, "Any time" label fix
+- `src/components/EventCardV2.js` — genre chips, tribute badge, artist image fallback
+- `src/app/api/admin/artists/ai-lookup/route.js` — structured output with `is_tribute`
+- `src/app/api/admin/artists/route.js` — `is_tribute` in POST
+- `src/app/api/sync-events/route.js` — `artist_id` linking in enrichment, bio overwrite protection
+- `src/lib/enrichLastfm.js` — disambiguation bio rejection, 300-char bio cap, Last.fm tags → genres array
+- `supabase-phase4-taxonomy.sql` — new migration file (includes Karaoke, Trivia, Specials pills)
+
+### QA Fixes Applied (same session)
+- **Bio overwrite protection:** Last.fm disambiguation bios ("There are numerous artists...") now rejected. Bios capped at 300 chars. Sync only overwrites bios < 100 chars (protects curated/Perplexity bios).
+- **Genre chips wiring:** Last.fm tags now auto-populate `artists.genres` array (top 3 tags, won't overwrite curated genres from AI lookup). Genre chips render on EventCardV2 after sync populates data.
+- **Trending pill:** Threshold raised to top 25% busiest venues with minimum 8 events. Still needs a better signal (click count, curated flag) — currently shows too many events.
+- **New pills added:** Karaoke (keyword search), Trivia (keyword search), Specials (keyword search). Need seed SQL run in Supabase.
+- **St. Patty's extended:** seasonal_end moved to 2026-03-22 for Belmar parade weekend.
+- **Header clear-all X:** Small X button next to filter count badge in collapsed omnibar — clears all filters without opening panel.
+- **"Any time" label:** WHEN dropdown default now reads "Any time" (lowercase t) to match "Any distance".
+
+### Known Bugs / Open Issues
+1. **403 Forbidden on Supabase:** `shortcut_pills` table query returns 403 — likely means the Phase 4 SQL migration hasn't been run yet, or the RLS policy didn't apply. Run `supabase-phase4-taxonomy.sql` to fix.
+2. **500 on `/api/follows`:** The `user_follows` table may not exist. Run `supabase-phase2-follows.sql` in Supabase SQL Editor to create it.
+3. **Stale Supabase session warnings:** Console shows "Session as retrieved from URL expires in -171151s" — this is a GoTrue auth token that expired. Harmless for anonymous users but can be fixed by clearing the auth session or calling `supabase.auth.signOut()`.
+4. **Click-outside panel dismissal:** Tapping blank space inside the filter panel doesn't close it. The scrim overlay (behind the panel) and the header both close it, but the panel interior padding does not. Needs a different approach (possibly a close gesture or dedicated close zone).
+5. **Trending pill logic:** Shows ~909 events — needs a real popularity signal (view count, click tracking, or admin curation) instead of just event-count-per-venue.
 
 ---
 
