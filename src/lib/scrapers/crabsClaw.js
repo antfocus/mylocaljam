@@ -42,7 +42,7 @@ export async function scrapeCrabsClaw() {
     const html = await res.text();
 
     // Extract the custom_page_body content
-    const bodyMatch = html.match(/class="custom_page_body"[^>]*>([\s\S]*?)(?:<\/div>\s*<script|<\/div>\s*$)/i);
+    const bodyMatch = html.match(/class="custom_page_body"[^>]*>([\s\S]*?)<\/div>\s*(?:<style|<script|<\/div>|$)/i);
     if (!bodyMatch) throw new Error('Could not find custom_page_body');
 
     const bodyHtml = bodyMatch[1];
