@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1500+ events** across 36 scrapers (as of March 18, 2026)
+**~1500+ events** across 37 scrapers (as of March 18, 2026)
 
 ---
 
@@ -63,6 +63,7 @@
 | 34 | The Roost | `theRoost.js` | HTML plain-text parsing (Beacon CMS) | ✅ Working | ~10+ |
 | 35 | Deal Lake Bar + Co. | `dealLakeBar.js` | Squarespace JSON API | ✅ Working | ~23 |
 | 36 | The Crab's Claw Inn | `crabsClaw.js` | RestaurantPassion iframe HTML | ✅ Working | ~10+ |
+| 37 | Water Street Bar & Grill | `waterStreet.js` | Squarespace JSON API | ✅ Working | ~5 |
 
 ---
 
@@ -355,6 +356,13 @@
 - **Date format:** Very inconsistent — "Fri., Mar., 20", "Sun.,Mar . 1", "Sat.,Mar., 14", etc. Uses loose regex to handle variants.
 - **Address:** Lavallette, NJ
 - **Note:** Schedule is typically one month at a time. Non-music events are filtered by a skip list. Time is extracted from inline ranges like "4-7" or "8-12".
+
+### Water Street Bar & Grill (`waterStreet.js`)
+- **URL:** https://www.waterstreetnj.com/music (display page), https://www.waterstreetnj.com/schedule (events collection)
+- **Platform:** Squarespace (JSON API)
+- **Approach:** Same pattern as other Squarespace scrapers — fetches `/schedule?format=json`, parses the `upcoming` array. Note: the `/music` page is a layout page that embeds the `/schedule` collection, so the JSON API must target `/schedule`, not `/music`.
+- **Address:** Tom's River, NJ
+- **Note:** Friday & Saturday live music, 8:30pm–12:30am. ~5 upcoming events. Also has Bingo nights.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
