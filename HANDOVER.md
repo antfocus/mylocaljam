@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1500+ events** across 38 scrapers (as of March 18, 2026)
+**~1500+ events** across 39 scrapers (as of March 18, 2026)
 
 ---
 
@@ -65,6 +65,7 @@
 | 36 | The Crab's Claw Inn | `crabsClaw.js` | RestaurantPassion iframe HTML | ✅ Working | ~10+ |
 | 37 | Water Street Bar & Grill | `waterStreet.js` | Squarespace JSON API | ✅ Working | ~5 |
 | 38 | Crossroads | `crossroads.js` | Eventbrite JSON-LD | ✅ Working | ~24 |
+| 39 | Algonquin Arts Theatre | `algonquinArts.js` | Custom PHP HTML parsing | ✅ Working | ~18 |
 
 ---
 
@@ -371,6 +372,13 @@
 - **Approach:** Fetches the Eventbrite organizer page HTML, extracts JSON-LD `<script type="application/ld+json">` containing `itemListElement` array with full event data (name, startDate, endDate, url, image, description).
 - **Address:** 78 North Ave, Garwood, NJ 07027
 - **Note:** Active music venue with ~24 upcoming events. Tickets sold via Eventbrite with prices. Events include live bands, tribute acts, comedy shows, and festivals.
+
+### Algonquin Arts Theatre (`algonquinArts.js`)
+- **URL:** https://www.algonquinarts.org/calendar.php?s=14
+- **Platform:** Custom PHP site
+- **Approach:** Fetches the calendar page HTML and extracts events from `.calendar-full-container` divs using class-based regex patterns for `.calendar-full-dates`, `.calendar-full-title`, `.calendar-full-series`, and `.calendar-full-description`. Also extracts detail page links (`calendar.php?id=XXX`) and event images.
+- **Address:** 173 Main St, Manasquan, NJ 08736
+- **Note:** The `?s=14` param is the current season number. If events stop appearing, try incrementing (s=15, s=16). Handles date ranges ("March 20 - March 29") by taking the start date. Appends series category to title (e.g. "9 to 5: The Musical (Broadway Series 2025-2026)"). Default time 8:00 PM.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
