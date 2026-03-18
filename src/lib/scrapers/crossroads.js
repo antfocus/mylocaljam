@@ -1,57 +1,48 @@
 /**
  * Crossroads scraper
  * Website: https://www.xxroads.com/calendar
- * Data source: Eventbrite organizer page (JSON-LD structured data)
- * URL: https://www.eventbrite.com/o/crossroads-18337279677
+ * Data source: Eventbrite organizer JSON API
+ * API: https://www.eventbrite.com/org/{orgId}/showmore/?type=future&page_size=50&page=1
  *
  * The venue's own Wix site only has image posters, but they sell all tickets
- * through Eventbrite. The Eventbrite organizer page contains JSON-LD
- * (schema.org) structured data with an `itemListElement` array of all
- * upcoming events including title, startDate, endDate, url, and image.
+ * through Eventbrite. The Eventbrite "showmore" API returns all future events
+ * as JSON with name, start/end times, URL, image, price, and event ID.
+ *
+ * Previously used JSON-LD which only returned the first 12 of 24 events.
+ * The showmore API returns all events in one request (page_size=50).
  *
  * If it breaks:
  *   1. Go to https://www.eventbrite.com/o/crossroads-18337279677
- *   2. View source → search for "application/ld+json"
- *   3. Look for the script containing "itemListElement"
- *   4. If the organizer URL changed, search Eventbrite for "Crossroads Garwood"
+ *   2. Open Network tab, click "Show more" on upcoming events
+ *   3. Look for /org/{id}/showmore/ requests
+ *   4. If the organizer ID changed, search Eventbrite for "Crossroads Garwood"
  */
 
-const EVENTBRITE_URL = 'https://www.eventbrite.com/o/crossroads-18337279677';
+const ORG_ID = '18337279677';
+const API_URL = `https://www.eventbrite.com/org/${ORG_ID}/showmore/`;
 const VENUE = 'Crossroads';
 const VENUE_URL = 'https://www.xxroads.com/calendar';
 
 export async function scrapeCrossroads() {
   try {
-    const res = await fetch(EVENTBRITE_URL, {
+    const url = `${API_URL}?type=future&page_size=50&page=1`;
+    const res = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
         'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://www.eventbrite.com/o/crossroads-18337279677',
       },
       next: { revalidate: 0 },
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status} fetching Eventbrite organizer page`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching Eventbrite showmore API`);
 
-    const html = await res.text();
+    const json = await res.json();
+    const items = json?.data?.events || [];
 
-    // Extract JSON-LD scripts
-    const jsonLdPattern = /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi;
-    let match;
-    let itemList = null;
-
-    while ((match = jsonLdPattern.exec(html)) !== null) {
-      try {
-        const data = JSON.parse(match[1]);
-        if (data.itemListElement) {
-          itemList = data.itemListElement;
-          break;
-        }
-      } catch { /* skip malformed JSON */ }
-    }
-
-    if (!itemList || !Array.isArray(itemList)) {
-      throw new Error('Could not find itemListElement in JSON-LD');
+    if (!items.length) {
+      throw new Error('No events returned from Eventbrite API');
     }
 
     const events = [];
@@ -59,48 +50,46 @@ export async function scrapeCrossroads() {
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const seen = new Set();
 
-    for (const entry of itemList) {
-      const item = entry.item || entry;
-      const title = item.name;
+    for (const item of items) {
+      const title = item.name?.text;
       if (!title) continue;
 
-      const startDateStr = item.startDate;
-      if (!startDateStr) continue;
+      // Use local start time (already in Eastern)
+      const localStart = item.start?.local;
+      if (!localStart) continue;
 
-      const startDate = new Date(startDateStr);
-      if (isNaN(startDate.getTime())) continue;
-
-      // Format date in Eastern time
-      const year = parseInt(startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York', year: 'numeric' }));
-      const month = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York', month: '2-digit' });
-      const day = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York', day: '2-digit' });
-      const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      // localStart format: "2026-03-20T20:00:00"
+      const dateStr = localStart.slice(0, 10);
 
       // Skip past events
       if (dateStr < todayStr) continue;
 
-      const timeStr = startDate.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'America/New_York',
-      });
+      // Extract time from formatted_time or parse from local
+      const time = item.start?.formatted_time || (() => {
+        const [, timeStr] = localStart.split('T');
+        if (!timeStr) return null;
+        const [h, m] = timeStr.split(':').map(Number);
+        const hour12 = h % 12 || 12;
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        return `${hour12}:${String(m).padStart(2, '0')} ${ampm}`;
+      })();
 
-      // Event URL from Eventbrite
-      const eventUrl = item.url || EVENTBRITE_URL;
+      // Event URL
+      const eventUrl = item.url || `https://www.eventbrite.com/e/${item.id}`;
 
-      // Image URL
-      const imageUrl = item.image || null;
+      // Image URL — use the logo URL from Eventbrite
+      const imageUrl = item.logo?.url || null;
 
       // Description
-      const description = item.description
-        ? item.description.replace(/<[^>]*>/g, '').trim().slice(0, 500) || null
+      const description = item.summary
+        ? item.summary.replace(/<[^>]*>/g, '').trim().slice(0, 500) || null
         : null;
 
-      // Build external ID from URL slug or title+date
-      const urlSlug = eventUrl.split('/').pop().split('?')[0] || '';
-      const idBase = urlSlug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-      const externalId = `crossroads-${dateStr}-${idBase.slice(0, 50)}`;
+      // Price
+      const price = item.is_free ? 'Free' : (item.price_range || null);
+
+      // External ID using Eventbrite event ID
+      const externalId = `crossroads-${dateStr}-${item.id}`;
 
       if (seen.has(externalId)) continue;
       seen.add(externalId);
@@ -109,10 +98,10 @@ export async function scrapeCrossroads() {
         title: title.trim(),
         venue: VENUE,
         date: dateStr,
-        time: timeStr,
+        time,
         description,
         ticket_url: eventUrl,
-        price: null,
+        price,
         source_url: VENUE_URL,
         external_id: externalId,
         image_url: imageUrl,
