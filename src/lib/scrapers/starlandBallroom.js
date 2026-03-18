@@ -49,13 +49,11 @@ export async function scrapeStarlandBallroom() {
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const seen = new Set();
 
-    // Match each entry div — entries alternate between "entry  starland" and "entry alt  starland"
-    // Use a pattern that captures each entry block
-    const entryPattern = /<div\s+class="entry\s+(?:alt\s+)?starland\s+clearfix\s*">([\s\S]*?)(?=<div\s+class="entry\s+(?:alt\s+)?starland\s+clearfix|<\/div>\s*<!--\s*end\s*event_list|$)/gi;
+    // Split HTML by entry divs — class has double spaces: "entry  starland clearfix "
+    const splitPattern = /<div\s+class="entry\s+(?:alt\s+)?\s*starland\s+clearfix\s*">/gi;
+    const blocks = html.split(splitPattern).slice(1); // first chunk is before any entry
 
-    let entryMatch;
-    while ((entryMatch = entryPattern.exec(html)) !== null) {
-      const block = entryMatch[1];
+    for (const block of blocks) {
 
       // Extract headliner from h3
       const h3Match = block.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
@@ -97,13 +95,13 @@ export async function scrapeStarlandBallroom() {
       const clockMatch = timeText.match(/(\d{1,2}:\d{2}\s*[AP]M)/i);
       const time = clockMatch ? clockMatch[1].trim() : '7:00 PM';
 
-      // Extract detail page link — /events/detail/XXXXXXX
-      const detailMatch = block.match(/href="(\/events\/detail\/\d+)"/i);
-      const detailUrl = detailMatch ? `${BASE_URL}${detailMatch[1]}` : EVENTS_URL;
+      // Extract detail page link — full or relative URL to /events/detail/XXXXXXX
+      const detailMatch = block.match(/href="([^"]*\/events\/detail\/(\d+))"/i);
+      const detailUrl = detailMatch ? detailMatch[1] : EVENTS_URL;
 
-      // Extract ticket link — /events/XXXXXXX/slug
-      const ticketMatch = block.match(/href="(\/events\/\d+\/[^"]+)"/i);
-      const ticketUrl = ticketMatch ? `${BASE_URL}${ticketMatch[1]}` : null;
+      // Extract ticket link — full or relative URL to /events/XXXXXXX/slug
+      const ticketMatch = block.match(/href="([^"]*\/events\/\d+\/[^"]+)"/i);
+      const ticketUrl = ticketMatch ? ticketMatch[1] : null;
 
       // Extract image URL
       const imgMatch = block.match(/<img[^>]*src="([^"]+)"/i);
@@ -113,8 +111,7 @@ export async function scrapeStarlandBallroom() {
       }
 
       // Extract event ID from detail link for external_id
-      const idMatch = detailMatch ? detailMatch[1].match(/\/(\d+)$/) : null;
-      const eventId = idMatch ? idMatch[1] : dateStr;
+      const eventId = detailMatch ? detailMatch[2] : dateStr;
       const externalId = `starland-${dateStr}-${eventId}`;
 
       if (seen.has(externalId)) continue;
