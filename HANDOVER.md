@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1500+ events** across 35 scrapers (as of March 18, 2026)
+**~1500+ events** across 36 scrapers (as of March 18, 2026)
 
 ---
 
@@ -62,6 +62,7 @@
 | 33 | The Columns | `theColumns.js` | WordPress HTML (custom schedule block) | ✅ Working | 112 |
 | 34 | The Roost | `theRoost.js` | HTML plain-text parsing (Beacon CMS) | ✅ Working | ~10+ |
 | 35 | Deal Lake Bar + Co. | `dealLakeBar.js` | Squarespace JSON API | ✅ Working | ~23 |
+| 36 | The Crab's Claw Inn | `crabsClaw.js` | RestaurantPassion iframe HTML | ✅ Working | ~10+ |
 
 ---
 
@@ -345,6 +346,15 @@
 - **Approach:** Same pattern as Anchor Tavern / Sun Harbor — fetches `/music-events?format=json`, parses the `upcoming` array with `title`, `startDate` (epoch ms), `endDate`, `urlId`, `id`, `assetUrl`, `excerpt`.
 - **Address:** 601 Main Street, Loch Arbour, NJ
 - **Note:** Mix of live music (Charlie Brown, Quincy Mumford, Kevin Hill, etc.), trivia nights, and special events (March Madness). ~23 upcoming events.
+
+### The Crab's Claw Inn (`crabsClaw.js`)
+- **URL:** https://thecrabsclaw.com/events-calendar/
+- **Data source:** RestaurantPassion iframe (`https://www.restaurantpassion.com/ext-page/13/332/27093/`)
+- **Platform:** Custom CMS with embedded RestaurantPassion calendar widget
+- **Approach:** Fetches the iframe URL directly, extracts `.custom_page_body`, splits into `<p>` blocks (one per day). First line of each block is the date, subsequent lines are events. Filters out non-music events (Bingo, Karaoke, Texas Hold'em, Trivia).
+- **Date format:** Very inconsistent — "Fri., Mar., 20", "Sun.,Mar . 1", "Sat.,Mar., 14", etc. Uses loose regex to handle variants.
+- **Address:** Lavallette, NJ
+- **Note:** Schedule is typically one month at a time. Non-music events are filtered by a skip list. Time is extracted from inline ranges like "4-7" or "8-12".
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
