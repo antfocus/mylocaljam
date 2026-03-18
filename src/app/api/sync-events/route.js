@@ -36,7 +36,8 @@ import { scrapeDealLakeBar } from '@/lib/scrapers/dealLakeBar';
 import { scrapeCrabsClaw } from '@/lib/scrapers/crabsClaw';
 import { scrapeWaterStreet } from '@/lib/scrapers/waterStreet';
 import { scrapeCrossroads } from '@/lib/scrapers/crossroads';
-import { scrapeAlgonquinArts } from '@/lib/scrapers/algonquinArts';
+// Algonquin Arts Theatre removed — algonquinarts.org returns HTTP 403 from datacenter IPs (Vercel)
+// Scraper file kept at algonquinArts.js — revisit if a proxy/workaround is found
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
 // Tim McLoone's removed — all McLoone's domains behind Cloudflare+reCAPTCHA, blocks all datacenter IPs
 // Source: mcloones.ticketbud.com (Ticketbud organizer page) — revisit if a workaround is found
@@ -159,7 +160,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, algonquinArts] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -195,7 +196,6 @@ export async function POST(request) {
     scrapeCrabsClaw(),
     scrapeWaterStreet(),
     scrapeCrossroads(),
-    scrapeAlgonquinArts(),
   ]);
 
   const scraperResults = {
@@ -234,7 +234,6 @@ export async function POST(request) {
     CrabsClaw: { count: crabsClaw.events.length, error: crabsClaw.error },
     WaterStreet: { count: waterStreet.events.length, error: waterStreet.error },
     Crossroads: { count: crossroads.events.length, error: crossroads.error },
-    AlgonquinArts: { count: algonquinArts.events.length, error: algonquinArts.error },
   };
 
   // Combine all events
@@ -274,7 +273,6 @@ export async function POST(request) {
     ...crabsClaw.events,
     ...waterStreet.events,
     ...crossroads.events,
-    ...algonquinArts.events,
   ].map(ev => mapEvent(ev, venueMap));
 
   // Filter out events with no external_id or date, and deduplicate by external_id
