@@ -5,6 +5,7 @@ const VENUES = [
   { id: 'KovZpZAatk1A', name: 'Stone Pony Summer Stage' },
   { id: 'KovZpZAdt7AA', name: 'The Stone Pony' },
   { id: 'KovZ917AY7B', name: 'ParkStage' },
+  { id: 'KovZpZAEAIIA', name: 'PNC Bank Arts Center' },
 ];
 
 function formatTime(timeStr) {

@@ -28,7 +28,7 @@
 | # | Venue | File | Type | Status | ~Events |
 |---|---|---|---|---|---|
 | 1 | Pig & Parrot | `pigAndParrot.js` | Custom API | ✅ Working | ~60 |
-| 2 | Ticketmaster | `ticketmaster.js` | Ticketmaster API | ✅ Working | ~92 |
+| 2 | Ticketmaster | `ticketmaster.js` | Ticketmaster API | ✅ Working | ~120+ |
 | 3 | Joe's Surf Shack | `joesSurfShack.js` | Custom | ✅ Working | ~56 |
 | 4 | St. Stephen's Green | `stStephensGreen.js` | Google Calendar iCal | ✅ Working | ~65 |
 | 5 | McCann's Tavern | `mccanns.js` | Google Calendar iCal | ✅ Working (calendar ID fixed — was missing 's' in `jacksbythetracksnj`) | ~15+ |
@@ -727,7 +727,7 @@ Visit the venue URL and determine what platform the site is built on. Check thes
 - Find venue ID: search `https://app.ticketmaster.com/discovery/v2/venues.json?keyword=VENUE_NAME&apikey=KEY`
 - Add the venue ID to the `VENUES` array in `ticketmaster.js`
 - Requires `TICKETMASTER_API_KEY` env var (already set on Vercel)
-- Working examples: Wonder Bar, Stone Pony, ParkStage
+- Working examples: Wonder Bar, Stone Pony, ParkStage, PNC Bank Arts Center
 
 ### Step 3: Dig Deeper if No Easy Win
 
