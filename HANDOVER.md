@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1500+ events** across 37 scrapers (as of March 18, 2026)
+**~1500+ events** across 38 scrapers (as of March 18, 2026)
 
 ---
 
@@ -64,6 +64,7 @@
 | 35 | Deal Lake Bar + Co. | `dealLakeBar.js` | Squarespace JSON API | ✅ Working | ~23 |
 | 36 | The Crab's Claw Inn | `crabsClaw.js` | RestaurantPassion iframe HTML | ✅ Working | ~10+ |
 | 37 | Water Street Bar & Grill | `waterStreet.js` | Squarespace JSON API | ✅ Working | ~5 |
+| 38 | Crossroads | `crossroads.js` | Eventbrite JSON-LD | ✅ Working | ~24 |
 
 ---
 
@@ -363,6 +364,13 @@
 - **Approach:** Same pattern as other Squarespace scrapers — fetches `/schedule?format=json`, parses the `upcoming` array. Note: the `/music` page is a layout page that embeds the `/schedule` collection, so the JSON API must target `/schedule`, not `/music`.
 - **Address:** Tom's River, NJ
 - **Note:** Friday & Saturday live music, 8:30pm–12:30am. ~5 upcoming events. Also has Bingo nights.
+
+### Crossroads (`crossroads.js`)
+- **URL:** https://www.xxroads.com/calendar (venue site), https://www.eventbrite.com/o/crossroads-18337279677 (data source)
+- **Platform:** Wix (venue site is image posters only) — scrapes Eventbrite organizer page instead
+- **Approach:** Fetches the Eventbrite organizer page HTML, extracts JSON-LD `<script type="application/ld+json">` containing `itemListElement` array with full event data (name, startDate, endDate, url, image, description).
+- **Address:** 78 North Ave, Garwood, NJ 07027
+- **Note:** Active music venue with ~24 upcoming events. Tickets sold via Eventbrite with prices. Events include live bands, tribute acts, comedy shows, and festivals.
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
