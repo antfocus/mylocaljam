@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const DARK = {
@@ -75,79 +75,18 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
     }
   })();
 
-  // ── Google sign-in via GIS credential flow + signInWithIdToken ────────────
-  // GoogleOAuthProvider (in layout) loads the GIS script for us.
-  // We render a hidden Google button and proxy-click it from our styled button.
-  // This gets us the id_token credential that signInWithIdToken needs.
-  const hiddenGoogleRef = useRef(null);
-  const googleInitialized = useRef(false);
-
-  useEffect(() => {
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId || !hiddenGoogleRef.current) return;
-
-    const init = () => {
-      if (!window.google?.accounts?.id || googleInitialized.current) return false;
-
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: async (response) => {
-          try {
-            // Clear any stale session to avoid conflicts on first click
-            await supabase.auth.signOut();
-
-            const { data, error: idTokenError } = await supabase.auth.signInWithIdToken({
-              provider: 'google',
-              token: response.credential,
-            });
-            if (idTokenError) throw idTokenError;
-            // Success — onAuthStateChange in page.js will close the modal
-          } catch (err) {
-            setError(err.message || 'Google sign-in failed. Please try again.');
-          }
-        },
-        ux_mode: 'popup',
-        use_fedcm_for_prompt: true,
-      });
-
-      window.google.accounts.id.renderButton(hiddenGoogleRef.current, {
-        type: 'icon',
-        size: 'large',
-      });
-
-      googleInitialized.current = true;
-      return true;
-    };
-
-    if (init()) return;
-    const check = setInterval(() => { if (init()) clearInterval(check); }, 200);
-    return () => clearInterval(check);
-  }, []);
-
-  const handleGoogleSignIn = useCallback(() => {
-    setError(null);
-    // Click the hidden Google-rendered button to trigger the credential flow
-    const btn = hiddenGoogleRef.current?.querySelector('[role="button"]')
-      || hiddenGoogleRef.current?.querySelector('div[aria-labelledby]')
-      || hiddenGoogleRef.current?.querySelector('iframe');
-    if (btn) {
-      btn.click();
-    } else {
-      setError('Google sign-in is loading. Please try again in a moment.');
-    }
-  }, []);
-
-  // ── Apple OAuth — still uses redirect flow (no equivalent client-side SDK) ─
-  const handleAppleOAuth = async () => {
+  // ── OAuth handler ──────────────────────────────────────────────────────────
+  const handleOAuth = async (provider) => {
     setError(null);
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: 'apple',
+        provider,
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
         },
       });
       if (oauthError) throw oauthError;
+      // Browser will redirect — no need to close
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.');
     }
@@ -286,12 +225,8 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
 
           {/* OAuth buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
-            {/* Hidden Google SDK button — we proxy-click this from our styled button */}
-            <div ref={hiddenGoogleRef} style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', height: 0, overflow: 'hidden' }} />
-
-            {/* Our custom-styled Google button */}
             <button
-              onClick={handleGoogleSignIn}
+              onClick={() => handleOAuth('google')}
               style={oauthBtnStyle(darkMode ? '#FFFFFF' : '#FFFFFF', '#1F2937')}
             >
               <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
@@ -302,8 +237,9 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
               </svg>
               Continue with Google
             </button>
+
             <button
-              onClick={handleAppleOAuth}
+              onClick={() => handleOAuth('apple')}
               style={oauthBtnStyle(darkMode ? '#FFFFFF' : '#000000', darkMode ? '#000000' : '#FFFFFF')}
             >
               <svg width="16" height="18" viewBox="0 0 16 20" fill={darkMode ? '#000' : '#fff'} xmlns="http://www.w3.org/2000/svg">

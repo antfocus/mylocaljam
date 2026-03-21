@@ -1,5 +1,4 @@
 import './globals.css';
-import GoogleOAuthWrapper from '@/components/GoogleOAuthWrapper';
 
 export const metadata = {
   title: 'MyLocalJam — Live Music at the Jersey Shore',
@@ -40,9 +39,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        <GoogleOAuthWrapper>
-          {children}
-        </GoogleOAuthWrapper>
+        {children}
       </body>
     </html>
   );
