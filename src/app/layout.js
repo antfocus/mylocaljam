@@ -1,4 +1,5 @@
 import './globals.css';
+import Script from 'next/script';
 
 export const metadata = {
   title: 'MyLocalJam — Live Music at the Jersey Shore',
@@ -38,11 +39,11 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <head>
+      <body>
+        {children}
         {/* Google Identity Services — used by signInWithIdToken flow */}
-        <script src="https://accounts.google.com/gsi/client" async defer />
-      </head>
-      <body>{children}</body>
+        <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
+      </body>
     </html>
   );
 }
