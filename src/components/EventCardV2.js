@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { formatTimeRange } from '@/lib/utils';
 
 const CATEGORY_CONFIG = {
@@ -16,13 +16,30 @@ const CATEGORY_CONFIG = {
 
 const DEFAULT_CONFIG = { color: '#E8722A', bg: '#E8722A', emoji: '🎵' };
 
-export default function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = true, onFollowArtist, isArtistFollowed, onFlag }) {
+export default function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = true, onFollowArtist, isArtistFollowed, onFlag, followExpanded = false, onFollowCollapse }) {
   const [expanded, setExpanded] = useState(false);
   const [bioExpanded, setBioExpanded] = useState(false);
   const [flagSheet, setFlagSheet] = useState(false);
   const [flagSubmitting, setFlagSubmitting] = useState(false);
   const [flagOtherOpen, setFlagOtherOpen] = useState(false);
   const [flagOtherText, setFlagOtherText] = useState('');
+  const [followBtnState, setFollowBtnState] = useState('idle'); // 'idle' | 'following'
+
+  // Reset button state when expansion closes
+  useEffect(() => {
+    if (!followExpanded) setFollowBtnState('idle');
+  }, [followExpanded]);
+
+  const handleInlineFollow = useCallback(() => {
+    if (!event?.artist_name) return;
+    try { navigator?.vibrate?.(10); } catch {}
+    setFollowBtnState('following');
+    onFollowArtist?.(event.artist_name);
+    // Show "Following!" briefly, then collapse
+    setTimeout(() => {
+      onFollowCollapse?.();
+    }, 1200);
+  }, [event?.artist_name, onFollowArtist, onFollowCollapse]);
 
   if (!event) return null;
 
@@ -199,6 +216,78 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill="currentColor" />
             </svg>
           </button>
+        </div>
+
+        {/* Inline follow upsell — expands below compact row when user saves an event with an artist */}
+        <div style={{
+          maxHeight: followExpanded ? '60px' : '0px',
+          overflow: 'hidden',
+          transition: 'max-height 0.25s ease-out',
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 12px 10px',
+            borderTop: `1px solid ${borderColor}`,
+            opacity: followExpanded ? 1 : 0,
+            transition: 'opacity 0.2s ease 0.05s',
+          }}>
+            {/* Follow button — tonal dark brown/orange */}
+            <button
+              onClick={(e) => { e.stopPropagation(); handleInlineFollow(); }}
+              disabled={followBtnState === 'following'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                flex: 1,
+                padding: '9px 14px',
+                borderRadius: '10px',
+                border: '1px solid #5D4037',
+                background: followBtnState === 'following' ? '#4E342E' : '#3E2723',
+                cursor: followBtnState === 'following' ? 'default' : 'pointer',
+                transition: 'background 0.15s',
+                justifyContent: 'center',
+              }}
+            >
+              <span className="material-icons" style={{ fontSize: '18px', color: '#FFFFFF' }}>
+                {followBtnState === 'following' ? 'check' : 'music_note'}
+              </span>
+              <span style={{
+                color: '#FFFFFF',
+                fontSize: '13px',
+                fontWeight: 700,
+                fontFamily: "'DM Sans', sans-serif",
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}>
+                {followBtnState === 'following'
+                  ? 'Following!'
+                  : `Follow ${(event?.artist_name || '').length > 20 ? (event.artist_name.slice(0, 20) + '…') : (event?.artist_name || '')}`}
+              </span>
+            </button>
+
+            {/* Dismiss X */}
+            {followBtnState === 'idle' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onFollowCollapse?.(); }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <span className="material-icons" style={{ fontSize: '20px', color: '#7878A0' }}>close</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Expanded detail panel — always rendered, animated via max-height */}

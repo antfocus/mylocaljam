@@ -14,7 +14,7 @@ import AuthModal         from '@/components/AuthModal';
 import WelcomeModal      from '@/components/WelcomeModal';
 // ReportIssueModal replaced by inline flag bottom-sheet in EventCardV2
 import Toast             from '@/components/Toast';
-import FollowSnackbar from '@/components/FollowSnackbar';
+// FollowSnackbar removed — follow upsell now handled inline in EventCardV2
 import FollowingTab      from '@/components/FollowingTab';
 import ArtistProfileScreen from '@/components/ArtistProfileScreen';
 // FilterBar removed — filters now live in the omnibar panel
@@ -246,7 +246,7 @@ export default function HomePage() {
   const [toastVariant, setToastVariant] = useState(null);
   const [toastAction, setToastAction] = useState(null);           // callback for upsell toast tap
   const [toastActionLabel, setToastActionLabel] = useState(null); // label for upsell action button
-  const [snackbar, setSnackbar] = useState(null);                  // { artistName } when Follow Snackbar is visible after save
+  const [followExpandedCardId, setFollowExpandedCardId] = useState(null); // ID of the card whose inline follow upsell is open
 
   // ── Theme ────────────────────────────────────────────────────────────────────
   const [darkMode, setDarkMode] = useState(() => {
@@ -552,21 +552,26 @@ export default function HomePage() {
     const isSaved = favorites.has(id);
 
     if (isSaved) {
-      // Already saved — unsave immediately
+      // Already saved — unsave immediately, collapse any expansion
       unsaveEventFromDb(id);
-      setSnackbar(null);
+      if (followExpandedCardId === id) setFollowExpandedCardId(null);
       return;
     }
 
-    // Not saved yet — save immediately, then show snackbar
+    // Not saved yet — save immediately
     saveEventToDb(id);
 
+    // If the event has an artist, expand inline follow upsell (auto-collapses any other)
     const event = events.find(e => e.id === id);
-    const artistName = event?.artist_name || '';
-
-    // Show the snackbar (with or without artist)
-    setSnackbar({ artistName });
-  }, [favorites, isLoggedIn, events, openAuth, unsaveEventFromDb, saveEventToDb]);
+    if (event?.artist_name) {
+      setFollowExpandedCardId(id);
+    } else {
+      // No artist — just show a brief toast
+      setFollowExpandedCardId(null);
+      setToastVariant('success');
+      setToast('Event saved to My Jam');
+    }
+  }, [favorites, isLoggedIn, events, openAuth, unsaveEventFromDb, saveEventToDb, followExpandedCardId]);
 
   // ── Saved tab segment toggle (persisted per-session) ──────────────────────
   const [savedSegment, setSavedSegment] = useState(() => {
@@ -639,11 +644,7 @@ export default function HomePage() {
   // Sync ref so toggleFavorite's toast action can call followEntity without TDZ
   useEffect(() => { followEntityRef.current = followEntity; }, [followEntity]);
 
-  // ── Snackbar follow callback ────────────────────────────────────────────────
-  const handleSnackbarFollow = useCallback(() => {
-    if (!snackbar?.artistName) return;
-    followEntity('artist', snackbar.artistName);
-  }, [snackbar, followEntity]);
+  // ── Inline follow upsell callback (handled in EventCardV2 via onFollowArtist) ──
 
   const unfollowEntity = useCallback(async (entityType, entityName) => {
     // Optimistic removal
@@ -2024,6 +2025,8 @@ export default function HomePage() {
                           }}
                           isArtistFollowed={isFollowing('artist', event.name || event.artist_name || '')}
                           onFlag={(msg) => setToast(msg)}
+                          followExpanded={followExpandedCardId === event.id}
+                          onFollowCollapse={() => setFollowExpandedCardId(null)}
                         />
                       ))}
                     </div>
@@ -2158,13 +2161,7 @@ export default function HomePage() {
         />
       )}
 
-      {/* ── Follow Snackbar ─────────────────────────────────────────────── */}
-      <FollowSnackbar
-        visible={!!snackbar}
-        artistName={snackbar?.artistName || ''}
-        onFollowArtist={handleSnackbarFollow}
-        onDismiss={() => setSnackbar(null)}
-      />
+      {/* Follow upsell now rendered inline in EventCardV2 */}
 
       {toast && <Toast message={toast} variant={toastVariant} onAction={toastAction} actionLabel={toastActionLabel} onDismiss={() => { setToast(null); setToastVariant(null); setToastAction(null); setToastActionLabel(null); }} />}
     </>
