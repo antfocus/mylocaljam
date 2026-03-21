@@ -14,7 +14,7 @@ import AuthModal         from '@/components/AuthModal';
 import WelcomeModal      from '@/components/WelcomeModal';
 // ReportIssueModal replaced by inline flag bottom-sheet in EventCardV2
 import Toast             from '@/components/Toast';
-import FollowActionSheet from '@/components/FollowActionSheet';
+import FollowSnackbar from '@/components/FollowSnackbar';
 import FollowingTab      from '@/components/FollowingTab';
 import ArtistProfileScreen from '@/components/ArtistProfileScreen';
 // FilterBar removed — filters now live in the omnibar panel
@@ -246,7 +246,7 @@ export default function HomePage() {
   const [toastVariant, setToastVariant] = useState(null);
   const [toastAction, setToastAction] = useState(null);           // callback for upsell toast tap
   const [toastActionLabel, setToastActionLabel] = useState(null); // label for upsell action button
-  const [followSheet, setFollowSheet] = useState(null);           // { eventId, eventName, artistName, venueName } when Follow Action Sheet is open
+  const [snackbar, setSnackbar] = useState(null);                  // { artistName } when Follow Snackbar is visible after save
 
   // ── Theme ────────────────────────────────────────────────────────────────────
   const [darkMode, setDarkMode] = useState(() => {
@@ -552,25 +552,21 @@ export default function HomePage() {
     const isSaved = favorites.has(id);
 
     if (isSaved) {
-      // Already saved — unsave immediately (no sheet needed)
+      // Already saved — unsave immediately
       unsaveEventFromDb(id);
+      setSnackbar(null);
       return;
     }
 
-    // Not saved yet — open the Follow Action Sheet instead of immediately saving
+    // Not saved yet — save immediately, then show snackbar
+    saveEventToDb(id);
+
     const event = events.find(e => e.id === id);
-    if (!event) return;
+    const artistName = event?.artist_name || '';
 
-    const artistName = event.artist_name || event.name || event.event_title || '';
-    const venueName = event.venue_name || event.venue || '';
-
-    setFollowSheet({
-      eventId: id,
-      eventName: artistName || venueName,
-      artistName,
-      venueName,
-    });
-  }, [favorites, isLoggedIn, events, openAuth, unsaveEventFromDb]);
+    // Show the snackbar (with or without artist)
+    setSnackbar({ artistName });
+  }, [favorites, isLoggedIn, events, openAuth, unsaveEventFromDb, saveEventToDb]);
 
   // ── Saved tab segment toggle (persisted per-session) ──────────────────────
   const [savedSegment, setSavedSegment] = useState(() => {
@@ -643,36 +639,11 @@ export default function HomePage() {
   // Sync ref so toggleFavorite's toast action can call followEntity without TDZ
   useEffect(() => { followEntityRef.current = followEntity; }, [followEntity]);
 
-  // ── Follow Action Sheet callbacks ───────────────────────────────────────────
-  const handleFollowSheetAction = useCallback((action) => {
-    if (!followSheet) return;
-    const { eventId, artistName, venueName } = followSheet;
-
-    // Always save the event first
-    saveEventToDb(eventId);
-
-    // Then follow based on selected action
-    if (action === 'artist' && artistName) {
-      followEntity('artist', artistName);
-      setToastVariant('success');
-      setToast(`Following ${artistName}!`);
-    } else if (action === 'venue' && venueName) {
-      followEntity('artist', venueName);
-      setToastVariant('success');
-      setToast(`Following ${venueName}!`);
-    } else if (action === 'both') {
-      if (artistName) followEntity('artist', artistName);
-      if (venueName) followEntity('artist', venueName);
-      setToastVariant('success');
-      setToast(`Following ${artistName} & ${venueName}!`);
-    } else if (action === 'save') {
-      // Just save — already done above
-      setToastVariant('success');
-      setToast('Event saved!');
-    }
-
-    setFollowSheet(null);
-  }, [followSheet, saveEventToDb, followEntity]);
+  // ── Snackbar follow callback ────────────────────────────────────────────────
+  const handleSnackbarFollow = useCallback(() => {
+    if (!snackbar?.artistName) return;
+    followEntity('artist', snackbar.artistName);
+  }, [snackbar, followEntity]);
 
   const unfollowEntity = useCallback(async (entityType, entityName) => {
     // Optimistic removal
@@ -2187,22 +2158,13 @@ export default function HomePage() {
         />
       )}
 
-      {/* ── Follow Action Sheet ────────────────────────────────────────── */}
-      {followSheet && (
-        <FollowActionSheet
-          darkMode={darkMode}
-          eventName={followSheet.eventName}
-          artistName={followSheet.artistName}
-          venueName={followSheet.venueName}
-          isArtistFollowed={isFollowing('artist', followSheet.artistName || '')}
-          isVenueFollowed={isFollowing('artist', followSheet.venueName || '')}
-          onFollowArtist={() => handleFollowSheetAction('artist')}
-          onFollowVenue={() => handleFollowSheetAction('venue')}
-          onFollowBoth={() => handleFollowSheetAction('both')}
-          onSaveOnly={() => handleFollowSheetAction('save')}
-          onClose={() => setFollowSheet(null)}
-        />
-      )}
+      {/* ── Follow Snackbar ─────────────────────────────────────────────── */}
+      <FollowSnackbar
+        visible={!!snackbar}
+        artistName={snackbar?.artistName || ''}
+        onFollowArtist={handleSnackbarFollow}
+        onDismiss={() => setSnackbar(null)}
+      />
 
       {toast && <Toast message={toast} variant={toastVariant} onAction={toastAction} actionLabel={toastActionLabel} onDismiss={() => { setToast(null); setToastVariant(null); setToastAction(null); setToastActionLabel(null); }} />}
     </>

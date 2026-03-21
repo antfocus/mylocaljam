@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1500+ events** across 38 scrapers (as of March 18, 2026)
+**~1500+ events** across 35 active scrapers (as of March 21, 2026)
 
 ---
 
@@ -46,7 +46,7 @@
 | 17 | Reef & Barrel | `reefAndBoatyard.js` | Google Calendar iCal | ✅ Working | ~10+ |
 | 18 | Palmetto | `palmetto.js` | Hardcoded (image poster) | ⚠️ Working — requires manual monthly update (see notes) | ~21 |
 | 19 | Idle Hour | `idleHour.js` | Google Calendar iCal | ✅ Working | ~15+ |
-| 20 | Asbury Lanes | `asburyLanes.js` | BentoBox HTML + JSON-LD | ✅ Working | ~12+ |
+| 20 | Asbury Lanes | `asburyLanes.js` | BentoBox HTML + AJAX pagination | ✅ Working (fixed: browser-like headers + pagination for all events) | ~18+ |
 | 21 | Bakes Brewing | `bakesBrewing.js` | Webflow CMS HTML | ✅ Working | ~12 |
 | 22 | River Rock | `riverRock.js` | WordPress EventPrime AJAX | ✅ Working | ~102 |
 | 23 | Wild Air Beerworks | `wildAir.js` | Square Online (HTML + API) | ✅ Working | ~12 |
@@ -64,9 +64,10 @@
 | 35 | Deal Lake Bar + Co. | `dealLakeBar.js` | Squarespace JSON API | ✅ Working | ~23 |
 | 36 | The Crab's Claw Inn | `crabsClaw.js` | RestaurantPassion iframe HTML | ✅ Working | ~10+ |
 | 37 | Water Street Bar & Grill | `waterStreet.js` | Squarespace JSON API | ✅ Working | ~5 |
-| 38 | Crossroads | `crossroads.js` | Eventbrite JSON-LD | ✅ Working | ~24 |
+| 38 | Crossroads | `crossroads.js` | Eventbrite showmore JSON API | ✅ Working | ~24 |
 | ~~39~~ | ~~Algonquin Arts Theatre~~ | ~~`algonquinArts.js`~~ | ~~Custom PHP HTML~~ | ❌ Blocked (403) | — |
 | ~~39~~ | ~~Starland Ballroom~~ | ~~`starlandBallroom.js`~~ | ~~AXS/Carbonhouse AJAX~~ | ❌ Blocked (datacenter IP) | — |
+| ~~39~~ | ~~House of Independents~~ | ~~`houseOfIndependents.js`~~ | ~~Etix JSON-LD~~ | ❌ Blocked (datacenter IP) | — |
 
 ---
 
@@ -124,7 +125,14 @@
 - **Cleanup:** Deleted scraper file, reverted route.js, ran `DELETE FROM events WHERE external_id LIKE 'monmouthtourism-%';` in Supabase
 - **Residual data:** May need `DELETE FROM events WHERE venue_name = 'Monmouth County';` and `DELETE FROM venues WHERE name = 'Monmouth County';` if old entries persist
 
-### 8. iOS Safari swipe — `overflow-x: hidden` blocks ALL horizontal scroll
+### 8. Asbury Lanes scraper — headers + pagination fix
+- **Problem 1:** Scraper started returning "FAIL: No event cards found." BentoBox nginx was blocking the default bot User-Agent from Vercel datacenter IPs — returned valid HTML but with no event cards.
+- **Fix 1:** Replaced bare UA with full `BROWSER_HEADERS` constant (Chrome 124 UA, Accept, Accept-Language, Accept-Encoding, Cache-Control, Pragma). Also added 3 fallback parsing strategies and single-digit month support (`M.DD.YYYY`).
+- **Problem 2:** Sync only captured 10 events when the site had 18+. The "Load More Events" button triggers AJAX pagination.
+- **Fix 2:** Added pagination loop — fetches `${LISTING_URL}?p=${page}` with `X-Requested-With: XMLHttpRequest` header (returns HTML fragments). Extracted `parseCardsFromHTML()` helper. Deduplicates by href via `seenHrefs` Set, stops when `newCards.length === 0` or hits `MAX_PAGES=5`.
+- **File:** `asburyLanes.js`
+
+### 9. iOS Safari swipe — `overflow-x: hidden` blocks ALL horizontal scroll
 
 > **CRITICAL — read this before building any swipeable/carousel component.**
 
@@ -223,11 +231,14 @@
 
 ### Asbury Lanes (`asburyLanes.js`)
 - **URL:** https://www.asburylanes.com/concerts/
-- **Platform:** BentoBox (getbento.com) — no API available
-- **Approach:** Parses listing page HTML for `.card__heading` titles (contain dates in MM.DD.YYYY format), extracts event slugs for external_id, then fetches each detail page in parallel to extract door times from JSON-LD `@type:Event` description field
-- **Fallback time:** 8:00 PM if no door time found in detail page
+- **Platform:** BentoBox (getbento.com) — nginx-served HTML, no API available
+- **Approach:** Parses listing page HTML with 3 fallback strategies (`.card__btn` + `.card__heading`, separate heading+href matching, aria-label attributes). Dates in `M.DD.YYYY` or `MM.DD.YYYY` format. Extracts images from `background-image` styles on `.card__image` divs.
+- **Pagination:** BentoBox AJAX pagination — fetches `?p=2`, `?p=3`, etc. with `X-Requested-With: XMLHttpRequest` header. Returns HTML fragments. Deduplicates by href, stops when all cards are dupes or hits MAX_PAGES=5.
+- **Headers:** Requires full browser-like headers (`BROWSER_HEADERS` constant) — BentoBox nginx blocks bare bot User-Agents from Vercel datacenter IPs.
+- **Fallback time:** 8:00 PM if no door time found
 - **Address:** 209 4th Ave, Asbury Park, NJ 07712
 - **Note:** Concert venue + bowling alley. Events include concerts, music bingo, and special events.
+- **Fix history:** (1) Mar 2026 — replaced bot UA with browser-like headers, added single-digit month support, image extraction, aria-label fallback parsing. (2) Added AJAX pagination to capture all events (was only getting first page of ~10, site had 18+).
 
 ### Bakes Brewing (`bakesBrewing.js`)
 - **URL:** https://www.bakesbrewing.co/events
@@ -367,12 +378,15 @@
 - **Address:** Tom's River, NJ
 - **Note:** Friday & Saturday live music, 8:30pm–12:30am. ~5 upcoming events. Also has Bingo nights.
 
-### Crossroads (`crossroads.js`)
+### Crossroads (`crossroads.js`) — UPGRADED to Eventbrite showmore API
 - **URL:** https://www.xxroads.com/calendar (venue site), https://www.eventbrite.com/o/crossroads-18337279677 (data source)
 - **Platform:** Wix (venue site is image posters only) — scrapes Eventbrite organizer page instead
-- **Approach:** Fetches the Eventbrite organizer page HTML, extracts JSON-LD `<script type="application/ld+json">` containing `itemListElement` array with full event data (name, startDate, endDate, url, image, description).
+- **Previous approach (replaced):** Eventbrite JSON-LD (`<script type="application/ld+json">`) — only returned the first ~12 of 24 events because JSON-LD contains only the first page of results.
+- **Current approach:** Eventbrite showmore JSON API (`/org/{orgId}/showmore/?type=future&page_size=50&page=1`). Returns ALL future events as JSON with `data.events[]` containing `name.text`, `start.local`, `start.formatted_time`, `url`, `logo.url`, `summary`, `is_free`, `price_range`, `id`.
+- **Organizer ID:** `18337279677` (from the Eventbrite organizer URL)
 - **Address:** 78 North Ave, Garwood, NJ 07027
 - **Note:** Active music venue with ~24 upcoming events. Tickets sold via Eventbrite with prices. Events include live bands, tribute acts, comedy shows, and festivals.
+- **Discovery story:** JSON-LD was missing half the events. Investigated `window.__SERVER_DATA__` which showed `num_future_events: 24` but only `futureCount: 12` loaded. The "Show more" button on the Eventbrite page triggers the `/org/{id}/showmore/` API endpoint. See "Eventbrite Organizer Pages" in the platform detection reference below.
 
 ### Starland Ballroom — ❌ BLOCKED
 - **URL:** https://www.starlandballroom.com/events/all
@@ -387,6 +401,14 @@
 - **Status:** Returns HTTP 403 from Vercel datacenter IPs. Full browser-like headers (Sec-Fetch-*, Referer, Connection) did not help. Site blocks server-side requests entirely.
 - **Scraper file:** `algonquinArts.js` kept for reference — can be re-enabled if a proxy workaround is found.
 - **Address:** 173 Main St, Manasquan, NJ 08736
+
+### House of Independents — ❌ BLOCKED
+- **URL:** https://www.etix.com/ticket/v/33546/calendars
+- **Platform:** Etix (React SPA with server-rendered JSON-LD)
+- **Status:** Etix serves a bare React app shell (~2KB, no title, no JSON-LD) to Vercel datacenter IPs. From residential IPs, the same URL returns ~44KB with 2 JSON-LD blocks including an array of 20 Event objects. The Etix search API (`POST /ticket/api/online/search`) was also investigated but returns encrypted/encoded data that can't be decoded server-side.
+- **What works from residential IP:** JSON-LD extraction — 20 upcoming events with name, image, ticket URL, startDate ("Sat Mar 21 17:30:00 EDT 2026" format), and offers (price in USD). Venue ID is 33546.
+- **Scraper file:** `houseOfIndependents.js` kept for reference — fully functional from non-datacenter IPs, can be re-enabled if a proxy workaround is found.
+- **Address:** 572 Cookman Avenue, Asbury Park, NJ 07712
 
 ### Wild Air Beerworks (`wildAir.js`)
 - **URL:** https://www.wildairbeer.com/upcoming-events
@@ -787,6 +809,188 @@ Once you've determined the approach:
 | `ticketbud.com` links or embeds | Ticketbud | Parse organizer page HTML (`.card.vertical`, `.event-title`, `.date`, `.time`). ⚠️ May be behind Cloudflare — test from Vercel first |
 | Wix Events TPA iframe (no `src`, title "Events Calendar") | Wix Events | ❌ Currently not scrapeable — events render client-side in iframe, no public API, needs instance auth |
 | Image poster only (no structured data) | Any | Hardcoded monthly events array |
+| `eventbrite.com` links or organizer page | Eventbrite | showmore JSON API (`/org/{orgId}/showmore/`) — see Eventbrite pattern below |
+| AXS ticket links, `axs.com`, Carbonhouse platform | AEG/Carbonhouse | ❌ Likely blocked — datacenter IP blocking. AJAX at `/events/events_ajax/{offset}`. See Starland Ballroom notes |
+| `restaurantpassion.com` iframe | RestaurantPassion | Fetch iframe URL directly, parse `custom_page_body` HTML. Regex boundary is fragile — see notes |
+
+---
+
+## Scraping Data — Patterns, APIs & Lessons Learned
+
+This section documents every scraping pattern, API endpoint, and hard-won lesson learned across all sessions. The goal is to enable an AI agent to autonomously investigate and scrape new venues without repeating past mistakes.
+
+### Eventbrite Organizer Pages
+
+**When to use:** Venue sells tickets through Eventbrite but their own website only has image posters or no structured data.
+
+**How to find the organizer ID:**
+1. Search Eventbrite for the venue name (e.g., "Crossroads Garwood")
+2. Click on the organizer name in any event listing
+3. The organizer URL is `https://www.eventbrite.com/o/{name}-{orgId}` — the numeric suffix is the organizer ID
+4. Alternatively: on any Eventbrite event page, open DevTools and check `window.__SERVER_DATA__` → `api_data.organizer`
+
+**API endpoint — showmore (preferred):**
+```
+GET https://www.eventbrite.com/org/{orgId}/showmore/?type=future&page_size=50&page=1
+Headers:
+  User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ...
+  Accept: application/json
+  Referer: https://www.eventbrite.com/o/{name}-{orgId}
+```
+
+**Response structure:**
+```json
+{
+  "data": {
+    "events": [
+      {
+        "name": { "text": "Event Title" },
+        "start": { "local": "2026-03-20T20:00:00", "formatted_time": "8:00 PM" },
+        "end": { "local": "2026-03-20T23:00:00" },
+        "url": "https://www.eventbrite.com/e/...",
+        "logo": { "url": "https://img.evbuc.com/..." },
+        "summary": "Event description text",
+        "is_free": false,
+        "price_range": "$25 - $35",
+        "id": "123456789"
+      }
+    ]
+  }
+}
+```
+
+**Why NOT to use JSON-LD:** The Eventbrite organizer page includes `<script type="application/ld+json">` with an `itemListElement` array, but this only contains events from the **first page load** (typically ~12). If the organizer has more events (e.g., 24), the rest are loaded via the showmore API when the user clicks "Show more." The JSON-LD will silently miss half the events.
+
+**`window.__SERVER_DATA__` for debugging:** On an Eventbrite organizer page, `window.__SERVER_DATA__.view_data.events` contains `num_future_events` (total count), `has_next_future_page` (boolean), and `future_events` (first page only). Use this to verify if events are being missed.
+
+**Working example:** Crossroads (`crossroads.js`) — organizer ID `18337279677`
+
+### AEG/Carbonhouse Platform (Starland Ballroom pattern)
+
+**Identifying features:** AXS ticket links (`axs.com`), venue site domain often managed by AEG. Main page is a JavaScript shell that loads events via AJAX.
+
+**AJAX endpoint:**
+```
+GET https://www.{venue}.com/events/events_ajax/{offset}
+Headers:
+  X-Requested-With: XMLHttpRequest
+  Referer: https://www.{venue}.com/events/all
+```
+Returns JSON-encoded HTML string (must `JSON.parse()` first). Each page returns ~20 events in `<div class="entry starland clearfix">` blocks.
+
+**⚠️ BLOCKED from datacenter IPs:** Both the main page and AJAX endpoints block Vercel/datacenter IPs entirely. Returns empty HTML or 0 events with no error. This is platform-level blocking, not per-venue — all AEG/Carbonhouse sites will likely be blocked.
+
+**Scraper kept for reference:** `starlandBallroom.js` — fully functional parser, just can't reach the data from Vercel.
+
+**To revisit:** A residential proxy, headless browser running outside Vercel, or if AEG opens a public API.
+
+### RestaurantPassion Iframe Calendar
+
+**Identifying features:** Restaurant websites using RestaurantPassion for their calendar/events page. Calendar is embedded in an iframe pointing to `restaurantpassion.com/ext-page/{a}/{b}/{c}/`.
+
+**Approach:** Fetch the iframe URL directly (not the parent page). Extract content from `.custom_page_body` div. Content is organized as `<p>` blocks — one per day, with date on first line and events on subsequent lines.
+
+**⚠️ Regex boundary is fragile:** The regex to extract `custom_page_body` content depends on what HTML tag follows the closing `</div>`. This has changed at least once (from `<script>` to `<style>`). The current robust pattern is:
+```regex
+/class="custom_page_body"[^>]*>([\s\S]*?)<\/div>\s*(?:<style|<script|<\/div>|$)/i
+```
+If the scraper breaks with "Could not find custom_page_body", check what tag follows the div and add it to the alternation group.
+
+**Working example:** The Crab's Claw Inn (`crabsClaw.js`) — iframe URL `restaurantpassion.com/ext-page/13/332/27093/`
+
+### Datacenter IP Blocking — Which Platforms Block
+
+Vercel runs on datacenter IPs that many platforms block. These are the known blocking patterns:
+
+| Platform / Site | Blocks? | Error Behavior |
+|---|---|---|
+| Cloudflare + reCAPTCHA (McLoone's) | ✅ Yes | HTTP 403 |
+| AEG/Carbonhouse (Starland Ballroom) | ✅ Yes | Returns empty/0 events, no error |
+| Etix (House of Independents) | ✅ Yes | Returns 2KB React shell, no JSON-LD |
+| Algonquin Arts (custom PHP) | ✅ Yes | HTTP 403 |
+| WordPress EventPrime (Brielle House) | ✅ Partially — nonce/session blocks AJAX | "Security check failed" |
+| Ticketbud (behind Cloudflare) | ✅ Yes | HTTP 403 |
+| Eventbrite | ❌ No | Works fine |
+| Ticketmaster Discovery API | ❌ No | Works fine (API key auth) |
+| Google Calendar iCal feeds | ❌ No | Works fine |
+| Squarespace JSON API | ❌ No | Works fine |
+| WordPress REST API / AJAX | ❌ Usually no | Depends on security plugins |
+| RestaurantPassion | ❌ No | Works fine |
+| Timely API | ❌ No | Works fine |
+| BentoBox | ❌ No | Works fine |
+| Square Online API | ❌ No | Works fine |
+| Webflow CMS | ❌ No | Works fine |
+
+**Key lesson:** When a scraper returns 0 events with no error, it's often datacenter IP blocking — the server returns valid but empty responses. Always test new scrapers from Vercel (not just local dev) before marking them as working.
+
+**Headers that DON'T help against real blocking:** Full browser-like headers (`User-Agent`, `Sec-Fetch-*`, `Referer`, `Connection`, `Cache-Control`, `Upgrade-Insecure-Requests`) do NOT bypass Cloudflare, AEG, or server-level IP blocking. If a site blocks datacenter IPs, no amount of header manipulation will help.
+
+### Ticketmaster Venue Addition (fastest method for major venues)
+
+**When to use:** Venue is ticketed by Ticketmaster/Live Nation. These are typically larger venues (concert halls, amphitheaters, clubs with reserved seating).
+
+**How to find the venue ID:**
+1. Go to the venue's website and look for Ticketmaster links
+2. Check the page source for JSON-LD — look for `@type: Place` with `identifier` or `sameAs` containing a Ticketmaster URL
+3. Or search the Ticketmaster Discovery API: `https://app.ticketmaster.com/discovery/v2/venues.json?keyword=VENUE_NAME&apikey=YOUR_KEY`
+4. The venue ID looks like `KovZpZAEAIIA` (alphanumeric)
+
+**To add a new Ticketmaster venue:** Just append to the `VENUES` array in `ticketmaster.js`:
+```javascript
+{ id: 'KovZpZAEAIIA', name: 'PNC Bank Arts Center' },
+```
+No new scraper file needed. No route.js changes needed. The existing Ticketmaster scraper handles all venues in the array.
+
+**Current Ticketmaster venues:** Wonder Bar, Stone Pony Summer Stage, The Stone Pony, ParkStage, PNC Bank Arts Center (~155 combined events)
+
+### Supabase Venue Deduplication
+
+**Problem:** When a venue is added via SQL INSERT and the sync also creates one, or when multiple INSERTs run, duplicate venue entries appear in Supabase. Events may link to different venue IDs.
+
+**Fix procedure:**
+1. Identify the correct venue ID to keep (usually the one with the most events)
+2. Reassign all events from duplicate IDs: `UPDATE events SET venue_id = 'correct-uuid' WHERE venue_id = 'duplicate-uuid';`
+3. Delete the duplicate venue entries: `DELETE FROM venues WHERE id = 'duplicate-uuid';`
+4. **Important:** Must reassign events FIRST — the foreign key constraint prevents deleting a venue that still has events linked to it.
+
+### Autonomous Venue Investigation Workflow
+
+When investigating a new venue URL, an AI agent should follow this exact sequence:
+
+**Phase 1 — Quick Reconnaissance (no browser needed)**
+1. Fetch the venue URL with `fetch()` and examine the HTML source
+2. Check `<meta name="generator">` for platform identification
+3. Search for `calendar.google.com` iframes → Google Calendar embed
+4. Search for `<script type="application/ld+json">` → structured event data
+5. Search for platform clues: `wp-content`, `squarespace-cdn`, `wix.com`, `getbento.com`, `static.framer.com`
+6. Check for known ticket platform links: `eventbrite.com`, `ticketmaster.com`, `axs.com`, `ticketbud.com`
+
+**Phase 2 — Platform-Specific API Probing**
+- **Squarespace:** Try `{url}?format=json` — if it returns items/upcoming array, done
+- **WordPress:** Try `/wp-json/wp/v2/events`, `/wp-json/wp/v2/posts` — check for event data
+- **Google Calendar:** Extract calendar ID from iframe → build iCal URL → test if public
+- **Eventbrite:** Find organizer ID → test showmore API
+- **Ticketmaster:** Find venue ID → add to VENUES array in `ticketmaster.js`
+
+**Phase 3 — Deep Investigation (browser may be needed)**
+- Open the page in a browser and check the Network tab for XHR/Fetch requests
+- Look for AJAX endpoints that return JSON event data
+- Check `window.__SERVER_DATA__`, `window.__PRELOADED_STATE__`, `__BOOTSTRAP_STATE__` for inline data
+- Check for API calls when interacting with calendar widgets (clicking next month, "show more", etc.)
+
+**Phase 4 — Classification**
+After investigation, classify the venue into one of:
+- ✅ **Scrapeable** — structured data source found, build the scraper
+- ⚠️ **Image poster only** — can build hardcoded monthly scraper (requires manual updates)
+- ❌ **Blocked** — datacenter IP blocking, keep scraper file for reference
+- ❌ **Not scrapeable** — no structured data, no API, cross-origin iframe lockdown
+
+**Phase 5 — Build & Wire**
+1. Create scraper file following existing patterns
+2. Wire into `route.js` (import, Promise.all, scraperResults, allEvents spread)
+3. Provide Supabase INSERT SQL for the venue
+4. Update this HANDOVER.md with the new venue entry
+5. User pushes to git, runs SQL, triggers sync
 
 ---
 
@@ -1413,6 +1617,582 @@ Each pill in the `shortcut_pills` table has:
 3. **Stale Supabase session warnings:** Console shows "Session as retrieved from URL expires in -171151s" — this is a GoTrue auth token that expired. Harmless for anonymous users but can be fixed by clearing the auth session or calling `supabase.auth.signOut()`.
 4. **Click-outside panel dismissal:** Tapping blank space inside the filter panel doesn't close it. The scrim overlay (behind the panel) and the header both close it, but the panel interior padding does not. Needs a different approach (possibly a close gesture or dedicated close zone).
 5. **Trending pill logic:** Shows ~909 events — needs a real popularity signal (view count, click tracking, or admin curation) instead of just event-count-per-venue.
+
+---
+
+## Session: March 18, 2026 — "My Jam" Overhaul, Ticket Stubs & Artist Profiles
+
+### What Changed
+
+Complete redesign of the "My Jam" (saved) tab with retro ticket stub cards, an artist profile screen, and numerous UX polish passes.
+
+### New Components Created
+
+| Component | File | Purpose |
+|---|---|---|
+| `SavedGigCard` | `src/components/SavedGigCard.js` | Brand Orange retro ticket stub for saved events. 3-column layout: left date/time stub (split into date column + vertical rotated time), middle body with monospace ARTIST/VENUE labels, right action stub with remove (confirm dialog) + share icons. Dark slate paper background, muted gray structural borders, 8px orange top strip. |
+| `ArtistProfileScreen` | `src/components/ArtistProfileScreen.js` | Full-screen artist detail overlay (z-index 200). Conditional hero image (300px edge-to-edge with gradient fade, hidden entirely if no image), artist name, ghost follow/unfollow pill button, bio with fallback text, lightweight upcoming shows text list (orange dates + title-case venues). |
+| `ArtistListItem` | `src/components/ArtistListItem.js` | Standalone artist row component (created early, now unused — list is inlined in FollowingTab). Can be deleted if desired. |
+
+### Components Modified
+
+**`src/components/EventCardV2.js`**
+- Removed left 4px accent border bar
+- Time block border-radius changed from `8px 0 0 8px` to `12px 0 0 12px` (flush with outer card)
+- Compact row left padding set to 0 (stub flush against card edge)
+- Removed category emoji (`{config.emoji}`) between time block and artist name
+
+**`src/components/FollowingTab.js`** — Major rewrite
+- Added local search bar ("Search your artists...") with real-time filtering
+- Rows simplified: Avatar (48px circle) → Artist Name → Gray Chevron `>`
+- Removed: remove_circle_outline button, next gig info block, notification bell, "Following" pill button
+- Rows are clickable — artists open `ArtistProfileScreen`, venues open existing bottom sheet
+- Artist image lookup via `useMemo` map from events array (`artist_image || image_url`)
+- Fallback avatar: dark gray circle with Brand Orange `music_note` SVG
+- Empty state + trending artists carousel preserved
+
+**`src/components/SavedGigCard.js`** — Evolved through several iterations:
+1. Started as `PurpleTicketCard` (deep violet theme) — deleted
+2. Pivoted to Brand Orange with muted gray structural borders
+3. Left stub split into 2 inner columns: date stack + vertical rotated time
+4. Time format: full `h:mm AM/PM` (e.g., "7:00 PM") via custom parser from `event.start_time`
+5. Font smoothing: `-webkit-font-smoothing: antialiased` on all stub text
+6. Remove button uses `window.confirm()` before calling `onToggleFavorite`
+
+### Page.js Changes (`src/app/page.js`)
+
+**Navigation & Toggle**
+- Segmented control redesigned: dark slate container with Brand Orange active pill (white text + orange glow shadow)
+- Toggle labels: "My Shows" / "My Artists" (renamed from "Upcoming Gigs" / "Followed Artists")
+- Default segment forced to `'events'` (My Shows) every time user taps the My Jam tab via `handleSetSavedSegment('events')` in bottom nav click handler
+- Session storage persistence via `mlj_saved_segment` key
+
+**Header Conditional Rendering**
+- Global search/filter omnibar pill hidden on `saved` and `profile` tabs
+- Orange `+` "Add to the Jar" FAB hidden on `saved` and `profile` tabs
+- Header on My Jam = clean `myLocalJam` logo only
+
+**Artist Profile Navigation**
+- New state: `const [artistProfile, setArtistProfile] = useState(null)` — holds artist name string
+- `onEntityTap` in FollowingTab: artists → `setArtistProfile(name)`, venues → `setBottomSheet(...)`
+- `ArtistProfileScreen` rendered as fixed overlay when `artistProfile` is set
+- Props passed: `artistName`, `events`, `darkMode`, `isFollowed`, `onFollow`, `onUnfollow`, `onBack`
+
+**6:00 AM Rollover Expiration (My Shows feed)**
+- Saved events filtered on frontend only — events stay visible until 6:00 AM the morning after the event date
+- Logic: `new Date(e.date + 'T06:00:00')` + 1 day, compare to `now`
+- Does NOT delete from `user_saved_events` table — data preserved for future "Gig Diary" feature
+- Same rollover logic applied in `ArtistProfileScreen` upcoming shows list
+
+### Files Created
+- `src/components/SavedGigCard.js`
+- `src/components/ArtistProfileScreen.js`
+- `src/components/ArtistListItem.js` (unused, can be cleaned up)
+
+### Files Deleted
+- `src/components/PurpleTicketCard.js` (replaced by SavedGigCard)
+
+### Files Modified
+- `src/app/page.js` — imports, state, toggle UI, header conditionals, artist profile rendering, 6AM rollover filter
+- `src/components/EventCardV2.js` — removed accent border, emoji, adjusted radii/padding
+- `src/components/FollowingTab.js` — complete list rewrite with search, simplified rows, clickable navigation
+
+### Database Impact
+- **None** — all changes are frontend-only. No new tables, no migrations, no RLS changes needed.
+- `user_saved_events` and `user_followed_artists` tables (from previous session) remain unchanged.
+
+### Known Issues
+1. **ArtistListItem.js is unused** — was created as a standalone component but the list rendering was later inlined directly in FollowingTab. Safe to delete.
+2. **Artist images depend on events data** — if an artist has no upcoming events in the current dataset, their avatar in the Following list will show the fallback music note. Image lookup is `artist_image || image_url` from matching events.
+3. **6AM rollover is client-side only** — the filter runs on each render using `new Date()`. If a user leaves the tab open overnight, events will disappear at 6AM without a refresh. This is acceptable behavior.
+
+---
+
+## Session: March 18, 2026 — Sprint 1: Event Auto-Sorter & Triage
+
+### What Changed
+
+**Phase 1: Auto-Sorter Pipeline** (`src/app/api/sync-events/route.js`)
+- Runs after event upsert, before Last.fm enrichment
+- **Known Artist Fast-Track:** Cross-references `artist_name` against all names in the `artists` table. If exact match found → `category = 'Live Music'`, `triage_status = 'reviewed'`, goes straight to live feed.
+- **Keyword Routing:** If no artist match, scans title+description for keyword patterns:
+  - `['trivia', 'bingo', 'feud', 'game night', 'quiz']` → Trivia
+  - `['pint night', 'taco', 'wings', 'happy hour', 'drink special', ...]` → Food & Drink Special
+  - `['ufc', 'nfl', 'football', 'watch party', ...]` → Sports / Watch Party
+- Events auto-sorted by Phase 1 completely bypass the Triage inbox
+- Sync response now includes `autoSort: { knownArtistMatches, keywordRouted, unknownsForTriage }`
+
+**Phase 2: Triage Inbox** (`src/app/admin/page.js`)
+- "Triage" tab (first/default tab in admin) shows ONLY events that couldn't be auto-sorted (`triage_status = 'pending'`)
+- Professional category pill buttons: **Live Music** (green), **Food & Drink** (amber), **Trivia** (purple), **Sports** (blue)
+- Edit pencil + SVG trash can for junk deletion
+- Non-music categories clear `artist_bio`/`artist_id` from the event
+- "Inbox Zero" state when all events are reviewed
+
+**Phase 3: Error Correction** (`src/app/admin/page.js`)
+- **History tab:** Each event row now has an inline category `<select>` dropdown, colored by current category
+- Changing the dropdown instantly re-routes the event (same logic as triage: non-music clears artist data)
+- Toast confirmation on category change
+- **User Reports:** Frontend EventCardV2 already has a "Report Issue" flag button (flag-event API → Reports tab in admin). No changes needed — this flow is intact.
+
+### Data Flow (End-to-End)
+```
+Scraper → mapEvent() → upsert (triage_status defaults to 'pending')
+  ↓
+Auto-Sorter:
+  ├─ Known artist match? → Live Music (reviewed) → live feed
+  ├─ Keyword match? → Trivia/Food/Sports (reviewed) → live feed
+  └─ No match → stays pending → Triage inbox
+  ↓
+Admin Triage (manual):
+  ├─ Tap pill → categorized + reviewed → live feed
+  └─ Tap trash → deleted
+  ↓
+Error Correction:
+  └─ History tab → change dropdown → re-categorized live
+```
+
+### SQL Migration — Run BEFORE deploying
+```sql
+ALTER TABLE events ADD COLUMN IF NOT EXISTS triage_status TEXT DEFAULT 'pending';
+ALTER TABLE events ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Live Music';
+CREATE INDEX IF NOT EXISTS idx_events_triage ON events(triage_status, event_date);
+UPDATE events SET triage_status = 'reviewed' WHERE triage_status IS NULL OR triage_status = 'pending';
+```
+
+### Deploy Steps
+1. Run the SQL above in Supabase SQL Editor
+2. Deploy code
+3. Trigger a sync — check the response for `autoSort` stats
+4. Open /admin → Triage tab will show only unknowns the auto-sorter couldn't handle
+
+### Files Modified
+- `src/app/api/sync-events/route.js` — Auto-sorter pipeline (Phase 1)
+- `src/app/admin/page.js` — Triage tab (Phase 2), History tab category dropdown (Phase 3)
+- `src/app/api/admin/route.js` — triage filter, category/triage_status in PUT/POST, future-date filter for triage
+- `supabase-sprint1-triage.sql` — migration file
+
+---
+
+## Session: March 19, 2026 — Sprint 2: AI Artist Command Center + Scraper Memory
+
+### What Changed
+
+#### Sprint 2: Artist Metadata Command Center
+1. **Traffic Light Status Pills** (`src/app/admin/page.js`)
+   - Red = missing/null, Yellow = AI-generated pending review, Green = approved & live
+   - Powered by new `field_status JSONB` column on `artists` table
+   - Locked fields show 🔒 icon (from `is_human_edited JSONB`)
+
+2. **Granular Missing-Data Filters**
+   - Replaced single "Needs Info" toggle with four filter chips: Missing Bio, Missing Image, Missing Genre, Missing Vibe
+   - Combinable — checking multiple shows artists missing *any* of the selected fields
+   - CSV export respects active filters
+
+3. **Bulk AI Enrichment with Staging**
+   - Select artists → "Run AI Enrichment" → async progress bar
+   - AI-filled fields default to Yellow "pending" status (not live until admin approves)
+   - Respects `is_human_edited` lock — never overwrites human edits
+
+4. **Approve & Publish Workflow** (Edit Modal)
+   - Two save buttons: "Save Draft" (saves edits, locks changed fields) and "Approve & Publish" (sets all populated fields to Green/live, locks everything)
+   - Associated Events section shows venue, date, and source link for each event linked to the artist
+
+5. **Clean SVG Action Icons**
+   - Removed beer mug emoji and "Convert to Special" button
+   - Replaced with SVG pencil (edit) and SVG trash can (delete) matching Event Feed style
+
+6. **Smart Delete Modal**
+   - Clicking trash on an artist shows a confirmation modal with event count
+   - **Option A — "Delete & Hide Events"**: Deletes artist, archives linked upcoming events
+   - **Option B — "Delete & Keep Events"**: Deletes artist, keeps events live as "Other / Special Event" with null artist_id
+   - Deleted artists are automatically added to the blacklist (see Scraper Memory below)
+
+#### Event Feed Cleanup
+- Tab renamed "History" → **"Event Feed"**
+- Default sort: `created_at DESC` (most recently scraped at top)
+- Default filter: **Upcoming** (future + published)
+- Filter labels: **Upcoming** / **Past** / **Hidden**
+- Star/spotlight icon removed from rows (dedicated Spotlight tab handles this)
+- Inline category `<select>` dropdown on every row for error correction
+
+#### Triage Enhancements
+- **"Other / Special Event"** category added to triage pills, auto-sorter keywords, and Event Feed dropdown
+- **Instant Inbox Zero**: Tapping a pill or trash instantly removes the row (no save button)
+- **Undo Toast**: 5-second toast with clickable "Undo" button reverts category to null and restores the row
+- **Source Link**: Clickable `🔗 domain.com` link next to venue/date on triage cards (opens in new tab)
+
+#### Scraper Memory & Deduplication
+1. **Artist Blacklist** (`ignored_artists` table)
+   - When an admin deletes an artist, the name is added to `ignored_artists` with a lowercase index
+   - Sync route loads the full blacklist before enrichment and skips any matching names
+   - Prevents re-creation of deleted/fake artist profiles (e.g., "Kids Easter Egg Hunt")
+
+2. **Human-Edit Protection** (`is_human_edited` on events)
+   - New `is_human_edited BOOLEAN` column on events table
+   - Automatically set to `true` when admin changes category via triage, Event Feed dropdown, or any admin PUT
+   - Sync route skips human-edited events during enrichment — the scraper never overwrites admin changes
+   - Backfill marks existing non-"Live Music" categorized events as human-edited
+
+3. **Event Deduplication**
+   - Already handled by `external_id` upsert (`onConflict: 'external_id'`) — scraper-generated unique IDs prevent duplicates
+   - Upsert only updates columns present in the scraper payload — `category`, `triage_status`, `is_human_edited` are NOT in the payload, so they're never overwritten
+
+### Data Migration — Run BEFORE deploying
+
+```sql
+-- Sprint 2: AI Artist Command Center
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS is_human_edited JSONB DEFAULT '{}';
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS field_status JSONB DEFAULT '{}';
+
+UPDATE artists SET field_status = jsonb_build_object(
+  'bio', CASE WHEN bio IS NOT NULL THEN 'live' ELSE null END,
+  'image_url', CASE WHEN image_url IS NOT NULL THEN 'live' ELSE null END,
+  'genres', CASE WHEN genres IS NOT NULL AND array_length(genres, 1) > 0 THEN 'live' ELSE null END,
+  'vibes', CASE WHEN vibes IS NOT NULL AND array_length(vibes, 1) > 0 THEN 'live' ELSE null END
+)
+WHERE field_status = '{}' OR field_status IS NULL;
+
+-- Scraper Memory: Artist Blacklist
+CREATE TABLE IF NOT EXISTS ignored_artists (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name TEXT NOT NULL,
+  name_lower TEXT NOT NULL,
+  reason TEXT DEFAULT 'admin_deleted',
+  deleted_by TEXT DEFAULT 'admin',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ignored_artists_name ON ignored_artists(name_lower);
+ALTER TABLE ignored_artists ENABLE ROW LEVEL SECURITY;
+
+-- Scraper Memory: Human-Edit Protection
+ALTER TABLE events ADD COLUMN IF NOT EXISTS is_human_edited BOOLEAN DEFAULT false;
+UPDATE events SET is_human_edited = true
+WHERE is_human_edited = false
+  AND triage_status = 'reviewed'
+  AND category IS NOT NULL
+  AND category != 'Live Music';
+```
+
+### Files Modified
+- `src/app/admin/page.js` — Full Artists tab overhaul (traffic lights, filters, bulk enrichment, approve workflow, smart deletes, edit modal with associated events), Event Feed renaming/filtering, triage enhancements (Other category, undo toast, source links)
+- `src/app/api/admin/route.js` — `is_human_edited` auto-set on category change, `artist_id` in PUT allowlist
+- `src/app/api/admin/artists/route.js` — Smart delete (hide-events/unlink-events/count-events modes), blacklist insertion on delete
+- `src/app/api/sync-events/route.js` — Blacklist loading, human-edit skip, enrichment stats (blacklistedSkipped, humanEditedSkipped), "Other / Special Event" keyword routing
+- `supabase-sprint2-artists.sql` — `is_human_edited` JSONB, `field_status` JSONB, backfill
+- `supabase-scraper-memory.sql` — `ignored_artists` table, `is_human_edited` on events, backfill
+
+### Deploy Steps
+1. Run the SQL migration above in Supabase SQL Editor
+2. Deploy code (`npx vercel --prod`)
+3. Trigger a sync — check response for `blacklistedSkipped` and `humanEditedSkipped` stats
+4. Open /admin → Artists tab to verify traffic light pills and filters
+
+---
+
+## Session: March 19, 2026 — AI Pipeline Polish, UX Fixes & Bug Fix
+
+### What Changed
+
+#### AI System Prompts (Backend LLM Integration)
+- **Bio Writer** — Updated prompt: "Strictly 2-3 sentences, under 60 words, MUST complete final sentence." Removed hard `.slice(0, 400)` truncation. `max_tokens` already at 600.
+- **Genre/Vibe Tagger** — Strict allowlist enforcement with canonical lists synced between `ai-lookup/route.js` and `src/lib/utils.js`
+- **Price Extractor** — Regex-first (no AI credits): extracts "$X Cover" for bars, "From $X" for ticketed events, "Free" for free. Cleans up Ticketmaster decimal checkout totals (estimates base price by backing out ~27% fees). Runs every sync.
+- **Image Search** — Serper.dev integration: queries `"[Artist Name] band live music"`, returns top 5 URLs for carousel. Fallback: 8 Unsplash music placeholders.
+
+#### Canonical Allowed Tags (`src/lib/utils.js`)
+- **Genres:** Rock, Pop, Country, Acoustic, Cover Band, DJ, Electronic, Jazz, Blues, Reggae, R&B, Hip Hop, Emo, Punk, Metal, Indie, Folk
+- **Vibes:** High Energy, Chill, Dance Party, Sing-along, Background Music, Heavy, Family Friendly
+
+#### Admin UX Polish
+- **Image Carousel** — `< >` overlay arrows on Mobile Preview pane cycle through top 5 Serper results. "Search for images" button triggers Serper when carousel is empty. Counter shows "2 of 5".
+- **Regenerate Buttons** — Per-field 🔄 icons next to Bio, Genres, and Image URL in edit modal. Forces fresh AI call for that single field, bypasses smart-skip.
+- **Sticky Table Header** — Artist table header (ARTIST / STATUS / ACTIONS) now pinned with `position: sticky; top: 0`.
+- **Search Bar** — Capped at `max-width: 400px`. Clear X icon inside right edge (only visible when text present, clears and re-fetches on click).
+- **Status Pills** — Changed to `flex-wrap: nowrap; min-width: 220px` so all four pills (Bio, Img, Genre, Vibe) stay on one line.
+- **Modal Copy** — AI Enrichment confirmation now reads "images, bios, genres, and vibes" (was missing "images").
+- **Sticky Bulk Action Bar** — Floating bar at viewport bottom (only when artists selected) with count, "Deselect All", and "Run AI Enrichment" button + progress bar.
+- **Magic Wand Shortcut** — Sparkle SVG icon on every artist row for instant single-artist AI enrichment (bypasses checkbox workflow).
+- **Enrichment Confirmation Modal** — Lists selected artist names with avatars and missing-field indicators before executing.
+
+#### Bug Fix: Client-Side Crash on "Keep Events" Delete
+- **Root Cause:** The delete modal handlers called `setDeleteConfirm(null)` before the async API call, then referenced `deleteConfirm.artist.id` and `deleteConfirm.artist.name` in subsequent lines. After React re-rendered with `deleteConfirm = null`, the stale closure references caused the crash.
+- **Fix:** Destructure `const { artist, eventCount } = deleteConfirm` into local variables BEFORE calling `setDeleteConfirm(null)`. Both Option A (Hide Events) and Option B (Keep Events) handlers are now safe.
+
+### Files Modified
+- `src/app/api/admin/artists/ai-lookup/route.js` — Two-pass Perplexity (Bio Writer + Genre/Vibe Tagger) + Serper image search returning `image_candidates[]`, updated bio prompt (word limit, no truncation)
+- `src/app/api/sync-events/route.js` — Price extractor (regex + decimal cleanup), auto-sorter "Other" keywords
+- `src/app/admin/page.js` — Image carousel, regenerate buttons, sticky header, search bar resize/clear, status pill nowrap, modal copy, sticky bulk action bar, magic wand icon, enrichment confirmation modal, delete crash fix
+- `src/lib/utils.js` — Canonical GENRES and VIBES arrays aligned with AI prompts
+
+#### Bulk Delete Feature
+- **Sticky bar** now has red "Delete (N)" button alongside AI Enrich button
+- **Bulk delete confirmation modal** — fetches aggregate event counts, shows artist name list, Option A (Delete & Hide Events) / Option B (Delete & Keep Events as "Other")
+- Option B only shown when linked events exist
+
+#### Critical Bug Fix: Deleted Artists Reappearing
+- **Root cause:** Multiple code paths re-created deleted artists from event data:
+  1. `/api/enrich-artists` standalone endpoint called `enrichWithLastfm` without blacklist
+  2. `/api/admin/artists/backfill` scanned all events and re-inserted blacklisted names
+  3. Sync route enrichment queried ALL events regardless of category — drink specials triggered artist creation
+  4. Delete API nulled `artist_id` but left `artist_name` intact, allowing enrichment to re-create the row
+  5. Delete API only cleaned upcoming published events, missing past/archived ones
+- **Fixes applied (5 layers of protection):**
+  1. `enrichWithLastfm` now accepts `{ blacklist }` param and rejects matching names
+  2. `/api/enrich-artists` loads blacklist and filters names before enrichment
+  3. `/api/admin/artists/backfill` loads blacklist and skips matching names
+  4. Sync route enrichment now filters to ONLY `Live Music` or uncategorized events: `.or('category.is.null,category.eq.Live Music')`
+  5. Auto-sorter sets `artist_id = null` on non-music events when categorizing
+  6. Delete API now sets `is_human_edited = true` on ALL events matching the artist name (nuclear cleanup)
+  7. Delete API "hide-events" and "unlink-events" modes now also set `is_human_edited = true`
+
+#### Bug Fix: Client-Side Crash on Delete Modal
+- **Root cause:** `showQueueToast({ msg: '...' })` double-wrapped the message object. `showQueueToast` already wraps in `{ msg, undoFn }`, so passing an object created `{ msg: { msg: '...' } }` which React couldn't render.
+- **Fix:** Changed delete handlers to pass plain strings: `showQueueToast('Deleted...')`
+- **Also fixed:** Destructure `const { artist, eventCount } = deleteConfirm` before `setDeleteConfirm(null)` to prevent stale closure references
+
+### Files Modified
+- `src/app/api/admin/artists/ai-lookup/route.js` — Serper top-5 carousel, bio prompt word limit, image candidates array
+- `src/app/api/admin/artists/route.js` — Nuclear cleanup on delete (is_human_edited on all matching events)
+- `src/app/api/admin/artists/backfill/route.js` — Blacklist check added
+- `src/app/api/sync-events/route.js` — Category filter on enrichment query, auto-sorter nulls artist_id on non-music, price extractor
+- `src/app/api/enrich-artists/route.js` — Blacklist check added
+- `src/lib/enrichLastfm.js` — Blacklist parameter support
+- `src/app/admin/page.js` — Image carousel, regenerate buttons, sticky header, search resize/clear, status pill nowrap, bulk delete, sticky bar, magic wand, enrichment confirmation modal, delete crash fixes
+- `src/lib/utils.js` — Canonical GENRES and VIBES arrays
+
+### No SQL Migration Needed
+All changes are code-only. Existing DB columns are sufficient.
+
+---
+
+---
+
+## Session: March 20, 2026 — Admin Overhaul, Data Cleanup & Spotlight Fix
+
+### Critical Bug Fix: UTC Timezone Mismatch (Root Cause of Multiple Issues)
+
+**Problem:** Events stored in Supabase use UTC timestamps. An 8:30 PM Eastern show becomes `2026-03-21T00:30:00Z` — the UTC date is the *next day*. Every piece of code that compared dates using `.slice(0, 10)` (string-based UTC date extraction) would miss evening events entirely.
+
+**Affected areas (all fixed):**
+- Spotlight picker: filtered today's events by UTC date string, missing all evening shows
+- Spotlight GET API: same UTC date range issue, missed events after ~7 PM Eastern
+- Spotlight Tier 3 evening range: used UTC times instead of Eastern-adjusted
+- Artist "Next Event" column: minor impact (display only)
+
+**Fix pattern — use everywhere going forward:**
+```javascript
+// WRONG — compares UTC date, misses evening events
+const match = (ev.event_date || '').slice(0, 10) === '2026-03-20';
+
+// RIGHT — converts to Eastern before comparing
+const evDateET = new Date(ev.event_date).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+const match = evDateET === '2026-03-20';
+
+// RIGHT (server-side) — extend UTC range to cover Eastern evening
+const dateStart = `${date}T04:00:00`;   // midnight ET = 4-5 AM UTC
+const dateEnd = `${nextDateStr}T05:59:59`; // covers through ~1 AM ET next day
+```
+
+**Rule for future development:** Never use `.slice(0, 10)` on UTC ISO strings to compare dates in the Jersey Shore timezone. Always convert to `America/New_York` first, or use extended UTC ranges.
+
+### Critical Bug Fix: Spotlight Save Flow
+
+**Problem:** The spotlight save appeared to succeed but data reverted on reload. Three layered issues:
+
+1. **`spotlight_events` table didn't exist** — the POST endpoint wrote to it, got a 500 error, but the UI didn't check the response status. The GET endpoint never read from it either (only checked `is_featured` on events table).
+2. **Stale ghost IDs** — deleted/past event IDs persisted in `spotlightPins` state array. The display filtered them visually but the raw array still sent them to the save API, polluting the database.
+3. **Async race condition** — `fetchSpotlight` loaded pin IDs before `fetchSpotlightEvents` finished, so pin validation against the events list always failed.
+
+**Fix:**
+- Created `spotlight_events` table (see SQL migrations below)
+- GET endpoint now reads from `spotlight_events` first; returns admin pins immediately if they exist, skips algorithm
+- `fetchSpotlightEvents` now returns the events array; `fetchSpotlight` awaits it and filters pins synchronously before setting state
+- `saveSpotlight` filters stale IDs from `spotlightPins` before writing to DB
+- `toggleSpotlightPin` auto-purges stale IDs on every interaction
+
+### Admin Bulk Tools
+
+**Bulk Delete (upgraded):**
+- Sticky bar Delete button now fetches per-artist event counts
+- Modal shows granular list: each artist with their individual upcoming event count
+- Red (Delete & Hide) and Yellow (Delete & Keep as Other) buttons
+
+**Merge Duplicates (new):**
+- Blue "Merge (N)" button appears when 2+ artists checked
+- Modal with radio buttons to select master profile (shows avatar, data status pills)
+- Execution: transfers all events from duplicates to master (by `artist_id` and `artist_name`), saves duplicate names as aliases, deletes duplicate rows
+- API: `POST /api/admin/artists/merge` — `{ masterId, duplicateIds[] }`
+
+**Bulk Edit Time (new):**
+- Checkbox column on Events table with select-all
+- Bulk action bar with "Edit Time (N)" button
+- Modal with single time input; updates `event_date` on all selected events (preserves date, changes time only)
+- Selection clears on search change, filter change, or after save
+
+### Event Title Field
+
+- New `event_title` column on events table (nullable)
+- Added to Edit Event modal above Artist Name field
+- Display priority: `event_title > artist_name` across all components (EventCard, EventCardV2, SiteEventCard, SpotlightCarousel, HeroSection)
+- Use case: festival events like "Annual Mushfest" featuring artist "Mushmouth"
+
+### Artist Edit Enhancements
+
+**Editable Artist Name:**
+- Name field added to top of edit modal
+- Renaming auto-saves old name as alias (prevents scraper from re-creating duplicates)
+- Events linked to the artist get their `artist_name` updated
+
+**Artist Aliases System:**
+- New `artist_aliases` table: `artist_id`, `alias`, `alias_lower` (unique index)
+- Populated automatically on: artist rename, merge, name correction
+- Scraper checks aliases before creating new artists (`enrichWithLastfm` + sync route event-linking)
+- Prevents the "renamed artist reappears as duplicate" problem
+
+**Genre/Vibe Tag Pickers:**
+- Converted from free-text inputs to clickable pill buttons (multi-select)
+- Controlled vocabulary enforced in UI, AI prompt, and server-side validation
+- Genres: Rock, Pop, Country, Reggae, Jazz/Blues, R&B/Soul, Hip-Hop, EDM/DJ, Tribute/Cover, Alternative, Jam Band
+- Vibes: High-Energy, Chill/Acoustic, Dance Heavy, Sing-Along, Background Music, Family Friendly, Late Night
+- Migration script maps old freeform values to new vocabulary (`supabase-migrate-tags.sql`)
+
+### Event Feed UI Overhaul
+
+- View filters (Upcoming/Past/Hidden) changed from orange pills to clean underline tabs
+- Sort buttons replaced with single dropdown: "Sort by: Event Date (soonest)" etc.
+- Server-side filtering via `?status=upcoming|past|hidden` param on admin API — fixes the "0 events on load" bug
+- Default sort: `event_date asc` (tonight's events at top)
+- Search bar with clear X button
+- Event selection state clears on search/filter/tab changes
+
+### Live Feed & Cache Fixes
+
+**Artist data JOIN:**
+- Public `/api/events` now JOINs `artists(name, bio, image_url, genres, vibes, is_tribute, instagram_url)`
+- Admin `/api/admin` also JOINs `artists(name, image_url)`
+- Frontend components prioritize artist-level data over stale event-level fields
+
+**Image priority (all card components):**
+```
+artist_image > image_url > venue_photo > branded gradient fallback
+```
+
+**Cache revalidation:**
+- Artist PUT endpoint now calls `revalidatePath('/')` and `revalidatePath('/api/events')`
+- Public events API set to `force-dynamic`
+
+**Branded fallback graphics:**
+- HeroSection and SpotlightCarousel use orange/teal gradient with subtle "MYLOCALJAM" watermark when no image exists
+- Replaces broken Unsplash placeholder URLs
+
+### Scraper Improvements
+
+**Deduplication:**
+- Added unique index on `external_id` column (was missing — root cause of all duplicate events)
+- Crossroads duplicates purged (old slug-format vs new numeric-format `external_id`)
+- `supabase-dedup.sql` migration handles cleanup
+
+**Instagram/Facebook image blacklist:**
+- Serper image search now filters out `instagram.com`, `lookaside`, `scontent`, `facebook.com` CDN URLs
+- These domains block hotlinking with CORS/403 errors
+
+**Artist alias awareness:**
+- `enrichWithLastfm` checks `artist_aliases` table before creating new artist profiles
+- Sync route event-linking augments the name-to-artist map with alias lookups
+
+### Mobile App Updates
+
+**Flag modal — "Other / Incorrect Info":**
+- Third option added to EventCardV2 flag bottom-sheet
+- Progressive disclosure: tapping reveals text area (200 char limit) + "Submit Report" button
+- Posts to existing `/api/reports` endpoint with `issue_type: 'other'`
+
+**Admin Reports tab rebuilt:**
+- Color-coded type pills (red cancel, yellow cover, blue other)
+- Shows venue, date, user's quoted text, timestamp
+- "Edit Event" button opens the event directly in the edit modal
+
+**Event modal cleanup:**
+- Removed deprecated Recurring and Spotlight checkboxes
+- Genre/Vibe dropdowns show inherited artist values as placeholder ("Inheriting: Rock, High-Energy")
+- Override logic: event-level genre/vibe takes priority over artist-level on the live feed
+
+### Spotlight Picker UX
+
+- Missing-image warning badge ("⚠️ No Image") on events without artist image
+- Warning modal intercepts pin attempt: "Edit Artist Profile" or "Spotlight with Default Graphic"
+- Search bar added to spotlight picker (same logic as Event Feed)
+- Stale/ghost pins auto-purged from state and database
+
+### SQL Migrations Required (Run in Supabase SQL Editor)
+
+1. `supabase-event-title.sql` — `event_title` column on events
+2. `supabase-dedup.sql` — unique index on `external_id`, purges duplicates
+3. `supabase-artist-aliases.sql` — aliases table for scraper memory
+4. `supabase-migrate-tags.sql` — maps old genre/vibe strings to controlled vocabulary
+5. `spotlight_events` table — manual pins for spotlight carousel
+
+### Files Created
+- `src/app/api/admin/artists/merge/route.js` — merge duplicates endpoint
+
+### Files Modified
+- `src/app/admin/page.js` — bulk delete upgrade, merge tool, bulk edit time, event title field, artist name editing, genre/vibe tag pickers, event feed UI overhaul, spotlight picker with search/warnings/stale-pin cleanup
+- `src/app/api/admin/route.js` — `event_title` support, server-side status filtering, artists JOIN
+- `src/app/api/admin/artists/route.js` — rename + alias creation, next_event_date attachment, cache revalidation
+- `src/app/api/admin/artists/merge/route.js` — alias creation on merge
+- `src/app/api/admin/artists/ai-lookup/route.js` — Instagram CDN blacklist, updated genre/vibe seed lists
+- `src/app/api/events/route.js` — artists JOIN, force-dynamic
+- `src/app/api/spotlight/route.js` — reads from spotlight_events table first, Eastern-aware date ranges
+- `src/app/api/sync-events/route.js` — alias-aware event linking, explicit upsert options
+- `src/app/api/flag-event/route.js` — unchanged (Other reports go through /api/reports)
+- `src/app/page.js` — event_title priority, genre/vibe override logic, artist image priority
+- `src/components/EventCard.js` — event_title display
+- `src/components/EventCardV2.js` — artist image priority, "Other" flag option
+- `src/components/SiteEventCard.js` — event_title + artist image
+- `src/components/SpotlightCarousel.js` — artist image priority, branded fallback watermark
+- `src/components/HeroSection.js` — artist image priority, branded gradient fallbacks
+- `src/lib/enrichLastfm.js` — alias-aware cache lookup
+- `src/lib/utils.js` — updated genre/vibe controlled vocabulary
+
+---
+
+## Session: March 21, 2026 — Follow Action Sheet, Mobile Hover Fix, Google Auth Cleanup
+
+### What Changed
+
+1. **Follow Action Bottom Sheet** (`src/components/FollowActionSheet.js`) — New component replacing the toast upsell when saving an event. Full bottom sheet menu with tonal burnt-orange buttons (#3E2723 bg, white text). Menu options: Follow Artist, Follow Venue, Follow Both (heart icon), Save Event Only, Cancel. The plus icon does NOT toggle until after a menu selection. Matches existing flag sheet pattern (overlay, slideUp animation, drag handle).
+
+2. **Event save flow rewrite** (`src/app/page.js`) — `toggleFavorite` now opens the Follow Action Sheet instead of immediately saving + showing a toast. If already saved, unsaves immediately. Added `followSheet` state, extracted `saveEventToDb`/`unsaveEventFromDb`, added `handleFollowSheetAction` callback.
+
+3. **Mobile hover bug fix** (`src/components/EventCardV2.js`) — Removed JS `onMouseEnter`/`onMouseLeave` handlers from share and flag buttons. Replaced with CSS `@media (hover: hover)` query so hover highlights only activate on devices with real hover support (prevents stuck highlight on mobile touchscreens).
+
+4. **Privacy & Terms pages** — Created `/privacy` (`src/app/privacy/page.js`) and `/terms` (`src/app/terms/page.js`) for Google OAuth compliance. Dark themed, DM Sans font, orange accents, contact: mylocaljam@gmail.com.
+
+5. **Google Auth — signInWithIdToken attempt & revert** — Attempted to switch from `signInWithOAuth` (redirect through Supabase) to `signInWithIdToken` (client-side popup via Google Identity Services) to eliminate the Supabase project URL from the Google consent screen. Created `GoogleOAuthWrapper.js`, installed `@react-oauth/google`. After multiple failures (One Tap unreliable on mobile, session conflicts, hidden button proxy-click issues), **reverted entirely** to standard `signInWithOAuth`. Removed GoogleOAuthWrapper from `layout.js`, restored clean AuthModal.js with custom-styled Google/Apple buttons.
+
+### Files Created
+- `src/components/FollowActionSheet.js`
+- `src/app/privacy/page.js`
+- `src/app/terms/page.js`
+- `src/components/GoogleOAuthWrapper.js` (created then made unused by revert — can be deleted)
+
+### Files Modified
+- `src/app/page.js` — Follow Action Sheet integration, save flow rewrite
+- `src/components/EventCardV2.js` — `@media (hover: hover)` CSS fix
+- `src/components/AuthModal.js` — Reverted to clean `signInWithOAuth` (no GIS/signInWithIdToken code)
+- `src/app/layout.js` — Removed GoogleOAuthWrapper, back to simple `<body>{children}</body>`
+- `.env.local` — Added `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
+- `.env.local.example` — Added `NEXT_PUBLIC_GOOGLE_CLIENT_ID` placeholder
+- `package.json` / `package-lock.json` — `@react-oauth/google` installed (unused, can be removed)
+
+### Env Vars
+- `NEXT_PUBLIC_GOOGLE_CLIENT_ID` — `952608961093-8fm1g85hfhcfs3ohgm8o44kom4mp4v4f.apps.googleusercontent.com` (already in `.env.local` and Vercel)
+
+### Pending / TODO
+- **Google Brand Verification** — Submit app for official Brand Verification in Google Cloud Console so the consent screen displays "mylocaljam" branding instead of the raw Supabase project URL (`ugmyqucizialapfulens.supabase.co`). Go to Google Cloud Console → APIs & Services → OAuth consent screen → publish app and submit for verification. Requires privacy policy URL (`https://mylocaljam.com/privacy`) and terms URL (`https://mylocaljam.com/terms`) — both are deployed.
+- **Delete `GoogleOAuthWrapper.js`** — No longer used after revert. Can be safely removed.
+- **Optionally uninstall `@react-oauth/google`** — No longer used. Run `npm uninstall @react-oauth/google` if desired, or leave as harmless dep.
 
 ---
 

@@ -166,16 +166,11 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             }}
           >
             {isFavorited ? (
-              /* Material: check_circle filled — orange fill, black checkmark */
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" fill="#E8722A" />
-                <path d="M10 15l-3.5-3.5 1.41-1.41L10 12.17l5.59-5.59L17 8l-7 7z" fill="#1C1917" />
-              </svg>
+              /* Material Icon: check_circle — filled orange circle with black checkmark */
+              <span className="material-icons" style={{ fontSize: '26px', color: '#E8722A' }}>check_circle</span>
             ) : (
-              /* Material: add_circle_outline — brand orange */
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="#E8722A" />
-              </svg>
+              /* Material Icon: add_circle_outline — brand orange */
+              <span className="material-icons" style={{ fontSize: '26px', color: '#E8722A' }}>add_circle_outline</span>
             )}
           </button>
 
