@@ -18,15 +18,20 @@ const DEFAULT_CONFIG = { color: '#E8722A', bg: '#E8722A', emoji: '🎵' };
 
 export default function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = true, onFollowArtist, isArtistFollowed, onFlag }) {
   const [expanded, setExpanded] = useState(false);
+  const [bioExpanded, setBioExpanded] = useState(false);
   const [flagSheet, setFlagSheet] = useState(false);
   const [flagSubmitting, setFlagSubmitting] = useState(false);
+  const [flagOtherOpen, setFlagOtherOpen] = useState(false);
+  const [flagOtherText, setFlagOtherText] = useState('');
 
   if (!event) return null;
 
-  const name       = event.name        || event.artist_name || '';
+  const name       = event.name        || event.event_title || event.artist_name || '';
   const venue      = event.venue       || event.venue_name  || '';
   const desc       = event.description || event.artist_bio  || '';
-  const imageUrl   = event.image_url   || event.venue_photo || null;
+  const imageUrl   = event.artist_image || event.image_url || event.venue_photo || null;
+  const genres     = event.artist_genres || [];
+  const isTribute  = event.is_tribute || false;
   const rawSource  = event.source       || null;
   const sourceLink = rawSource && /^https?:\/\//i.test(rawSource) ? rawSource : null;
   const category   = event.genre       || event.vibe        || 'Live Music';
@@ -55,10 +60,17 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
   const handleFlag = async (flagType) => {
     setFlagSubmitting(true);
     try {
+      // Also increment the flag counter on the event
       await fetch('/api/flag-event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_id: event.id, flag_type: flagType }),
+      });
+      // Create a report row so it appears in the admin User Flags queue
+      await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: event.id, issue_type: flagType, description: null }),
       });
       onFlag?.(`Flag submitted — thanks for the heads up!`);
     } catch {
@@ -78,24 +90,22 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
       border: `1px solid ${borderColor}`,
       opacity: isCanceled ? 0.6 : 1,
     }}>
-      {/* Left accent bar */}
-      <div style={{ width: '4px', flexShrink: 0, background: isCanceled ? '#DC2626' : config.color }} />
-
       {/* Card body */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 
         {/* Compact row */}
         <div
-          onClick={() => setExpanded(e => !e)}
-          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 10px', cursor: 'pointer' }}
+          onClick={() => { setExpanded(e => { if (e) setBioExpanded(false); return !e; }); }}
+          style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px 11px 0', cursor: 'pointer' }}
         >
-          {/* Colored time block — flat for top-of-hour, stacked for half-hours */}
+          {/* Colored time block — ticket stub with perforation */}
           <div style={{
             background: isCanceled ? '#DC2626' : config.bg,
             color: isCanceled ? '#FFFFFF' : '#1C1917',
             fontWeight: 900,
             width: '48px', height: '48px',
-            borderRadius: '8px', flexShrink: 0,
+            borderRadius: '12px 0 0 12px', flexShrink: 0,
+            borderRight: '2px dashed rgba(255,255,255,0.4)',
             display: 'flex',
             flexDirection: (timeStr && timeStr.includes(':')) ? 'column' : 'row',
             alignItems: 'center', justifyContent: 'center',
@@ -117,9 +127,6 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             })()}
           </div>
 
-          {/* Category emoji */}
-          <span style={{ fontSize: '15px', flexShrink: 0 }}>{config.emoji}</span>
-
           {/* Event name + venue stacked */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
             <span style={{
@@ -134,7 +141,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             </span>
             {venue && (
               <span style={{
-                fontSize: '14px', fontWeight: 600, color: venueColor,
+                fontSize: '13px', fontWeight: 500, color: darkMode ? '#A0A0B8' : '#9CA3AF',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
                 {venue}
@@ -142,23 +149,61 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             )}
           </div>
 
-          {/* Save heart */}
+          {/* Save button — hero CTA: orange ⊕ → filled orange circle with black check */}
           <button
-            onClick={e => { e.stopPropagation(); onToggleFavorite?.(event.id); }}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px',
-              fontSize: '18px', color: isFavorited ? '#E8722A' : heartOff, flexShrink: 0,
-              transition: 'transform 0.15s, color 0.15s',
-              transform: isFavorited ? 'scale(1.2)' : 'scale(1)',
+            onClick={e => {
+              e.stopPropagation();
+              // Haptic feedback on mobile
+              try { navigator?.vibrate?.(10); } catch {}
+              onToggleFavorite?.(event.id);
             }}
-          >{isFavorited ? '♥' : '♡'}</button>
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+              flexShrink: 0,
+              transition: 'transform 0.15s ease',
+              transform: isFavorited ? 'scale(1.15)' : 'scale(1)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            {isFavorited ? (
+              /* Material: check_circle filled — orange fill, black checkmark */
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" fill="#E8722A" />
+                <path d="M10 15l-3.5-3.5 1.41-1.41L10 12.17l5.59-5.59L17 8l-7 7z" fill="#1C1917" />
+              </svg>
+            ) : (
+              /* Material: add_circle_outline — brand orange */
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="#E8722A" />
+              </svg>
+            )}
+          </button>
 
-          {/* Chevron */}
-          <span style={{
-            fontSize: '9px', color: chevronCol, flexShrink: 0,
-            transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.2s',
-          }}>▼</span>
+          {/* Share button — ghost secondary: muted slate, hover brightens */}
+          <button
+            className="share-btn"
+            onClick={e => {
+              e.stopPropagation();
+              const shareText = `${name} at ${venue}`;
+              const shareUrl = event.ticket_url || event.source || window.location.href;
+              if (navigator.share) {
+                navigator.share({ title: shareText, url: shareUrl }).catch(() => {});
+              } else {
+                navigator.clipboard?.writeText(`${shareText} — ${shareUrl}`);
+              }
+            }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+              flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: darkMode ? '#5A5A7A' : '#94A3B8',
+              transition: 'color 0.2s ease',
+            }}
+          >
+            {/* Material: ios_share */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill="currentColor" />
+            </svg>
+          </button>
         </div>
 
         {/* Expanded detail panel — always rendered, animated via max-height */}
@@ -241,32 +286,91 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               </div>
             )}
 
-            {/* Description */}
+            {/* Bio / Description — 3-line clamp with Read More */}
             {desc && (
-              <p style={{ fontSize: '13px', color: textDesc, lineHeight: 1.5, margin: '6px 0 8px' }}>
-                {desc}
-              </p>
+              <div style={{ margin: '6px 0 8px' }}>
+                <p style={{
+                  fontSize: '13px', color: textDesc, lineHeight: 1.5, margin: 0,
+                  ...(bioExpanded ? {} : {
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }),
+                }}>
+                  {desc}
+                </p>
+                {desc.length > 120 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setBioExpanded(prev => !prev); }}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0 0',
+                      fontSize: '12px', fontWeight: 600, color: '#E8722A',
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}
+                  >
+                    {bioExpanded ? 'Show Less' : 'Read More'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Genre chips + Tribute badge */}
+            {(genres.length > 0 || isTribute) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', margin: '4px 0 6px' }}>
+                {isTribute && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '3px',
+                    fontSize: '10px', fontWeight: 700, padding: '3px 8px',
+                    borderRadius: '999px', background: darkMode ? '#2A1A2A' : '#FDF2F8',
+                    color: darkMode ? '#F0ABFC' : '#A21CAF',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    🎭 Tribute
+                  </span>
+                )}
+                {genres.map(g => (
+                  <span key={g} style={{
+                    fontSize: '10px', fontWeight: 600, padding: '3px 8px',
+                    borderRadius: '999px',
+                    background: darkMode ? '#1E1E2E' : '#F3F4F6',
+                    color: darkMode ? '#9898B8' : '#6B7280',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    {g}
+                  </span>
+                ))}
+              </div>
             )}
 
             {/* Action row — single flex line: Follow | Venue | Tickets | Flag */}
             {!isCanceled && (
               <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                {/* 1. Follow Artist (far left, primary action) */}
+                {/* 1. Follow Artist (far left, primary action) — Spotify paradigm */}
                 {onFollowArtist && name && (
                   <button
                     onClick={e => { e.stopPropagation(); onFollowArtist(name); }}
                     style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      display: 'inline-flex', alignItems: 'center', gap: '5px',
                       fontSize: '11px', fontWeight: 700,
                       padding: '7px 14px', borderRadius: '999px', cursor: 'pointer',
-                      border: isArtistFollowed ? 'none' : '1.5px solid #E8722A',
-                      background: isArtistFollowed ? (darkMode ? '#1E3A1E' : '#DCFCE7') : 'transparent',
-                      color: isArtistFollowed ? (darkMode ? '#8DD888' : '#16A34A') : '#E8722A',
+                      border: isArtistFollowed ? '1.5px solid #E8722A' : `1.5px solid ${darkMode ? '#5A5A7A' : '#9CA3AF'}`,
+                      background: isArtistFollowed ? (darkMode ? 'rgba(232,114,42,0.12)' : 'rgba(232,114,42,0.08)') : 'transparent',
+                      color: isArtistFollowed ? '#E8722A' : (darkMode ? '#C0C0D0' : '#6B7280'),
                       transition: 'all 0.2s ease',
                       fontFamily: "'DM Sans', sans-serif",
                     }}
                   >
-                    {isArtistFollowed ? '✓ Following' : '+ Follow Artist'}
+                    {isArtistFollowed ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="#E8722A" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                        <path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor" />
+                      </svg>
+                    )}
+                    {isArtistFollowed ? 'Following' : 'Follow Artist'}
                   </button>
                 )}
 
@@ -293,6 +397,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
 
                 {/* 3. Flag icon (far right, muted, larger touch target) */}
                 <button
+                  className="flag-btn"
                   onClick={e => { e.stopPropagation(); setFlagSheet(true); }}
                   style={{
                     marginLeft: 'auto',
@@ -304,8 +409,6 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                     display: 'flex', alignItems: 'center', flexShrink: 0,
                     lineHeight: 1,
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.color = '#E8722A'; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = '#A0A0A0'; }}
                   title="Report an issue"
                 >
                   ⚑
@@ -398,9 +501,92 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                 Cover Charge Added
               </button>
 
+              {/* Other / Incorrect Info */}
+              <button
+                onClick={() => setFlagOtherOpen(prev => !prev)}
+                disabled={flagSubmitting}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  width: '100%', padding: '14px 16px', borderRadius: '12px',
+                  border: `1px solid ${darkMode ? '#1A2A2A' : '#E0F2FE'}`,
+                  background: darkMode ? '#101A1E' : '#F0F9FF',
+                  color: darkMode ? '#7DD3FC' : '#0369A1',
+                  fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'transform 0.1s',
+                }}
+              >
+                <span style={{ fontSize: '20px' }}>💬</span>
+                Other / Incorrect Info
+              </button>
+
+              {/* Expandable text area for Other reports */}
+              {flagOtherOpen && (
+                <div style={{
+                  padding: '12px', borderRadius: '12px',
+                  background: darkMode ? '#14141E' : '#F9FAFB',
+                  border: `1px solid ${sheetBorder}`,
+                }}>
+                  <textarea
+                    value={flagOtherText}
+                    onChange={e => { if (e.target.value.length <= 200) setFlagOtherText(e.target.value); }}
+                    placeholder="What's wrong? (e.g. wrong time, wrong band name, venue changed...)"
+                    maxLength={200}
+                    rows={3}
+                    style={{
+                      width: '100%', padding: '10px 12px', borderRadius: '8px',
+                      background: darkMode ? '#1A1A24' : '#FFFFFF',
+                      border: `1px solid ${sheetBorder}`,
+                      color: textPrimary, fontSize: '13px',
+                      fontFamily: "'DM Sans', sans-serif",
+                      outline: 'none', resize: 'none',
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                    <span style={{ fontSize: '11px', color: textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+                      {flagOtherText.length}/200
+                    </span>
+                    <button
+                      disabled={flagSubmitting || !flagOtherText.trim()}
+                      onClick={async () => {
+                        setFlagSubmitting(true);
+                        try {
+                          await fetch('/api/reports', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              event_id: event.id,
+                              issue_type: 'other',
+                              description: flagOtherText.trim(),
+                            }),
+                          });
+                          onFlag?.('Report submitted — thanks for the heads up!');
+                        } catch {
+                          onFlag?.('Something went wrong. Please try again.');
+                        }
+                        setFlagSubmitting(false);
+                        setFlagSheet(false);
+                        setFlagOtherOpen(false);
+                        setFlagOtherText('');
+                      }}
+                      style={{
+                        padding: '8px 18px', borderRadius: '8px',
+                        background: flagOtherText.trim() ? '#E8722A' : (darkMode ? '#2A2A3A' : '#D1D5DB'),
+                        color: flagOtherText.trim() ? '#fff' : textMuted,
+                        fontSize: '13px', fontWeight: 700, border: 'none',
+                        cursor: flagOtherText.trim() ? 'pointer' : 'not-allowed',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      Submit Report
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Close button */}
               <button
-                onClick={() => setFlagSheet(false)}
+                onClick={() => { setFlagSheet(false); setFlagOtherOpen(false); setFlagOtherText(''); }}
                 style={{
                   width: '100%', padding: '12px', borderRadius: '12px',
                   border: `1px solid ${sheetBorder}`,
@@ -418,11 +604,19 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
         </div>
       )}
 
-      {/* Slide-up animation */}
+      {/* Slide-up animation + share hover (pointer devices only) */}
       <style jsx>{`
         @keyframes slideUp {
           from { transform: translateY(100%); }
           to { transform: translateY(0); }
+        }
+        @media (hover: hover) {
+          .share-btn:hover {
+            color: ${darkMode ? '#F0F0F5' : '#1F2937'} !important;
+          }
+          .flag-btn:hover {
+            color: #E8722A !important;
+          }
         }
       `}</style>
     </div>
