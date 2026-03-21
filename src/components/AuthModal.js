@@ -75,18 +75,59 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
     }
   })();
 
-  // ── OAuth handler ──────────────────────────────────────────────────────────
-  const handleOAuth = async (provider) => {
+  // ── Google sign-in via Identity Services + signInWithIdToken ──────────────
+  // This keeps the auth flow on our domain — user never sees supabase.co
+  const handleGoogleSignIn = useCallback(() => {
+    setError(null);
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      setError('Google sign-in is not configured. Please try email login.');
+      return;
+    }
+    if (!window.google?.accounts?.id) {
+      setError('Google sign-in is loading. Please try again in a moment.');
+      return;
+    }
+
+    window.google.accounts.id.initialize({
+      client_id: clientId,
+      callback: async (response) => {
+        try {
+          const { data, error: idTokenError } = await supabase.auth.signInWithIdToken({
+            provider: 'google',
+            token: response.credential,
+          });
+          if (idTokenError) throw idTokenError;
+          // Success — onAuthStateChange in page.js will close the modal
+        } catch (err) {
+          setError(err.message || 'Google sign-in failed. Please try again.');
+        }
+      },
+    });
+
+    // Trigger the One Tap / popup flow
+    window.google.accounts.id.prompt((notification) => {
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        // One Tap not available — fall back to the button-style popup
+        window.google.accounts.id.renderButton(
+          document.getElementById('google-signin-fallback'),
+          { theme: 'outline', size: 'large', width: '100%' }
+        );
+      }
+    });
+  }, []);
+
+  // ── Apple OAuth — still uses redirect flow (no equivalent client-side SDK) ─
+  const handleAppleOAuth = async () => {
     setError(null);
     try {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider,
+        provider: 'apple',
         options: {
           redirectTo: `${window.location.origin}/auth/callback`,
         },
       });
       if (oauthError) throw oauthError;
-      // Browser will redirect — no need to close
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.');
     }
@@ -226,7 +267,7 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
           {/* OAuth buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
             <button
-              onClick={() => handleOAuth('google')}
+              onClick={handleGoogleSignIn}
               style={oauthBtnStyle(darkMode ? '#FFFFFF' : '#FFFFFF', '#1F2937')}
             >
               <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
@@ -237,9 +278,11 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
               </svg>
               Continue with Google
             </button>
+            {/* Hidden fallback container for Google Identity Services button */}
+            <div id="google-signin-fallback" style={{ display: 'none' }} />
 
             <button
-              onClick={() => handleOAuth('apple')}
+              onClick={handleAppleOAuth}
               style={oauthBtnStyle(darkMode ? '#FFFFFF' : '#000000', darkMode ? '#000000' : '#FFFFFF')}
             >
               <svg width="16" height="18" viewBox="0 0 16 20" fill={darkMode ? '#000' : '#fff'} xmlns="http://www.w3.org/2000/svg">

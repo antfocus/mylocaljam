@@ -38,6 +38,10 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
+      <head>
+        {/* Google Identity Services — used by signInWithIdToken flow */}
+        <script src="https://accounts.google.com/gsi/client" async defer />
+      </head>
       <body>{children}</body>
     </html>
   );
