@@ -1,5 +1,5 @@
 import './globals.css';
-import Script from 'next/script';
+import GoogleOAuthWrapper from '@/components/GoogleOAuthWrapper';
 
 export const metadata = {
   title: 'MyLocalJam — Live Music at the Jersey Shore',
@@ -40,9 +40,9 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        {children}
-        {/* Google Identity Services — used by signInWithIdToken flow */}
-        <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
+        <GoogleOAuthWrapper>
+          {children}
+        </GoogleOAuthWrapper>
       </body>
     </html>
   );
