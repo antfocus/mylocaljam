@@ -77,45 +77,75 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
 
   // ── Google sign-in via Identity Services + signInWithIdToken ──────────────
   // This keeps the auth flow on our domain — user never sees supabase.co
+  const [googleReady, setGoogleReady] = useState(false);
+
+  // Initialize Google Identity Services once the script loads
+  useEffect(() => {
+    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+    if (!clientId) return;
+
+    const initGoogle = () => {
+      if (!window.google?.accounts?.id) return;
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: async (response) => {
+          try {
+            const { data, error: idTokenError } = await supabase.auth.signInWithIdToken({
+              provider: 'google',
+              token: response.credential,
+            });
+            if (idTokenError) throw idTokenError;
+            // Success — onAuthStateChange in page.js will close the modal
+          } catch (err) {
+            setError(err.message || 'Google sign-in failed. Please try again.');
+          }
+        },
+      });
+      setGoogleReady(true);
+    };
+
+    // Script may already be loaded
+    if (window.google?.accounts?.id) {
+      initGoogle();
+    } else {
+      // Wait for the script to load
+      const check = setInterval(() => {
+        if (window.google?.accounts?.id) {
+          clearInterval(check);
+          initGoogle();
+        }
+      }, 200);
+      return () => clearInterval(check);
+    }
+  }, []);
+
   const handleGoogleSignIn = useCallback(() => {
     setError(null);
-    const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-    if (!clientId) {
+    if (!process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID) {
       setError('Google sign-in is not configured. Please try email login.');
       return;
     }
-    if (!window.google?.accounts?.id) {
+    if (!googleReady || !window.google?.accounts?.id) {
       setError('Google sign-in is loading. Please try again in a moment.');
       return;
     }
-
-    window.google.accounts.id.initialize({
-      client_id: clientId,
-      callback: async (response) => {
-        try {
-          const { data, error: idTokenError } = await supabase.auth.signInWithIdToken({
-            provider: 'google',
-            token: response.credential,
-          });
-          if (idTokenError) throw idTokenError;
-          // Success — onAuthStateChange in page.js will close the modal
-        } catch (err) {
-          setError(err.message || 'Google sign-in failed. Please try again.');
-        }
-      },
-    });
-
-    // Trigger the One Tap / popup flow
+    // Use prompt() for One Tap — falls back to rendering a visible button
     window.google.accounts.id.prompt((notification) => {
       if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        // One Tap not available — fall back to the button-style popup
-        window.google.accounts.id.renderButton(
-          document.getElementById('google-signin-fallback'),
-          { theme: 'outline', size: 'large', width: '100%' }
-        );
+        // One Tap unavailable (mobile, cooldown, etc.) — show the Google button
+        const fallbackEl = document.getElementById('google-signin-fallback');
+        if (fallbackEl) {
+          fallbackEl.style.display = 'block';
+          window.google.accounts.id.renderButton(fallbackEl, {
+            theme: 'outline',
+            size: 'large',
+            width: 400,
+            text: 'continue_with',
+          });
+        }
       }
     });
-  }, []);
+  }, [googleReady]);
 
   // ── Apple OAuth — still uses redirect flow (no equivalent client-side SDK) ─
   const handleAppleOAuth = async () => {
@@ -278,8 +308,8 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
               </svg>
               Continue with Google
             </button>
-            {/* Hidden fallback container for Google Identity Services button */}
-            <div id="google-signin-fallback" style={{ display: 'none' }} />
+            {/* Fallback Google Sign-In button — shown when One Tap is unavailable */}
+            <div id="google-signin-fallback" style={{ display: 'none', marginTop: '4px' }} />
 
             <button
               onClick={handleAppleOAuth}
