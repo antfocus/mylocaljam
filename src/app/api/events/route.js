@@ -1,15 +1,19 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
+import { getEasternDayBounds } from '@/lib/utils';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   const supabase = getAdminClient();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Use Eastern midnight (not UTC) so today's evening events aren't excluded
+  const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const { start } = getEasternDayBounds(todayET);
 
   const { data, error } = await supabase
     .from('events')
-    .select('*, venues(name, address, color)')
-    .gte('event_date', today.toISOString())
+    .select('*, venues(name, address, color), artists(name, bio, image_url, genres, vibes, is_tribute, instagram_url)')
+    .gte('event_date', start)
     .eq('status', 'published')
     .order('event_date', { ascending: true });
 

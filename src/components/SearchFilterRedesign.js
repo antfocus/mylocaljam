@@ -1319,7 +1319,7 @@ export default function SearchFilterRedesign() {
           borderBottom: `1px solid ${t.border}`,
         }}>
           <div style={{ fontSize: '12px', fontWeight: 700, color: t.accent, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>
-            Tonight's Spotlight
+            Today's Spotlight
           </div>
           <div style={{ fontSize: '20px', fontWeight: 800, color: t.text, fontFamily: "'Outfit', sans-serif", marginBottom: '4px' }}>
             DJ Funsize

@@ -25,7 +25,7 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
 
   if (!event) return null;
 
-  const name       = event.name || event.artist_name || '';
+  const name       = event.name || event.event_title || event.artist_name || '';
   const venue      = event.venue || event.venue_name || '';
   const desc       = event.description || event.artist_bio || '';
   const category   = event.genre || event.vibe || 'Live Music';

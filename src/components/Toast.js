@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Icons } from './Icons';
 
 /**
@@ -8,39 +8,61 @@ import { Icons } from './Icons';
  *
  * Variants:
  *  - 'success'  → large green bar with party emoji (4s)
- *  - 'upsell'   → amber/warm bar with action link (5s)
+ *  - 'upsell'   → dark bar with message + follow CTA button (4s, transitions to "Following!" on action)
  *  - default    → small dark pill with accent border (3s)
  *
- * Props:
- *  - message: string (required)
- *  - variant: 'success' | 'upsell' | null
- *  - onDismiss: () => void
- *  - onAction: () => void — callback when action link is tapped (upsell variant)
- *  - actionLabel: string — text for the tappable link (default: 'Sign in')
+ * Design rules:
+ *  - Orange buttons always use bold BLACK text (#1C1917) for contrast/accessibility
+ *  - Mobile: bottom offset clears the bottom nav bar (~80px)
+ *  - Desktop: max-width 480px, centered
  */
 export default function Toast({ message, variant, onDismiss, onAction, actionLabel = 'Sign in' }) {
-  const duration = variant === 'upsell' ? 3000 : variant === 'success' ? 4000 : 3000;
+  const [confirmed, setConfirmed] = useState(false);
+  const duration = variant === 'upsell' ? 4000 : variant === 'success' ? 4000 : 3000;
 
   useEffect(() => {
+    if (confirmed) {
+      const timer = setTimeout(onDismiss, 1500);
+      return () => clearTimeout(timer);
+    }
     const timer = setTimeout(onDismiss, duration);
     return () => clearTimeout(timer);
-  }, [onDismiss, duration]);
+  }, [onDismiss, duration, confirmed]);
+
+  useEffect(() => { setConfirmed(false); }, [message]);
+
+  const handleAction = useCallback((e) => {
+    e.stopPropagation();
+    // Haptic on follow tap
+    try { navigator?.vibrate?.(10); } catch {}
+    onAction?.();
+    setConfirmed(true);
+  }, [onAction]);
 
   if (!message) return null;
+
+  // Shared positioning: clears bottom nav on mobile, centered + capped width on desktop
+  const toastPosition = {
+    position: 'fixed',
+    bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    width: 'calc(100% - 32px)',
+    maxWidth: '440px',
+    zIndex: 300,
+    animation: 'slideUp 0.3s ease',
+  };
 
   // Large green success toast
   if (variant === 'success') {
     return (
-      <div
-        style={{
-          position: 'fixed', bottom: '24px', left: '16px', right: '16px',
-          zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: '10px', padding: '18px 24px', borderRadius: '16px',
-          background: '#16A34A',
-          boxShadow: '0 8px 40px rgba(0,0,0,0.35)',
-          animation: 'slideUp 0.3s ease',
-        }}
-      >
+      <div style={{
+        ...toastPosition,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        gap: '10px', padding: '18px 24px', borderRadius: '16px',
+        background: '#16A34A',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.35)',
+      }}>
         <span style={{ fontSize: '22px' }}>🎉</span>
         <span style={{
           color: 'white', fontSize: '16px', fontWeight: 700,
@@ -52,35 +74,63 @@ export default function Toast({ message, variant, onDismiss, onAction, actionLab
     );
   }
 
-  // Upsell toast — warm amber with tappable action
+  // Upsell toast — dark bar with follow CTA
   if (variant === 'upsell') {
-    return (
-      <div
-        style={{
-          position: 'fixed', bottom: '24px', left: '16px', right: '16px',
-          zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          gap: '6px', padding: '14px 20px', borderRadius: '14px',
+    if (confirmed) {
+      return (
+        <div style={{
+          ...toastPosition,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: '8px', padding: '14px 20px', borderRadius: '14px',
           background: '#292524',
-          border: '1px solid #44403C',
+          border: '1px solid #E8722A',
           boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
-          animation: 'slideUp 0.3s ease',
-          flexWrap: 'wrap',
-        }}
-      >
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" fill="#E8722A" />
+            <path d="M10 15l-3.5-3.5 1.41-1.41L10 12.17l5.59-5.59L17 8l-7 7z" fill="#1C1917" />
+          </svg>
+          <span style={{
+            color: '#E8722A', fontSize: '15px', fontWeight: 700,
+            fontFamily: "'DM Sans', sans-serif",
+          }}>
+            Following!
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{
+        ...toastPosition,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: '10px', padding: '14px 16px', borderRadius: '14px',
+        background: '#292524',
+        border: '1px solid #44403C',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
+      }}>
         <span style={{
           color: '#FAFAF9', fontSize: '14px', fontWeight: 500,
           fontFamily: "'DM Sans', sans-serif", lineHeight: 1.4,
+          flex: 1, minWidth: 0,
         }}>
           {message}
         </span>
         {onAction && (
           <button
-            onClick={(e) => { e.stopPropagation(); onAction(); onDismiss(); }}
+            onClick={handleAction}
             style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px',
-              color: '#E8722A', fontSize: '14px', fontWeight: 700,
+              background: '#E8722A',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              padding: '8px 14px',
+              color: '#1C1917',
+              fontSize: '13px',
+              fontWeight: 800,
               fontFamily: "'DM Sans', sans-serif",
-              textDecoration: 'underline', textUnderlineOffset: '2px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             {actionLabel}
@@ -92,15 +142,15 @@ export default function Toast({ message, variant, onDismiss, onAction, actionLab
 
   // Default small toast
   return (
-    <div
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[300] flex items-center gap-2.5 px-6 py-3 rounded-xl border text-sm font-medium"
-      style={{
-        background: 'var(--bg-elevated)',
-        borderColor: 'var(--accent)',
-        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-        animation: 'slideUp 0.3s ease',
-      }}
-    >
+    <div style={{
+      ...toastPosition,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gap: '10px', padding: '12px 20px', borderRadius: '12px',
+      background: 'var(--bg-elevated)',
+      border: '1px solid var(--accent)',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+      fontSize: '14px', fontWeight: 500,
+    }}>
       <span style={{ color: 'var(--accent)' }}>{Icons.check}</span>
       {message}
     </div>

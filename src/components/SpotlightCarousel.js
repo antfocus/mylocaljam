@@ -19,16 +19,17 @@ function fmtTime(t) {
   } catch { return t; }
 }
 
+/**
+ * SpotlightCarousel — Custom touch handler with translateX transforms.
+ * Uses raw touchstart/touchmove/touchend with direction locking.
+ * Moves track via transform: translateX() — no scroll containers.
+ */
 export default function SpotlightCarousel({ events = [], darkMode = true }) {
   const accent = '#E8722A';
   const [active, setActive] = useState(0);
   const trackRef = useRef(null);
   const viewportRef = useRef(null);
 
-  // Debug state — shows touch info on screen so we can diagnose on iPhone
-  const [debug, setDebug] = useState('waiting...');
-
-  // Touch state refs
   const dragging = useRef(false);
   const startX = useRef(0);
   const startY = useRef(0);
@@ -74,42 +75,32 @@ export default function SpotlightCarousel({ events = [], darkMode = true }) {
       startY.current = e.touches[0].clientY;
       prevTranslate.current = currentTranslate.current;
       if (animFrame.current) cancelAnimationFrame(animFrame.current);
-      setDebug(`START x:${Math.round(e.touches[0].clientX)} y:${Math.round(e.touches[0].clientY)}`);
     };
 
     const onTouchMove = (e) => {
       if (!dragging.current) return;
-
       const dx = e.touches[0].clientX - startX.current;
       const dy = e.touches[0].clientY - startY.current;
 
-      // Lock direction after small movement
       if (directionLocked.current === null && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
         directionLocked.current = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
-        setDebug(`LOCKED: ${directionLocked.current} dx:${Math.round(dx)} dy:${Math.round(dy)}`);
       }
 
-      // Vertical — let browser handle it, bail out
       if (directionLocked.current === 'y') {
         dragging.current = false;
         return;
       }
 
-      // Horizontal — we handle it
       if (directionLocked.current === 'x') {
         e.preventDefault();
         e.stopPropagation();
         currentTranslate.current = prevTranslate.current + dx;
         animFrame.current = requestAnimationFrame(applyTransform);
-        setDebug(`MOVE dx:${Math.round(dx)} translate:${Math.round(currentTranslate.current)}`);
       }
     };
 
     const onTouchEnd = () => {
-      if (!dragging.current && directionLocked.current !== 'x') {
-        setDebug(`END (ignored — dir: ${directionLocked.current})`);
-        return;
-      }
+      if (!dragging.current && directionLocked.current !== 'x') return;
       dragging.current = false;
 
       const movedBy = currentTranslate.current - prevTranslate.current;
@@ -117,14 +108,11 @@ export default function SpotlightCarousel({ events = [], darkMode = true }) {
       if (movedBy < -50 && active < events.length - 1) newIdx = active + 1;
       else if (movedBy > 50 && active > 0) newIdx = active - 1;
 
-      setDebug(`END moved:${Math.round(movedBy)} → slide ${newIdx}`);
       directionLocked.current = null;
       if (animFrame.current) cancelAnimationFrame(animFrame.current);
       snapTo(newIdx);
     };
 
-    // NO touch-action CSS — let browser dispatch ALL touch events to us.
-    // passive: false on touchmove so we CAN call preventDefault for horizontal drags.
     vp.addEventListener('touchstart', onTouchStart, { passive: true });
     vp.addEventListener('touchmove', onTouchMove, { passive: false });
     vp.addEventListener('touchend', onTouchEnd, { passive: true });
@@ -139,12 +127,11 @@ export default function SpotlightCarousel({ events = [], darkMode = true }) {
     };
   }, [active, events.length, getSlideWidth, snapTo, applyTransform]);
 
-  // Initial snap
   useEffect(() => {
     if (events.length) snapTo(0);
   }, [events.length, snapTo]);
 
-  // Tap-to-advance fallback: tap left half = prev, right half = next
+  // Tap-to-advance: tap right half = next, left half = prev
   const handleTap = useCallback((e) => {
     const rect = viewportRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -167,22 +154,13 @@ export default function SpotlightCarousel({ events = [], darkMode = true }) {
         <div style={{ flex: 1, height: '1px', background: darkMode ? '#2A2A3A' : '#E5E7EB', opacity: 0.5 }} />
       </div>
 
-      {/* DEBUG: Visible touch state — REMOVE once swipe works */}
-      <div style={{
-        padding: '4px 16px', fontSize: '10px', fontFamily: 'monospace',
-        color: '#00FF00', background: 'rgba(0,0,0,0.8)', marginBottom: '4px',
-      }}>
-        TOUCH: {debug} | slide: {active}/{events.length}
-      </div>
-
-      {/* Viewport — overflow: hidden, NO touch-action, NO scroll */}
+      {/* Viewport — overflow: hidden, custom touch handlers */}
       <div
         ref={viewportRef}
         onClick={handleTap}
         style={{
           overflow: 'hidden',
           position: 'relative',
-          /* NO touch-action at all — browser dispatches everything to JS */
         }}
       >
         {/* Track — translateX driven */}
@@ -197,7 +175,7 @@ export default function SpotlightCarousel({ events = [], darkMode = true }) {
           }}
         >
           {events.map((ev, i) => {
-            const img = ev.image_url;
+            const img = ev.artist_image || ev.image_url;
             return (
               <div
                 key={ev.id || i}
@@ -218,7 +196,7 @@ export default function SpotlightCarousel({ events = [], darkMode = true }) {
                   boxShadow: darkMode ? '0 4px 20px rgba(0,0,0,0.4)' : '0 2px 12px rgba(0,0,0,0.1)',
                   WebkitTouchCallout: 'none',
                 }}>
-                  {img && (
+                  {img ? (
                     <img src={img} alt="" draggable={false} loading={i < 2 ? 'eager' : 'lazy'}
                       style={{
                         position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
@@ -226,6 +204,15 @@ export default function SpotlightCarousel({ events = [], darkMode = true }) {
                         WebkitUserDrag: 'none',
                       }}
                     />
+                  ) : (
+                    <div style={{
+                      position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%)',
+                      fontSize: '22px', fontWeight: 900, color: 'rgba(255,255,255,0.08)',
+                      fontFamily: "'DM Sans', sans-serif", letterSpacing: '2px', whiteSpace: 'nowrap',
+                      pointerEvents: 'none', textTransform: 'uppercase',
+                    }}>
+                      myLocalJam
+                    </div>
                   )}
 
                   <div style={{
@@ -247,7 +234,7 @@ export default function SpotlightCarousel({ events = [], darkMode = true }) {
                       fontSize: 18, fontWeight: 800, color: '#fff', fontFamily: "'DM Sans', sans-serif",
                       textShadow: '0 1px 4px rgba(0,0,0,0.5)', lineHeight: 1.2, marginBottom: 4,
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>{ev.name || ev.artist_name}</div>
+                    }}>{ev.name || ev.event_title || ev.artist_name}</div>
                     <div style={{
                       display: 'flex', alignItems: 'center', gap: 8,
                       fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)',

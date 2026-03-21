@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
+import { getEasternDayBounds } from '@/lib/utils';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -37,11 +38,27 @@ export async function GET(request) {
     }
   };
 
-  // Helper: build date range for the target date
-  const dateStart = `${date}T00:00:00`;
-  const dateEnd   = `${date}T23:59:59`;
+  // Eastern-aware UTC boundaries (handles EDT/EST automatically)
+  const { start: dateStart, end: dateEnd, nextDateStr } = getEasternDayBounds(date);
 
-  // ── Tier 0: Featured events (is_featured = true), sorted by spotlight_order
+  // ── Tier 0: Admin-pinned spotlight events from spotlight_events table
+  try {
+    const { data: pins } = await supabase
+      .from('spotlight_events')
+      .select('event_id, sort_order')
+      .eq('spotlight_date', date)
+      .order('sort_order', { ascending: true });
+    if (pins && pins.length > 0) {
+      addIds(pins.map(p => p.event_id));
+      // If we have manual pins, return them immediately (admin override)
+      if (collected.length > 0) {
+        const result = collected.map((id, i) => ({ event_id: id, sort_order: i }));
+        return NextResponse.json(result);
+      }
+    }
+  } catch { /* spotlight_events table may not exist */ }
+
+  // ── Tier 0b: Fallback — Featured events (is_featured = true)
   try {
     const { data } = await supabase
       .from('events')
@@ -125,9 +142,10 @@ export async function GET(request) {
   // ── Tier 3: Random evening events at popular venues ────────────────────
   if (collected.length < MAX_SLOTS) {
     try {
-      // Get events tonight between 19:00–22:00 (7pm–10pm)
-      const eveningStart = `${date}T19:00:00`;
-      const eveningEnd   = `${date}T22:00:00`;
+      // Get events tonight between 7pm–10pm Eastern (offset-aware)
+      const { offsetHours: oh } = getEasternDayBounds(date);
+      const eveningStart = `${date}T${String(19 + oh).padStart(2, '0')}:00:00Z`;  // 7pm ET in UTC
+      const eveningEnd   = `${nextDateStr}T${String(22 + oh - 24).padStart(2, '0')}:00:00Z`;  // 10pm ET in UTC
 
       const { data } = await supabase
         .from('events')

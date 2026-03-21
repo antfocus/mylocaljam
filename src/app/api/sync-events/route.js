@@ -36,6 +36,8 @@ import { scrapeDealLakeBar } from '@/lib/scrapers/dealLakeBar';
 import { scrapeCrabsClaw } from '@/lib/scrapers/crabsClaw';
 import { scrapeWaterStreet } from '@/lib/scrapers/waterStreet';
 import { scrapeCrossroads } from '@/lib/scrapers/crossroads';
+// House of Independents removed — Etix serves bare React shell (2KB) to datacenter IPs, no JSON-LD
+// Scraper file kept at houseOfIndependents.js — works from residential IPs, revisit if proxy is added
 // Starland Ballroom removed — AEG/Carbonhouse platform blocks datacenter IPs, AJAX endpoint returns empty/blocked
 // Scraper file kept at starlandBallroom.js — revisit if a proxy/workaround is found
 // Algonquin Arts Theatre removed — algonquinarts.org returns HTTP 403 from datacenter IPs (Vercel)
@@ -87,26 +89,87 @@ function decodeHtmlEntities(str) {
     .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
 
+// Extract time from messy title strings like "Malcolm McDonald 730-1030", "Live Music 9pm", "DJ 8:30 PM"
+function extractTimeFromTitle(title) {
+  if (!title) return null;
+
+  // Pattern 1: "730-1030" or "7:30-10:30" (military-ish, no am/pm — assume PM for evening)
+  const rangeMatch = title.match(/\b(\d{1,2}):?(\d{2})\s*[-–]\s*(\d{1,2}):?(\d{2})\b/);
+  if (rangeMatch) {
+    let hr = parseInt(rangeMatch[1]);
+    const mn = rangeMatch[2] || '00';
+    // 3-4 digit number like 730 → 7:30
+    if (hr >= 1 && hr <= 12) {
+      if (hr < 12 && hr >= 1) hr += 12; // assume PM for evening shows
+      return `${String(hr).padStart(2, '0')}:${mn}`;
+    }
+  }
+
+  // Pattern 2: "8pm", "9:30 PM", "8:30PM", "9 pm"
+  const ampmMatch = title.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (ampmMatch) {
+    let hr = parseInt(ampmMatch[1]);
+    const mn = ampmMatch[2] || '00';
+    const period = ampmMatch[3].toLowerCase();
+    if (period === 'pm' && hr !== 12) hr += 12;
+    if (period === 'am' && hr === 12) hr = 0;
+    return `${String(hr).padStart(2, '0')}:${mn}`;
+  }
+
+  return null;
+}
+
+// Strip time patterns from title to clean up the artist name
+function stripTimeFromTitle(title) {
+  if (!title) return title;
+  return title
+    .replace(/\s+\d{1,2}:?\d{2}\s*[-–]\s*\d{1,2}:?\d{2}\s*(am|pm)?\s*/gi, ' ')
+    .replace(/\s+\d{1,2}(?::\d{2})?\s*(am|pm)\s*[-–]?\s*\d{0,2}:?\d{0,2}\s*(am|pm)?\s*/gi, ' ')
+    .replace(/\s+\d{1,2}(?::\d{2})?\s*(am|pm)\s*/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 // Map scraper fields → Supabase schema
-function mapEvent(ev, venueMap) {
+function mapEvent(ev, venueMap, defaultTimes) {
   const venueId = venueMap[ev.venue] || null;
+
+  // Try to extract time from title if scraper didn't provide one
+  let scrapedTime = ev.time;
+  let cleanTitle = ev.title;
+  if (!scrapedTime || scrapedTime === '00:00' || scrapedTime === '12:00 AM') {
+    const titleTime = extractTimeFromTitle(ev.title);
+    if (titleTime) {
+      scrapedTime = titleTime;
+      cleanTitle = stripTimeFromTitle(ev.title);
+    }
+  }
+
+  // Fallback to venue default time if still no time found
+  const venueDefaultTime = defaultTimes[ev.venue] || null;
+  const hasRealTime = scrapedTime && scrapedTime !== '00:00' && scrapedTime !== '12:00 AM';
 
   // Combine date + time into a full ISO timestamp (Eastern)
   let eventDate = null;
   if (ev.date) {
     if (ev.date.includes('T')) {
-      // Already a full ISO string — use as-is
       eventDate = new Date(ev.date).toISOString();
     } else {
-      // Build with correct Eastern offset (EDT or EST) for the event date
-      const offset  = easternOffset(ev.date);
-      const timeStr = ev.time ? convertTo24h(ev.time) : '00:00';
+      const offset = easternOffset(ev.date);
+      let timeStr;
+      if (hasRealTime) {
+        timeStr = convertTo24h(scrapedTime);
+      } else if (venueDefaultTime) {
+        timeStr = convertTo24h(venueDefaultTime);
+      } else {
+        timeStr = '00:00';
+      }
       eventDate = new Date(`${ev.date}T${timeStr}:00${offset}`).toISOString();
     }
   }
 
   return {
-    artist_name: decodeHtmlEntities(ev.title),
+    artist_name: decodeHtmlEntities(cleanTitle),
     venue_name: ev.venue,
     venue_id: venueId,
     event_date: eventDate,
@@ -154,11 +217,13 @@ export async function POST(request) {
   const start = Date.now();
   const supabase = getAdminClient();
 
-  // Load venue map: { "Pig & Parrot Brielle": uuid, ... }
-  const { data: venues } = await supabase.from('venues').select('id, name');
+  // Load venue map and default times
+  const { data: venues } = await supabase.from('venues').select('id, name, default_start_time');
   const venueMap = {};
+  const defaultTimes = {};
   for (const v of venues || []) {
     venueMap[v.name] = v.id;
+    if (v.default_start_time) defaultTimes[v.name] = v.default_start_time;
   }
 
   // Run all scrapers in parallel
@@ -238,6 +303,64 @@ export async function POST(request) {
     Crossroads: { count: crossroads.events.length, error: crossroads.error },
   };
 
+  // ── Write scraper health to database ──────────────────────────────────────
+  const VENUE_REGISTRY = {
+    PigAndParrot: { venue: 'Pig & Parrot Brielle', url: 'https://www.thepigandparrot.com', source: 'GraphQL' },
+    Ticketmaster: { venue: 'Ticketmaster Venues', url: 'https://ticketmaster.com', source: 'Ticketmaster API' },
+    JoesSurfShack: { venue: "Joe's Surf Shack", url: 'https://www.jss.surf', source: 'WordPress AJAX' },
+    StStephensGreen: { venue: "St. Stephen's Green", url: 'https://www.ststephensgreenpub.com', source: 'Google Calendar' },
+    McCanns: { venue: "McCann's Tavern", url: 'http://www.mccannstavernnj.com', source: 'Google Calendar' },
+    BeachHaus: { venue: 'Beach Haus', url: 'https://beachhausparty.com', source: 'WordPress' },
+    Martells: { venue: "Martell's Tiki Bar", url: 'https://tikibar.com', source: 'HTML Scrape' },
+    BarAnticipation: { venue: 'Bar Anticipation', url: 'https://bar-a.com', source: 'HTML Scrape' },
+    JacksOnTheTracks: { venue: 'Jacks on the Tracks', url: 'https://www.jacksbytracks.com', source: 'Google Calendar' },
+    MarinaGrille: { venue: 'Marina Grille', url: 'https://www.marinagrillenj.com', source: 'Squarespace' },
+    AnchorTavern: { venue: 'Anchor Tavern', url: 'https://www.anchortavernnj.com', source: 'Squarespace' },
+    RBar: { venue: 'R Bar', url: 'https://www.itsrbar.com', source: 'Squarespace' },
+    BrielleHouse: { venue: 'Brielle House', url: 'https://brielle-house.com', source: 'WordPress AJAX' },
+    TenthAveBurrito: { venue: '10th Ave Burrito', url: 'https://tenthaveburrito.com', source: 'WordPress' },
+    ReefAndBarrel: { venue: 'Reef & Barrel', url: 'https://www.reefandbarrel.com', source: 'Google Calendar' },
+    Palmetto: { venue: 'Palmetto', url: 'https://www.palmettoasburypark.com', source: 'Squarespace' },
+    IdleHour: { venue: 'Idle Hour', url: 'https://www.ihpointpleasant.com', source: 'Google Calendar' },
+    AsburyLanes: { venue: 'Asbury Lanes', url: 'https://www.asburylanes.com', source: 'HTML Scrape' },
+    BakesBrewing: { venue: 'Bakes Brewing', url: 'https://www.bakesbrewing.co', source: 'Squarespace' },
+    RiverRock: { venue: 'River Rock', url: 'https://riverrockbricknj.com', source: 'WordPress AJAX' },
+    WildAir: { venue: 'Wild Air Beerworks', url: 'https://www.wildairbeer.com', source: 'Squarespace' },
+    AsburyParkBrewery: { venue: 'Asbury Park Brewery', url: 'https://www.asburyparkbrewery.com', source: 'Squarespace' },
+    Boatyard401: { venue: 'Boatyard 401', url: 'https://boatyard401.com', source: 'WordPress AJAX' },
+    WindwardTavern: { venue: 'Windward Tavern', url: 'https://www.windwardtavern.com', source: 'Google Calendar' },
+    Jamians: { venue: "Jamian's", url: 'https://www.jamiansfood.com', source: 'Squarespace' },
+    TheCabin: { venue: 'The Cabin', url: 'https://www.thecabinnj.com', source: 'Squarespace' },
+    TheVogel: { venue: 'The Vogel', url: 'https://thebasie.org', source: 'HTML Scrape' },
+    SunHarbor: { venue: 'Sun Harbor', url: 'https://www.sunharborseafoodandgrill.com', source: 'Squarespace' },
+    BumRogers: { venue: 'Bum Rogers Tavern', url: 'https://bumrogerstavern.com', source: 'BentoBox/Wix' },
+    TheColumns: { venue: 'The Columns', url: 'https://thecolumnsnj.com', source: 'WordPress' },
+    TheRoost: { venue: 'The Roost', url: 'https://theroostrestaurant.com', source: 'HTML Scrape' },
+    DealLakeBar: { venue: 'Deal Lake Bar + Co.', url: 'https://www.deallakebarco.com', source: 'Squarespace' },
+    CrabsClaw: { venue: "The Crab's Claw Inn", url: 'https://thecrabsclaw.com', source: 'RestaurantPassion' },
+    WaterStreet: { venue: 'Water Street Bar & Grill', url: 'https://www.waterstreetnj.com', source: 'Squarespace' },
+    Crossroads: { venue: 'Crossroads', url: 'https://www.xxroads.com', source: 'Eventbrite API' },
+  };
+
+  try {
+    const healthRows = Object.entries(scraperResults).map(([key, result]) => {
+      const reg = VENUE_REGISTRY[key] || { venue: key, url: '', source: 'Unknown' };
+      return {
+        scraper_key: key,
+        venue_name: reg.venue,
+        website_url: reg.url || null,
+        platform: reg.source || 'Unknown',
+        events_found: result.count || 0,
+        status: result.error ? 'fail' : (result.count === 0 ? 'warning' : 'success'),
+        error_message: result.error || null,
+        last_sync: new Date().toISOString(),
+      };
+    });
+    await supabase.from('scraper_health').upsert(healthRows, { onConflict: 'scraper_key' });
+  } catch (healthErr) {
+    console.error('Failed to write scraper health:', healthErr);
+  }
+
   // Combine all events
   const allEvents = [
     ...pigAndParrot.events,
@@ -275,7 +398,7 @@ export async function POST(request) {
     ...crabsClaw.events,
     ...waterStreet.events,
     ...crossroads.events,
-  ].map(ev => mapEvent(ev, venueMap));
+  ].map(ev => mapEvent(ev, venueMap, defaultTimes));
 
   // Filter out events with no external_id or date, and deduplicate by external_id
   const seen = new Set();
@@ -286,16 +409,40 @@ export async function POST(request) {
     return true;
   });
 
-  // Batch upsert to Supabase in chunks of 50
+  // ── Smart upsert: protect manually-edited events from scraper overwrites ──
+  // Load external_ids of manually-edited events so we can skip overwriting their fields
+  const allExtIds = validEvents.map(ev => ev.external_id).filter(Boolean);
+  let protectedIds = new Set();
+  try {
+    // Batch query in chunks to avoid URL length limits
+    for (let i = 0; i < allExtIds.length; i += 200) {
+      const chunk = allExtIds.slice(i, i + 200);
+      const { data: locked } = await supabase
+        .from('events')
+        .select('external_id')
+        .in('external_id', chunk)
+        .eq('is_human_edited', true);
+      for (const row of (locked || [])) protectedIds.add(row.external_id);
+    }
+  } catch { /* proceed without protection if query fails */ }
+
+  // Split events: unprotected get full upsert, protected only get safe fields updated
+  const unprotectedEvents = validEvents.filter(ev => !protectedIds.has(ev.external_id));
+  const protectedEvents = validEvents.filter(ev => protectedIds.has(ev.external_id));
+
   const BATCH_SIZE = 50;
   let totalUpserted = 0;
   const upsertErrors = [];
 
-  for (let i = 0; i < validEvents.length; i += BATCH_SIZE) {
-    const batch = validEvents.slice(i, i + BATCH_SIZE);
+  // Full upsert for non-protected events
+  for (let i = 0; i < unprotectedEvents.length; i += BATCH_SIZE) {
+    const batch = unprotectedEvents.slice(i, i + BATCH_SIZE);
     const { error } = await supabase
       .from('events')
-      .upsert(batch, { onConflict: 'external_id' });
+      .upsert(batch, {
+        onConflict: 'external_id',
+        ignoreDuplicates: false,
+      });
 
     if (error) {
       upsertErrors.push(error.message);
@@ -304,35 +451,226 @@ export async function POST(request) {
     }
   }
 
-  // --- Auto-enrich new artists via Last.fm + link events → artists via artist_id ---
-  let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, eventsLinked: 0, errors: [] };
+  // Safe update for protected events — only refresh ticket_link, cover, source (never overwrite time, title, image)
+  for (const ev of protectedEvents) {
+    try {
+      const safeUpdate = {};
+      if (ev.ticket_link) safeUpdate.ticket_link = ev.ticket_link;
+      if (ev.cover) safeUpdate.cover = ev.cover;
+      if (ev.source) safeUpdate.source = ev.source;
+      safeUpdate.verified_at = new Date().toISOString();
+      if (Object.keys(safeUpdate).length > 1) {
+        await supabase.from('events').update(safeUpdate).eq('external_id', ev.external_id);
+      }
+      totalUpserted++;
+    } catch { /* skip on error */ }
+  }
+
+  // --- Phase 1: Auto-Sorter Pipeline — categorize events before triage --------
+  let autoSortResult = { matched: 0, keywordRouted: 0, unknowns: 0 };
   try {
-    // Fetch all future published events for enrichment + artist linking
-    const { data: unenriched } = await supabase
+    // Fetch all events needing triage (pending or null)
+    const { data: pendingEvents } = await supabase
       .from('events')
-      .select('id, artist_name, image_url, artist_bio, artist_id')
-      .eq('status', 'published')
-      .not('artist_name', 'is', null)
+      .select('id, artist_name, artist_bio, category, triage_status')
+      .or('triage_status.is.null,triage_status.eq.pending')
       .gte('event_date', new Date().toISOString())
       .limit(500);
 
+    if (pendingEvents?.length) {
+      // Load all known artist names for fast-track matching
+      const { data: knownArtists } = await supabase
+        .from('artists')
+        .select('name')
+        .not('name', 'is', null)
+        .limit(5000);
+      const artistNamesSet = new Set((knownArtists || []).map(a => a.name.toLowerCase().trim()));
+
+      // Keyword routing rules
+      const KEYWORD_ROUTES = [
+        { category: 'Trivia', terms: ['trivia', 'bingo', 'feud', 'game night', 'quiz'] },
+        { category: 'Food & Drink Special', terms: ['pint night', 'taco', 'wings', 'miller lite', 'happy hour', 'drink special', 'food special', 'ladies night', 'pitcher', 'burger night'] },
+        { category: 'Sports / Watch Party', terms: ['ufc', 'nfl', 'football', 'watch party', 'nba', 'mlb', 'march madness', 'super bowl', 'fight night'] },
+        { category: 'Other / Special Event', terms: ['comedy', 'fundraiser', 'market', 'brunch', 'yoga', 'craft fair', 'paint night', 'drag', 'comedy night', 'open house'] },
+      ];
+
+      for (const ev of pendingEvents) {
+        const title = (ev.artist_name || '').toLowerCase().trim();
+        const desc = (ev.artist_bio || '').toLowerCase();
+        const combined = `${title} ${desc}`;
+        let category = null;
+        let triageStatus = 'pending';
+
+        // Step 1: Known artist fast-track
+        if (title && artistNamesSet.has(title)) {
+          category = 'Live Music';
+          triageStatus = 'reviewed';
+          autoSortResult.matched++;
+        }
+
+        // Step 2: Keyword routing (only if not already matched)
+        if (!category) {
+          for (const rule of KEYWORD_ROUTES) {
+            if (rule.terms.some(term => combined.includes(term))) {
+              category = rule.category;
+              triageStatus = 'reviewed';
+              autoSortResult.keywordRouted++;
+              break;
+            }
+          }
+        }
+
+        // Step 3: Still unknown → stays pending for triage
+        if (!category) {
+          autoSortResult.unknowns++;
+          continue; // Leave as pending, don't update
+        }
+
+        // Write the auto-sort result
+        const sortUpdate = { category, triage_status: triageStatus };
+        // For non-music categories, null out artist_id so enrichment doesn't re-create artist rows
+        if (category !== 'Live Music') {
+          sortUpdate.artist_id = null;
+        }
+        await supabase
+          .from('events')
+          .update(sortUpdate)
+          .eq('id', ev.id);
+      }
+    }
+  } catch (sortErr) {
+    console.error('Auto-sorter error:', sortErr);
+  }
+
+  // --- Price Extractor — extract BASE price from event descriptions -------------
+  // Rules: base face-value only (ignore taxes/fees), use "Cover" for bars, "Tickets" for ticketed
+  let priceResult = { extracted: 0, cleaned: 0 };
+  try {
+    // Pass 1: Extract prices for events with no cover set
+    const { data: needsPrice } = await supabase
+      .from('events')
+      .select('id, artist_name, artist_bio, cover, source, ticket_link')
+      .is('cover', null)
+      .gte('event_date', new Date().toISOString())
+      .eq('status', 'published')
+      .limit(200);
+
+    if (needsPrice?.length) {
+      for (const ev of needsPrice) {
+        const text = `${ev.artist_name || ''} ${ev.artist_bio || ''}`.toLowerCase();
+        const isTicketed = !!(ev.ticket_link || (ev.source && /ticketmaster|ticketweb|eventbrite|seetickets|axs\.com/i.test(ev.source)));
+        let priceInfo = null;
+
+        if (/\bfree\b|no cover|free admission|free entry/i.test(text)) {
+          priceInfo = 'Free';
+        } else {
+          // Extract all dollar amounts, pick the LOWEST as base price
+          const dollarMatches = text.match(/\$(\d+(?:\.\d{2})?)/g);
+          if (dollarMatches) {
+            const amounts = dollarMatches.map(m => parseFloat(m.replace('$', '')));
+            const basePrice = Math.min(...amounts);
+            // Round to whole dollar (base prices are almost always whole numbers)
+            const rounded = Math.round(basePrice);
+            // Format with correct terminology
+            if (/cover/i.test(text) || /door/i.test(text)) {
+              priceInfo = `$${rounded} Cover`;
+            } else if (isTicketed) {
+              priceInfo = `From $${rounded}`;
+            } else {
+              priceInfo = `$${rounded} Cover`;
+            }
+          }
+        }
+
+        if (priceInfo) {
+          await supabase.from('events').update({ cover: priceInfo }).eq('id', ev.id);
+          priceResult.extracted++;
+        }
+      }
+    }
+
+    // Pass 2: Clean up existing prices that look like checkout totals (decimals from Ticketmaster)
+    const { data: decimalPrices } = await supabase
+      .from('events')
+      .select('id, cover, source, ticket_link')
+      .gte('event_date', new Date().toISOString())
+      .eq('status', 'published')
+      .not('cover', 'is', null)
+      .limit(500);
+
+    if (decimalPrices?.length) {
+      for (const ev of decimalPrices) {
+        const c = ev.cover || '';
+        // If it's a raw decimal price like "$28.63" or "$50.93" — it's a checkout total
+        if (/^\$\d+\.\d{2}$/.test(c.trim())) {
+          const raw = parseFloat(c.replace('$', ''));
+          // Estimate base price: Ticketmaster fees are ~25-30%, so base ≈ raw / 1.27
+          const estimated = Math.round(raw / 1.27);
+          const isTicketed = !!(ev.ticket_link || (ev.source && /ticketmaster|ticketweb|eventbrite/i.test(ev.source)));
+          const cleaned = isTicketed ? `From $${estimated}` : `$${estimated} Cover`;
+          await supabase.from('events').update({ cover: cleaned }).eq('id', ev.id);
+          priceResult.cleaned++;
+        }
+      }
+    }
+  } catch (priceErr) {
+    console.error('Price extractor error:', priceErr);
+  }
+
+  // --- Load artist blacklist (ignored_artists) for scraper memory ---
+  let blacklistedNames = new Set();
+  try {
+    const { data: blacklist } = await supabase.from('ignored_artists').select('name_lower').limit(5000);
+    blacklistedNames = new Set((blacklist || []).map(b => b.name_lower));
+  } catch { /* table may not exist yet */ }
+
+  // --- Auto-enrich new artists via Last.fm + link events → artists via artist_id ---
+  let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, eventsLinked: 0, blacklisted: 0, humanSkipped: 0, errors: [] };
+  try {
+    // Fetch all future published LIVE MUSIC events for enrichment + artist linking
+    // Only enrich events categorized as Live Music (or uncategorized) — skip drink specials, trivia, etc.
+    const { data: unenriched } = await supabase
+      .from('events')
+      .select('id, artist_name, image_url, artist_bio, artist_id, is_human_edited, category')
+      .eq('status', 'published')
+      .not('artist_name', 'is', null)
+      .gte('event_date', new Date().toISOString())
+      .or('category.is.null,category.eq.Live Music')
+      .limit(500);
+
     if (unenriched?.length) {
-      const uniqueNames = [...new Set(unenriched.map(e => e.artist_name.trim()))];
+      // Golden Rule: skip human-edited events — never overwrite admin changes
+      const enrichable = unenriched.filter(e => {
+        if (e.is_human_edited) { enrichResult.humanSkipped++; return false; }
+        return true;
+      });
+
+      const uniqueNames = [...new Set(enrichable.map(e => e.artist_name.trim()))];
+
+      // Blacklist filter: skip names that were deleted by admin
+      const cleanNames = uniqueNames.filter(n => {
+        if (blacklistedNames.has(n.toLowerCase().trim())) {
+          enrichResult.blacklisted++;
+          return false;
+        }
+        return true;
+      });
 
       // Check which are already cached
       const { data: cached } = await supabase
         .from('artists')
         .select('id, name, image_url, bio')
-        .in('name', uniqueNames.slice(0, 200));
+        .in('name', cleanNames.slice(0, 200));
 
       const cachedMap = {};
       for (const a of (cached || [])) cachedMap[a.name.toLowerCase()] = a;
 
       // Look up uncached artists (max 30 per sync to stay within timeout)
-      const uncached = uniqueNames.filter(n => !cachedMap[n.toLowerCase()]).slice(0, 30);
+      // Also skip blacklisted from Last.fm lookup
+      const uncached = cleanNames.filter(n => !cachedMap[n.toLowerCase()]).slice(0, 30);
       for (const name of uncached) {
         try {
-          await enrichWithLastfm(name, supabase);
+          await enrichWithLastfm(name, supabase, { blacklist: blacklistedNames });
           enrichResult.artistsLookedUp++;
           await new Promise(r => setTimeout(r, 200));
         } catch (err) {
@@ -344,13 +682,46 @@ export async function POST(request) {
       const { data: freshCached } = await supabase
         .from('artists')
         .select('id, name, image_url, bio')
-        .in('name', uniqueNames.slice(0, 200));
+        .in('name', cleanNames.slice(0, 200));
 
       const freshMap = {};
       for (const a of (freshCached || [])) freshMap[a.name.toLowerCase()] = a;
 
-      for (const ev of unenriched) {
-        const artistData = freshMap[ev.artist_name.trim().toLowerCase()];
+      // Also load aliases so renamed artists still get linked to events
+      try {
+        const unmatchedNames = cleanNames.filter(n => !freshMap[n.toLowerCase()]);
+        if (unmatchedNames.length > 0) {
+          const lowerNames = unmatchedNames.map(n => n.toLowerCase().trim());
+          const { data: aliasRows } = await supabase
+            .from('artist_aliases')
+            .select('artist_id, alias_lower')
+            .in('alias_lower', lowerNames.slice(0, 200));
+
+          if (aliasRows?.length) {
+            const aliasArtistIds = [...new Set(aliasRows.map(a => a.artist_id))];
+            const { data: aliasArtists } = await supabase
+              .from('artists')
+              .select('id, name, image_url, bio')
+              .in('id', aliasArtistIds);
+
+            const artistById = {};
+            for (const a of (aliasArtists || [])) artistById[a.id] = a;
+
+            for (const row of aliasRows) {
+              const master = artistById[row.artist_id];
+              if (master && !freshMap[row.alias_lower]) {
+                freshMap[row.alias_lower] = master;
+              }
+            }
+          }
+        }
+      } catch { /* artist_aliases table may not exist yet */ }
+
+      for (const ev of enrichable) {
+        const evNameLower = ev.artist_name.trim().toLowerCase();
+        // Skip blacklisted artists in the linking step too
+        if (blacklistedNames.has(evNameLower)) continue;
+        const artistData = freshMap[evNameLower];
         if (!artistData) continue;
         const update = {};
         if (!ev.image_url && artistData.image_url) update.image_url = artistData.image_url;
@@ -382,10 +753,21 @@ export async function POST(request) {
     totalScraped: validEvents.length,
     totalUpserted,
     scrapers: scraperResults,
+    autoSort: {
+      knownArtistMatches: autoSortResult.matched,
+      keywordRouted: autoSortResult.keywordRouted,
+      unknownsForTriage: autoSortResult.unknowns,
+    },
+    priceExtractor: {
+      pricesExtracted: priceResult.extracted,
+      decimalsCleaned: priceResult.cleaned,
+    },
     enrichment: {
       artistsLookedUp: enrichResult.artistsLookedUp,
       eventsEnriched: enrichResult.eventsEnriched,
       eventsLinked: enrichResult.eventsLinked,
+      blacklistedSkipped: enrichResult.blacklisted,
+      humanEditedSkipped: enrichResult.humanSkipped,
       errors: enrichResult.errors.length ? enrichResult.errors : null,
     },
     errors: upsertErrors.length ? upsertErrors : null,

@@ -1,60 +1,63 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
+
+// Create a Supabase client that forwards the user's auth token (respects RLS)
+function getAuthClient(request) {
+  const authHeader = request.headers.get('Authorization') || '';
+  const token = authHeader.replace('Bearer ', '');
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
+  );
+}
 
 /**
- * GET /api/follows?device_id=xxx
- * Returns all follows for a device, with "next gig" data hydrated from events.
+ * GET /api/follows
+ * Returns all followed artists for the authenticated user, with "next gig" hydrated.
  */
 export async function GET(request) {
-  const { searchParams } = new URL(request.url);
-  const deviceId = searchParams.get('device_id');
-
-  if (!deviceId) {
-    return NextResponse.json({ error: 'device_id required' }, { status: 400 });
+  const supabase = getAuthClient(request);
+  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Get all follows for this device
   const { data: follows, error } = await supabase
-    .from('user_follows')
+    .from('user_followed_artists')
     .select('*')
-    .eq('device_id', deviceId)
+    .eq('user_id', user.id)
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Error fetching follows:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   // Hydrate with "next gig" from events table
-  const now = new Date().toISOString();
+  const now = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const { getAdminClient } = await import('@/lib/supabase');
+  const admin = getAdminClient();
+
   const hydrated = await Promise.all(
     (follows || []).map(async (follow) => {
-      let nextGig = null;
+      let next_gig = null;
+      const { data: events } = await admin
+        .from('events')
+        .select('id, artist_name, event_date, venue_name')
+        .ilike('artist_name', follow.artist_name)
+        .eq('status', 'published')
+        .gte('event_date', now)
+        .order('event_date', { ascending: true })
+        .limit(1);
+      if (events?.length) next_gig = events[0];
 
-      if (follow.entity_type === 'venue') {
-        const { data: events } = await supabase
-          .from('events')
-          .select('id, artist_name, event_date, venue_name')
-          .eq('venue_name', follow.entity_name)
-          .eq('status', 'published')
-          .gte('event_date', now)
-          .order('event_date', { ascending: true })
-          .limit(1);
-        if (events?.length) nextGig = events[0];
-      } else {
-        // artist
-        const { data: events } = await supabase
-          .from('events')
-          .select('id, artist_name, event_date, venue_name')
-          .ilike('artist_name', follow.entity_name)
-          .eq('status', 'published')
-          .gte('event_date', now)
-          .order('event_date', { ascending: true })
-          .limit(1);
-        if (events?.length) nextGig = events[0];
-      }
-
-      return { ...follow, next_gig: nextGig };
+      return {
+        entity_type: 'artist',
+        entity_name: follow.artist_name,
+        receives_notifications: follow.receives_notifications,
+        created_at: follow.created_at,
+        next_gig,
+      };
     })
   );
 
@@ -63,62 +66,59 @@ export async function GET(request) {
 
 /**
  * POST /api/follows
- * Body: { device_id, entity_type, entity_name, entity_id? }
- * Creates a follow relationship.
+ * Body: { artist_name }
+ * Follows an artist for the authenticated user.
  */
 export async function POST(request) {
-  const body = await request.json();
-  const { device_id, entity_type, entity_name, entity_id } = body;
-
-  if (!device_id || !entity_type || !entity_name) {
-    return NextResponse.json({ error: 'device_id, entity_type, entity_name required' }, { status: 400 });
+  const supabase = getAuthClient(request);
+  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { data, error } = await supabase
-    .from('user_follows')
+  const { artist_name } = await request.json();
+  if (!artist_name) {
+    return NextResponse.json({ error: 'artist_name required' }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from('user_followed_artists')
     .upsert(
-      {
-        device_id,
-        entity_type,
-        entity_name,
-        entity_id: entity_id || null,
-        receives_notifications: true,
-      },
-      { onConflict: 'device_id,entity_type,entity_name' }
-    )
-    .select()
-    .single();
+      { user_id: user.id, artist_name, receives_notifications: true },
+      { onConflict: 'user_id,artist_name' }
+    );
 
   if (error) {
-    console.error('Error creating follow:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  return NextResponse.json({ success: true });
 }
 
 /**
  * DELETE /api/follows
- * Body: { device_id, entity_type, entity_name }
- * Removes a follow relationship.
+ * Body: { artist_name }
+ * Unfollows an artist for the authenticated user.
  */
 export async function DELETE(request) {
-  const body = await request.json();
-  const { device_id, entity_type, entity_name } = body;
+  const supabase = getAuthClient(request);
+  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
-  if (!device_id || !entity_type || !entity_name) {
-    return NextResponse.json({ error: 'device_id, entity_type, entity_name required' }, { status: 400 });
+  const { artist_name } = await request.json();
+  if (!artist_name) {
+    return NextResponse.json({ error: 'artist_name required' }, { status: 400 });
   }
 
   const { error } = await supabase
-    .from('user_follows')
+    .from('user_followed_artists')
     .delete()
-    .eq('device_id', device_id)
-    .eq('entity_type', entity_type)
-    .eq('entity_name', entity_name);
+    .eq('user_id', user.id)
+    .eq('artist_name', artist_name);
 
   if (error) {
-    console.error('Error deleting follow:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
@@ -127,30 +127,30 @@ export async function DELETE(request) {
 
 /**
  * PATCH /api/follows
- * Body: { device_id, entity_type, entity_name, receives_notifications }
- * Toggles notification preference for a follow.
+ * Body: { artist_name, receives_notifications }
+ * Toggles notification preference for a followed artist.
  */
 export async function PATCH(request) {
-  const body = await request.json();
-  const { device_id, entity_type, entity_name, receives_notifications } = body;
-
-  if (!device_id || !entity_type || !entity_name || receives_notifications === undefined) {
-    return NextResponse.json({ error: 'device_id, entity_type, entity_name, receives_notifications required' }, { status: 400 });
+  const supabase = getAuthClient(request);
+  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { data, error } = await supabase
-    .from('user_follows')
+  const { artist_name, receives_notifications } = await request.json();
+  if (!artist_name || receives_notifications === undefined) {
+    return NextResponse.json({ error: 'artist_name, receives_notifications required' }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from('user_followed_artists')
     .update({ receives_notifications })
-    .eq('device_id', device_id)
-    .eq('entity_type', entity_type)
-    .eq('entity_name', entity_name)
-    .select()
-    .single();
+    .eq('user_id', user.id)
+    .eq('artist_name', artist_name);
 
   if (error) {
-    console.error('Error updating notification pref:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  return NextResponse.json({ success: true });
 }

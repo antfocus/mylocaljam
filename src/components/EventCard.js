@@ -42,7 +42,7 @@ export default function EventCard({ event, onReport, showDate }) {
       {/* Details */}
       <div className="flex-1 min-w-0">
         <div className="font-display font-bold text-[17px] text-brand-text mb-1 flex items-center gap-2">
-          {event.artist_name}
+          {event.event_title || event.artist_name}
           {event.recurring && (
             <span className="text-brand-accent-2" title="Recurring event">{Icons.repeat}</span>
           )}

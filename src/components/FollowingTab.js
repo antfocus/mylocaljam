@@ -101,6 +101,19 @@ export default function FollowingTab({
     });
   }, [filteredFollowing, events]);
 
+  // Build artist name → image URL lookup from events array
+  const artistImageMap = useMemo(() => {
+    const map = {};
+    for (const e of events) {
+      const artistName = (e.name || e.artist_name || '').toLowerCase();
+      if (artistName && !map[artistName]) {
+        const img = e.artist_image || e.image_url || null;
+        if (img) map[artistName] = img;
+      }
+    }
+    return map;
+  }, [events]);
+
   // Unfollow with undo toast
   const handleUnfollow = useCallback((entityType, entityName) => {
     // Clear any existing undo timer
@@ -207,99 +220,105 @@ export default function FollowingTab({
     );
   }
 
-  // ── Following List ─────────────────────────────────────────────────────────
+  // ── Following List (VIP Roster) ─────────────────────────────────────────────
+  const avatarBg = darkMode ? '#2A2A38' : '#E5E7EB';
+  const rowBorder = darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+  const chevronClr = darkMode ? '#4A4A6A' : '#9CA3AF';
+
+  // Local search state for artist filtering
+  const [localSearch, setLocalSearch] = useState('');
+  const displayList = useMemo(() => {
+    if (!localSearch.trim()) return followingWithNextGig;
+    const q = normalize(localSearch);
+    return followingWithNextGig.filter(f => normalize(f.entity_name).includes(q));
+  }, [followingWithNextGig, localSearch]);
+
   return (
     <div style={{ padding: '12px 16px 20px' }}>
+      {/* Search bar */}
+      <div style={{ marginBottom: '12px' }}>
+        <input
+          type="text"
+          placeholder="Search your artists..."
+          value={localSearch}
+          onChange={(e) => setLocalSearch(e.target.value)}
+          style={{
+            width: '100%', padding: '10px 14px',
+            borderRadius: '10px', border: 'none',
+            background: t.inputBg, color: t.text,
+            fontSize: '14px', fontWeight: 500,
+            fontFamily: "'DM Sans', sans-serif",
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+      </div>
+
       <p style={{ fontSize: '12px', fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>
-        {followingWithNextGig.length} following
+        {displayList.length} following
       </p>
 
-      {followingWithNextGig.length === 0 && searchQuery.trim() && (
+      {displayList.length === 0 && (localSearch.trim() || searchQuery.trim()) && (
         <div style={{ textAlign: 'center', padding: '32px 0' }}>
-          <p style={{ fontSize: '14px', color: t.textMuted }}>No results for &ldquo;{searchQuery}&rdquo;</p>
+          <p style={{ fontSize: '14px', color: t.textMuted }}>No results found</p>
         </div>
       )}
 
-      {followingWithNextGig.map((f, i) => {
-        const isVenue = f.entity_type === 'venue';
-        const nextGigText = formatNextGig(f.next_gig);
-        const notifOn = f.receives_notifications !== false;
+      {/* Vertical list */}
+      {displayList.map((f, i) => {
+        const imgUrl = artistImageMap[f.entity_name.toLowerCase()] || null;
+        const isLast = i === displayList.length - 1;
 
         return (
-          <div key={`${f.entity_type}-${f.entity_name}-${i}`} style={{
-            display: 'flex', alignItems: 'center', gap: '12px',
-            padding: '14px', borderRadius: '14px', marginBottom: '8px',
-            background: t.cardBg, border: `1px solid ${t.border}`,
-            cursor: 'pointer',
-            transition: 'background 0.15s',
-          }}
+          <div
+            key={`${f.entity_type}-${f.entity_name}-${i}`}
             onClick={() => onEntityTap?.(f.entity_type, f.entity_name)}
+            style={{
+              display: 'flex', alignItems: 'center',
+              padding: '12px 16px',
+              borderBottom: isLast ? 'none' : `1px solid ${rowBorder}`,
+              cursor: 'pointer',
+              transition: 'background 0.1s',
+            }}
           >
             {/* Avatar */}
+            {imgUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={imgUrl}
+                alt={f.entity_name}
+                style={{
+                  width: '48px', height: '48px', borderRadius: '50%',
+                  objectFit: 'cover', flexShrink: 0,
+                }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+              />
+            ) : null}
             <div style={{
-              width: '44px', height: '44px', borderRadius: isVenue ? '12px' : '50%',
-              background: isVenue
-                ? `linear-gradient(135deg, #a78bfa, ${t.accentAlt})`
-                : `linear-gradient(135deg, ${t.accent}, ${t.accentAlt})`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '20px', flexShrink: 0,
+              width: '48px', height: '48px', borderRadius: '50%',
+              background: avatarBg, flexShrink: 0,
+              display: imgUrl ? 'none' : 'flex',
+              alignItems: 'center', justifyContent: 'center',
             }}>
-              {isVenue ? '📍' : '🎤'}
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" fill={t.accent} />
+              </svg>
             </div>
 
-            {/* Name + subtext */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontSize: '14px', fontWeight: 700, color: t.text,
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {f.entity_name}
-              </div>
-              <div style={{ fontSize: '11px', color: nextGigText ? t.accentAlt : t.textMuted, fontWeight: nextGigText ? 600 : 400, marginTop: '2px' }}>
-                {nextGigText || (isVenue ? 'Venue' : 'Artist')}
-              </div>
+            {/* Name */}
+            <div style={{
+              flex: 1, minWidth: 0, marginLeft: '14px',
+              fontSize: '16px', fontWeight: 600, color: t.text,
+              fontFamily: "'DM Sans', sans-serif",
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {f.entity_name}
             </div>
 
-            {/* Notification bell toggle */}
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleNotif?.(f.entity_type, f.entity_name); }}
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: '18px', padding: '4px',
-                opacity: notifOn ? 1 : 0.4,
-                transition: 'opacity 0.15s',
-              }}
-              title={notifOn ? 'Notifications on' : 'Notifications off'}
-            >
-              {notifOn ? '🔔' : '🔕'}
-            </button>
-
-            {/* Following / Unfollow button */}
-            <button
-              onClick={(e) => { e.stopPropagation(); handleUnfollow(f.entity_type, f.entity_name); }}
-              style={{
-                padding: '6px 12px', borderRadius: '8px', border: 'none',
-                background: t.followBg, color: '#8DD888',
-                fontSize: '11px', fontWeight: 700, cursor: 'pointer',
-                fontFamily: "'DM Sans', sans-serif",
-                whiteSpace: 'nowrap', flexShrink: 0,
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.textContent = '+ Follow';
-                e.currentTarget.style.color = t.accent;
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.border = `1.5px solid ${t.accent}`;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.textContent = '✓ Following';
-                e.currentTarget.style.color = '#8DD888';
-                e.currentTarget.style.background = t.followBg;
-                e.currentTarget.style.border = 'none';
-              }}
-            >
-              ✓ Following
-            </button>
+            {/* Chevron */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, marginLeft: '8px' }}>
+              <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill={chevronClr} />
+            </svg>
           </div>
         );
       })}

@@ -1,3 +1,49 @@
+/**
+ * Get UTC date boundaries for an Eastern (America/New_York) calendar day.
+ * Handles EDT (UTC-4) and EST (UTC-5) automatically via Intl.
+ *
+ * Usage:
+ *   const { start, end } = getEasternDayBounds('2026-03-20');
+ *   query.gte('event_date', start).lt('event_date', end);
+ *
+ * An 8:30 PM Eastern show = T00:30 UTC next day. This function returns
+ * UTC boundaries that cover the full Eastern calendar day.
+ */
+export function getEasternDayBounds(dateStr) {
+  // Determine the offset for this date (EDT = -4, EST = -5)
+  const probe = new Date(`${dateStr}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    timeZoneName: 'short',
+  }).formatToParts(probe);
+  const tz = parts.find(p => p.type === 'timeZoneName')?.value ?? 'EST';
+  const offsetHours = tz.includes('EDT') ? 4 : 5;
+
+  // Midnight Eastern in UTC = date + offsetHours
+  const start = `${dateStr}T${String(offsetHours).padStart(2, '0')}:00:00Z`;
+
+  // Next day midnight Eastern in UTC
+  const next = new Date(probe);
+  next.setUTCDate(next.getUTCDate() + 1);
+  const nextStr = next.toISOString().slice(0, 10);
+  const end = `${nextStr}T${String(offsetHours).padStart(2, '0')}:00:00Z`;
+
+  return { start, end, nextDateStr: nextStr, offsetHours };
+}
+
+/**
+ * Convert a UTC ISO date string to an Eastern (America/New_York) date string (YYYY-MM-DD).
+ * Use this instead of .slice(0, 10) which gives the UTC date.
+ */
+export function toEasternDateStr(isoDate) {
+  if (!isoDate) return '';
+  try {
+    return new Date(isoDate).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  } catch {
+    return (isoDate || '').slice(0, 10);
+  }
+}
+
 export function formatDate(d) {
   const date = new Date(d);
   return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -68,16 +114,16 @@ export function getVenueColor(venueName) {
   return VENUE_COLORS[venueName] || '#FF6B35';
 }
 
+// Canonical allowed tags — these MUST match the AI system prompts in ai-lookup/route.js
+// Controlled vocabulary: admin tag-pickers and AI output both constrained to these exact strings
 export const GENRES = [
-  'Rock', 'Indie', 'Blues', 'Jazz', 'Folk', 'Punk', 'Electronic',
-  'R&B/Soul', 'Americana', 'Singer-Songwriter', 'Funk', 'Reggae',
-  'Country', 'Hip-Hop', 'Cover Band',
+  'Rock', 'Pop', 'Country', 'Reggae', 'Jazz/Blues', 'R&B/Soul',
+  'Hip-Hop', 'EDM/DJ', 'Tribute/Cover', 'Alternative', 'Jam Band',
 ];
 
 export const VIBES = [
-  '🔥 High Energy', '🎸 Rock', '🎷 Jazz & Blues', '🎵 Acoustic Chill',
-  '🎤 Singer-Songwriter', '🎧 DJ / Electronic', '🎺 Funk & Soul',
-  '🌊 Beach Vibes', '🎻 Folk & Americana',
+  'High-Energy', 'Chill/Acoustic', 'Dance Heavy', 'Sing-Along',
+  'Background Music', 'Family Friendly', 'Late Night',
 ];
 
 // ── New: clean time range formatting ─────────────────────────────────────────

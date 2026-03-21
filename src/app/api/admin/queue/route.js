@@ -98,14 +98,14 @@ export async function PUT(request) {
   const { submission_id, action } = body;
 
   if (action === 'reject') {
-    // Fetch submission to get image_url for storage cleanup
+    // Step A: Fetch submission to get image_url for storage cleanup
     const { data: sub } = await supabase
       .from('submissions')
       .select('image_url')
       .eq('id', submission_id)
       .single();
 
-    // Delete the poster from storage if it exists in our posters bucket
+    // Delete the poster from storage bucket (permanent)
     if (sub?.image_url && sub.image_url.includes('/posters/')) {
       try {
         const fileName = sub.image_url.split('/posters/').pop();
@@ -114,19 +114,19 @@ export async function PUT(request) {
         }
       } catch (storageErr) {
         console.error('Failed to delete poster from storage:', storageErr);
-        // Don't block the reject if storage delete fails
       }
     }
 
+    // Step B: Hard DELETE the submission row (no soft-delete)
     const { error } = await supabase
       .from('submissions')
-      .update({ status: 'rejected' })
+      .delete()
       .eq('id', submission_id);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, hard_deleted: true });
   }
 
   if (action === 'archive') {

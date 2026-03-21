@@ -20,12 +20,28 @@ const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
  */
 function cleanBio(raw) {
   if (!raw) return null;
-  return raw
+  let cleaned = raw
     .replace(/<a[^>]*>.*?<\/a>/gi, '') // remove anchor links (incl. "Read more")
     .replace(/<[^>]+>/g, '')            // strip remaining HTML
     .replace(/\s+/g, ' ')              // collapse whitespace
     .trim()
     || null;
+  if (!cleaned) return null;
+  // Reject Last.fm disambiguation pages and garbage bios
+  const lower = cleaned.toLowerCase();
+  if (lower.startsWith('there are numerous artists')
+    || lower.startsWith('there are multiple artists')
+    || lower.startsWith('there are several artists')
+    || lower.includes('artists with this name')) {
+    return null;
+  }
+  // Cap bio at 300 chars — truncate at last sentence boundary
+  if (cleaned.length > 300) {
+    const truncated = cleaned.substring(0, 300);
+    const lastPeriod = truncated.lastIndexOf('.');
+    cleaned = lastPeriod > 100 ? truncated.substring(0, lastPeriod + 1) : truncated + '…';
+  }
+  return cleaned;
 }
 
 /**
@@ -96,20 +112,48 @@ async function fetchFromLastfm(artistName) {
  * @param {object}  supabase    An initialised Supabase client
  * @returns {object|null}  { name, image_url, bio, tags } or null
  */
-export async function enrichWithLastfm(artistName, supabase) {
+export async function enrichWithLastfm(artistName, supabase, { blacklist } = {}) {
   if (!artistName?.trim()) return null;
 
   const name = artistName.trim();
 
-  // --- 1. Check cache ---
-  const { data: cached } = await supabase
+  // Check blacklist — never create profiles for deleted/ignored artists
+  if (blacklist && blacklist.has(name.toLowerCase())) return null;
+
+  // --- 1. Check cache (primary name OR alias) ---
+  let cached = null;
+
+  // First: exact name match in artists table
+  const { data: directMatch } = await supabase
     .from('artists')
     .select('*')
     .ilike('name', name)
     .single();
 
+  if (directMatch) {
+    cached = directMatch;
+  } else {
+    // Second: check artist_aliases for a known alias → master artist
+    try {
+      const { data: aliasMatch } = await supabase
+        .from('artist_aliases')
+        .select('artist_id')
+        .eq('alias_lower', name.toLowerCase().trim())
+        .single();
+
+      if (aliasMatch?.artist_id) {
+        const { data: master } = await supabase
+          .from('artists')
+          .select('*')
+          .eq('id', aliasMatch.artist_id)
+          .single();
+        if (master) cached = master;
+      }
+    } catch { /* artist_aliases table may not exist yet */ }
+  }
+
   if (cached) {
-    const age = Date.now() - new Date(cached.last_fetched).getTime();
+    const age = Date.now() - new Date(cached.last_fetched || 0).getTime();
     if (age < CACHE_TTL_MS) return cached; // still fresh
   }
 
@@ -118,6 +162,12 @@ export async function enrichWithLastfm(artistName, supabase) {
 
   // Cache the result even if Last.fm returned nothing ("not found").
   // This prevents re-querying the same unknown local band every run.
+  // Convert Last.fm tags to genres array (top 3, capitalized)
+  const genresFromTags = fresh?.tags
+    ? fresh.tags.split(',').slice(0, 3).map(t => t.trim()).filter(Boolean)
+        .map(t => t.charAt(0).toUpperCase() + t.slice(1))
+    : null;
+
   const record = {
     name: fresh?.name || name,
     image_url: fresh?.image_url || null,
@@ -125,6 +175,13 @@ export async function enrichWithLastfm(artistName, supabase) {
     tags: fresh?.tags || null,
     last_fetched: new Date().toISOString(),
   };
+
+  // Only set genres from Last.fm tags if the artist doesn't already have curated genres
+  if (genresFromTags && genresFromTags.length > 0) {
+    if (!cached?.genres || cached.genres.length === 0) {
+      record.genres = genresFromTags;
+    }
+  }
 
   // --- 3. Upsert into artists cache ---
   await supabase

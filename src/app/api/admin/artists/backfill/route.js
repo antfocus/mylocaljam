@@ -50,11 +50,21 @@ export async function POST(request) {
     return NextResponse.json({ ok: true, message: 'No events with artist names found', inserted: 0 });
   }
 
+  // 1b. Load blacklist (ignored artists)
+  let blacklistedNames = new Set();
+  try {
+    const { data: bl } = await supabase.from('ignored_artists').select('name_lower').limit(5000);
+    blacklistedNames = new Set((bl || []).map(b => b.name_lower));
+  } catch { /* table may not exist yet */ }
+
   // 2. Build a map of unique artist names, picking the best available data
   const artistMap = {};
   for (const ev of events) {
     const name = ev.artist_name.trim();
     if (!name) continue;
+
+    // Skip blacklisted names — never re-create deleted artists
+    if (blacklistedNames.has(name.toLowerCase())) continue;
 
     // Normalize to lowercase key for dedup, but keep original casing
     const key = name.toLowerCase();

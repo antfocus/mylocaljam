@@ -45,6 +45,9 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
+/* Hide scrollbar on shortcut pills */
+.shortcut-pills::-webkit-scrollbar { display: none; }
+.shortcut-pills { scrollbar-width: none; }
 
 /* Selection */
 ::selection {
@@ -75,23 +78,24 @@ input[type="range"].distance-slider {
   border-radius: 3px;
   outline: none;
   cursor: pointer;
-  /* Inset so thumb is flush with track edges at 0 and max */
   margin-left: 0;
   margin-right: 0;
-  padding: 0;
+  /* Extra vertical padding creates a larger invisible touch target */
+  padding: 14px 0;
+  box-sizing: content-box;
 }
 input[type="range"].distance-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  /* 20px visual thumb — sleek and clean */
-  width: 20px;
-  height: 20px;
+  /* 26px visual thumb — mobile-friendly grab target */
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: #3AADA0;
-  border: 2px solid #FFFFFF;
+  border: 2.5px solid #FFFFFF;
   box-shadow: 0 1px 4px rgba(0,0,0,0.3), 0 2px 8px rgba(58,173,160,0.25);
   cursor: grab;
-  margin-top: -7px;
+  margin-top: -10px;
   position: relative;
 }
 input[type="range"].distance-slider::-webkit-slider-thumb:active {
@@ -100,12 +104,12 @@ input[type="range"].distance-slider::-webkit-slider-thumb:active {
   box-shadow: 0 2px 8px rgba(58,173,160,0.5), 0 0 0 2px #FFFFFF;
 }
 input[type="range"].distance-slider::-moz-range-thumb {
-  /* 20px visual thumb — sleek and clean */
-  width: 20px;
-  height: 20px;
+  /* 26px visual thumb — mobile-friendly grab target */
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: #3AADA0;
-  border: 2px solid #FFFFFF;
+  border: 2.5px solid #FFFFFF;
   box-shadow: 0 1px 4px rgba(0,0,0,0.3), 0 2px 8px rgba(58,173,160,0.25);
   cursor: grab;
 }

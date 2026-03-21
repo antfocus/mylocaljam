@@ -111,14 +111,27 @@ export async function POST(request) {
     });
   }
 
-  // --- 3. Look up uncached artists on Last.fm ---
+  // --- 2b. Load blacklist (ignored artists) ---
+  let blacklistedNames = new Set();
+  try {
+    const { data: bl } = await supabase.from('ignored_artists').select('name_lower').limit(5000);
+    blacklistedNames = new Set((bl || []).map(b => b.name_lower));
+  } catch { /* table may not exist yet */ }
+
+  // --- 3. Look up uncached artists on Last.fm (skip blacklisted) ---
   let lookedUp = 0;
-  const artistsToProcess = uncachedNames.slice(0, ARTIST_LIMIT);
+  let blacklisted = 0;
+  const artistsToProcess = uncachedNames
+    .filter(n => {
+      if (blacklistedNames.has(n.toLowerCase().trim())) { blacklisted++; return false; }
+      return true;
+    })
+    .slice(0, ARTIST_LIMIT);
   const errors = [];
 
   for (const name of artistsToProcess) {
     try {
-      await enrichWithLastfm(name, supabase);
+      await enrichWithLastfm(name, supabase, { blacklist: blacklistedNames });
       lookedUp++;
       // Small delay to not hammer Last.fm
       await new Promise(r => setTimeout(r, 300));
