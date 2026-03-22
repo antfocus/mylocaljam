@@ -934,14 +934,30 @@ export default function AdminPage() {
             <MetricCard label="Top Venue" value="—" sub="Awaiting click tracking" />
           </div>
 
-          {/* Data Health */}
-          <SectionHeader title="Data Health" />
+          {/* Health & Inventory */}
+          <SectionHeader title="Health & Inventory" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
             <MetricCard
-              label="Total Events"
-              value={totalEvents.toLocaleString()}
-              sub="Published upcoming"
+              label="Successful Syncs"
+              value={scraperHealth.filter(s => s.status === 'success' && s.last_sync && (Date.now() - new Date(s.last_sync).getTime()) < 24 * 60 * 60 * 1000).length}
+              sub={`of ${scraperHealth.length} total scrapers`}
               color="#22c55e"
+              onClick={() => {
+                setActiveTab('venues');
+                setVenuesFilter('success');
+                fetchScraperHealth();
+              }}
+            />
+            <MetricCard
+              label="Failing Scrapers"
+              value={scraperHealth.filter(s => s.status === 'fail').length}
+              sub={scraperHealth.filter(s => s.status === 'fail').length === 0 ? 'All scrapers healthy' : 'Click to view →'}
+              color={scraperHealth.filter(s => s.status === 'fail').length > 0 ? '#ef4444' : '#22c55e'}
+              onClick={scraperHealth.filter(s => s.status === 'fail').length > 0 ? () => {
+                setActiveTab('venues');
+                setVenuesFilter('fail');
+                fetchScraperHealth();
+              } : undefined}
             />
             <MetricCard
               label="New Events (24h)"
@@ -958,10 +974,45 @@ export default function AdminPage() {
               } : undefined}
             />
             <MetricCard
+              label="Total Events"
+              value={totalEvents.toLocaleString()}
+              sub="Published upcoming"
+              color="#22c55e"
+            />
+            <MetricCard
               label="Total Artists"
               value={totalArtists.toLocaleString()}
               sub="In database"
               color="#22c55e"
+            />
+          </div>
+
+          {/* Action Items / Triage */}
+          <SectionHeader title="Action Items" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
+            <MetricCard
+              label="Pending User Flags"
+              value={pendingFlags}
+              sub={pendingFlags === 0 ? 'Inbox zero' : 'Click to view →'}
+              color={pendingFlags > 0 ? '#ef4444' : '#22c55e'}
+              onClick={pendingFlags > 0 ? () => {
+                setActiveTab('reports');
+                setFlagsViewFilter('pending');
+                fetchReports();
+              } : undefined}
+            />
+            <MetricCard
+              label="Events Missing Times"
+              value={eventsMissingTimeCount}
+              sub={eventsMissingTimeCount === 0 ? 'All events have times' : 'Click to view →'}
+              color={eventsMissingTimeCount > 0 ? '#EAB308' : '#22c55e'}
+              onClick={eventsMissingTimeCount > 0 ? () => {
+                setActiveTab('events');
+                setEventsMissingTime(true);
+                setEventsRecentlyAdded(false);
+                setEvents([]);
+                fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, true, false);
+              } : undefined}
             />
             <MetricCard
               label="Events Missing Images"
@@ -983,52 +1034,6 @@ export default function AdminPage() {
                 setActiveTab('artists');
                 setArtistMissingFilters({ bio: true, image_url: false, genres: false, vibes: false });
                 fetchArtists('', false);
-              } : undefined}
-            />
-            <MetricCard
-              label="Pending User Flags"
-              value={pendingFlags}
-              sub={pendingFlags === 0 ? 'Inbox zero' : 'Click to view →'}
-              color={pendingFlags > 0 ? '#ef4444' : '#22c55e'}
-              onClick={pendingFlags > 0 ? () => {
-                setActiveTab('reports');
-                setFlagsViewFilter('pending');
-                fetchReports();
-              } : undefined}
-            />
-            <MetricCard
-              label="Failing Scrapers"
-              value={scraperHealth.filter(s => s.status === 'fail').length}
-              sub={scraperHealth.filter(s => s.status === 'fail').length === 0 ? 'All scrapers healthy' : 'Click to view →'}
-              color={scraperHealth.filter(s => s.status === 'fail').length > 0 ? '#ef4444' : '#22c55e'}
-              onClick={scraperHealth.filter(s => s.status === 'fail').length > 0 ? () => {
-                setActiveTab('venues');
-                setVenuesFilter('fail');
-                fetchScraperHealth();
-              } : undefined}
-            />
-            <MetricCard
-              label="Successful Syncs"
-              value={scraperHealth.filter(s => s.status === 'success' && s.last_sync && (Date.now() - new Date(s.last_sync).getTime()) < 24 * 60 * 60 * 1000).length}
-              sub={`of ${scraperHealth.length} total scrapers`}
-              color="#22c55e"
-              onClick={() => {
-                setActiveTab('venues');
-                setVenuesFilter('success');
-                fetchScraperHealth();
-              }}
-            />
-            <MetricCard
-              label="Events Missing Times"
-              value={eventsMissingTimeCount}
-              sub={eventsMissingTimeCount === 0 ? 'All events have times' : 'Click to view →'}
-              color={eventsMissingTimeCount > 0 ? '#EAB308' : '#22c55e'}
-              onClick={eventsMissingTimeCount > 0 ? () => {
-                setActiveTab('events');
-                setEventsMissingTime(true);
-                setEventsRecentlyAdded(false);
-                setEvents([]);
-                fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, true, false);
               } : undefined}
             />
           </div>
