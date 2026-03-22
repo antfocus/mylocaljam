@@ -213,26 +213,29 @@ export async function scrapeAsburyLanes() {
     console.log(`[AsburyLanes] Listing page fetched: ${html.length} bytes`);
 
     const page1Cards = parseCardsFromHTML(html);
-    console.log(`[AsburyLanes] Page 1: ${page1Cards.length} cards`);
-
-    if (page1Cards.length === 0) {
-      const hasCardBtn = html.includes('card__btn');
-      const hasCardHeading = html.includes('card__heading');
-      const hasEventHref = html.includes('/event/');
-      console.log(`[AsburyLanes] No event cards found. Diagnostics: html=${html.length}b, card__btn=${hasCardBtn}, card__heading=${hasCardHeading}, /event/=${hasEventHref}`);
-      return { events: [], error: 'No event cards found' };
-    }
+    console.log(`[AsburyLanes] Page 1 (full page): ${page1Cards.length} cards`);
 
     // ── Paginate: BentoBox uses ?p=N with X-Requested-With header ──
     // The "Load More Events" button (paginator__ajax) sends GET /concerts/?p=2
     // with X-Requested-With: XMLHttpRequest. The response is an HTML fragment
     // containing the next batch of <li class="card"> elements.
     // When pages run out, the server wraps around and returns duplicates.
+    //
+    // IMPORTANT: BentoBox/nginx may block full-page requests from datacenter IPs
+    // (Vercel), returning HTML with 0 cards. The AJAX pagination endpoint (?p=N
+    // with X-Requested-With header) still works. If the full page returns 0 cards,
+    // we fall back to fetching ?p=1 via AJAX to get the first batch.
     const seenHrefs = new Set(page1Cards.map(c => c.href));
     const allCards = [...page1Cards];
-    const MAX_PAGES = 5; // safety limit to avoid infinite loops
 
-    for (let page = 2; page <= MAX_PAGES; page++) {
+    // If full page returned 0 cards, start AJAX pagination from page 1 (fallback)
+    const startPage = page1Cards.length === 0 ? 1 : 2;
+    if (startPage === 1) {
+      console.log(`[AsburyLanes] Full page returned 0 cards — falling back to AJAX ?p=1`);
+    }
+    const MAX_PAGES = 12; // site has up to ~10 pages of events
+
+    for (let page = startPage; page <= MAX_PAGES; page++) {
       try {
         const pageRes = await fetch(`${LISTING_URL}?p=${page}`, {
           headers: {
@@ -272,6 +275,14 @@ export async function scrapeAsburyLanes() {
         console.log(`[AsburyLanes] Page ${page} fetch error: ${err.message}, stopping pagination`);
         break;
       }
+    }
+
+    if (allCards.length === 0) {
+      const hasCardBtn = html.includes('card__btn');
+      const hasCardHeading = html.includes('card__heading');
+      const hasEventHref = html.includes('/event/');
+      console.log(`[AsburyLanes] No event cards found after full page + AJAX fallback. Diagnostics: html=${html.length}b, card__btn=${hasCardBtn}, card__heading=${hasCardHeading}, /event/=${hasEventHref}`);
+      return { events: [], error: 'No event cards found (possible IP block)' };
     }
 
     console.log(`[AsburyLanes] Total unique cards across all pages: ${allCards.length}`);
