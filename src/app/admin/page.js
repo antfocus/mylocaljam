@@ -120,6 +120,7 @@ export default function AdminPage() {
   const [flagsViewFilter, setFlagsViewFilter] = useState('pending'); // 'pending' | 'archived'
   const [scraperHealth, setScraperHealth] = useState([]);
   const [venuesFilter, setVenuesFilter] = useState('all'); // 'all' | 'fail' | 'warning' | 'success'
+  const [forceSyncing, setForceSyncing] = useState(null); // scraper_key currently syncing
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` };
 
@@ -149,6 +150,29 @@ export default function AdminPage() {
       if (res.ok) setScraperHealth(await res.json());
     } catch (err) { console.error('Failed to fetch scraper health:', err); }
   }, [password]);
+
+  const handleForceSync = useCallback(async (scraperKey) => {
+    if (forceSyncing) return;
+    setForceSyncing(scraperKey);
+    try {
+      const res = await fetch('/api/admin/force-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+        body: JSON.stringify({ scraper_key: scraperKey }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setQueueToast(`${scraperKey}: synced ${data.eventsScraped} events in ${data.duration}`);
+        fetchScraperHealth();
+      } else {
+        setQueueToast(`${scraperKey} sync failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      setQueueToast(`Force sync error: ${err.message}`);
+    } finally {
+      setForceSyncing(null);
+    }
+  }, [password, forceSyncing, fetchScraperHealth]);
 
   const fetchReports = useCallback(async () => {
     try {
@@ -2594,6 +2618,22 @@ export default function AdminPage() {
                     }}>
                       {s.platform || 'Unknown'}
                     </span>
+                    <button
+                      onClick={() => handleForceSync(s.scraper_key)}
+                      disabled={!!forceSyncing}
+                      style={{
+                        padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 700,
+                        background: forceSyncing === s.scraper_key ? '#E8722A' : 'rgba(232, 114, 42, 0.12)',
+                        color: forceSyncing === s.scraper_key ? '#FFFFFF' : '#E8722A',
+                        border: '1px solid rgba(232, 114, 42, 0.3)',
+                        fontFamily: "'DM Sans', sans-serif",
+                        cursor: forceSyncing ? 'not-allowed' : 'pointer',
+                        flexShrink: 0, opacity: forceSyncing && forceSyncing !== s.scraper_key ? 0.4 : 1,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {forceSyncing === s.scraper_key ? '⟳ Syncing…' : '⟳ Sync'}
+                    </button>
                   </div>
                 );
               })}

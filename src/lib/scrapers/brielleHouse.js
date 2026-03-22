@@ -56,9 +56,10 @@ export async function scrapeBrielleHouse() {
 
     const html = await pageRes.text();
 
-    // Extract nonce from em_front_event_object = {"nonce":"38976f6cdd",...}
-    const nonceMatch = html.match(/em_front_event_object\s*=\s*\{[^}]*?"nonce"\s*:\s*"([a-f0-9]+)"/);
-    if (!nonceMatch) throw new Error('Could not extract nonce from em_front_event_object');
+    // Extract nonce from em_front_event_object — key was renamed from "nonce" to "_nonce" in plugin update
+    const nonceMatch = html.match(/em_front_event_object\s*=\s*\{[^}]*?"_nonce"\s*:\s*"([a-f0-9]+)"/)
+                     || html.match(/em_front_event_object\s*=\s*\{[^}]*?"nonce"\s*:\s*"([a-f0-9]+)"/);
+    if (!nonceMatch) throw new Error('Could not extract nonce (_nonce or nonce) from em_front_event_object');
     const nonce = nonceMatch[1];
 
     // Step 2: Make the AJAX request with cookies + nonce
