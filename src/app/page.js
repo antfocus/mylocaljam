@@ -1787,29 +1787,55 @@ export default function HomePage() {
         {/* ── Saved view (Phase 2: Segmented — Saved Events | Following) ── */}
         {activeTab === 'saved' && (
           <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg }}>
-            {/* Underline tab toggle */}
-            <div style={{
-              display: 'flex', justifyContent: 'center', gap: '32px',
-              padding: '14px 16px 0',
-            }}>
-              {[
-                { key: 'events', label: 'My Shows' },
-                { key: 'following', label: 'My Artists' },
-              ].map(seg => (
-                <button key={seg.key} onClick={() => handleSetSavedSegment(seg.key)} style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  padding: '0 0 10px',
-                  color: savedSegment === seg.key ? (darkMode ? '#FFFFFF' : '#1F2937') : t.textMuted,
-                  fontSize: '14px',
-                  fontWeight: savedSegment === seg.key ? 800 : 600,
-                  fontFamily: "'DM Sans', sans-serif",
-                  transition: 'color 0.2s ease',
-                  borderBottom: savedSegment === seg.key ? '3px solid #E8722A' : '3px solid transparent',
-                  letterSpacing: '0.3px',
-                }}>
-                  {seg.label}
-                </button>
-              ))}
+            {/* Segmented control toggle */}
+            <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '24px' }}>
+              <div style={{
+                position: 'relative',
+                display: 'flex',
+                width: '90%',
+                maxWidth: '400px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '100px',
+                padding: '4px',
+              }}>
+                {/* Sliding orange pill */}
+                <div style={{
+                  position: 'absolute',
+                  top: '4px',
+                  left: savedSegment === 'events' ? '4px' : '50%',
+                  width: 'calc(50% - 4px)',
+                  height: 'calc(100% - 8px)',
+                  background: '#E8722A',
+                  borderRadius: '100px',
+                  transition: 'left 250ms cubic-bezier(0.4, 0.0, 0.2, 1)',
+                  boxShadow: '0 4px 15px rgba(255, 100, 0, 0.3)',
+                }} />
+                {[
+                  { key: 'events', label: 'My Shows' },
+                  { key: 'following', label: 'My Artists' },
+                ].map(seg => (
+                  <button key={seg.key} onClick={() => handleSetSavedSegment(seg.key)} style={{
+                    position: 'relative',
+                    zIndex: 1,
+                    flex: 1,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '10px 0',
+                    color: savedSegment === seg.key ? '#FFFFFF' : '#888888',
+                    fontSize: '14px',
+                    fontWeight: savedSegment === seg.key ? 600 : 400,
+                    fontFamily: "'DM Sans', sans-serif",
+                    transition: 'color 200ms ease',
+                    letterSpacing: '0.3px',
+                  }}>
+                    {seg.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Yellow guest banner removed — hard gate handles auth */}
