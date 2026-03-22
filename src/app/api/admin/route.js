@@ -86,6 +86,10 @@ export async function GET(request) {
     if (statusFilter === 'upcoming') countQuery = countQuery.eq('status', 'published').gte('event_date', nowIso);
     else if (statusFilter === 'past') countQuery = countQuery.eq('status', 'published').lt('event_date', nowIso);
     else if (statusFilter === 'hidden') countQuery = countQuery.neq('status', 'published');
+    if (recentlyAdded) {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      countQuery = countQuery.gte('created_at', since);
+    }
     const countResult = await countQuery;
     count = countResult.count;
   }
