@@ -70,6 +70,71 @@ function decodeIcalText(str) {
     .trim();
 }
 
+/**
+ * Extract a start time from title strings like:
+ *   "Kevin Hill 6-9"        → { time: "6:00 PM", cleaned: "Kevin Hill" }
+ *   "Jazz Trio 7pm"         → { time: "7:00 PM", cleaned: "Jazz Trio" }
+ *   "Open Mic 6:30-9:30"    → { time: "6:30 PM", cleaned: "Open Mic" }
+ *   "Blues Night 8pm-11pm"  → { time: "8:00 PM", cleaned: "Blues Night" }
+ *   "Kevin Hill"            → null (no time found)
+ */
+function extractTimeFromTitle(title) {
+  if (!title) return null;
+
+  // Pattern 1: "6:30pm-9:30pm" or "6:30-9:30" or "6pm-9pm" or "6-9" (with optional am/pm)
+  const rangeRe = /\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*[-–—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*$/i;
+  const rangeMatch = title.match(rangeRe);
+  if (rangeMatch) {
+    let hour = parseInt(rangeMatch[1], 10);
+    const min = rangeMatch[2] || '00';
+    const startMeridiem = rangeMatch[3];
+    const endHour = parseInt(rangeMatch[4], 10);
+    const endMeridiem = rangeMatch[6];
+
+    // Determine AM/PM: if explicitly stated use it, otherwise infer
+    // Most bar/venue events are PM, and if start < end and both < 12, assume PM
+    let meridiem = 'PM';
+    if (startMeridiem) {
+      meridiem = startMeridiem.toUpperCase();
+    } else if (endMeridiem) {
+      // If end is AM (e.g., 8-1am), start is still PM
+      // If end is PM, start is PM too
+      meridiem = 'PM';
+    } else {
+      // No meridiem at all (e.g., "6-9") — assume PM for bar events
+      meridiem = 'PM';
+    }
+
+    if (meridiem === 'PM' && hour < 12) hour = hour; // keep as-is, will format with PM
+    const timeStr = `${hour}:${min.padStart(2, '0')} ${meridiem}`;
+    const cleaned = title.replace(rangeRe, '').trim();
+    return { time: timeStr, cleaned };
+  }
+
+  // Pattern 2: standalone "7pm" or "8:30pm" at end of title
+  const singleRe = /\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*$/i;
+  const singleMatch = title.match(singleRe);
+  if (singleMatch) {
+    const hour = parseInt(singleMatch[1], 10);
+    const min = singleMatch[2] || '00';
+    const meridiem = singleMatch[3].toUpperCase();
+    const timeStr = `${hour}:${min.padStart(2, '0')} ${meridiem}`;
+    const cleaned = title.replace(singleRe, '').trim();
+    return { time: timeStr, cleaned };
+  }
+
+  return null;
+}
+
+/**
+ * Check if a DTSTART value is a date-only (all-day) event vs. one with a real time.
+ * Date-only: "20260322"
+ * With time: "20260322T190000Z" or "20260322T190000"
+ */
+function isAllDayEvent(dtstart) {
+  return dtstart && /^\d{8}$/.test(dtstart);
+}
+
 function parseIcal(icalText) {
   const events = [];
   const now = new Date();
@@ -97,19 +162,43 @@ function parseIcal(icalText) {
       const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
       if (eventDateStr < todayStr) { current = {}; continue; }
 
-      const title = decodeIcalText(current.summary || '');
-      if (!title) { current = {}; continue; }
+      const rawTitle = decodeIcalText(current.summary || '');
+      if (!rawTitle) { current = {}; continue; }
+
+      const allDay = isAllDayEvent(current.dtstart);
+
+      // Try to extract time from title (e.g., "Kevin Hill 6-9" → 6:00 PM)
+      const titleTime = extractTimeFromTitle(rawTitle);
+      const title = titleTime ? titleTime.cleaned : rawTitle;
+
+      let timeStr = null;
+      if (titleTime) {
+        // Time was embedded in the title — use it
+        timeStr = titleTime.time;
+      } else if (!allDay) {
+        // Real timed event from Google Calendar — use the actual time
+        timeStr = startDate.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: 'America/New_York',
+        });
+        // If the resolved time is exactly midnight, it's likely a default — treat as NULL
+        const h = startDate.getUTCHours();
+        const m = startDate.getUTCMinutes();
+        const offset = easternOffset(startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }));
+        const offsetHours = parseInt(offset.split(':')[0], 10);
+        const easternHour = (h + offsetHours + 24) % 24;
+        if (easternHour === 0 && m === 0) {
+          timeStr = null; // midnight default → treat as missing
+        }
+      }
+      // else: all-day event with no time in title → timeStr stays null
 
       const uid = current.uid || `${title}-${current.dtstart}`;
       const externalId = `mccanns-${uid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 40)}`;
 
       const dateStr = startDate.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-      const timeStr = startDate.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'America/New_York',
-      });
 
       let genre = 'Music';
       const lower = title.toLowerCase();
