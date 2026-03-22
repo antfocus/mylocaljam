@@ -232,7 +232,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             opacity: followExpanded ? 1 : 0,
             transition: 'opacity 0.2s ease 0.05s',
           }}>
-            {/* Follow button — tonal dark brown/orange, centered in available space */}
+            {/* Follow button — vibrant brand orange with dark text for max contrast */}
             <button
               onClick={(e) => { e.stopPropagation(); handleInlineFollow(); }}
               disabled={followBtnState === 'following'}
@@ -243,18 +243,18 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                 flex: 1,
                 padding: '9px 14px',
                 borderRadius: '10px',
-                border: '1px solid #5D4037',
-                background: followBtnState === 'following' ? '#4E342E' : '#3E2723',
+                border: 'none',
+                background: followBtnState === 'following' ? '#D4621F' : '#E8722A',
                 cursor: followBtnState === 'following' ? 'default' : 'pointer',
                 transition: 'background 0.15s',
                 justifyContent: 'center',
               }}
             >
-              <span className="material-icons" style={{ fontSize: '18px', color: '#FFFFFF' }}>
+              <span className="material-icons" style={{ fontSize: '18px', color: '#1A1A1A' }}>
                 {followBtnState === 'following' ? 'check' : 'music_note'}
               </span>
               <span style={{
-                color: '#FFFFFF',
+                color: '#1A1A1A',
                 fontSize: '13px',
                 fontWeight: 700,
                 fontFamily: "'DM Sans', sans-serif",
