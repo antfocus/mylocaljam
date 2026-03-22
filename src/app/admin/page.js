@@ -2480,7 +2480,7 @@ export default function AdminPage() {
       {activeTab === 'venues' && !loading && (() => {
         // Platform colors for read-only badges (auto-populated from VENUE_REGISTRY in sync route)
         const PLATFORM_COLORS = {
-          'WordPress': '#21759B', 'WordPress AJAX': '#21759B', 'Squarespace': '#1A1A1A',
+          'WordPress': '#21759B', 'WordPress AJAX': '#21759B', 'Squarespace': '#5B8A72',
           'Wix': '#0C6EFC', 'BentoBox/Wix': '#0C6EFC', 'Google Calendar': '#4285F4',
           'Eventbrite API': '#F05537', 'Ticketmaster API': '#026CDF', 'GraphQL': '#E535AB',
           'HTML Scrape': '#E8722A', 'RestaurantPassion': '#8B5CF6', 'Image Poster': '#D97706', 'Custom': '#6B7280', 'Unknown': '#6B7280',
