@@ -990,6 +990,17 @@ export default function AdminPage() {
               } : undefined}
             />
             <MetricCard
+              label="Successful Syncs"
+              value={scraperHealth.filter(s => s.status === 'success' && s.last_sync && (Date.now() - new Date(s.last_sync).getTime()) < 24 * 60 * 60 * 1000).length}
+              sub={`of ${scraperHealth.length} total scrapers`}
+              color="#22c55e"
+              onClick={() => {
+                setActiveTab('venues');
+                setVenuesFilter('success');
+                fetchScraperHealth();
+              }}
+            />
+            <MetricCard
               label="Events Missing Times"
               value={eventsMissingTimeCount}
               sub={eventsMissingTimeCount === 0 ? 'All events have times' : 'Click to view →'}
@@ -2472,7 +2483,7 @@ export default function AdminPage() {
           'WordPress': '#21759B', 'WordPress AJAX': '#21759B', 'Squarespace': '#1A1A1A',
           'Wix': '#0C6EFC', 'BentoBox/Wix': '#0C6EFC', 'Google Calendar': '#4285F4',
           'Eventbrite API': '#F05537', 'Ticketmaster API': '#026CDF', 'GraphQL': '#E535AB',
-          'HTML Scrape': '#E8722A', 'RestaurantPassion': '#8B5CF6', 'Custom': '#6B7280', 'Unknown': '#6B7280',
+          'HTML Scrape': '#E8722A', 'RestaurantPassion': '#8B5CF6', 'Image Poster': '#D97706', 'Custom': '#6B7280', 'Unknown': '#6B7280',
         };
 
         // Filter by status OR platform

@@ -323,7 +323,7 @@ export async function POST(request) {
     BrielleHouse: { venue: 'Brielle House', url: 'https://brielle-house.com', source: 'WordPress AJAX' },
     TenthAveBurrito: { venue: '10th Ave Burrito', url: 'https://tenthaveburrito.com', source: 'WordPress' },
     ReefAndBarrel: { venue: 'Reef & Barrel', url: 'https://www.reefandbarrel.com', source: 'Google Calendar' },
-    Palmetto: { venue: 'Palmetto', url: 'https://www.palmettoasburypark.com', source: 'Squarespace' },
+    Palmetto: { venue: 'Palmetto', url: 'https://www.palmettoasburypark.com', source: 'Image Poster' },
     IdleHour: { venue: 'Idle Hour', url: 'https://www.ihpointpleasant.com', source: 'Google Calendar' },
     AsburyLanes: { venue: 'Asbury Lanes', url: 'https://www.asburylanes.com', source: 'HTML Scrape' },
     BakesBrewing: { venue: 'Bakes Brewing', url: 'https://www.bakesbrewing.co', source: 'Squarespace' },

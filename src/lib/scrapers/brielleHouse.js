@@ -32,7 +32,7 @@ export async function scrapeBrielleHouse() {
       next: { revalidate: 0 },
     });
 
-    if (!pageRes.ok) throw new Error(`HTTP ${pageRes.status} fetching events page`);
+    if (!pageRes.ok) throw new Error(`HTTP ${pageRes.status} fetching events page (likely IP block from hosting provider)`);
 
     // Capture ALL cookies from the response using multiple methods
     let cookies = '';
@@ -100,6 +100,11 @@ export async function scrapeBrielleHouse() {
     // Handle WordPress returning "0" for invalid nonce
     if (rawText === '0' || rawText === '-1') {
       throw new Error('WordPress returned 0 — nonce or action invalid');
+    }
+
+    // Handle WordPress critical error (PHP crash on their server)
+    if (rawText.includes('critical error on this website')) {
+      throw new Error('WordPress critical error — EventPrime plugin is broken on their server (not our bug)');
     }
 
     let raw;

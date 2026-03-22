@@ -81,6 +81,22 @@ const SCRAPER_MAP = {
   EventideGrille: scrapeEventideGrille,
 };
 
+// Platform metadata for scraper_health (mirrors VENUE_REGISTRY in sync-events/route.js)
+const PLATFORM_MAP = {
+  PigAndParrot: 'GraphQL', Ticketmaster: 'Ticketmaster API', JoesSurfShack: 'WordPress AJAX',
+  StStephensGreen: 'Google Calendar', McCanns: 'Google Calendar', BeachHaus: 'WordPress',
+  Martells: 'HTML Scrape', BarAnticipation: 'HTML Scrape', JacksOnTheTracks: 'Google Calendar',
+  MarinaGrille: 'Squarespace', AnchorTavern: 'Squarespace', RBar: 'Squarespace',
+  BrielleHouse: 'WordPress AJAX', TenthAveBurrito: 'WordPress', ReefAndBarrel: 'Google Calendar',
+  Palmetto: 'Image Poster', IdleHour: 'Google Calendar', AsburyLanes: 'HTML Scrape',
+  BakesBrewing: 'Squarespace', RiverRock: 'WordPress AJAX', WildAir: 'Squarespace',
+  AsburyParkBrewery: 'Squarespace', Boatyard401: 'WordPress AJAX', WindwardTavern: 'Google Calendar',
+  Jamians: 'Squarespace', TheCabin: 'Squarespace', TheVogel: 'HTML Scrape',
+  SunHarbor: 'Squarespace', BumRogers: 'BentoBox/Wix', TheColumns: 'WordPress',
+  TheRoost: 'HTML Scrape', DealLakeBar: 'Squarespace', CrabsClaw: 'RestaurantPassion',
+  WaterStreet: 'Squarespace', Crossroads: 'Eventbrite API', EventideGrille: 'Image Poster',
+};
+
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
   return authHeader === `Bearer ${process.env.ADMIN_PASSWORD}`;
@@ -298,7 +314,7 @@ export async function POST(request) {
       scraper_key,
       venue_name: validEvents[0]?.venue_name || scraper_key,
       website_url: result.events[0]?.source_url || null,
-      platform: null, // will be filled from VENUE_REGISTRY in main sync
+      platform: PLATFORM_MAP[scraper_key] || null,
       events_found: result.events.length,
       status: result.error ? 'fail' : (result.events.length === 0 ? 'warning' : 'success'),
       error_message: result.error || null,
