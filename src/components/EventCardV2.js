@@ -220,20 +220,19 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
 
         {/* Inline follow upsell — expands below compact row when user saves an event with an artist */}
         <div style={{
-          maxHeight: followExpanded ? '60px' : '0px',
+          maxHeight: followExpanded ? '56px' : '0px',
           overflow: 'hidden',
           transition: 'max-height 0.25s ease-out',
         }}>
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            padding: '8px 12px 10px',
+            padding: '8px 0 10px 12px',
             borderTop: `1px solid ${borderColor}`,
             opacity: followExpanded ? 1 : 0,
             transition: 'opacity 0.2s ease 0.05s',
           }}>
-            {/* Follow button — tonal dark brown/orange */}
+            {/* Follow button — tonal dark brown/orange, centered in available space */}
             <button
               onClick={(e) => { e.stopPropagation(); handleInlineFollow(); }}
               disabled={followBtnState === 'following'}
@@ -265,11 +264,11 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               }}>
                 {followBtnState === 'following'
                   ? 'Following!'
-                  : `Follow ${(event?.artist_name || '').length > 20 ? (event.artist_name.slice(0, 20) + '…') : (event?.artist_name || '')}`}
+                  : `Follow ${(event?.artist_name || '').length > 20 ? (event.artist_name.slice(0, 20) + '\u2026') : (event?.artist_name || '')}`}
               </span>
             </button>
 
-            {/* Dismiss X */}
+            {/* Dismiss X — padded to align vertically with share icon above */}
             {followBtnState === 'idle' && (
               <button
                 onClick={(e) => { e.stopPropagation(); onFollowCollapse?.(); }}
@@ -277,7 +276,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  padding: '4px',
+                  padding: '4px 12px 4px 10px',
                   flexShrink: 0,
                   display: 'flex',
                   alignItems: 'center',
