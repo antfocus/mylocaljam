@@ -509,6 +509,7 @@ export default function HomePage() {
 
   // ── Swipe support for saved tab segments ──────────────────────────────────
   const savedSwipeRef = useRef(null);
+  const savedSegmentSetRef = useRef(null); // ref avoids TDZ — handleSetSavedSegment defined later
   const handleSavedTouchStart = useCallback((e) => {
     savedSwipeRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   }, []);
@@ -519,9 +520,9 @@ export default function HomePage() {
     savedSwipeRef.current = null;
     // Only register horizontal swipes (dx > 60px, and more horizontal than vertical)
     if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
-    if (dx < 0) handleSetSavedSegment('following'); // swipe left → Artists
-    else handleSetSavedSegment('events');            // swipe right → Shows
-  }, [handleSetSavedSegment]);
+    if (dx < 0) savedSegmentSetRef.current?.('following'); // swipe left → Artists
+    else savedSegmentSetRef.current?.('events');            // swipe right → Shows
+  }, []);
 
   // Refs for the follow upsell — lets toggleFavorite call follow logic defined later without TDZ issues
   const followingRef = useRef([]);
@@ -599,6 +600,8 @@ export default function HomePage() {
     setSavedSegment(seg);
     try { sessionStorage.setItem('mlj_saved_segment', seg); } catch {}
   }, []);
+  // Sync ref so swipe handlers (defined earlier) can call it without TDZ
+  useEffect(() => { savedSegmentSetRef.current = handleSetSavedSegment; }, [handleSetSavedSegment]);
 
   // ── Following state (Supabase — auth required) ─────────────────────────────
   const [following, setFollowing] = useState([]);
