@@ -27,6 +27,7 @@ export async function GET(request) {
   const triageFilter = searchParams.get('triage');
   const statusFilter = searchParams.get('status'); // 'upcoming' | 'past' | 'hidden'
   const missingTime = searchParams.get('missingTime') === 'true';
+  const recentlyAdded = searchParams.get('recentlyAdded') === 'true';
 
   // For missing-time filter, we fetch a larger set and filter server-side
   // because PostgREST can't do ::time casts on timestamptz columns reliably
@@ -54,6 +55,12 @@ export async function GET(request) {
     query = query.eq('status', 'published').lt('event_date', nowIso);
   } else if (statusFilter === 'hidden') {
     query = query.neq('status', 'published');
+  }
+
+  // Filter to events created in last 24h (for "New Events" click-through)
+  if (recentlyAdded) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    query = query.gte('created_at', since);
   }
 
   const { data, error } = await query;
@@ -90,10 +97,22 @@ export async function GET(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Quick count: events created in last 24 hours (for dashboard velocity card)
+  let newEvents24h = 0;
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count: recentCount } = await supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', since);
+    newEvents24h = recentCount || 0;
+  } catch { /* ignore */ }
+
   const total = count || 0;
   return NextResponse.json({
     events: paginatedData,
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    newEvents24h,
   });
 }
 

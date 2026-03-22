@@ -90,6 +90,8 @@ export default function AdminPage() {
   const [eventsPage, setEventsPage] = useState(1);
   const [eventsTotalPages, setEventsTotalPages] = useState(1);
   const [eventsTotal, setEventsTotal] = useState(0);
+  const [newEvents24h, setNewEvents24h] = useState(0);
+  const [eventsRecentlyAdded, setEventsRecentlyAdded] = useState(false);
   const [spotlightDate, setSpotlightDate] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -124,11 +126,12 @@ export default function AdminPage() {
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` };
 
-  const fetchEvents = useCallback(async (page = 1, sort = eventsSortField, order = eventsSortOrder, status = eventsStatusFilter, missingTime = eventsMissingTime) => {
+  const fetchEvents = useCallback(async (page = 1, sort = eventsSortField, order = eventsSortOrder, status = eventsStatusFilter, missingTime = eventsMissingTime, recentlyAdded = eventsRecentlyAdded) => {
     try {
       const params = new URLSearchParams({ page: String(page), limit: '100', sort, order });
       if (status) params.set('status', status);
       if (missingTime) params.set('missingTime', 'true');
+      if (recentlyAdded) params.set('recentlyAdded', 'true');
       const res = await fetch(`/api/admin?${params}`, { headers: { Authorization: `Bearer ${password}` } });
       if (res.status === 401) { setAuthenticated(false); alert('Invalid password'); return; }
       const data = await res.json();
@@ -141,8 +144,9 @@ export default function AdminPage() {
         // Fallback for old API shape
         setEvents(Array.isArray(data) ? data : []);
       }
+      if (data.newEvents24h !== undefined) setNewEvents24h(data.newEvents24h);
     } catch (err) { console.error(err); }
-  }, [password, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime]);
+  }, [password, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime, eventsRecentlyAdded]);
 
   const fetchScraperHealth = useCallback(async () => {
     try {
@@ -940,6 +944,20 @@ export default function AdminPage() {
               color="#22c55e"
             />
             <MetricCard
+              label="New Events (24h)"
+              value={newEvents24h}
+              sub={newEvents24h === 0 ? 'No new additions' : 'Click to view →'}
+              color={newEvents24h > 0 ? '#3B82F6' : 'var(--text-muted)'}
+              onClick={newEvents24h > 0 ? () => {
+                setEventsRecentlyAdded(true);
+                setEventsMissingTime(false);
+                setEventsStatusFilter('');
+                setEvents([]);
+                setActiveTab('events');
+                fetchEvents(1, 'created_at', 'desc', '', false, true);
+              } : undefined}
+            />
+            <MetricCard
               label="Total Artists"
               value={totalArtists.toLocaleString()}
               sub="In database"
@@ -1008,8 +1026,9 @@ export default function AdminPage() {
               onClick={eventsMissingTimeCount > 0 ? () => {
                 setActiveTab('events');
                 setEventsMissingTime(true);
+                setEventsRecentlyAdded(false);
                 setEvents([]);
-                fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, true);
+                fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, true, false);
               } : undefined}
             />
           </div>
@@ -1175,7 +1194,7 @@ export default function AdminPage() {
               ].map(seg => (
                 <button
                   key={seg.key}
-                  onClick={() => { setEventsStatusFilter(seg.key); setSelectedEvents(new Set()); setEvents([]); fetchEvents(1, eventsSortField, eventsSortOrder, seg.key, eventsMissingTime); }}
+                  onClick={() => { setEventsStatusFilter(seg.key); setSelectedEvents(new Set()); setEventsRecentlyAdded(false); setEvents([]); fetchEvents(1, eventsSortField, eventsSortOrder, seg.key, eventsMissingTime, false); }}
                   style={{
                     padding: '8px 16px', fontSize: '13px', fontWeight: 600,
                     fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
@@ -1230,11 +1249,32 @@ export default function AdminPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
                 onClick={() => {
-                  const next = !eventsMissingTime;
-                  setEventsMissingTime(next);
+                  const next = !eventsRecentlyAdded;
+                  setEventsRecentlyAdded(next);
+                  if (next) setEventsMissingTime(false);
                   setEvents([]);
                   setSelectedEvents(new Set());
-                  fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, next);
+                  fetchEvents(1, next ? 'created_at' : eventsSortField, next ? 'desc' : eventsSortOrder, eventsStatusFilter, false, next);
+                }}
+                style={{
+                  padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: 'none',
+                  whiteSpace: 'nowrap',
+                  background: eventsRecentlyAdded ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
+                  color: eventsRecentlyAdded ? '#3B82F6' : 'var(--text-muted)',
+                  outline: eventsRecentlyAdded ? '1.5px solid rgba(59,130,246,0.4)' : '1px solid var(--border)',
+                }}
+              >
+                New (24h)
+              </button>
+              <button
+                onClick={() => {
+                  const next = !eventsMissingTime;
+                  setEventsMissingTime(next);
+                  if (next) setEventsRecentlyAdded(false);
+                  setEvents([]);
+                  setSelectedEvents(new Set());
+                  fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, next, false);
                 }}
                 style={{
                   padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
