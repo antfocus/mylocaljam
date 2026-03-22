@@ -507,6 +507,22 @@ export default function HomePage() {
     })();
   }, [isLoggedIn, user]);
 
+  // ── Swipe support for saved tab segments ──────────────────────────────────
+  const savedSwipeRef = useRef(null);
+  const handleSavedTouchStart = useCallback((e) => {
+    savedSwipeRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, []);
+  const handleSavedTouchEnd = useCallback((e) => {
+    if (!savedSwipeRef.current) return;
+    const dx = e.changedTouches[0].clientX - savedSwipeRef.current.x;
+    const dy = e.changedTouches[0].clientY - savedSwipeRef.current.y;
+    savedSwipeRef.current = null;
+    // Only register horizontal swipes (dx > 60px, and more horizontal than vertical)
+    if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
+    if (dx < 0) handleSetSavedSegment('following'); // swipe left → Artists
+    else handleSetSavedSegment('events');            // swipe right → Shows
+  }, [handleSetSavedSegment]);
+
   // Refs for the follow upsell — lets toggleFavorite call follow logic defined later without TDZ issues
   const followingRef = useRef([]);
   const followEntityRef = useRef(null);
@@ -1768,25 +1784,25 @@ export default function HomePage() {
         {/* ── Saved view (Phase 2: Segmented — Saved Events | Following) ── */}
         {activeTab === 'saved' && (
           <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg }}>
-            {/* Segmented control — Brand Orange pill */}
+            {/* Underline tab toggle */}
             <div style={{
-              display: 'flex', margin: '10px 16px 0', padding: '3px',
-              background: darkMode ? '#1A1A24' : '#E5E7EB', borderRadius: '12px',
-              border: `1px solid ${darkMode ? '#2A2A3A' : '#D1D5DB'}`,
+              display: 'flex', justifyContent: 'center', gap: '32px',
+              padding: '14px 16px 0',
             }}>
               {[
                 { key: 'events', label: 'My Shows' },
                 { key: 'following', label: 'My Artists' },
               ].map(seg => (
                 <button key={seg.key} onClick={() => handleSetSavedSegment(seg.key)} style={{
-                  flex: 1, padding: '10px 0', borderRadius: '10px', border: 'none', cursor: 'pointer',
-                  background: savedSegment === seg.key ? '#E8722A' : 'transparent',
-                  color: savedSegment === seg.key ? '#FFFFFF' : t.textMuted,
-                  fontSize: '13px', fontWeight: 700,
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: '0 0 10px',
+                  color: savedSegment === seg.key ? (darkMode ? '#FFFFFF' : '#1F2937') : t.textMuted,
+                  fontSize: '14px',
+                  fontWeight: savedSegment === seg.key ? 800 : 600,
                   fontFamily: "'DM Sans', sans-serif",
-                  transition: 'all 0.2s ease',
-                  boxShadow: savedSegment === seg.key ? '0 2px 8px rgba(232,114,42,0.3)' : 'none',
-                  letterSpacing: '0.5px',
+                  transition: 'color 0.2s ease',
+                  borderBottom: savedSegment === seg.key ? '3px solid #E8722A' : '3px solid transparent',
+                  letterSpacing: '0.3px',
                 }}>
                   {seg.label}
                 </button>
@@ -1794,6 +1810,13 @@ export default function HomePage() {
             </div>
 
             {/* Yellow guest banner removed — hard gate handles auth */}
+
+            {/* Swipeable content area */}
+            <div
+              onTouchStart={handleSavedTouchStart}
+              onTouchEnd={handleSavedTouchEnd}
+              style={{ flex: 1, transition: 'opacity 0.2s ease' }}
+            >
 
             {/* View A: Saved Events */}
             {savedSegment === 'events' && (() => {
@@ -1923,6 +1946,7 @@ export default function HomePage() {
                 searchQuery={searchQuery}
               />
             )}
+            </div>{/* end swipe wrapper */}
           </div>
         )}
 
