@@ -97,6 +97,17 @@ const MATERIAL_ICON_PATHS = {
   local_offer: 'M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z',
   // Material: location_on (venue pin)
   location_on: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
+  // Profile tab icons
+  dark_mode: 'M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z',
+  mail: 'M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z',
+  notifications_active: 'M7.58 4.08L6.15 2.65C3.75 4.48 2.17 7.3 2.03 10.5h2c.15-2.65 1.51-4.97 3.55-6.42zm12.39 6.42h2c-.15-3.2-1.73-6.02-4.12-7.85l-1.42 1.43c2.02 1.45 3.39 3.77 3.54 6.42zM18 11c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2v-5zm-6 11c.14 0 .27-.01.4-.04.65-.14 1.18-.58 1.44-1.18.1-.24.15-.5.15-.78h-4c.01 1.1.9 2 2.01 2z',
+  calendar_month: 'M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z',
+  key: 'M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
+  email: 'M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z',
+  warning: 'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z',
+  chat_bubble: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z',
+  help_outline: 'M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z',
+  policy: 'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z',
 };
 
 // ── Haversine distance (miles) between two lat/lng points ──────────────────
@@ -292,6 +303,12 @@ export default function HomePage() {
   const [authTrigger, setAuthTrigger] = useState(null);            // 'save' | 'submit' | 'profile' | null
   // guestBannerDismissed removed — hard gate handles auth, no banner needed
   const [showWelcome, setShowWelcome] = useState(false);
+  // ── Notification state ───────────────────────────────────────────────────
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifDrawerOpen, setNotifDrawerOpen] = useState(false);
+  const [emailNotifPref, setEmailNotifPref] = useState(true);
+  const [inAppNotifPref, setInAppNotifPref] = useState(true);
   const [locationSuggestions, setLocationSuggestions] = useState([]);  // autocomplete dropdown
   const [locationFocused, setLocationFocused] = useState(false);       // show dropdown when focused
   const locationDebounceRef = useRef(null);
@@ -871,6 +888,86 @@ export default function HomePage() {
     } catch {}
   }, []);
 
+  // ── Fetch notifications for logged-in users (poll every 60s) ────────────
+  const fetchNotifications = useCallback(async () => {
+    if (!isLoggedIn) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch('/api/notifications?limit=30', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unread_count || 0);
+      }
+    } catch {}
+  }, [isLoggedIn]);
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 60000); // poll every 60s
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
+  const markNotificationsRead = useCallback(async () => {
+    if (unreadCount === 0) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ all: true }),
+      });
+      setUnreadCount(0);
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch {}
+  }, [unreadCount]);
+
+  // ── Fetch notification preferences when logged in ──────────────────────
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        const res = await fetch('/api/notification-prefs', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setEmailNotifPref(data.email_enabled !== false);
+          setInAppNotifPref(data.in_app_enabled !== false);
+        }
+      } catch {}
+    })();
+  }, [isLoggedIn]);
+
+  const toggleNotifPref = useCallback(async (key) => {
+    const newVal = key === 'email' ? !emailNotifPref : !inAppNotifPref;
+    if (key === 'email') setEmailNotifPref(newVal);
+    else setInAppNotifPref(newVal);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await fetch('/api/notification-prefs', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(
+          key === 'email' ? { email_enabled: newVal } : { in_app_enabled: newVal }
+        ),
+      });
+    } catch {}
+  }, [emailNotifPref, inAppNotifPref]);
+
   useEffect(() => { setDateKey('all'); setPickedDate(''); }, [activeTab]);
 
   // ── Unified search opener — single handler for both header pill & bottom nav ──
@@ -1337,7 +1434,132 @@ export default function HomePage() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="white" /></svg>
             </button>
           )}
+
+          {/* Bell icon — notification center (all tabs, logged-in only) */}
+          {isLoggedIn && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setNotifDrawerOpen(prev => !prev); if (!notifDrawerOpen) markNotificationsRead(); }}
+              title="Notifications"
+              style={{
+                position: 'relative',
+                width: '30px', height: '30px', borderRadius: '50%', border: 'none',
+                background: notifDrawerOpen ? t.accent : 'transparent',
+                cursor: 'pointer', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background 0.15s',
+              }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                  fill={notifDrawerOpen ? 'white' : (darkMode ? '#AAA' : '#6B7280')} />
+              </svg>
+              {/* Red unread badge */}
+              {unreadCount > 0 && (
+                <span style={{
+                  position: 'absolute', top: '-2px', right: '-2px',
+                  minWidth: '16px', height: '16px', borderRadius: '999px',
+                  background: '#EF4444', color: 'white',
+                  fontSize: '9px', fontWeight: 800, lineHeight: '16px', textAlign: 'center',
+                  padding: '0 4px', border: `2px solid ${darkMode ? '#1E1E2C' : '#FFFFFF'}`,
+                }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+          )}
         </header>
+
+        {/* ── Notification Drawer (slides down from header) ──────────── */}
+        {notifDrawerOpen && (
+          <>
+            <div onClick={() => setNotifDrawerOpen(false)} style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 98,
+              background: 'rgba(0,0,0,0.3)',
+            }} />
+            <div style={{
+              position: 'sticky', top: '70px', zIndex: 99,
+              maxHeight: '60vh', overflowY: 'auto',
+              background: t.surface, borderBottom: `1px solid ${t.border}`,
+              boxShadow: darkMode ? '0 8px 32px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.12)',
+              borderRadius: '0 0 16px 16px',
+              margin: '0 auto', width: '100%', maxWidth: '480px',
+            }}>
+              {/* Header */}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '14px 16px 8px', borderBottom: `1px solid ${t.borderLight}`,
+              }}>
+                <span style={{ fontSize: '15px', fontWeight: 700, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>Notifications</span>
+                {notifications.length > 0 && (
+                  <button onClick={() => { markNotificationsRead(); }} style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: '12px', color: t.accent, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+                  }}>Mark all read</button>
+                )}
+              </div>
+
+              {/* Notification list */}
+              {notifications.length === 0 ? (
+                <div style={{ padding: '32px 16px', textAlign: 'center' }}>
+                  <span style={{ fontSize: '28px', display: 'block', marginBottom: '8px' }}>🔔</span>
+                  <p style={{ fontSize: '13px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>No notifications yet</p>
+                  <p style={{ fontSize: '12px', color: t.textSubtle, fontFamily: "'DM Sans', sans-serif", marginTop: '4px' }}>
+                    Follow artists to get alerts when new shows are added!
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  {notifications.slice(0, 20).map(notif => (
+                    <button
+                      key={notif.id}
+                      onClick={() => {
+                        setNotifDrawerOpen(false);
+                        // Navigate to target if available
+                        if (notif.target_url) window.location.href = notif.target_url;
+                      }}
+                      style={{
+                        display: 'flex', flexDirection: 'column', gap: '2px',
+                        width: '100%', padding: '12px 16px', border: 'none', cursor: 'pointer',
+                        background: notif.is_read ? t.surface : (darkMode ? 'rgba(232,114,42,0.05)' : 'rgba(232,114,42,0.04)'),
+                        borderBottom: `1px solid ${t.borderLight}`,
+                        textAlign: 'left',
+                      }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {!notif.is_read && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: t.accent, flexShrink: 0 }} />}
+                        <span style={{
+                          fontSize: '13px', fontWeight: notif.is_read ? 500 : 700,
+                          color: t.text, fontFamily: "'DM Sans', sans-serif",
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>{notif.title}</span>
+                      </div>
+                      {notif.body && (
+                        <p style={{
+                          fontSize: '12px', color: t.textMuted, margin: 0,
+                          fontFamily: "'DM Sans', sans-serif", lineHeight: 1.4,
+                          paddingLeft: notif.is_read ? '0' : '14px',
+                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                        }}>{notif.body}</p>
+                      )}
+                      <span style={{
+                        fontSize: '10px', color: t.textSubtle, fontFamily: "'DM Sans', sans-serif",
+                        paddingLeft: notif.is_read ? '0' : '14px', marginTop: '2px',
+                      }}>
+                        {(() => {
+                          const diff = Date.now() - new Date(notif.created_at).getTime();
+                          const mins = Math.floor(diff / 60000);
+                          if (mins < 1) return 'Just now';
+                          if (mins < 60) return `${mins}m ago`;
+                          const hrs = Math.floor(mins / 60);
+                          if (hrs < 24) return `${hrs}h ago`;
+                          return `${Math.floor(hrs / 24)}d ago`;
+                        })()}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         {/* ── Filter Panel (expands from header) ─────────────────────── */}
         <div style={{
@@ -1980,68 +2202,242 @@ export default function HomePage() {
         )}
 
         {/* ── Profile view ─────────────────────────────────────────────── */}
-        {activeTab === 'profile' && (
+        {activeTab === 'profile' && (() => {
+          /* ── Shared styles for grouped-list sections ── */
+          const sectionCard = {
+            margin: '0 16px 20px',
+            borderRadius: '12px',
+            background: t.surface,
+            overflow: 'hidden',
+            boxShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.4)' : '0 1px 6px rgba(0,0,0,0.07)',
+            border: `1px solid ${t.border}`,
+          };
+          const sectionLabel = {
+            fontSize: '11px', fontWeight: 700, color: t.textMuted,
+            textTransform: 'uppercase', letterSpacing: '0.8px',
+            padding: '0 20px 8px', fontFamily: "'DM Sans', sans-serif",
+          };
+          const rowBase = (isLast) => ({
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            width: '100%', padding: '14px 16px', border: 'none', cursor: 'pointer',
+            background: t.surface,
+            borderBottom: isLast ? 'none' : `1px solid ${t.borderLight}`,
+            fontFamily: "'DM Sans', sans-serif",
+          });
+          const rowLabel = (danger) => ({
+            display: 'flex', alignItems: 'center', gap: '12px',
+            fontSize: '14px', color: danger ? '#EF4444' : t.text, fontWeight: 500,
+          });
+          const chevron = <span style={{ color: t.textMuted, fontSize: '16px', fontWeight: 300 }}>›</span>;
+          const toggleSwitch = (on) => (
+            <div style={{ width: '44px', height: '24px', borderRadius: '999px', position: 'relative', background: on ? t.accent : t.textSubtle, transition: 'background 0.2s', flexShrink: 0 }}>
+              <div style={{ position: 'absolute', top: '3px', left: on ? '23px' : '3px', width: '18px', height: '18px', borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
+            </div>
+          );
+
+          return (
           <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg }}>
-            <div style={{ padding: '32px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'linear-gradient(135deg, #E8722A, #3AADA0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>
+
+            {/* ── Section 1: User Header ── */}
+            <div style={{ padding: '32px 24px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+              {/* Avatar */}
+              <div style={{
+                position: 'relative', width: '80px', height: '80px', borderRadius: '50%',
+                background: 'linear-gradient(135deg, #E8722A, #3AADA0)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '36px',
+                cursor: isLoggedIn ? 'pointer' : 'default',
+              }}>
                 {isLoggedIn && user?.user_metadata?.avatar_url
-                  ? <img src={user.user_metadata.avatar_url} alt="" style={{ width: '72px', height: '72px', borderRadius: '50%', objectFit: 'cover' }} />
-                  : '👤'
+                  ? <img src={user.user_metadata.avatar_url} alt="" style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover' }} />
+                  : <span style={{ lineHeight: 1 }}>👤</span>
                 }
+                {/* Camera badge for tappable hint */}
+                {isLoggedIn && (
+                  <div style={{
+                    position: 'absolute', bottom: '-2px', right: '-2px',
+                    width: '26px', height: '26px', borderRadius: '50%',
+                    background: t.accent, border: `3px solid ${t.bg}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 15.2a3.2 3.2 0 100-6.4 3.2 3.2 0 000 6.4z" fill="white"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" fill="white"/></svg>
+                  </div>
+                )}
               </div>
-              <p style={{ fontWeight: 800, fontSize: '18px', color: t.text, marginTop: '8px' }}>
-                {isLoggedIn ? (user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Your Profile') : 'Your Profile'}
-              </p>
+
               {isLoggedIn ? (
-                <p style={{ fontSize: '13px', color: t.textMuted }}>{user?.email}</p>
+                <>
+                  <p style={{ fontWeight: 700, fontSize: '20px', color: t.text, marginTop: '10px', fontFamily: "'DM Sans', sans-serif" }}>
+                    {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Your Profile'}
+                  </p>
+                  <p style={{ fontSize: '13px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>{user?.email}</p>
+                  <button style={{
+                    marginTop: '10px', padding: '8px 24px', borderRadius: '999px',
+                    border: `1px solid ${t.border}`, background: 'transparent',
+                    color: t.text, fontWeight: 600, fontSize: '13px', cursor: 'pointer',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    Edit Profile
+                  </button>
+                </>
               ) : (
                 <>
-                  <p style={{ fontSize: '13px', color: t.textMuted }}>Sign in to save events across devices</p>
-                  <button onClick={() => openAuth('profile')} style={{ marginTop: '12px', padding: '10px 32px', borderRadius: '999px', border: 'none', background: t.accent, color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif" }}>
+                  <p style={{ fontWeight: 700, fontSize: '20px', color: t.text, marginTop: '10px', fontFamily: "'DM Sans', sans-serif" }}>Your Profile</p>
+                  <p style={{ fontSize: '13px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>Sign in to save events across devices</p>
+                  <button onClick={() => openAuth('profile')} style={{
+                    marginTop: '10px', padding: '10px 32px', borderRadius: '999px', border: 'none',
+                    background: t.accent, color: 'white', fontWeight: 700, fontSize: '14px',
+                    cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                  }}>
                     Sign In
                   </button>
                 </>
               )}
             </div>
-            <div style={{ margin: '0 16px', borderRadius: '12px', background: t.surface, overflow: 'hidden', boxShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.4)' : '0 1px 6px rgba(0,0,0,0.07)', border: `1px solid ${t.border}` }}>
-              {[
-                { icon: '🔔', label: 'Notifications',             toggle: 'notif'  },
-                { icon: '🌙', label: 'Dark Mode', toggle: 'theme'  },
-                { icon: '📍', label: 'Default Location',          soon: true       },
-                { icon: '🎟', label: 'Add to the Jar',             action: () => setShowSubmit(true) },
-                ...(isLoggedIn ? [{ icon: '🚪', label: 'Sign Out', action: handleSignOut, danger: true }] : []),
-              ].map((item, i, arr) => (
-                <button
-                  key={item.label}
-                  onClick={
-                    item.toggle === 'notif' ? toggleNotifications
-                    : item.toggle === 'theme' ? toggleDarkMode
-                    : (item.action ?? null)
-                  }
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    width: '100%', padding: '14px 16px', border: 'none', cursor: item.soon ? 'default' : 'pointer',
-                    background: t.surface, borderBottom: i < arr.length - 1 ? `1px solid ${t.borderLight}` : 'none',
-                  }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', color: item.danger ? '#EF4444' : t.text, fontWeight: 500 }}>
-                    <span>{item.icon}</span>{item.label}
-                  </span>
-                  {item.soon
-                    ? <span style={{ fontSize: '10px', fontWeight: 700, color: t.textMuted, background: t.inputBg, padding: '2px 8px', borderRadius: '999px' }}>SOON</span>
-                    : item.toggle === 'notif'
-                    ? <div style={{ width: '44px', height: '24px', borderRadius: '999px', position: 'relative', background: notifEnabled ? t.accent : t.textSubtle, transition: 'background 0.2s', flexShrink: 0 }}>
-                        <div style={{ position: 'absolute', top: '3px', left: notifEnabled ? '23px' : '3px', width: '18px', height: '18px', borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
-                      </div>
-                    : item.toggle === 'theme'
-                    ? <div style={{ width: '44px', height: '24px', borderRadius: '999px', position: 'relative', background: darkMode ? t.accent : t.textSubtle, transition: 'background 0.2s', flexShrink: 0 }}>
-                        <div style={{ position: 'absolute', top: '3px', left: darkMode ? '23px' : '3px', width: '18px', height: '18px', borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }} />
-                      </div>
-                    : <span style={{ color: t.textMuted, fontSize: '12px' }}>›</span>}
-                </button>
-              ))}
+
+            {/* ── Material icon helper (with container) ── */}
+            {(() => {
+              const iconBox = { width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(255, 255, 255, 0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
+              const mIcon = (name, color) => (
+                <span style={iconBox}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <path d={MATERIAL_ICON_PATHS[name] || ''} fill={color || t.text} />
+                  </svg>
+                </span>
+              );
+              return (<>
+
+            {/* ── Section 2: Display & Discovery ── */}
+            <p style={sectionLabel}>Display & Discovery</p>
+            <div style={sectionCard}>
+              <button onClick={toggleDarkMode} style={rowBase(false)}>
+                <span style={rowLabel(false)}>{mIcon('dark_mode')}Dark Mode</span>
+                {toggleSwitch(darkMode)}
+              </button>
+              <button style={rowBase(true)}>
+                <span style={rowLabel(false)}>{mIcon('location_on')}Search Radius</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: t.textMuted, fontSize: '13px', fontWeight: 500 }}>
+                  25 mi {chevron}
+                </span>
+              </button>
             </div>
+
+            {/* ── Section 3: Alerts & Notifications ── */}
+            <p style={sectionLabel}>Alerts & Notifications</p>
+            <div style={sectionCard}>
+              {/* Email Notifications — with subtitle */}
+              <button onClick={() => toggleNotifPref('email')} style={{ ...rowBase(false), padding: '12px 16px' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                  {mIcon('mail')}
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: 'left' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 500, color: t.text }}>Email Notifications</span>
+                    <span style={{ fontSize: '11px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>Reminders sent directly to your inbox.</span>
+                  </span>
+                </span>
+                {toggleSwitch(emailNotifPref)}
+              </button>
+              {/* In-App Alerts — with subtitle */}
+              <button onClick={() => toggleNotifPref('inapp')} style={{ ...rowBase(false), padding: '12px 16px' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                  {mIcon('notifications_active')}
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: 'left' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 500, color: t.text }}>In-App Alerts</span>
+                    <span style={{ fontSize: '11px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>Silent alerts sent to your notifications tab.</span>
+                  </span>
+                </span>
+                {toggleSwitch(inAppNotifPref)}
+              </button>
+              {/* The Local Lineup — disabled teaser row (same flex structure as above) */}
+              <div style={{ ...rowBase(true), cursor: 'default', padding: '12px 16px' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+                  {mIcon('calendar_month', '#888888')}
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: '2px', textAlign: 'left' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 500, color: '#888888', fontFamily: "'DM Sans', sans-serif" }}>The Local Lineup</span>
+                      <span style={{
+                        fontSize: '9px', fontWeight: 700, letterSpacing: '0.5px',
+                        color: '#E8722A', background: 'rgba(255, 100, 0, 0.15)',
+                        padding: '2px 8px', borderRadius: '999px',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}>COMING SOON</span>
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#888888', fontFamily: "'DM Sans', sans-serif" }}>A Thursday preview of the weekend's best local shows.</span>
+                  </span>
+                </span>
+                <div style={{ width: '44px', height: '24px', borderRadius: '999px', position: 'relative', background: darkMode ? '#333' : '#D1D5DB', flexShrink: 0 }}>
+                  <div style={{ position: 'absolute', top: '3px', left: '3px', width: '18px', height: '18px', borderRadius: '50%', background: darkMode ? '#555' : '#F3F4F6', boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }} />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Section 4: Account & Security ── */}
+            {isLoggedIn && (
+              <>
+                <p style={sectionLabel}>Account & Security</p>
+                <div style={sectionCard}>
+                  <button style={rowBase(false)}>
+                    <span style={rowLabel(false)}>{mIcon('key')}Change Password</span>
+                    {chevron}
+                  </button>
+                  <button style={rowBase(false)}>
+                    <span style={rowLabel(false)}>{mIcon('email')}Update Email Address</span>
+                    {chevron}
+                  </button>
+                  <button style={rowBase(true)}>
+                    <span style={rowLabel(true)}>{mIcon('warning', '#EF4444')}Delete Account</span>
+                    {chevron}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ── Section 5: Support & Business ── */}
+            <p style={sectionLabel}>Support</p>
+            <div style={sectionCard}>
+              <button onClick={() => setShowSubmit(true)} style={rowBase(false)}>
+                <span style={rowLabel(false)}>{mIcon('chat_bubble')}Give Feedback</span>
+                {chevron}
+              </button>
+              <button onClick={() => { window.location.href = 'mailto:mylocaljam@gmail.com'; }} style={rowBase(false)}>
+                <span style={rowLabel(false)}>{mIcon('help_outline')}Contact Support</span>
+                {chevron}
+              </button>
+              <button onClick={() => window.open('/terms', '_blank')} style={rowBase(false)}>
+                <span style={rowLabel(false)}>{mIcon('policy')}Terms & Privacy</span>
+                {chevron}
+              </button>
+              {/* App Version */}
+              <div style={{
+                ...rowBase(true), cursor: 'default', justifyContent: 'center',
+                padding: '10px 16px',
+              }}>
+                <span style={{ fontSize: '12px', color: t.textSubtle, fontWeight: 500, fontFamily: "'DM Sans', sans-serif" }}>
+                  myLocalJam Web v1.0
+                </span>
+              </div>
+            </div>
+
+            {/* ── Section 6: Log Out ── */}
+            {isLoggedIn && (
+              <div style={{ margin: '4px 16px 32px' }}>
+                <button onClick={handleSignOut} style={{
+                  width: '100%', padding: '14px', borderRadius: '12px',
+                  border: 'none', background: t.surface, cursor: 'pointer',
+                  fontSize: '15px', fontWeight: 600, color: '#EF4444',
+                  fontFamily: "'DM Sans', sans-serif",
+                  boxShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.4)' : '0 1px 6px rgba(0,0,0,0.07)',
+                  borderWidth: '1px', borderStyle: 'solid', borderColor: t.border,
+                }}>
+                  Log Out
+                </button>
+              </div>
+            )}
+
+              </>);
+            })()}
+
           </div>
-        )}
+          );
+        })()}
 
         {/* ── Event list (home tab) ─────────────────────────────────────── */}
         {activeTab === 'home' && (
@@ -2128,7 +2524,12 @@ export default function HomePage() {
           }} style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
             background: 'none', border: 'none', cursor: 'pointer', padding: '4px 16px',
-            color: (tab.key === 'search' ? (searchFocused || (activeTab === 'home' && filtersExpanded)) : activeTab === tab.key) ? t.accent : t.textMuted,
+            color: (tab.key === 'search'
+              ? (searchFocused || (activeTab === 'home' && filtersExpanded))
+              : tab.key === 'home'
+                ? (activeTab === 'home' && !filtersExpanded && !searchFocused)
+                : activeTab === tab.key
+            ) ? t.accent : t.textMuted,
             transition: 'color 0.15s',
           }}>
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px' }}>
@@ -2146,7 +2547,12 @@ export default function HomePage() {
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor" /></svg>
               )}
             </span>
-            <span style={{ fontSize: '10px', fontWeight: (tab.key === 'search' ? (searchFocused || (activeTab === 'home' && filtersExpanded)) : activeTab === tab.key) ? 700 : 500 }}>{tab.label}</span>
+            <span style={{ fontSize: '10px', fontWeight: (tab.key === 'search'
+              ? (searchFocused || (activeTab === 'home' && filtersExpanded))
+              : tab.key === 'home'
+                ? (activeTab === 'home' && !filtersExpanded && !searchFocused)
+                : activeTab === tab.key
+            ) ? 700 : 500 }}>{tab.label}</span>
           </button>
         ))}
       </nav>

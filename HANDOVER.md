@@ -31,7 +31,7 @@
 | 2 | Ticketmaster | `ticketmaster.js` | Ticketmaster API | ✅ Working | ~120+ |
 | 3 | Joe's Surf Shack | `joesSurfShack.js` | Custom | ✅ Working | ~56 |
 | 4 | St. Stephen's Green | `stStephensGreen.js` | Google Calendar iCal | ✅ Working | ~65 |
-| 5 | McCann's Tavern | `mccanns.js` | Google Calendar iCal | ✅ Working (calendar ID fixed — was missing 's' in `jacksbythetracksnj`) | ~15+ |
+| 5 | McCann's Tavern | `mccanns.js` | Google Calendar iCal | ✅ Working (time-from-title extraction, NULL for missing times) | ~15+ |
 | 6 | Beach Haus | `beachHaus.js` | Custom | ✅ Working | ~35 |
 | 7 | Martell's Tiki Bar | `martells.js` | Timely API | ✅ Working | ~270 |
 | 8 | Bar Anticipation | `barAnticipation.js` | AILEC iCal + RDATE | ✅ Working | ~211 |
@@ -2193,6 +2193,48 @@ artist_image > image_url > venue_photo > branded gradient fallback
 - **Google Brand Verification** — Submit app for official Brand Verification in Google Cloud Console so the consent screen displays "mylocaljam" branding instead of the raw Supabase project URL (`ugmyqucizialapfulens.supabase.co`). Go to Google Cloud Console → APIs & Services → OAuth consent screen → publish app and submit for verification. Requires privacy policy URL (`https://mylocaljam.com/privacy`) and terms URL (`https://mylocaljam.com/terms`) — both are deployed.
 - **Delete `GoogleOAuthWrapper.js`** — No longer used after revert. Can be safely removed.
 - **Optionally uninstall `@react-oauth/google`** — No longer used. Run `npm uninstall @react-oauth/google` if desired, or leave as harmless dep.
+
+---
+
+## Session: March 22, 2026 — McCann's Time Extraction, Pagination Fix, Admin Dashboard Polish
+
+### What Changed
+
+1. **McCann's Tavern — Time Extraction from Titles** (`src/lib/scrapers/mccanns.js`)
+   - New `extractTimeFromTitle()` function parses time patterns at the end of event titles: `6-9`, `7pm`, `6:30-9:30`, `8pm-11pm`, en-dash/em-dash variants
+   - Assumes PM for bare numbers (safe for bar/venue events)
+   - Cleans the extracted time from the title so only the artist name remains (e.g., "Kevin Hill 6-9" → title: "Kevin Hill", time: "6:00 PM")
+   - New `isAllDayEvent()` helper detects date-only DTSTART values (no time component)
+   - **Priority order:** title-embedded time → real calendar time (if not midnight) → `null`
+   - **Midnight default → NULL:** Events resolving to exactly midnight Eastern now return `null` for time, so they correctly surface in the "Missing Time" dashboard card
+
+2. **Pagination Count Bug Fix** (`src/app/api/admin/route.js`)
+   - The count query for the Load More button was not applying the `recentlyAdded` filter, causing it to show unfiltered totals (e.g., "8 of 1865" instead of "8 of 8")
+   - Added `recentlyAdded` filter (`created_at >= 24h ago`) to the count query so it matches the data query
+   - Load More button now correctly hides when all filtered results are displayed
+
+3. **Prior session carry-over (committed earlier, documented here for completeness):**
+   - **Eventide Grille scraper** wired into sync-events route (Image Poster type, hardcoded monthly events)
+   - **scraper_health table** — ALTER TABLE to add `website_url` and `platform` columns
+   - **Brielle House** — Updated nonce regex for `_nonce` key, added error messages for HTTP 403 and WordPress critical errors. Site-side issue (their EventPrime plugin is broken), nothing we can fix.
+   - **Force Sync endpoint** (`/api/admin/force-sync/route.js`) — Per-venue sync with `SCRAPER_MAP` and `PLATFORM_MAP`
+   - **Asbury Lanes** — AJAX fallback when BentoBox/nginx blocks full-page requests from Vercel IPs
+   - **Successful Syncs card** on Data Health dashboard
+   - **Platform badges** — `PLATFORM_MAP` in force-sync, backfill SQL for existing rows, Squarespace badge color fix (`#1A1A1A` → `#5B8A72`)
+   - **New Events (24h) velocity card** with click-through to filtered events list
+   - **Dashboard card reorder** — Row 1: Health & Inventory, Row 2: Action Items
+
+### Files Modified
+- `src/lib/scrapers/mccanns.js` — `extractTimeFromTitle()`, `isAllDayEvent()`, NULL time handling, cleaned titles
+- `src/app/api/admin/route.js` — `recentlyAdded` filter on count query
+
+### SQL Migrations Required
+- `ALTER TABLE scraper_health ADD COLUMN website_url TEXT, ADD COLUMN platform TEXT;` (if not already run)
+- Backfill platform tags: `UPDATE scraper_health SET platform = 'Google Calendar' WHERE scraper_key = 'McCanns';` (etc. for all venues — see PLATFORM_MAP in force-sync route)
+
+### Pending / TODO
+- **Brielle House** — Site-side PHP crash + HTTP 403 from datacenter IPs. Monitor periodically; nothing to fix on our end.
+- **Eventide Grille / Palmetto** — Image poster scrapers require manual monthly updates. Scheduled reminder set up.
 
 ---
 

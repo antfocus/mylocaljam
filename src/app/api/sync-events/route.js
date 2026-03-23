@@ -750,6 +750,39 @@ export async function POST(request) {
     enrichResult.errors.push(`Enrichment failed: ${enrichErr.message}`);
   }
 
+  // --- Trigger B: Notify followers about newly added events ---
+  let notifyResult = { newEvents: 0, notified: false };
+  try {
+    // Find events created in the last 10 minutes (covers this sync window)
+    const tenMinsAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const { data: brandNew } = await supabase
+      .from('events')
+      .select('id')
+      .gte('created_at', tenMinsAgo)
+      .eq('status', 'published')
+      .not('artist_name', 'is', null);
+
+    const newIds = (brandNew || []).map(e => e.id);
+    notifyResult.newEvents = newIds.length;
+
+    if (newIds.length > 0 && newIds.length < 200) {
+      // Fire-and-forget internal call to /api/notify
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000';
+      fetch(`${baseUrl}/api/notify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.SYNC_SECRET || ''}`,
+        },
+        body: JSON.stringify({ trigger: 'new_show', newEventIds: newIds }),
+      }).catch(err => console.error('[Trigger B] Fire-and-forget failed:', err.message));
+      notifyResult.notified = true;
+    }
+  } catch (notifyErr) {
+    console.error('[Trigger B] Error:', notifyErr.message);
+  }
+
   const duration = ((Date.now() - start) / 1000).toFixed(2) + 's';
 
   return NextResponse.json({
@@ -775,6 +808,7 @@ export async function POST(request) {
       humanEditedSkipped: enrichResult.humanSkipped,
       errors: enrichResult.errors.length ? enrichResult.errors : null,
     },
+    notifications: notifyResult,
     errors: upsertErrors.length ? upsertErrors : null,
   });
 }

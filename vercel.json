@@ -7,6 +7,14 @@
     {
       "path": "/api/sync-events",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/notify?trigger=tracked_show",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/notify?trigger=artist_discovery",
+      "schedule": "0 17 * * *"
     }
   ]
 }
