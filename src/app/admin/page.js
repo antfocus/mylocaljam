@@ -879,11 +879,7 @@ export default function AdminPage() {
       {activeTab === 'dashboard' && !loading && (() => {
         // Compute Data Health metrics from existing state
         const eventsWithoutImage = events.filter(e => !e.image_url && !e.artists?.image_url).length;
-        const eventsMissingTimeCount = events.filter(e => {
-          if (!e.event_date) return true;
-          const time = e.event_date.split('T')[1] || '';
-          return time.startsWith('00:00') || time.startsWith('04:00') || time.startsWith('05:00');
-        }).length;
+        const eventsMissingTimeCount = events.filter(e => e.is_time_tbd).length;
         const artistsWithoutBio = artists.filter(a => !a.bio).length;
         const pendingFlags = reports.filter(r => r.status === 'pending').length;
         const totalEvents = eventsTotal || events.length;
@@ -3388,7 +3384,7 @@ export default function AdminPage() {
                         await fetch('/api/admin', {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-                          body: JSON.stringify({ id, event_date: newDateTime }),
+                          body: JSON.stringify({ id, event_date: newDateTime, is_time_tbd: false }),
                         });
                       }
                       setBulkTimeModal(false);

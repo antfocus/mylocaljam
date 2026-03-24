@@ -152,6 +152,9 @@ function mapEvent(ev, venueMap, defaultTimes) {
   const venueDefaultTime = defaultTimes[ev.venue] || null;
   const hasRealTime = scrapedTime && scrapedTime !== '00:00' && scrapedTime !== '12:00 AM';
 
+  // Track whether we actually have a real time or are guessing
+  let isTimeTbd = false;
+
   // Combine date + time into a full ISO timestamp (Eastern)
   let eventDate = null;
   if (ev.date) {
@@ -166,6 +169,7 @@ function mapEvent(ev, venueMap, defaultTimes) {
         timeStr = convertTo24h(venueDefaultTime);
       } else {
         timeStr = '00:00';
+        isTimeTbd = true;
       }
       eventDate = new Date(`${ev.date}T${timeStr}:00${offset}`).toISOString();
     }
@@ -176,6 +180,7 @@ function mapEvent(ev, venueMap, defaultTimes) {
     venue_name: ev.venue,
     venue_id: venueId,
     event_date: eventDate,
+    is_time_tbd: isTimeTbd,
     // Pass through scraper description — used for scraper-first artist enrichment
     _scraper_bio: ev.description || null,
     _scraper_image: ev.image_url || null,

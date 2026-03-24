@@ -29,11 +29,8 @@ export async function GET(request) {
   const missingTime = searchParams.get('missingTime') === 'true';
   const recentlyAdded = searchParams.get('recentlyAdded') === 'true';
 
-  // For missing-time filter, we fetch a larger set and filter server-side
-  // because PostgREST can't do ::time casts on timestamptz columns reliably
-  const pageLimit = missingTime ? 2000 : limit;
-  const pageFrom = missingTime ? 0 : from;
-  const pageTo = missingTime ? 1999 : to;
+  const pageFrom = from;
+  const pageTo = to;
 
   let query = supabase
     .from('events')
@@ -63,39 +60,30 @@ export async function GET(request) {
     query = query.gte('created_at', since);
   }
 
+  // Filter for missing time — uses boolean flag instead of UTC timestamp math
+  if (missingTime) {
+    query = query.eq('is_time_tbd', true);
+  }
+
   const { data, error } = await query;
 
-  // Post-query filter for missing time — check if UTC hour is 0, 4, or 5 with minute 0
   let filtered = data || [];
-  if (missingTime && filtered.length > 0) {
-    filtered = filtered.filter(ev => {
-      if (!ev.event_date) return true;
-      const d = new Date(ev.event_date);
-      const h = d.getUTCHours();
-      const m = d.getUTCMinutes();
-      return m === 0 && (h === 0 || h === 4 || h === 5);
-    });
-  }
 
-  // Compute count — for missing time it's the filtered length, otherwise use DB count
+  // Compute count
   let count;
-  if (missingTime) {
-    count = filtered.length;
-  } else {
-    let countQuery = supabase.from('events').select('id', { count: 'exact', head: true });
-    if (statusFilter === 'upcoming') countQuery = countQuery.eq('status', 'published').gte('event_date', nowIso);
-    else if (statusFilter === 'past') countQuery = countQuery.eq('status', 'published').lt('event_date', nowIso);
-    else if (statusFilter === 'hidden') countQuery = countQuery.neq('status', 'published');
-    if (recentlyAdded) {
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      countQuery = countQuery.gte('created_at', since);
-    }
-    const countResult = await countQuery;
-    count = countResult.count;
+  let countQuery = supabase.from('events').select('id', { count: 'exact', head: true });
+  if (statusFilter === 'upcoming') countQuery = countQuery.eq('status', 'published').gte('event_date', nowIso);
+  else if (statusFilter === 'past') countQuery = countQuery.eq('status', 'published').lt('event_date', nowIso);
+  else if (statusFilter === 'hidden') countQuery = countQuery.neq('status', 'published');
+  if (recentlyAdded) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    countQuery = countQuery.gte('created_at', since);
   }
+  if (missingTime) countQuery = countQuery.eq('is_time_tbd', true);
+  const countResult = await countQuery;
+  count = countResult.count;
 
-  // Apply pagination for missing-time results
-  const paginatedData = missingTime ? filtered.slice(from, from + limit) : filtered;
+  const paginatedData = filtered;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
