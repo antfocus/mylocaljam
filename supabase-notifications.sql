@@ -31,6 +31,10 @@ CREATE POLICY "Users can mark own notifications read"
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
+CREATE POLICY "Users can delete own notifications"
+  ON notifications FOR DELETE
+  USING (auth.uid() = user_id);
+
 -- 2. User notification preferences (global toggles from Profile tab)
 CREATE TABLE IF NOT EXISTS user_notification_preferences (
   user_id             UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,

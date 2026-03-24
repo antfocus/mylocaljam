@@ -35,12 +35,14 @@ export async function GET(request) {
     return NextResponse.json({
       email_enabled: true,
       in_app_enabled: true,
+      search_radius: null,
     });
   }
 
   return NextResponse.json({
     email_enabled: data.email_enabled,
     in_app_enabled: data.in_app_enabled,
+    search_radius: data.search_radius,
   });
 }
 
@@ -57,19 +59,21 @@ export async function PATCH(request) {
   }
 
   const body = await request.json();
-  const update = { updated_at: new Date().toISOString() };
-  if (typeof body.email_enabled === 'boolean') update.email_enabled = body.email_enabled;
-  if (typeof body.in_app_enabled === 'boolean') update.in_app_enabled = body.in_app_enabled;
+
+  // Build the upsert payload — only include fields that were sent
+  const upsertData = {
+    user_id: user.id,
+    updated_at: new Date().toISOString(),
+  };
+  if (typeof body.email_enabled === 'boolean') upsertData.email_enabled = body.email_enabled;
+  if (typeof body.in_app_enabled === 'boolean') upsertData.in_app_enabled = body.in_app_enabled;
+  // search_radius: integer (2/5/10/25/50) or null for "Show All"
+  if (body.search_radius !== undefined) upsertData.search_radius = body.search_radius;
 
   // Upsert: create row if it doesn't exist, update if it does
   const { error } = await supabase
     .from('user_notification_preferences')
-    .upsert({
-      user_id: user.id,
-      email_enabled: body.email_enabled ?? true,
-      in_app_enabled: body.in_app_enabled ?? true,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' });
+    .upsert(upsertData, { onConflict: 'user_id' });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -6,11 +6,41 @@ import { getAdminClient } from '@/lib/supabase';
  * Public — increments cancel_flag_count or cover_flag_count for an event.
  * Does NOT change the public UI. Flags route to admin queue for manual review.
  *
+ * Rate limited: 1 flag per IP per event per 10 minutes.
+ *
  * Body: { event_id: string, flag_type: 'cancel' | 'cover' }
  */
-export async function POST(request) {
-  const supabase = getAdminClient();
 
+// ── In-memory rate limiter ──────────────────────────────────────────────────
+// Key: "ip:event_id" → timestamp of last flag.
+// Resets on cold start, but catches hot-path abuse within a single instance.
+const FLAG_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const flagLog = new Map();
+
+// Periodic cleanup so the Map doesn't grow unbounded
+const CLEANUP_INTERVAL = 5 * 60 * 1000; // every 5 min
+let lastCleanup = Date.now();
+
+function pruneStaleEntries() {
+  const now = Date.now();
+  if (now - lastCleanup < CLEANUP_INTERVAL) return;
+  lastCleanup = now;
+  for (const [key, ts] of flagLog) {
+    if (now - ts > FLAG_WINDOW_MS) flagLog.delete(key);
+  }
+}
+
+function getClientIP(request) {
+  return (
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') ||
+    'unknown'
+  );
+}
+
+// ── Handler ─────────────────────────────────────────────────────────────────
+
+export async function POST(request) {
   let body;
   try {
     body = await request.json();
@@ -24,6 +54,21 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Missing event_id or invalid flag_type (must be "cancel" or "cover")' }, { status: 400 });
   }
 
+  // ── Rate limit check ────────────────────────────────────────────────────
+  pruneStaleEntries();
+  const ip = getClientIP(request);
+  const rateKey = `${ip}:${event_id}`;
+  const lastFlag = flagLog.get(rateKey);
+  if (lastFlag && Date.now() - lastFlag < FLAG_WINDOW_MS) {
+    return NextResponse.json(
+      { error: 'You already flagged this event recently. Please wait before trying again.' },
+      { status: 429 }
+    );
+  }
+  flagLog.set(rateKey, Date.now());
+
+  // ── Database update ─────────────────────────────────────────────────────
+  const supabase = getAdminClient();
   const column = flag_type === 'cancel' ? 'cancel_flag_count' : 'cover_flag_count';
 
   // Fetch current count

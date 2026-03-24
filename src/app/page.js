@@ -257,7 +257,6 @@ export default function HomePage() {
   const [toastVariant, setToastVariant] = useState(null);
   const [toastAction, setToastAction] = useState(null);           // callback for upsell toast tap
   const [toastActionLabel, setToastActionLabel] = useState(null); // label for upsell action button
-  const [followExpandedCardId, setFollowExpandedCardId] = useState(null); // ID of the card whose inline follow upsell is open
 
   // ── Theme ────────────────────────────────────────────────────────────────────
   const [darkMode, setDarkMode] = useState(() => {
@@ -278,12 +277,14 @@ export default function HomePage() {
 
   // ── UI state ────────────────────────────────────────────────────────────────
   const [activeTab,      setActiveTab]      = useState('home');
+  const [deepLinkEventId, setDeepLinkEventId] = useState(null);     // auto-expand from shared link
   const [mapOpen,        setMapOpen]        = useState(false);
   const [dateKey,        setDateKey]        = useState('all');
   const [pickedDate,     setPickedDate]     = useState('');        // YYYY-MM-DD for 'pick' dateKey
   const [searchQuery,    setSearchQuery]    = useState('');
   const [activeVenues,   setActiveVenues]   = useState([]);    // multi-select venue filter
   const [milesRadius,    setMilesRadius]    = useState(null);  // null = any distance
+  const profileRadiusRef = useRef(null); // saved profile default (null for guests)
   const [showSubmit,     setShowSubmit]     = useState(false);
   // reportEvent state removed — flagging now handled inline in EventCardV2
   const [filtersExpanded, setFiltersExpanded] = useState(false);
@@ -303,6 +304,14 @@ export default function HomePage() {
   const [authTrigger, setAuthTrigger] = useState(null);            // 'save' | 'submit' | 'profile' | null
   // guestBannerDismissed removed — hard gate handles auth, no banner needed
   const [showWelcome, setShowWelcome] = useState(false);
+  // ── Edit Profile modal state ─────────────────────────────────────────────
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [editAvatarUrl, setEditAvatarUrl] = useState('');
+  const [editProfileSaving, setEditProfileSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [showRadiusPicker, setShowRadiusPicker] = useState(false);
   // ── Notification state ───────────────────────────────────────────────────
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -586,32 +595,21 @@ export default function HomePage() {
     const isSaved = favorites.has(id);
 
     if (isSaved) {
-      // Already saved — unsave immediately, collapse any expansion
       unsaveEventFromDb(id);
-      if (followExpandedCardId === id) setFollowExpandedCardId(null);
       return;
     }
 
-    // Not saved yet — save immediately
+    // Not saved yet — save immediately (popover upsell is handled inside EventCardV2)
     saveEventToDb(id);
-
-    // If the event has an artist, expand inline follow upsell (auto-collapses any other)
-    const event = events.find(e => e.id === id);
-    if (event?.artist_name) {
-      setFollowExpandedCardId(id);
-    } else {
-      // No artist — just show a brief toast
-      setFollowExpandedCardId(null);
-      setToastVariant('success');
-      setToast('Event saved to My Jam');
-    }
-  }, [favorites, isLoggedIn, events, openAuth, unsaveEventFromDb, saveEventToDb, followExpandedCardId]);
+  }, [favorites, isLoggedIn, openAuth, unsaveEventFromDb, saveEventToDb]);
 
   // ── Saved tab segment toggle (persisted per-session) ──────────────────────
   const [savedSegment, setSavedSegment] = useState(() => {
     if (typeof window === 'undefined') return 'events';
     return sessionStorage.getItem('mlj_saved_segment') || 'events';
   });
+
+  const [savedTimeView, setSavedTimeView] = useState('upcoming'); // 'upcoming' | 'past'
 
   const handleSetSavedSegment = useCallback((seg) => {
     setSavedSegment(seg);
@@ -877,6 +875,56 @@ export default function HomePage() {
     return () => subscription.unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Handle URL query params from /event/[id] redirect ─────────────────────
+  // Read params once on mount, store in state, then clean URL.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+
+    // ?signup=true → open auth modal in signup mode
+    if (params.get('signup') === 'true') {
+      setShowAuthModal(true);
+      setAuthTrigger('save');
+      window.history.replaceState({}, '', '/');
+      return;
+    }
+
+    // ?login=true → open auth modal in login mode
+    if (params.get('login') === 'true') {
+      setShowAuthModal(true);
+      setAuthTrigger(null);
+      window.history.replaceState({}, '', '/');
+      return;
+    }
+
+    // ?event=<id> → store for deep-link expand (handled below once events load)
+    const eventParam = params.get('event');
+    if (eventParam) {
+      setDeepLinkEventId(eventParam);
+      setActiveTab('home');
+      window.history.replaceState({}, '', '/');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Once events finish loading and we have a deep-link target, scroll + auto-expand
+  useEffect(() => {
+    if (!deepLinkEventId || loading) return;
+    // Give the DOM a beat to render the card (autoExpand prop handles opening)
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`event-${deepLinkEventId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.style.outline = '2px solid #E8722A';
+        el.style.outlineOffset = '2px';
+        el.style.borderRadius = '12px';
+        setTimeout(() => { el.style.outline = 'none'; }, 3000);
+      }
+      // Clear deep-link so it doesn't persist across tab switches
+      setDeepLinkEventId(null);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [deepLinkEventId, loading]);
+
   // ── Welcome modal for first-time visitors ──────────────────────────────────
   useEffect(() => {
     try {
@@ -929,6 +977,60 @@ export default function HomePage() {
     } catch {}
   }, [unreadCount]);
 
+  const markSingleNotificationRead = useCallback(async (notifId) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: [notifId] }),
+      });
+      setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch {}
+  }, []);
+
+  const clearAllNotifications = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await fetch('/api/notifications', {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ all: true }),
+      });
+      setNotifications([]);
+      setUnreadCount(0);
+    } catch {}
+  }, []);
+
+  const dismissNotification = useCallback(async (notifId) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await fetch('/api/notifications', {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: [notifId] }),
+      });
+      setNotifications(prev => {
+        const removed = prev.find(n => n.id === notifId);
+        if (removed && !removed.is_read) setUnreadCount(c => Math.max(0, c - 1));
+        return prev.filter(n => n.id !== notifId);
+      });
+    } catch {}
+  }, []);
+
   // ── Fetch notification preferences when logged in ──────────────────────
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -943,6 +1045,10 @@ export default function HomePage() {
           const data = await res.json();
           setEmailNotifPref(data.email_enabled !== false);
           setInAppNotifPref(data.in_app_enabled !== false);
+          // Initialize distance filter from saved preference
+          const savedRadius = data.search_radius ?? null;
+          profileRadiusRef.current = savedRadius;
+          setMilesRadius(savedRadius);
         }
       } catch {}
     })();
@@ -1222,13 +1328,14 @@ export default function HomePage() {
       .trim();
   }
 
-  const hasActiveFilters = dateKey !== 'all' || milesRadius !== null || searchQuery.trim() !== '' || activeShortcut !== null;
-  const activeFilterCount = [dateKey !== 'all', milesRadius !== null, searchQuery.trim() !== '', activeShortcut !== null].filter(Boolean).length;
+  const radiusIsOverridden = milesRadius !== profileRadiusRef.current;
+  const hasActiveFilters = dateKey !== 'all' || radiusIsOverridden || searchQuery.trim() !== '' || activeShortcut !== null;
+  const activeFilterCount = [dateKey !== 'all', radiusIsOverridden, searchQuery.trim() !== '', activeShortcut !== null].filter(Boolean).length;
   const clearAllFilters = useCallback(() => {
     setDateKey('all');
     setPickedDate('');
     setActiveVenues([]);
-    setMilesRadius(null);
+    setMilesRadius(profileRadiusRef.current); // reset to profile default, not null
     setArtistSearch('');
     setSearchQuery('');
     setFiltersExpanded(false);
@@ -1358,8 +1465,8 @@ export default function HomePage() {
                 Search / Filters
               </span>
             )}
-            {/* Active filter pills inline — category-colored */}
-            {hasActiveFilters && (
+            {/* Active filter pills inline + passive radius indicator */}
+            {(hasActiveFilters || milesRadius !== null) && (
               <div style={{ display: 'flex', gap: '3px', alignItems: 'center', overflow: 'hidden', flex: 1, minWidth: 0 }}>
                 <span style={{ color: t.textMuted, fontSize: '8px', opacity: 0.5, flexShrink: 0 }}>|</span>
                 {dateKey !== 'all' && (
@@ -1370,12 +1477,16 @@ export default function HomePage() {
                       : ({ today: 'Today', tomorrow: 'Tmrw', weekend: 'Wknd' }[dateKey] || dateKey)}
                   </span>
                 )}
-                {milesRadius !== null && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill="#E8722A" /></svg>
-                    {milesRadius}mi
-                  </span>
-                )}
+                {milesRadius !== null && (() => {
+                  const isOverride = milesRadius !== profileRadiusRef.current;
+                  const clr = isOverride ? '#E8722A' : (darkMode ? 'rgba(255,255,255,0.35)' : '#9CA3AF');
+                  return (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: isOverride ? 600 : 500, color: clr, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={clr} /></svg>
+                      {milesRadius}mi
+                    </span>
+                  );
+                })()}
                 {activeShortcut && (() => {
                   const pill = dbPills.find(p => p.id === activeShortcut);
                   if (!pill) return null;
@@ -1389,7 +1500,7 @@ export default function HomePage() {
                 })()}
               </div>
             )}
-            {!hasActiveFilters && <div style={{ flex: 1 }} />}
+            {!hasActiveFilters && milesRadius === null && <div style={{ flex: 1 }} />}
             {/* Right: badge or tune icon */}
             {hasActiveFilters ? (<>
               <span style={{
@@ -1421,67 +1532,77 @@ export default function HomePage() {
           </button>
           </>}
 
-          {/* Add to the Jar FAB — hidden on saved/profile tabs */}
-          {activeTab !== 'saved' && activeTab !== 'profile' && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setShowSubmit(true); }}
-              title="Add to the Jar"
-              style={{
-                width: '30px', height: '30px', borderRadius: '50%', border: 'none',
-                background: t.accent,
-                cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="white" /></svg>
-            </button>
-          )}
+          {/* Spacer — pushes bell to far right on tabs without omnibar */}
+          {(activeTab === 'saved' || activeTab === 'profile') && <div style={{ flex: 1 }} />}
 
-          {/* Bell icon — notification center (all tabs, logged-in only) */}
-          {isLoggedIn && (
-            <button
-              onClick={(e) => { e.stopPropagation(); setNotifDrawerOpen(prev => !prev); if (!notifDrawerOpen) markNotificationsRead(); }}
-              title="Notifications"
-              style={{
-                position: 'relative',
-                width: '30px', height: '30px', borderRadius: '50%', border: 'none',
-                background: notifDrawerOpen ? t.accent : 'transparent',
-                cursor: 'pointer', flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'background 0.15s',
-              }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
-                  fill={notifDrawerOpen ? 'white' : (darkMode ? '#AAA' : '#6B7280')} />
-              </svg>
-              {/* Red unread badge */}
-              {unreadCount > 0 && (
-                <span style={{
-                  position: 'absolute', top: '-2px', right: '-2px',
-                  minWidth: '16px', height: '16px', borderRadius: '999px',
-                  background: '#EF4444', color: 'white',
-                  fontSize: '9px', fontWeight: 800, lineHeight: '16px', textAlign: 'center',
-                  padding: '0 4px', border: `2px solid ${darkMode ? '#1E1E2C' : '#FFFFFF'}`,
+          {/* Right-side icon group — stays anchored to far right on all tabs */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            {/* Add to the Jar FAB — hidden on saved/profile tabs */}
+            {activeTab !== 'saved' && activeTab !== 'profile' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowSubmit(true); }}
+                title="Add to the Jar"
+                style={{
+                  width: '30px', height: '30px', borderRadius: '50%', border: 'none',
+                  background: t.accent,
+                  cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </button>
-          )}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="white" /></svg>
+              </button>
+            )}
+
+            {/* Bell icon — notification center (all tabs, logged-in only) */}
+            {isLoggedIn && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setNotifDrawerOpen(prev => !prev); }}
+                  title="Notifications"
+                  style={{
+                    position: 'relative',
+                    width: '30px', height: '30px', borderRadius: '50%', border: 'none',
+                    background: notifDrawerOpen ? t.accent : (darkMode ? '#2A2A3A' : '#E5E7EB'),
+                    cursor: 'pointer', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'background 0.15s',
+                  }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                      fill={notifDrawerOpen ? 'white' : (darkMode ? '#CCCCDD' : '#4B5563')} />
+                  </svg>
+                  {/* Red unread badge */}
+                  {unreadCount > 0 && (
+                    <span style={{
+                      position: 'absolute', top: '-3px', right: '-3px',
+                      minWidth: '16px', height: '16px', borderRadius: '999px',
+                      background: '#EF4444', color: 'white',
+                      fontSize: '9px', fontWeight: 800, lineHeight: '16px', textAlign: 'center',
+                      padding: '0 4px', border: `2px solid ${darkMode ? '#2A2A3A' : '#E5E7EB'}`,
+                    }}>
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
         </header>
 
-        {/* ── Notification Drawer (slides down from header) ──────────── */}
+        {/* ── Notification Popup (floating dropdown from bell) ──────────── */}
         {notifDrawerOpen && (
           <>
             <div onClick={() => setNotifDrawerOpen(false)} style={{
-              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 98,
-              background: 'rgba(0,0,0,0.3)',
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 200,
             }} />
             <div style={{
-              position: 'sticky', top: '70px', zIndex: 99,
-              maxHeight: '60vh', overflowY: 'auto',
-              background: t.surface, borderBottom: `1px solid ${t.border}`,
-              boxShadow: darkMode ? '0 8px 32px rgba(0,0,0,0.6)' : '0 8px 24px rgba(0,0,0,0.12)',
-              borderRadius: '0 0 16px 16px',
-              margin: '0 auto', width: '100%', maxWidth: '480px',
+              position: 'fixed', top: '56px', right: '8px', zIndex: 201,
+              maxHeight: '70vh', overflowY: 'auto',
+              background: t.surface,
+              border: `1px solid ${darkMode ? '#2A2A3A' : '#E5E7EB'}`,
+              boxShadow: darkMode
+                ? '0 12px 48px rgba(0,0,0,0.7), 0 4px 16px rgba(0,0,0,0.4)'
+                : '0 12px 40px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08)',
+              borderRadius: '12px',
+              width: 'calc(100vw - 16px)', maxWidth: '380px',
             }}>
               {/* Header */}
               <div style={{
@@ -1489,12 +1610,20 @@ export default function HomePage() {
                 padding: '14px 16px 8px', borderBottom: `1px solid ${t.borderLight}`,
               }}>
                 <span style={{ fontSize: '15px', fontWeight: 700, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>Notifications</span>
-                {notifications.length > 0 && (
-                  <button onClick={() => { markNotificationsRead(); }} style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: '12px', color: t.accent, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
-                  }}>Mark all read</button>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  {unreadCount > 0 && (
+                    <button onClick={() => { markNotificationsRead(); }} style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      fontSize: '12px', color: t.accent, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+                    }}>Mark all read</button>
+                  )}
+                  {notifications.length > 0 && (
+                    <button onClick={() => { clearAllNotifications(); }} style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      fontSize: '12px', color: t.textMuted, fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+                    }}>Clear All</button>
+                  )}
+                </div>
               </div>
 
               {/* Notification list */}
@@ -1509,51 +1638,92 @@ export default function HomePage() {
               ) : (
                 <div>
                   {notifications.slice(0, 20).map(notif => (
-                    <button
+                    <div
                       key={notif.id}
-                      onClick={() => {
-                        setNotifDrawerOpen(false);
-                        // Navigate to target if available
-                        if (notif.target_url) window.location.href = notif.target_url;
-                      }}
                       style={{
-                        display: 'flex', flexDirection: 'column', gap: '2px',
-                        width: '100%', padding: '12px 16px', border: 'none', cursor: 'pointer',
+                        position: 'relative',
+                        display: 'flex', alignItems: 'stretch',
                         background: notif.is_read ? t.surface : (darkMode ? 'rgba(232,114,42,0.05)' : 'rgba(232,114,42,0.04)'),
                         borderBottom: `1px solid ${t.borderLight}`,
-                        textAlign: 'left',
                       }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {!notif.is_read && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: t.accent, flexShrink: 0 }} />}
+                      {/* Clickable notification body */}
+                      <button
+                        onClick={() => {
+                          if (!notif.is_read) markSingleNotificationRead(notif.id);
+                          setNotifDrawerOpen(false);
+                          if (notif.target_url) {
+                            const eventId = notif.target_url.replace('/events/', '');
+                            if (eventId) {
+                              setActiveTab('home');
+                              setTimeout(() => {
+                                const el = document.getElementById(`event-${eventId}`);
+                                if (el) {
+                                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  el.style.outline = '2px solid #E8722A';
+                                  el.style.outlineOffset = '2px';
+                                  el.style.borderRadius = '12px';
+                                  setTimeout(() => { el.style.outline = 'none'; }, 2000);
+                                }
+                              }, 300);
+                            }
+                          }
+                        }}
+                        style={{
+                          flex: 1, display: 'flex', flexDirection: 'column', gap: '2px',
+                          padding: '12px 36px 12px 16px', border: 'none', cursor: 'pointer',
+                          background: 'transparent', textAlign: 'left', minWidth: 0,
+                        }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {!notif.is_read && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: t.accent, flexShrink: 0 }} />}
+                          <span style={{
+                            fontSize: '13px', fontWeight: notif.is_read ? 500 : 700,
+                            color: t.text, fontFamily: "'DM Sans', sans-serif",
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>{notif.title}</span>
+                        </div>
+                        {notif.body && (
+                          <p style={{
+                            fontSize: '12px', color: t.textMuted, margin: 0,
+                            fontFamily: "'DM Sans', sans-serif", lineHeight: 1.4,
+                            paddingLeft: notif.is_read ? '0' : '14px',
+                            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                          }}>{notif.body}</p>
+                        )}
                         <span style={{
-                          fontSize: '13px', fontWeight: notif.is_read ? 500 : 700,
-                          color: t.text, fontFamily: "'DM Sans', sans-serif",
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>{notif.title}</span>
-                      </div>
-                      {notif.body && (
-                        <p style={{
-                          fontSize: '12px', color: t.textMuted, margin: 0,
-                          fontFamily: "'DM Sans', sans-serif", lineHeight: 1.4,
-                          paddingLeft: notif.is_read ? '0' : '14px',
-                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                        }}>{notif.body}</p>
-                      )}
-                      <span style={{
-                        fontSize: '10px', color: t.textSubtle, fontFamily: "'DM Sans', sans-serif",
-                        paddingLeft: notif.is_read ? '0' : '14px', marginTop: '2px',
-                      }}>
-                        {(() => {
-                          const diff = Date.now() - new Date(notif.created_at).getTime();
-                          const mins = Math.floor(diff / 60000);
-                          if (mins < 1) return 'Just now';
-                          if (mins < 60) return `${mins}m ago`;
-                          const hrs = Math.floor(mins / 60);
-                          if (hrs < 24) return `${hrs}h ago`;
-                          return `${Math.floor(hrs / 24)}d ago`;
-                        })()}
-                      </span>
-                    </button>
+                          fontSize: '10px', color: t.textSubtle, fontFamily: "'DM Sans', sans-serif",
+                          paddingLeft: notif.is_read ? '0' : '14px', marginTop: '2px',
+                        }}>
+                          {(() => {
+                            const diff = Date.now() - new Date(notif.created_at).getTime();
+                            const mins = Math.floor(diff / 60000);
+                            if (mins < 1) return 'Just now';
+                            if (mins < 60) return `${mins}m ago`;
+                            const hrs = Math.floor(mins / 60);
+                            if (hrs < 24) return `${hrs}h ago`;
+                            return `${Math.floor(hrs / 24)}d ago`;
+                          })()}
+                        </span>
+                      </button>
+                      {/* Dismiss X button */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); dismissNotification(notif.id); }}
+                        title="Dismiss"
+                        style={{
+                          position: 'absolute', top: '10px', right: '10px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: '22px', height: '22px', borderRadius: '50%',
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          color: darkMode ? '#5A5A7A' : '#B0B0B0',
+                          transition: 'color 0.15s, background 0.15s',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.color = darkMode ? '#AAAACC' : '#6B7280'; e.currentTarget.style.background = darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = darkMode ? '#5A5A7A' : '#B0B0B0'; e.currentTarget.style.background = 'none'; }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -1846,22 +2016,49 @@ export default function HomePage() {
                       {/* Slider with bookend labels — disabled when no valid location */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 2px', marginTop: '24px', marginBottom: '16px', opacity: locationCoords ? 1 : 0.4, pointerEvents: locationCoords ? 'auto' : 'none' }}>
                         <span style={{ fontSize: '10px', fontWeight: 600, color: '#A0A0A0', minWidth: '24px', textAlign: 'left', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>0 mi</span>
-                        <input type="range" min="0" max="50" value={milesRadius ?? 0}
+                        <input type="range" min="0" max="25" value={milesRadius ?? 0}
                           className="distance-slider"
                           disabled={!locationCoords}
                           onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v === 0 ? null : v); }}
                           style={{
                             flex: 1, height: '6px',
-                            background: `linear-gradient(to right, #E8722A ${((milesRadius ?? 0) / 50) * 100}%, ${darkMode ? '#3A3A4A' : '#DDD'} 0%)`,
+                            background: `linear-gradient(to right, #E8722A ${((milesRadius ?? 0) / 25) * 100}%, ${darkMode ? '#3A3A4A' : '#DDD'} 0%)`,
                             borderRadius: '3px',
                           }}
                         />
-                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#A0A0A0', minWidth: '28px', textAlign: 'right', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>50 mi</span>
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#A0A0A0', minWidth: '28px', textAlign: 'right', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>25 mi</span>
                       </div>
-                      {/* Current radius display */}
+                      {/* Current radius display + local reset */}
                       {milesRadius !== null && locationCoords && (
-                        <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '11px', fontWeight: 700, color: '#E8722A', fontFamily: "'DM Sans', sans-serif" }}>
-                          {milesRadius} miles from {locationLabel}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0 2px', fontFamily: "'DM Sans', sans-serif" }}>
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#E8722A' }}>
+                            {milesRadius} miles from {locationLabel}
+                          </span>
+                          {milesRadius !== profileRadiusRef.current && (
+                            <button
+                              className="reset-to-default-btn"
+                              onClick={() => setMilesRadius(profileRadiusRef.current)}
+                              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', fontWeight: 600, color: t.textMuted, fontFamily: "'DM Sans', sans-serif", transition: 'opacity 0.15s' }}
+                            >
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                              Reset to default
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {milesRadius === null && profileRadiusRef.current !== null && locationCoords && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', padding: '0 2px', fontFamily: "'DM Sans', sans-serif" }}>
+                          <span style={{ fontSize: '11px', fontWeight: 600, color: t.textMuted }}>
+                            Showing all distances
+                          </span>
+                          <button
+                            className="reset-to-default-btn"
+                            onClick={() => setMilesRadius(profileRadiusRef.current)}
+                            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px', fontSize: '10px', fontWeight: 600, color: t.textMuted, fontFamily: "'DM Sans', sans-serif", transition: 'opacity 0.15s' }}
+                          >
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            Reset to default
+                          </button>
                         </div>
                       )}
                       {!locationCoords && !geolocating && (
@@ -2072,17 +2269,26 @@ export default function HomePage() {
             {/* View A: Saved Events */}
             {savedSegment === 'events' && (() => {
                   let savedEvents = events.filter(e => favorites.has(e.id));
-
-                  // 6:00 AM rollover rule — keep event visible until 6 AM the morning after
-                  // (Frontend-only filter; does NOT delete from user_saved_events table)
                   const now = new Date();
-                  savedEvents = savedEvents.filter(e => {
-                    if (!e.date) return true;
-                    // Build a Date for 6:00 AM on the day AFTER the event
-                    const eventDate = new Date(e.date.substring(0, 10) + 'T06:00:00');
-                    eventDate.setDate(eventDate.getDate() + 1); // next morning 6 AM
-                    return now < eventDate;
-                  });
+
+                  // Split by upcoming vs past using 6 AM rollover rule
+                  if (savedTimeView === 'upcoming') {
+                    // Keep event visible until 6 AM the morning after
+                    savedEvents = savedEvents.filter(e => {
+                      if (!e.date) return true;
+                      const eventDate = new Date(e.date.substring(0, 10) + 'T06:00:00');
+                      eventDate.setDate(eventDate.getDate() + 1);
+                      return now < eventDate;
+                    });
+                  } else {
+                    // Past: events whose next-morning 6 AM has passed
+                    savedEvents = savedEvents.filter(e => {
+                      if (!e.date) return false;
+                      const eventDate = new Date(e.date.substring(0, 10) + 'T06:00:00');
+                      eventDate.setDate(eventDate.getDate() + 1);
+                      return now >= eventDate;
+                    });
+                  }
 
                   if (searchQuery.trim()) {
                     const q = normalizeVenue(searchQuery);
@@ -2093,65 +2299,104 @@ export default function HomePage() {
                     );
                   }
 
+                  // Upcoming: closest date first; Past: most recent first
                   savedEvents = savedEvents.sort((a, b) => {
-                    const dc = a.date.localeCompare(b.date);
+                    const dc = savedTimeView === 'past'
+                      ? b.date.localeCompare(a.date)
+                      : a.date.localeCompare(b.date);
                     if (dc !== 0) return dc;
                     const aR = a.start_time && a.start_time !== '00:00';
                     const bR = b.start_time && b.start_time !== '00:00';
                     if (aR && !bR) return -1;
                     if (!aR && bR) return 1;
-                    return (a.start_time ?? '').localeCompare(b.start_time ?? '');
+                    return savedTimeView === 'past'
+                      ? (b.start_time ?? '').localeCompare(a.start_time ?? '')
+                      : (a.start_time ?? '').localeCompare(b.start_time ?? '');
                   });
 
-                  if (savedEvents.length === 0) {
-                    const hasAnySaved = events.some(e => favorites.has(e.id));
-                    // Logged-out empty state — hard gate with friendly CTA
-                    if (!isLoggedIn) {
-                      return (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '64px 32px', textAlign: 'center' }}>
-                          {/* Material: calendar_month */}
-                          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" style={{ marginBottom: '16px' }}>
-                            <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z" fill={t.textMuted} />
-                          </svg>
-                          <p style={{ fontWeight: 700, fontSize: '18px', color: t.text, marginBottom: '6px', fontFamily: "'DM Sans', sans-serif" }}>
-                            Start building your lineup.
-                          </p>
-                          <p style={{ fontSize: '14px', color: t.textMuted, lineHeight: 1.5, marginBottom: '20px', fontFamily: "'DM Sans', sans-serif" }}>
-                            Save shows and follow artists to build your personal concert calendar.
-                          </p>
-                          <button onClick={() => openAuth('save')} style={{
-                            padding: '13px 40px', borderRadius: '999px', border: 'none',
-                            background: t.accent, color: 'white', fontWeight: 700, fontSize: '15px',
-                            cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
-                            boxShadow: '0 2px 12px rgba(232,114,42,0.3)',
-                          }}>
-                            Sign In
-                          </button>
-                        </div>
-                      );
-                    }
-                    // Logged-in empty state (has saves but filtered to zero, or no saves yet)
+                  const hasAnySaved = events.some(e => favorites.has(e.id));
+
+                  // Logged-out empty state — hard gate with friendly CTA (no toggle needed)
+                  if (!isLoggedIn && savedEvents.length === 0) {
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '64px 32px', textAlign: 'center' }}>
-                        {/* Material: add_circle_outline */}
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" style={{ marginBottom: '14px' }}>
-                          <path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill={t.textMuted} />
+                        <svg width="52" height="52" viewBox="0 0 24 24" fill="none" style={{ marginBottom: '16px' }}>
+                          <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z" fill={t.textMuted} />
                         </svg>
-                        <p style={{ fontWeight: 700, fontSize: '16px', color: t.text, marginBottom: '4px', fontFamily: "'DM Sans', sans-serif" }}>
-                          {!hasAnySaved ? 'Your lineup is empty' : searchQuery ? 'No results found' : 'No upcoming saved events'}
+                        <p style={{ fontWeight: 700, fontSize: '18px', color: t.text, marginBottom: '6px', fontFamily: "'DM Sans', sans-serif" }}>
+                          Start building your lineup.
                         </p>
-                        <p style={{ fontSize: '14px', color: t.textMuted, lineHeight: 1.5, fontFamily: "'DM Sans', sans-serif" }}>
-                          {!hasAnySaved ? 'Tap the + icon on any event to add it here.' : searchQuery ? 'Try a different search term' : 'Check back as new events are added'}
+                        <p style={{ fontSize: '14px', color: t.textMuted, lineHeight: 1.5, marginBottom: '20px', fontFamily: "'DM Sans', sans-serif" }}>
+                          Save shows and follow artists to build your personal concert calendar.
                         </p>
+                        <button onClick={() => openAuth('save')} style={{
+                          padding: '13px 40px', borderRadius: '999px', border: 'none',
+                          background: t.accent, color: 'white', fontWeight: 700, fontSize: '15px',
+                          cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                          boxShadow: '0 2px 12px rgba(232,114,42,0.3)',
+                        }}>
+                          Sign In
+                        </button>
                       </div>
                     );
                   }
-                  const savedGroups = groupEventsByDate(savedEvents);
+
+                  const savedGroups = savedEvents.length > 0 ? groupEventsByDate(savedEvents) : [];
                   return (
                     <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <p style={{ fontSize: '12px', fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '1px', padding: '14px 0 2px' }}>
-                        {savedEvents.length} saved event{savedEvents.length !== 1 ? 's' : ''}
-                      </p>
+                      {/* Sub-header: count + Upcoming/Past toggle — ALWAYS visible */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0 2px' }}>
+                        <p style={{ fontSize: '12px', fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
+                          {savedEvents.length} {savedTimeView === 'past' ? 'past' : 'saved'} event{savedEvents.length !== 1 ? 's' : ''}
+                        </p>
+                        <button
+                          onClick={() => setSavedTimeView(v => v === 'upcoming' ? 'past' : 'upcoming')}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            background: 'none', border: `1px solid ${darkMode ? '#3A3A4A' : '#D1D5DB'}`,
+                            borderRadius: '8px', padding: '4px 10px', cursor: 'pointer',
+                            fontSize: '11px', fontWeight: 600,
+                            color: darkMode ? '#AAAACC' : '#4B5563',
+                            fontFamily: "'DM Sans', sans-serif",
+                            transition: 'border-color 0.15s',
+                          }}
+                        >
+                          {savedTimeView === 'upcoming' ? 'Upcoming' : 'Past'}
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.6 }}>
+                            <path d="M7 10l5 5 5-5z" fill="currentColor" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      {/* Empty states (toggle still visible above) */}
+                      {savedEvents.length === 0 && savedTimeView === 'past' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 32px', textAlign: 'center' }}>
+                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" style={{ marginBottom: '14px' }}>
+                            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" fill={t.textMuted} />
+                          </svg>
+                          <p style={{ fontWeight: 700, fontSize: '16px', color: t.text, marginBottom: '4px', fontFamily: "'DM Sans', sans-serif" }}>
+                            No past shows yet
+                          </p>
+                          <p style={{ fontSize: '14px', color: t.textMuted, lineHeight: 1.5, fontFamily: "'DM Sans', sans-serif" }}>
+                            Your gig history will live here. Go save some shows!
+                          </p>
+                        </div>
+                      )}
+                      {savedEvents.length === 0 && savedTimeView === 'upcoming' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 32px', textAlign: 'center' }}>
+                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" style={{ marginBottom: '14px' }}>
+                            <path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill={t.textMuted} />
+                          </svg>
+                          <p style={{ fontWeight: 700, fontSize: '16px', color: t.text, marginBottom: '4px', fontFamily: "'DM Sans', sans-serif" }}>
+                            {!hasAnySaved ? 'Your lineup is empty' : searchQuery ? 'No results found' : 'No upcoming saved events'}
+                          </p>
+                          <p style={{ fontSize: '14px', color: t.textMuted, lineHeight: 1.5, fontFamily: "'DM Sans', sans-serif" }}>
+                            {!hasAnySaved ? 'Tap the + icon on any event to add it here.' : searchQuery ? 'Try a different search term' : 'Check back as new events are added'}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Event list */}
                       {savedGroups.map(group => (
                         <div key={group.date}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0 6px' }}>
@@ -2270,7 +2515,11 @@ export default function HomePage() {
                     {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Your Profile'}
                   </p>
                   <p style={{ fontSize: '13px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>{user?.email}</p>
-                  <button style={{
+                  <button onClick={() => {
+                    setEditDisplayName(user?.user_metadata?.full_name || user?.email?.split('@')[0] || '');
+                    setEditAvatarUrl(user?.user_metadata?.avatar_url || '');
+                    setShowEditProfile(true);
+                  }} style={{
                     marginTop: '10px', padding: '8px 24px', borderRadius: '999px',
                     border: `1px solid ${t.border}`, background: 'transparent',
                     color: t.text, fontWeight: 600, fontSize: '13px', cursor: 'pointer',
@@ -2313,10 +2562,10 @@ export default function HomePage() {
                 <span style={rowLabel(false)}>{mIcon('dark_mode')}Dark Mode</span>
                 {toggleSwitch(darkMode)}
               </button>
-              <button style={rowBase(true)}>
+              <button onClick={() => setShowRadiusPicker(true)} style={rowBase(true)}>
                 <span style={rowLabel(false)}>{mIcon('location_on')}Search Radius</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: t.textMuted, fontSize: '13px', fontWeight: 500 }}>
-                  25 mi {chevron}
+                  {milesRadius === null ? 'Show All' : `${milesRadius} mi`} {chevron}
                 </span>
               </button>
             </div>
@@ -2369,28 +2618,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* ── Section 4: Account & Security ── */}
-            {isLoggedIn && (
-              <>
-                <p style={sectionLabel}>Account & Security</p>
-                <div style={sectionCard}>
-                  <button style={rowBase(false)}>
-                    <span style={rowLabel(false)}>{mIcon('key')}Change Password</span>
-                    {chevron}
-                  </button>
-                  <button style={rowBase(false)}>
-                    <span style={rowLabel(false)}>{mIcon('email')}Update Email Address</span>
-                    {chevron}
-                  </button>
-                  <button style={rowBase(true)}>
-                    <span style={rowLabel(true)}>{mIcon('warning', '#EF4444')}Delete Account</span>
-                    {chevron}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* ── Section 5: Support & Business ── */}
+            {/* ── Section 4: Support & Business ── */}
             <p style={sectionLabel}>Support</p>
             <div style={sectionCard}>
               <button onClick={() => setShowSubmit(true)} style={rowBase(false)}>
@@ -2474,8 +2702,7 @@ export default function HomePage() {
                           }}
                           isArtistFollowed={isFollowing('artist', event.name || event.artist_name || '')}
                           onFlag={(msg) => setToast(msg)}
-                          followExpanded={followExpandedCardId === event.id}
-                          onFollowCollapse={() => setFollowExpandedCardId(null)}
+                          autoExpand={deepLinkEventId === event.id}
                         />
                       ))}
                     </div>
@@ -2621,6 +2848,364 @@ export default function HomePage() {
       )}
 
       {/* Follow upsell now rendered inline in EventCardV2 */}
+
+      {/* ── Search Radius Picker ─────────────────────────────────────────── */}
+      {showRadiusPicker && (
+        <div
+          onClick={() => setShowRadiusPicker(false)}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 200,
+            background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: '420px',
+              background: t.surface, borderRadius: '20px 20px 0 0',
+              border: `1px solid ${t.border}`, borderBottom: 'none',
+              boxShadow: darkMode ? '0 -8px 40px rgba(0,0,0,0.5)' : '0 -4px 24px rgba(0,0,0,0.12)',
+              fontFamily: "'DM Sans', sans-serif",
+              padding: '24px 20px 32px',
+            }}
+          >
+            {/* Handle bar */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+              <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: t.textSubtle }} />
+            </div>
+            <h3 style={{ fontSize: '16px', fontWeight: 700, color: t.text, margin: '0 0 4px', textAlign: 'center' }}>
+              Search Radius
+            </h3>
+            <p style={{ fontSize: '12px', color: t.textMuted, margin: '0 0 20px', textAlign: 'center' }}>
+              How far should we look for shows?
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {[
+                { value: 2, label: '2 miles' },
+                { value: 5, label: '5 miles' },
+                { value: 10, label: '10 miles' },
+                { value: 25, label: '25 miles' },
+                { value: null, label: 'Show All' },
+              ].map(opt => {
+                const isActive = milesRadius === opt.value;
+                return (
+                  <button
+                    key={String(opt.value)}
+                    onClick={async () => {
+                      setMilesRadius(opt.value);
+                      profileRadiusRef.current = opt.value; // update the base default
+                      setShowRadiusPicker(false);
+                      // Persist to Supabase if logged in
+                      if (isLoggedIn) {
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession();
+                          if (session) {
+                            await fetch('/api/notification-prefs', {
+                              method: 'PATCH',
+                              headers: {
+                                Authorization: `Bearer ${session.access_token}`,
+                                'Content-Type': 'application/json',
+                              },
+                              body: JSON.stringify({ search_radius: opt.value }),
+                            });
+                          }
+                        } catch {}
+                      }
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      width: '100%', padding: '14px 16px', borderRadius: '12px',
+                      border: isActive ? '1.5px solid #E8722A' : `1px solid ${t.border}`,
+                      background: isActive
+                        ? (darkMode ? 'rgba(232,114,42,0.1)' : 'rgba(232,114,42,0.06)')
+                        : t.surface,
+                      cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                    }}
+                  >
+                    <span style={{
+                      fontSize: '14px', fontWeight: isActive ? 700 : 500,
+                      color: isActive ? '#E8722A' : t.text,
+                    }}>
+                      {opt.label}
+                    </span>
+                    {isActive && (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="#E8722A" />
+                      </svg>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Profile Modal ──────────────────────────────────────────── */}
+      {showEditProfile && (
+        <div
+          onClick={() => { if (!editProfileSaving && !showDeleteConfirm) setShowEditProfile(false); }}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 200,
+            background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '24px',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: '380px', maxHeight: '90vh', overflowY: 'auto',
+              background: t.surface, borderRadius: '20px',
+              border: `1px solid ${t.border}`,
+              boxShadow: darkMode ? '0 24px 80px rgba(0,0,0,0.6)' : '0 16px 48px rgba(0,0,0,0.15)',
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            {/* Close button */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '16px 16px 0' }}>
+              <button
+                onClick={() => setShowEditProfile(false)}
+                style={{
+                  width: '30px', height: '30px', borderRadius: '50%',
+                  border: `1px solid ${t.border}`, background: t.bg,
+                  cursor: 'pointer', fontSize: '14px', color: t.textMuted,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Avatar + Change Photo */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 24px 20px' }}>
+              <div style={{
+                width: '88px', height: '88px', borderRadius: '50%',
+                background: 'linear-gradient(135deg, #E8722A, #3AADA0)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden', position: 'relative',
+              }}>
+                {editAvatarUrl
+                  ? <img src={editAvatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <span style={{ fontSize: '40px', lineHeight: 1 }}>👤</span>
+                }
+              </div>
+              <label style={{ position: 'relative', marginTop: '8px', cursor: 'pointer' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: t.accent || '#E8722A' }}>Change Photo</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file || !user) return;
+                    try {
+                      const ext = file.name.split('.').pop();
+                      const path = `avatars/${user.id}.${ext}`;
+                      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+                      if (upErr) throw upErr;
+                      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+                      const publicUrl = urlData.publicUrl + '?t=' + Date.now();
+                      setEditAvatarUrl(publicUrl);
+                    } catch (err) {
+                      console.error('Avatar upload error:', err);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+
+            {/* Display Name */}
+            <div style={{ padding: '0 24px 16px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: t.textMuted, marginBottom: '6px' }}>
+                Display Name
+              </label>
+              <input
+                type="text"
+                value={editDisplayName}
+                onChange={e => setEditDisplayName(e.target.value)}
+                placeholder="Your name"
+                style={{
+                  width: '100%', padding: '12px 14px', borderRadius: '10px', fontSize: '14px',
+                  background: t.bg, color: t.text, border: `1px solid ${t.border}`,
+                  boxSizing: 'border-box', fontFamily: "'DM Sans', sans-serif",
+                }}
+              />
+            </div>
+
+            {/* Email (read-only) */}
+            <div style={{ padding: '0 24px 20px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: t.textMuted, marginBottom: '6px' }}>
+                Email (linked Google account)
+              </label>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '10px',
+                padding: '12px 14px', borderRadius: '10px',
+                background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
+                border: `1px solid ${t.border}`,
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z" fill={t.textMuted} />
+                </svg>
+                <span style={{ fontSize: '14px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+                  {user?.email || ''}
+                </span>
+              </div>
+            </div>
+
+            {/* Save & Cancel */}
+            <div style={{ padding: '0 24px 20px', display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setShowEditProfile(false)}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: '12px', fontSize: '14px', fontWeight: 600,
+                  background: t.bg, color: t.textMuted, border: `1px solid ${t.border}`, cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={editProfileSaving}
+                onClick={async () => {
+                  setEditProfileSaving(true);
+                  try {
+                    const updates = { data: { full_name: editDisplayName } };
+                    if (editAvatarUrl && editAvatarUrl !== user?.user_metadata?.avatar_url) {
+                      updates.data.avatar_url = editAvatarUrl;
+                    }
+                    const { error } = await supabase.auth.updateUser(updates);
+                    if (error) throw error;
+                    // Refresh local user object
+                    const { data: { user: refreshed } } = await supabase.auth.getUser();
+                    if (refreshed) setUser(refreshed);
+                    setShowEditProfile(false);
+                    setToast('Profile updated');
+                    setToastVariant('success');
+                    setTimeout(() => { setToast(null); setToastVariant(null); }, 3000);
+                  } catch (err) {
+                    console.error('Profile save error:', err);
+                    setToast('Failed to save profile');
+                    setToastVariant('error');
+                    setTimeout(() => { setToast(null); setToastVariant(null); }, 3000);
+                  }
+                  setEditProfileSaving(false);
+                }}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: '12px', fontSize: '14px', fontWeight: 700,
+                  background: '#E8722A', color: '#fff', border: 'none',
+                  cursor: editProfileSaving ? 'wait' : 'pointer',
+                  opacity: editProfileSaving ? 0.6 : 1,
+                }}
+              >
+                {editProfileSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+
+            {/* ── The Vault: Delete Account ── */}
+            <div style={{
+              borderTop: `1px solid ${t.border}`,
+              padding: '16px 24px 20px',
+              textAlign: 'center',
+            }}>
+              <p style={{
+                fontSize: '12px', color: '#888888', margin: 0,
+                fontFamily: "'DM Sans', sans-serif", lineHeight: 1.5,
+              }}>
+                Not feeling the local jam right now?{' '}
+                <span
+                  onClick={() => setShowDeleteConfirm(true)}
+                  style={{
+                    fontWeight: 700, textDecoration: 'underline', cursor: 'pointer',
+                    color: '#888888',
+                  }}
+                >
+                  Delete your account here
+                </span>
+                {' '}and jump back in anytime.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Account Confirmation ─────────────────────────────────── */}
+      {showDeleteConfirm && (
+        <div
+          onClick={() => { if (!deleteLoading) setShowDeleteConfirm(false); }}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 210,
+            background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '24px',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: '340px', padding: '28px 24px',
+              background: t.surface, borderRadius: '18px',
+              border: `1px solid ${t.border}`,
+              boxShadow: darkMode ? '0 20px 60px rgba(0,0,0,0.7)' : '0 12px 40px rgba(0,0,0,0.2)',
+              fontFamily: "'DM Sans', sans-serif", textAlign: 'center',
+            }}
+          >
+            <h3 style={{ fontSize: '16px', fontWeight: 700, color: t.text, margin: '0 0 12px' }}>
+              Leaving the Jam?
+            </h3>
+            <p style={{ fontSize: '13px', color: t.textMuted, lineHeight: 1.6, margin: '0 0 24px' }}>
+              Are you sure you want to delete your account? Your saved events and profile data will be removed.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleteLoading}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: '12px', fontSize: '14px', fontWeight: 600,
+                  background: t.bg, color: t.textMuted, border: `1px solid ${t.border}`, cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={deleteLoading}
+                onClick={async () => {
+                  setDeleteLoading(true);
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (session?.access_token) {
+                      await fetch('/api/delete-account', {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${session.access_token}` },
+                      });
+                    }
+                    await supabase.auth.signOut();
+                    setShowDeleteConfirm(false);
+                    setShowEditProfile(false);
+                    setUser(null);
+                    setIsLoggedIn(false);
+                    setActiveTab('home');
+                    setToast('All set — your myLocalJam account has been deleted. Thanks for being part of the local jam scene.');
+                    setToastVariant('success');
+                    setTimeout(() => { setToast(null); setToastVariant(null); }, 5000);
+                  } catch (err) {
+                    console.error('Delete account error:', err);
+                    setToast('Failed to delete account — contact support');
+                    setToastVariant('error');
+                    setTimeout(() => { setToast(null); setToastVariant(null); }, 4000);
+                  }
+                  setDeleteLoading(false);
+                }}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: '12px', fontSize: '14px', fontWeight: 700,
+                  background: '#EF4444', color: '#fff', border: 'none',
+                  cursor: deleteLoading ? 'wait' : 'pointer',
+                  opacity: deleteLoading ? 0.6 : 1,
+                }}
+              >
+                {deleteLoading ? 'Deleting...' : 'Delete Account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && <Toast message={toast} variant={toastVariant} onAction={toastAction} actionLabel={toastActionLabel} onDismiss={() => { setToast(null); setToastVariant(null); setToastAction(null); setToastActionLabel(null); }} />}
     </>

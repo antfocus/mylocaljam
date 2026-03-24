@@ -93,3 +93,41 @@ export async function PATCH(request) {
 
   return NextResponse.json({ error: 'Provide ids array or { all: true }' }, { status: 400 });
 }
+
+/**
+ * DELETE /api/notifications
+ * Delete notifications permanently.
+ * Body: { ids: ['uuid1', 'uuid2'] } — or { all: true } to clear everything.
+ */
+export async function DELETE(request) {
+  const supabase = getAuthClient(request);
+  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const body = await request.json();
+
+  if (body.all) {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', user.id);
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  }
+
+  if (body.ids && Array.isArray(body.ids)) {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', user.id)
+      .in('id', body.ids);
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  }
+
+  return NextResponse.json({ error: 'Provide ids array or { all: true }' }, { status: 400 });
+}

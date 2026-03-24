@@ -33,7 +33,7 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
   const timeStr    = formatTimeRange(event.start_time, event.end_time);
   const ticketLink = event.ticket_link || null;
   const sourceLink = event.source || null;
-  const isFree     = event.cover_charge === 0 || event.cover_charge === '0' || (event.cover_charge && String(event.cover_charge).toLowerCase() === 'free');
+  const isFree     = event.cover === '0' || event.cover === 0 || (event.cover && String(event.cover).toLowerCase() === 'free');
 
   // Build tags
   const tags = [];

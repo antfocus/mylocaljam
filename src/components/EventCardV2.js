@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { formatTimeRange } from '@/lib/utils';
 
 const CATEGORY_CONFIG = {
@@ -16,44 +17,77 @@ const CATEGORY_CONFIG = {
 
 const DEFAULT_CONFIG = { color: '#E8722A', bg: '#E8722A', emoji: '🎵' };
 
-export default function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = true, onFollowArtist, isArtistFollowed, onFlag, followExpanded = false, onFollowCollapse }) {
-  const [expanded, setExpanded] = useState(false);
+export default function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = true, onFollowArtist, isArtistFollowed, onFlag, autoExpand = false }) {
+  const [expanded, setExpanded] = useState(autoExpand);
   const [bioExpanded, setBioExpanded] = useState(false);
   const [flagSheet, setFlagSheet] = useState(false);
   const [flagSubmitting, setFlagSubmitting] = useState(false);
   const [flagOtherOpen, setFlagOtherOpen] = useState(false);
   const [flagOtherText, setFlagOtherText] = useState('');
-  const [followBtnState, setFollowBtnState] = useState('idle'); // 'idle' | 'following'
+  const [showFollowPopover, setShowFollowPopover] = useState(false);
+  const [popoverFading, setPopoverFading] = useState(false);
+  const [popoverPos, setPopoverPos] = useState({ top: 0, right: 0 });
+  const bookmarkRef = useRef(null);
+  const descRef = useRef(null);
+  const [isTextTruncated, setIsTextTruncated] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  // Reset button state when expansion closes
+  useEffect(() => { setMounted(true); }, []);
+
+  // Position popover using fixed coordinates from bookmark button
   useEffect(() => {
-    if (!followExpanded) setFollowBtnState('idle');
-  }, [followExpanded]);
+    if (showFollowPopover && bookmarkRef.current) {
+      const rect = bookmarkRef.current.getBoundingClientRect();
+      setPopoverPos({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
+    }
+  }, [showFollowPopover]);
 
-  const handleInlineFollow = useCallback(() => {
+  // Auto-dismiss popover after 5 seconds
+  useEffect(() => {
+    if (!showFollowPopover) return;
+    const timer = setTimeout(() => {
+      setPopoverFading(true);
+      setTimeout(() => { setShowFollowPopover(false); setPopoverFading(false); }, 300);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [showFollowPopover]);
+
+  const dismissPopover = useCallback(() => {
+    setPopoverFading(true);
+    setTimeout(() => { setShowFollowPopover(false); setPopoverFading(false); }, 300);
+  }, []);
+
+  const handlePopoverFollow = useCallback(() => {
     if (!event?.artist_name) return;
     try { navigator?.vibrate?.(10); } catch {}
-    setFollowBtnState('following');
     onFollowArtist?.(event.artist_name);
-    // Show "Following!" briefly, then collapse
-    setTimeout(() => {
-      onFollowCollapse?.();
-    }, 1200);
-  }, [event?.artist_name, onFollowArtist, onFollowCollapse]);
+    dismissPopover();
+  }, [event?.artist_name, onFollowArtist, dismissPopover]);
+
+  const desc = event?.description || event?.artist_bio || '';
+
+  // Check if description text is actually truncated
+  useEffect(() => {
+    if (descRef.current && !bioExpanded) {
+      setIsTextTruncated(descRef.current.scrollHeight > descRef.current.clientHeight);
+    }
+  }, [expanded, bioExpanded, desc]);
 
   if (!event) return null;
 
   const name       = event.name        || event.event_title || event.artist_name || '';
   const venue      = event.venue       || event.venue_name  || '';
-  const desc       = event.description || event.artist_bio  || '';
-  const imageUrl   = event.artist_image || event.image_url || event.venue_photo || null;
+  const imageUrl   = event.artist_image || event.venue_photo || null;
   const genres     = event.artist_genres || [];
   const isTribute  = event.is_tribute || false;
   const rawSource  = event.source       || null;
   const sourceLink = rawSource && /^https?:\/\//i.test(rawSource) ? rawSource : null;
   const category   = event.genre       || event.vibe        || 'Live Music';
   const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
-  const timeStr    = formatTimeRange(event.start_time, event.end_time);
+  const timeStr    = formatTimeRange(event.start_time);
   const isCanceled = event.status === 'cancelled' || event.status === 'canceled';
 
   // Theme colors — all dynamic based on darkMode
@@ -98,7 +132,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
   };
 
   return (
-    <div style={{
+    <div id={event?.id ? `event-${event.id}` : undefined} style={{
       background: cardBg,
       borderRadius: '12px',
       overflow: 'hidden',
@@ -166,126 +200,39 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             )}
           </div>
 
-          {/* Save button — hero CTA: orange ⊕ → filled orange circle with black check */}
-          <button
-            onClick={e => {
-              e.stopPropagation();
-              // Haptic feedback on mobile
-              try { navigator?.vibrate?.(10); } catch {}
-              onToggleFavorite?.(event.id);
-            }}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
-              flexShrink: 0,
-              transition: 'transform 0.15s ease',
-              transform: isFavorited ? 'scale(1.15)' : 'scale(1)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-          >
-            {isFavorited ? (
-              /* Material Icon: check_circle — filled orange circle with black checkmark */
-              <span className="material-icons" style={{ fontSize: '26px', color: '#E8722A' }}>check_circle</span>
-            ) : (
-              /* Material Icon: add_circle_outline — brand orange */
-              <span className="material-icons" style={{ fontSize: '26px', color: '#E8722A' }}>add_circle_outline</span>
-            )}
-          </button>
-
-          {/* Share button — ghost secondary: muted slate, hover brightens */}
-          <button
-            className="share-btn"
-            onClick={e => {
-              e.stopPropagation();
-              const shareText = `${name} at ${venue}`;
-              const shareUrl = event.ticket_url || event.source || window.location.href;
-              if (navigator.share) {
-                navigator.share({ title: shareText, url: shareUrl }).catch(() => {});
-              } else {
-                navigator.clipboard?.writeText(`${shareText} — ${shareUrl}`);
-              }
-            }}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
-              flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: darkMode ? '#5A5A7A' : '#94A3B8',
-              transition: 'color 0.2s ease',
-            }}
-          >
-            {/* Material: ios_share */}
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-              <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill="currentColor" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Inline follow upsell — expands below compact row when user saves an event with an artist */}
-        <div style={{
-          maxHeight: followExpanded ? '56px' : '0px',
-          overflow: 'hidden',
-          transition: 'max-height 0.25s ease-out',
-        }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            padding: '8px 0 10px 12px',
-            borderTop: `1px solid ${borderColor}`,
-            opacity: followExpanded ? 1 : 0,
-            transition: 'opacity 0.2s ease 0.05s',
-          }}>
-            {/* Follow button — semi-transparent orange glow bg, white text/icon */}
+          {/* Bookmark button */}
+          <div ref={bookmarkRef} style={{ flexShrink: 0 }}>
             <button
-              onClick={(e) => { e.stopPropagation(); handleInlineFollow(); }}
-              disabled={followBtnState === 'following'}
+              className="bookmark-btn"
+              onClick={e => {
+                e.stopPropagation();
+                try { navigator?.vibrate?.(10); } catch {}
+                const wasSaved = isFavorited;
+                onToggleFavorite?.(event.id);
+                // Show follow popover when saving (not unsaving), if not already following
+                if (!wasSaved && !isArtistFollowed && onFollowArtist && event?.artist_name) {
+                  setShowFollowPopover(true);
+                  setPopoverFading(false);
+                }
+              }}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                flex: 1,
-                padding: '9px 14px',
-                borderRadius: '10px',
-                border: 'none',
-                background: 'rgba(232, 114, 42, 0.2)',
-                cursor: followBtnState === 'following' ? 'default' : 'pointer',
-                transition: 'background 0.15s',
-                justifyContent: 'center',
+                background: 'none', border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: '44px', height: '44px',
+                padding: 0,
               }}
             >
-              <span className="material-icons" style={{ fontSize: '18px', color: '#FFFFFF' }}>
-                {followBtnState === 'following' ? 'check' : 'music_note'}
-              </span>
-              <span style={{
-                color: '#FFFFFF',
-                fontSize: '13px',
-                fontWeight: 700,
-                fontFamily: "'DM Sans', sans-serif",
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}>
-                {followBtnState === 'following'
-                  ? 'Following!'
-                  : `Follow ${(event?.artist_name || '').length > 20 ? (event.artist_name.slice(0, 20) + '\u2026') : (event?.artist_name || '')}`}
-              </span>
+              <svg
+                className={isFavorited ? 'bookmark-pop' : ''}
+                width="22" height="22" viewBox="0 0 24 24" fill={isFavorited ? '#E8722A' : 'none'}
+                stroke={isFavorited ? '#E8722A' : (darkMode ? '#7878A0' : '#9CA3AF')}
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transition: 'all 0.2s ease' }}
+              >
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
             </button>
 
-            {/* Dismiss X — padded to align vertically with share icon above */}
-            {followBtnState === 'idle' && (
-              <button
-                onClick={(e) => { e.stopPropagation(); onFollowCollapse?.(); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '4px 12px 4px 10px',
-                  flexShrink: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <span className="material-icons" style={{ fontSize: '20px', color: '#7878A0' }}>close</span>
-              </button>
-            )}
           </div>
         </div>
 
@@ -356,7 +303,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             )}
 
             {/* Cover Charge pill */}
-            {event.cover_charge != null && !isCanceled && (
+            {event.cover != null && event.cover !== 'TBA' && !isCanceled && (
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: '4px',
                 background: coverPillBg, color: coverPillTx,
@@ -365,14 +312,14 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                 margin: '6px 0 4px',
                 fontFamily: "'DM Sans', sans-serif",
               }}>
-                {event.cover_charge === 0 ? '🎵 Free Admission' : `💵 $${event.cover_charge} Cover`}
+                {event.cover === '0' || event.cover?.toLowerCase() === 'free' ? '🎵 Free Admission' : `💵 ${event.cover?.startsWith?.('$') ? '' : '$'}${event.cover} Cover`}
               </div>
             )}
 
             {/* Bio / Description — 3-line clamp with Read More */}
             {desc && (
               <div style={{ margin: '6px 0 8px' }}>
-                <p style={{
+                <p ref={descRef} style={{
                   fontSize: '13px', color: textDesc, lineHeight: 1.5, margin: 0,
                   ...(bioExpanded ? {} : {
                     display: '-webkit-box',
@@ -383,7 +330,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                 }}>
                   {desc}
                 </p>
-                {desc.length > 120 && (
+                {(isTextTruncated || bioExpanded) && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setBioExpanded(prev => !prev); }}
                     style={{
@@ -398,8 +345,8 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               </div>
             )}
 
-            {/* Genre chips + Tribute badge */}
-            {(genres.length > 0 || isTribute) && (
+            {/* Genre chips + Tribute badge — temporarily hidden pending backend data cleanup */}
+            {/* {(genres.length > 0 || isTribute) && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', margin: '4px 0 6px' }}>
                 {isTribute && (
                   <span style={{
@@ -424,77 +371,130 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                   </span>
                 ))}
               </div>
-            )}
+            )} */}
 
-            {/* Action row — single flex line: Follow | Venue | Tickets | Flag */}
+            {/* Action row — single flex line: [Follow | Venue | Share] ... [Edit icon] */}
             {!isCanceled && (
-              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                {/* 1. Follow Artist (far left, primary action) — Spotify paradigm */}
-                {onFollowArtist && name && (
-                  <button
-                    onClick={e => { e.stopPropagation(); onFollowArtist(name); }}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '5px',
-                      fontSize: '11px', fontWeight: 700,
-                      padding: '7px 14px', borderRadius: '999px', cursor: 'pointer',
-                      border: isArtistFollowed ? '1.5px solid #E8722A' : `1.5px solid ${darkMode ? '#5A5A7A' : '#9CA3AF'}`,
-                      background: isArtistFollowed ? (darkMode ? 'rgba(232,114,42,0.12)' : 'rgba(232,114,42,0.08)') : 'transparent',
-                      color: isArtistFollowed ? '#E8722A' : (darkMode ? '#C0C0D0' : '#6B7280'),
-                      transition: 'all 0.2s ease',
-                      fontFamily: "'DM Sans', sans-serif",
-                    }}
-                  >
-                    {isArtistFollowed ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="#E8722A" />
-                      </svg>
-                    ) : (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                        <path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill="currentColor" />
-                      </svg>
-                    )}
-                    {isArtistFollowed ? 'Following' : 'Follow Artist'}
-                  </button>
-                )}
+              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                {/* Primary group — left-aligned pill buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {/* 1. Follow Artist */}
+                  {onFollowArtist && name && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onFollowArtist(name); }}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '5px',
+                        fontSize: '11px', fontWeight: 700,
+                        padding: '8px 16px', borderRadius: '999px', cursor: 'pointer',
+                        border: 'none',
+                        background: isArtistFollowed
+                          ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.1)')
+                          : (darkMode ? '#3A3A4A' : '#374151'),
+                        color: isArtistFollowed ? '#E8722A' : (darkMode ? '#F0F0F5' : '#FFFFFF'),
+                        transition: 'all 0.2s ease',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      {isArtistFollowed ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#E8722A" />
+                        </svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                          <path d="M12 5v14M5 12h14" />
+                        </svg>
+                      )}
+                      {isArtistFollowed ? 'Following' : 'Follow Artist'}
+                    </button>
+                  )}
 
-                {/* 2. Venue Website */}
-                {sourceLink && (
-                  <a
-                    href={sourceLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={e => e.stopPropagation()}
+                  {/* 2. Venue Website */}
+                  {sourceLink && (
+                    <a
+                      href={sourceLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '5px',
+                        fontSize: '11px', fontWeight: 700,
+                        padding: '8px 14px', borderRadius: '8px',
+                        background: darkMode ? '#2A2A3A' : '#E5E7EB',
+                        color: darkMode ? '#AAAACC' : '#4B5563',
+                        textDecoration: 'none', border: 'none', cursor: 'pointer',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      🌐 Venue
+                    </a>
+                  )}
+
+                  {/* 3. Share button */}
+                  <button
+                    className="share-btn-detail"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const shareText = `${name} at ${venue}`;
+                      const shareUrl = event.id
+                        ? `https://mylocaljam.com/event/${event.id}`
+                        : (event.ticket_link || event.source || window.location.href);
+                      const copyFallback = async () => {
+                        try {
+                          await navigator.clipboard.writeText(`${shareText} — ${shareUrl}`);
+                          onFlag?.('Link copied to clipboard!');
+                        } catch {
+                          onFlag?.('Could not copy link — try again');
+                        }
+                      };
+                      if (navigator.share) {
+                        try {
+                          await navigator.share({ title: shareText, text: shareText, url: shareUrl });
+                        } catch (err) {
+                          // User cancelled share sheet — not an error; only fallback on real failures
+                          if (err.name !== 'AbortError') await copyFallback();
+                        }
+                      } else {
+                        await copyFallback();
+                      }
+                    }}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '5px',
                       fontSize: '11px', fontWeight: 700,
-                      padding: '7px 14px', borderRadius: '8px',
+                      padding: '8px 14px', borderRadius: '8px',
                       background: darkMode ? '#2A2A3A' : '#E5E7EB',
                       color: darkMode ? '#AAAACC' : '#4B5563',
-                      textDecoration: 'none', border: 'none', cursor: 'pointer',
+                      border: 'none', cursor: 'pointer',
                       fontFamily: "'DM Sans', sans-serif",
+                      transition: 'opacity 0.15s',
                     }}
                   >
-                    🌐 Venue Website
-                  </a>
-                )}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                      <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill="currentColor" />
+                    </svg>
+                    Share
+                  </button>
+                </div>
 
-                {/* 3. Flag icon (far right, muted, larger touch target) */}
+                {/* Secondary action — outlined icon, pushed right */}
                 <button
                   className="flag-btn"
                   onClick={e => { e.stopPropagation(); setFlagSheet(true); }}
+                  title="Report / Suggest Edit"
                   style={{
-                    marginLeft: 'auto',
-                    marginRight: '2px',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: '24px', padding: '4px 6px',
-                    color: '#A0A0A0',
-                    transition: 'color 0.15s',
-                    display: 'flex', alignItems: 'center', flexShrink: 0,
-                    lineHeight: 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: '32px', height: '32px', borderRadius: '999px',
+                    background: 'none', cursor: 'pointer',
+                    border: `1.5px solid ${darkMode ? '#3A3A4A' : '#D1D5DB'}`,
+                    color: darkMode ? '#7878A0' : '#9CA3AF',
+                    transition: 'border-color 0.15s, color 0.15s',
+                    flexShrink: 0,
                   }}
-                  title="Report an issue"
                 >
-                  ⚑
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 15V4h16v11H4z" style={{ display: 'none' }} />
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                    <line x1="4" y1="22" x2="4" y2="15" />
+                  </svg>
                 </button>
               </div>
             )}
@@ -687,18 +687,109 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
         </div>
       )}
 
-      {/* Slide-up animation + share hover (pointer devices only) */}
+      {/* Follow popover — portaled to body to escape overflow:hidden */}
+      {showFollowPopover && mounted && createPortal(
+        <>
+          {/* Invisible backdrop to dismiss on click-away */}
+          <div onClick={dismissPopover} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999 }} />
+          <div
+            className={popoverFading ? 'popover-fade-out' : 'popover-fade-in'}
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'fixed', top: `${popoverPos.top}px`, right: `${popoverPos.right}px`, zIndex: 1000,
+              background: darkMode ? '#252535' : '#FFFFFF',
+              border: `1px solid ${darkMode ? '#3A3A4A' : '#E5E7EB'}`,
+              borderRadius: '12px',
+              padding: '12px 14px',
+              boxShadow: darkMode ? '0 8px 24px rgba(0,0,0,0.5)' : '0 4px 16px rgba(0,0,0,0.12)',
+              width: '220px',
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            {/* Arrow */}
+            <div style={{
+              position: 'absolute', top: '-6px', right: '16px',
+              width: '12px', height: '12px',
+              background: darkMode ? '#252535' : '#FFFFFF',
+              border: `1px solid ${darkMode ? '#3A3A4A' : '#E5E7EB'}`,
+              borderRight: 'none', borderBottom: 'none',
+              transform: 'rotate(45deg)',
+            }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+              <p style={{ margin: 0, fontSize: '12px', fontWeight: 600, color: darkMode ? '#C0C0D0' : '#4B5563', lineHeight: 1.4 }}>
+                Saved! Want alerts for future shows?
+              </p>
+              <button
+                onClick={dismissPopover}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0', flexShrink: 0, display: 'flex', alignItems: 'center' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={darkMode ? '#7878A0' : '#9CA3AF'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <button
+              onClick={handlePopoverFollow}
+              style={{
+                marginTop: '10px', width: '100%',
+                display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px',
+                padding: '8px 12px', borderRadius: '8px', border: 'none',
+                background: '#E8722A', color: '#FFFFFF',
+                fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                fontFamily: "'DM Sans', sans-serif",
+                transition: 'opacity 0.15s',
+                textAlign: 'left',
+                overflow: 'hidden',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {(event?.artist_name || '').length > 18 ? 'Follow Artist' : `Follow ${event?.artist_name || ''}`}
+              </span>
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Animations + hover states */}
       <style jsx>{`
         @keyframes slideUp {
           from { transform: translateY(100%); }
           to { transform: translateY(0); }
         }
+        @keyframes bookmarkPop {
+          0% { transform: scale(1); }
+          40% { transform: scale(1.35); }
+          100% { transform: scale(1); }
+        }
+        @keyframes popoverIn {
+          from { opacity: 0; transform: translateY(-4px) scale(0.95); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .bookmark-pop {
+          animation: bookmarkPop 0.3s ease-out;
+        }
+        .popover-fade-in {
+          animation: popoverIn 0.2s ease-out forwards;
+        }
+        .popover-fade-out {
+          opacity: 0;
+          transform: translateY(-4px) scale(0.95);
+          transition: opacity 0.25s ease, transform 0.25s ease;
+        }
         @media (hover: hover) {
-          .share-btn:hover {
-            color: ${darkMode ? '#F0F0F5' : '#1F2937'} !important;
+          .bookmark-btn:hover svg {
+            stroke: #E8722A !important;
+          }
+          .share-btn-detail:hover {
+            opacity: 0.75;
           }
           .flag-btn:hover {
             color: #E8722A !important;
+            border-color: #E8722A !important;
           }
         }
       `}</style>

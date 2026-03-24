@@ -611,9 +611,12 @@ export default function AdminPage() {
         artist_name: toTitleCase(queueForm.artist_name),
         venue_name: toTitleCase(queueForm.venue_name),
       };
-      const eventDate = sanitized.event_time
-        ? new Date(`${sanitized.event_date}T${sanitized.event_time}`).toISOString()
-        : sanitized.event_date;
+      let eventDate = sanitized.event_date;
+      if (sanitized.event_time) {
+        const probe = new Date(`${sanitized.event_date}T12:00:00`);
+        const etOff = probe.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? '-04:00' : '-05:00';
+        eventDate = new Date(`${sanitized.event_date}T${sanitized.event_time}:00${etOff}`).toISOString();
+      }
       await fetch('/api/admin/queue', {
         method: 'POST', headers,
         body: JSON.stringify({ submission_id: sub.id, event_data: { ...sanitized, event_date: eventDate } }),
@@ -3970,8 +3973,8 @@ function EventFormModal({ event, artists = [], onClose, onSave }) {
     artist_name: event?.artist_name || '',
     artist_bio: event?.artist_bio || '',
     venue_name: event?.venue_name || event?.venues?.name || '',
-    event_date: event?.event_date ? new Date(event.event_date).toISOString().slice(0, 10) : '',
-    event_time: event?.event_date ? new Date(event.event_date).toTimeString().slice(0, 5) : '',
+    event_date: event?.event_date ? new Date(event.event_date).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : '',
+    event_time: event?.event_date ? new Date(event.event_date).toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }) : '',
     genre: event?.genre || '',
     vibe: event?.vibe || '',
     cover: event?.cover || '',
@@ -3994,7 +3997,11 @@ function EventFormModal({ event, artists = [], onClose, onSave }) {
       alert('Please fill in Artist, Venue, Date, and Time.');
       return;
     }
-    const eventDate = new Date(`${form.event_date}T${form.event_time}`).toISOString();
+    // Build datetime string with explicit ET offset to prevent timezone drift
+    // America/New_York is UTC-4 (EDT) or UTC-5 (EST)
+    const probe = new Date(`${form.event_date}T12:00:00`);
+    const etOffset = probe.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? '-04:00' : '-05:00';
+    const eventDate = new Date(`${form.event_date}T${form.event_time}:00${etOffset}`).toISOString();
     onSave({ ...form, event_date: eventDate });
   };
 

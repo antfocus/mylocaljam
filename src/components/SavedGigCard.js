@@ -280,14 +280,25 @@ export default function SavedGigCard({
 
           {/* Share */}
           <button
-            onClick={e => {
+            onClick={async (e) => {
               e.stopPropagation();
               const shareText = `${name} at ${venue}`;
-              const shareUrl = event.ticket_url || event.source || window.location.href;
+              const shareUrl = event.id
+                ? `https://mylocaljam.com/event/${event.id}`
+                : (event.ticket_link || event.source || window.location.href);
+              const copyFallback = async () => {
+                try {
+                  await navigator.clipboard.writeText(`${shareText} — ${shareUrl}`);
+                } catch {}
+              };
               if (navigator.share) {
-                navigator.share({ title: shareText, url: shareUrl }).catch(() => {});
+                try {
+                  await navigator.share({ title: shareText, text: shareText, url: shareUrl });
+                } catch (err) {
+                  if (err.name !== 'AbortError') await copyFallback();
+                }
               } else {
-                navigator.clipboard?.writeText(`${shareText} — ${shareUrl}`);
+                await copyFallback();
               }
             }}
             style={{
@@ -370,14 +381,14 @@ export default function SavedGigCard({
           )}
 
           {/* Cover Charge */}
-          {event.cover_charge != null && !isCanceled && (
+          {event.cover != null && event.cover !== 'TBA' && !isCanceled && (
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: '4px',
               fontFamily: MONO, fontSize: '10px', fontWeight: 700,
               color: labelOrange, letterSpacing: '1px',
               textTransform: 'uppercase', padding: '4px 0', margin: '6px 0 4px',
             }}>
-              {event.cover_charge === 0 ? 'FREE ADMISSION' : `$${event.cover_charge} COVER`}
+              {event.cover === '0' || event.cover?.toLowerCase() === 'free' ? 'FREE ADMISSION' : `${event.cover?.startsWith?.('$') ? '' : '$'}${event.cover} COVER`}
             </div>
           )}
 

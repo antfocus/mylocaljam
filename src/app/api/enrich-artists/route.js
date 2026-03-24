@@ -44,7 +44,7 @@ const ARTIST_LIMIT = 100;
 
 function isAuthorized(request) {
   const secret = process.env.SYNC_SECRET;
-  if (!secret) return true;
+  if (!secret) return false; // fail closed — SYNC_SECRET must be configured
   const auth = request.headers.get('authorization');
   return auth === `Bearer ${secret}`;
 }

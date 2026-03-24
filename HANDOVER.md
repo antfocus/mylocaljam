@@ -2238,6 +2238,324 @@ artist_image > image_url > venue_photo > branded gradient fallback
 
 ---
 
+## Session: March 23, 2026 — Notifications System, Distance Filter, Feed Card UI, Admin Timezone Fix
+
+### What Changed
+
+1. **Notification System — Full Backend + Frontend** (NEW)
+   - **Three notification triggers** via `/api/notify/route.js`:
+     - **Trigger A – Tracked Show Reminder** (cron at 10 AM ET / `0 15 * * *` UTC): Finds users with saved events happening today, sends in-app notification + email
+     - **Trigger B – New Show Added** (called from sync pipeline via POST): When sync finds new events for followed artists, notifies all followers
+     - **Trigger C – Artist Discovery Nudge** (cron at 12 PM ET / `0 17 * * *` UTC): Finds followed artists playing today, nudges followers who haven't saved the event (in-app only, no email)
+   - **API routes:**
+     - `GET /api/notifications` — Returns user's notifications (paginated, newest first) + unread count
+     - `PATCH /api/notifications` — Mark as read: `{ ids: [...] }` for individual, `{ all: true }` for all
+     - `GET /api/notification-prefs` — Returns user's email/in-app/search_radius preferences (defaults if no row)
+     - `PATCH /api/notification-prefs` — Upserts notification preferences
+   - **Email via Resend** (`src/lib/sendEmail.js`): REST API integration (no npm package), styled HTML email template with myLocalJam branding. Env vars: `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
+   - **Dedup:** `notification_emails_sent` table with unique index `(user_id, event_id, trigger)` prevents duplicate sends
+   - **Vercel cron** added to `vercel.json`:
+     ```json
+     { "path": "/api/notify?trigger=tracked_show", "schedule": "0 15 * * *" },
+     { "path": "/api/notify?trigger=artist_discovery", "schedule": "0 17 * * *" }
+     ```
+   - **Auth:** Uses `SYNC_SECRET` Bearer token (same as sync-events) + `SUPABASE_SERVICE_ROLE_KEY` admin client (bypasses RLS)
+
+2. **In-App Notification UI** (`src/app/page.js`)
+   - Bell icon in header with unread count badge (red dot with number)
+   - Notification dropdown panel with list of notifications
+   - Removed auto-mark-all on bell click — now only marks via explicit "Mark all read" button
+   - `markSingleNotificationRead` function: marks individual notification read on click
+   - Notification click navigates in-app using `scrollIntoView` to the event card (instead of `window.location.href` which caused 404s on `/events/{id}`)
+   - "Mark all read" button only visible when `unreadCount > 0`
+
+3. **Distance Filter — Default Changed to "Show All"**
+   - `search_radius` default changed from `25` to `null` (Show All) in:
+     - `page.js` — `search_radius ?? null` instead of `search_radius ?? 25`
+     - `notification-prefs/route.js` — default response returns `search_radius: null`
+     - `supabase-search-radius.sql` — `DEFAULT NULL`
+   - Distance slider max capped at 25 miles (was 50)
+   - Slider label shows "25 mi" as max
+   - 50-mile option removed from profile radius picker
+   - **"Reset to default" button** added below slider — resets to user's saved profile default
+   - Uses `profileRadiusRef` (useRef) pattern to track saved profile value separately from active session filter
+   - CSS: `.reset-to-default-btn:hover` style in `globals.css`
+
+4. **Header Icon Alignment Fix** (`page.js`)
+   - Fixed bell icon jumping left when switching to My Jam / Profile tabs
+   - Added flex spacer for header on saved/profile tabs
+   - Wrapped right-side header icons (+ button and bell) in a div for consistent alignment
+
+5. **Admin Event Edit — Timezone Bug Fix** (`src/app/admin/page.js`)
+   - **Problem:** Editing an 8 PM ET event would shift it to the next day. The form initialized `event_date` using UTC extraction but `event_time` using local system time, causing a mismatch.
+   - **Fix — Form initialization:** Both date and time now use consistent `America/New_York` timezone:
+     ```javascript
+     event_date: new Date(event.event_date).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+     event_time: new Date(event.event_date).toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false })
+     ```
+   - **Fix — Save handler:** Constructs datetime with explicit ET offset:
+     ```javascript
+     const probe = new Date(`${form.event_date}T12:00:00`);
+     const etOffset = probe.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? '-04:00' : '-05:00';
+     const eventDate = new Date(`${form.event_date}T${form.event_time}:00${etOffset}`).toISOString();
+     ```
+   - Same fix applied to queue approval flow
+
+6. **Cache-Control Headers** (`next.config.js`)
+   - Added `no-cache, no-store, must-revalidate` for all HTML pages (excludes `_next/static`, `_next/image`, `favicon.ico`)
+   - Ensures fresh deploys are served immediately without stale cache
+
+7. **Feed Card UI Overhaul** (`src/components/EventCardV2.js`)
+   - **Bookmark icon** replaced save icon (circle+check Material Icon) with bookmark SVG from Feather icons
+   - `bookmarkPop` CSS keyframe animation on save
+   - **Removed share button from compact card row** — share only in expanded detail
+   - **Follow popover upsell:** When user bookmarks an event for an unfollowed artist, shows a popover asking "Saved! Want alerts for future shows?" with a Follow button
+     - Popover rendered via `createPortal` to `document.body` (fixes clipping from `overflow: hidden` on card)
+     - Fixed positioning using `getBoundingClientRect()` from `bookmarkRef`
+     - Auto-dismiss after 5 seconds with fade animation
+     - `popover-fade-in` / `popover-fade-out` CSS classes
+   - **Expanded card action row:** Three balanced buttons — Follow Artist (solid dark bg unfollowed / orange followed), Venue (website link), Share
+   - **"Suggest Edit"** text link below action row (replaced inline flag icon) — opens existing bottom-sheet report modal
+   - **Smart "Read More":** Uses `useRef` + `useEffect` to measure actual text truncation via `scrollHeight > clientHeight`, only shows Read More button when text is genuinely truncated
+   - **Genre chips + Tribute badge** commented out pending backend data cleanup
+
+8. **Client-Side Exception Fix** (`EventCardV2.js`)
+   - After deploying the `createPortal` changes, the app crashed with "Application error: a client-side exception has occurred"
+   - **Root causes found and fixed:**
+     - `useLayoutEffect` → replaced with `useEffect` (useLayoutEffect causes SSR errors in Next.js)
+     - `useEffect` for truncation check was placed AFTER `if (!event) return null` early return — **Rules of Hooks violation** (hooks must always be called in the same order). Moved above the early return.
+     - `desc` variable referenced in `useLayoutEffect` dependency array before it was declared — moved `desc` derivation above the hook
+     - `typeof document !== 'undefined'` guard for `createPortal` replaced with `mounted` state pattern: `const [mounted, setMounted] = useState(false); useEffect(() => setMounted(true), []);`
+
+### New Files
+- `src/app/api/notify/route.js` — Notification trigger handler (3 triggers: tracked_show, new_show, artist_discovery)
+- `src/app/api/notifications/route.js` — GET/PATCH user notifications
+- `src/app/api/notification-prefs/route.js` — GET/PATCH notification preferences
+- `src/lib/sendEmail.js` — Resend email utility + HTML email template builder
+- `supabase-notifications.sql` — Table definitions (notifications, user_notification_preferences, notification_emails_sent)
+- `supabase-search-radius.sql` — ALTER TABLE to add search_radius column
+
+### Files Modified
+- `src/app/page.js` — Notification UI (bell icon, dropdown, mark read), distance filter defaults, header alignment, removed follow banner logic
+- `src/components/EventCardV2.js` — Complete UI overhaul (bookmark, popover, portal, action row, suggest edit, smart Read More)
+- `src/app/admin/page.js` — Timezone fix for event editing (form init + save handler)
+- `src/app/globals.css` — `.reset-to-default-btn:hover` style
+- `next.config.js` — Cache-Control headers
+- `vercel.json` — Two new notification cron jobs
+
+### SQL Migrations Required
+```sql
+-- 1. Notification tables (run supabase-notifications.sql if not already done)
+-- Creates: notifications, user_notification_preferences, notification_emails_sent
+-- With RLS policies and indexes
+
+-- 2. Search radius column (run if not already done)
+ALTER TABLE user_notification_preferences
+  ADD COLUMN IF NOT EXISTS search_radius INTEGER DEFAULT NULL;
+```
+
+### Env Vars Required
+- `RESEND_API_KEY` — Resend email API key (add to `.env.local` and Vercel)
+- `RESEND_FROM_EMAIL` — Sender address (e.g., `myLocalJam <notifications@mylocaljam.com>`). Falls back to `onboarding@resend.dev`
+- `NEXT_PUBLIC_SITE_URL` — Base URL for email links (defaults to `https://mylocaljam.com`)
+
+### Key Architecture Patterns Introduced
+
+**Portal pattern for popover escape:**
+```javascript
+import { createPortal } from 'react-dom';
+const [mounted, setMounted] = useState(false);
+useEffect(() => { setMounted(true); }, []);
+// In JSX:
+{showPopover && mounted && createPortal(<PopoverContent />, document.body)}
+```
+This is required because cards have `overflow: hidden` which clips absolutely-positioned children.
+
+**profileRadiusRef pattern:**
+The saved profile radius (from DB) and the active session radius (from slider) are tracked separately. `profileRadiusRef` holds the DB value, allowing "Reset to default" to restore it without a re-fetch.
+
+**Admin timezone pattern:**
+Always use `toLocaleDateString('en-CA', { timeZone: 'America/New_York' })` for dates and `toLocaleTimeString('en-GB', { timeZone: 'America/New_York' })` for times when extracting from ISO strings. When constructing ISO strings for save, probe for EDT/EST offset dynamically.
+
+### Pending / TODO
+- **Resend API setup** — User needs to configure `RESEND_API_KEY` in Vercel env vars (may already be done)
+- **Notification testing** — Full end-to-end test of cron triggers in production
+- **Genre chips** — Currently commented out in EventCardV2; re-enable after backend data cleanup
+- **Delete `GoogleOAuthWrapper.js`** — Still on disk, no longer imported
+- **Google Brand Verification** — Still pending (from prior session)
+
+---
+
+## Session: March 23, 2026 (cont.) — Event Sharing, OG Meta Tags, Deep Linking, Schema Fix
+
+### What Changed
+
+1. **Dynamic Event Sharing Route — `/event/[id]`** (NEW)
+   - **Server component** (`src/app/event/[id]/page.js`) with `generateMetadata()` for rich Open Graph tags
+   - **OG title format:** `"Artist at Venue | Friday, Mar 27 at 8 PM"` — date/time shown directly in link previews (iMessage, Slack, Twitter, etc.)
+   - **OG description:** `"Live music Friday, Mar 27 at 8 PM. Tap to see details and save this show on myLocalJam."`
+   - **Twitter cards:** `summary_large_image` when artist/venue image available
+   - `export const dynamic = 'force-dynamic'` + `export const revalidate = 0` — forces fresh server render, no ISR/route cache
+   - **Supabase client fallback:** Prefers `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS), falls back to `NEXT_PUBLIC_SUPABASE_ANON_KEY` if service key isn't set. Logs detailed errors with Supabase error code, message, and hint.
+   - **Joined query + flattenEvent():** Queries `events` with `venues(...)` and `artists(...)` joins, then flattens into the same shape the main feed uses. This fixed the 42703 column-not-found errors (the events table doesn't have `description`, `start_time`, `artist_image` etc. — those come from joins).
+
+2. **Public Event Page — EventPageClient** (NEW)
+   - **Auth check on mount:** Logged-in users redirect to `/?event={id}` (deep-link to expanded card). Unauthenticated users see the public view.
+   - **Public view:** Full event details (date, time, title, venue, image, description, genres, cover charge, tribute badge)
+   - **Sticky upsell banner:** "Never miss a local jam" + "Create Free Account" CTA linking to `/?signup=true`
+   - **Auth modal overlay:** "Save Show" / "Follow Artist" buttons trigger a modal with Sign Up / Sign In links
+   - Cover charge displays from `event.cover` (text field), handles "Free", "0", "TBA", and dollar amounts
+
+3. **Share Button Fix — All Card Components**
+   - **Share URL:** Now generates `https://mylocaljam.com/event/{event.id}` instead of linking to external ticket/venue sites
+   - **Silent failure fix:** Wrapped `navigator.share()` in `try/catch`. If Web Share API fails or isn't supported (desktop browsers), falls back to `navigator.clipboard.writeText()` and shows "Link copied to clipboard!" toast
+   - **AbortError handling:** User cancelling the share sheet doesn't trigger the clipboard fallback
+   - Applied to: `EventCardV2.js`, `SavedGigCard.js`
+
+4. **Ghost Column Cleanup — Schema Alignment**
+   - **Problem:** Multiple components referenced columns that don't exist on the `events` table: `cover_charge`, `ticket_url`, `image_url`, `end_time`, `description`, `start_time`, `artist_image`, `artist_genres`
+   - **Reality:** `cover` (text), `ticket_link`, `artist_bio` are the real event columns. Artist images/bios/genres come from the `artists` join. Venue photos come from the `venues` join.
+   - **Fixed in:**
+     - `EventCardV2.js` — `cover_charge` → `cover`, `ticket_url` → `ticket_link`, removed `image_url` from fallback, removed `end_time` from `formatTimeRange`
+     - `SavedGigCard.js` — Same `cover_charge` → `cover` fix, share URL updated to mylocaljam.com format with clipboard fallback
+     - `SiteEventCard.js` — `cover_charge` → `cover` for free admission check
+     - `EventPageClient.js` — `cover_charge` → `cover`, removed `artist_bio`/`image_url` fallbacks (already handled by `flattenEvent`)
+
+5. **Deep-Link Expanded Card — `?event=` Query Param**
+   - **Problem:** Logged-in users clicking shared links were dumped onto the home feed without seeing the specific event
+   - **Fix — Race condition:** Split into two useEffects:
+     1. Mount effect reads `?event=` param, stores in `deepLinkEventId` state, cleans URL via `history.replaceState`
+     2. Load effect waits for `loading === false` (events fetched), then scrolls to card with orange highlight
+   - **Auto-expand:** New `autoExpand` prop on `EventCardV2` — when `deepLinkEventId === event.id`, the card renders already expanded (`useState(autoExpand)`)
+   - **Cleanup:** `deepLinkEventId` cleared to `null` after scroll completes to prevent re-triggering on tab switches
+   - **Auth modal params:** `?signup=true` opens auth modal in signup mode, `?login=true` opens in login mode (from public page CTAs)
+
+6. **OG Date/Time Formatting**
+   - `formatOGDate()` — e.g. "Friday, Mar 27" (compact `month: 'short'` format)
+   - `formatOGTime()` — Converts 24h `start_time` string (from `flattenEvent`) into "8 PM" or "8:30 PM". Returns empty for midnight (typically means "no time provided")
+   - Falls back gracefully: no time → just date, no date → "Live music at {venue}"
+
+7. **RLS Policy Update**
+   - Replaced `"Public can read published events"` (`status = 'published'`) with `"Public can read events"` (`status IS NULL OR status <> 'draft'`)
+   - Fixes: scraped events with NULL status were invisible to unauthenticated users on shared links
+   - Migration: `supabase-public-events.sql`
+
+### New Files
+- `src/app/event/[id]/page.js` — Server component with `generateMetadata()`, joined query, `flattenEvent()`, OG/Twitter meta tags
+- `src/app/event/[id]/EventPageClient.js` — Client component: auth redirect, public event view, upsell banner, auth modal
+- `supabase-public-events.sql` — RLS policy migration (public SELECT on events for non-draft)
+
+### Files Modified
+- `src/components/EventCardV2.js` — Share URL, clipboard fallback with toast, ghost column fixes (`cover`, `ticket_link`), `autoExpand` prop
+- `src/components/SavedGigCard.js` — Share URL, clipboard fallback, `cover_charge` → `cover`
+- `src/components/SiteEventCard.js` — `cover_charge` → `cover`
+- `src/app/page.js` — `deepLinkEventId` state, query param handling (`?event=`, `?signup=`, `?login=`), `autoExpand` prop threading
+
+### SQL Migrations Required
+```sql
+-- Run supabase-public-events.sql in Supabase SQL Editor:
+DROP POLICY IF EXISTS "Public can read published events" ON events;
+CREATE POLICY "Public can read events"
+  ON events FOR SELECT
+  USING (status IS NULL OR status <> 'draft');
+
+-- Also ensure the DELETE policy from the previous session entry exists:
+-- CREATE POLICY "Users can delete own notifications"
+--   ON notifications FOR DELETE
+--   USING (auth.uid() = user_id);
+```
+
+### Env Vars
+- `SUPABASE_SERVICE_ROLE_KEY` — Must be set in Vercel for the `/event/[id]` server component to bypass RLS. Falls back to anon key if missing, but service key is preferred.
+
+### Key Architecture Patterns Introduced
+
+**Joined query + flattenEvent pattern:**
+The `events` table is lean — artist details (bio, image, genres, is_tribute) live on the `artists` table, venue details (photo, address, type) on `venues`. Always query with joins and flatten:
+```javascript
+const EVENT_SELECT = 'id, artist_name, event_date, ..., venues(name, address, color, photo_url), artists(name, bio, image_url, genres, is_tribute)';
+const { data: raw } = await supabase.from('events').select(EVENT_SELECT).eq('id', id).single();
+const event = flattenEvent(raw); // maps artists.bio → description, artists.image_url → artist_image, etc.
+```
+
+**Deep-link auto-expand pattern:**
+```javascript
+// page.js — store param in state, wait for data to load
+const [deepLinkEventId, setDeepLinkEventId] = useState(null);
+useEffect(() => { /* read ?event= on mount, store in state */ }, []);
+useEffect(() => { /* when !loading && deepLinkEventId, scroll + clear */ }, [deepLinkEventId, loading]);
+// In JSX:
+<EventCardV2 autoExpand={deepLinkEventId === event.id} ... />
+// EventCardV2.js:
+const [expanded, setExpanded] = useState(autoExpand);
+```
+
+---
+
+## Session: March 24, 2026 — Security Audit & Hardening
+
+### What Changed
+
+1. **Deleted Unauthenticated Test Routes** (3 files removed)
+   - `/api/do-sync` — Proxy that called sync-events POST without Bearer token, bypassing auth entirely. Deleted.
+   - `/api/test-parkstage` — Destructive endpoint (deleted duplicate events) with no auth, using `getAdminClient()`. Deleted.
+   - `/api/test-pig-parrot` — Temporary scraper test endpoint with no auth. Deleted.
+
+2. **Hardened SYNC_SECRET — Fail Closed** (4 locations, 3 files)
+   - **Before:** `if (!secret) return true` — if `SYNC_SECRET` env var was missing, all requests were allowed through
+   - **After:** `if (!secret) return false` — if env var is missing, all requests are rejected (401)
+   - Applied to:
+     - `src/app/api/sync-events/route.js` — `isAuthorized()` function
+     - `src/app/api/enrich-artists/route.js` — `isAuthorized()` function
+     - `src/app/api/notify/route.js` — GET handler (cron triggers)
+     - `src/app/api/notify/route.js` — POST handler (sync pipeline calls)
+
+3. **Rate Limited `/api/flag-event`** (rewritten)
+   - **Before:** No auth, no rate limiting — anyone could spam flag increments on any event
+   - **After:** In-memory rate limiter keyed on `IP:event_id`, 1 flag per event per 10-minute window
+   - Returns 429 with friendly message if rate exceeded
+   - Automatic Map cleanup every 5 minutes to prevent unbounded memory growth
+   - `getClientIP()` reads `x-forwarded-for` → `x-real-ip` → `'unknown'` (works behind Cloudflare/Vercel proxy)
+
+4. **Cloudflare Security Configuration** (dashboard, no code)
+   - **Rate Limiting Rule deployed:** 30 requests per 10 seconds per IP on `/api/` paths → Block for 10 seconds
+   - **Block AI Bots:** Enabled on all pages (blocks GPTBot, CCBot, and other AI training crawlers)
+
+### Files Deleted
+- `src/app/api/do-sync/route.js` + directory
+- `src/app/api/test-parkstage/route.js` + directory
+- `src/app/api/test-pig-parrot/route.js` + directory
+
+### Files Modified
+- `src/app/api/sync-events/route.js` — `isAuthorized()` fails closed
+- `src/app/api/enrich-artists/route.js` — `isAuthorized()` fails closed
+- `src/app/api/notify/route.js` — GET + POST auth checks fail closed
+- `src/app/api/flag-event/route.js` — Complete rewrite with IP-based rate limiting
+
+### Security Audit Summary
+
+**API Route Auth Status (post-hardening):**
+| Auth Type | Routes |
+|---|---|
+| `ADMIN_PASSWORD` Bearer | `/api/admin/*`, `/api/submissions` GET, `/api/reports` GET/PUT, `/api/geocode-venues` POST |
+| `SYNC_SECRET` Bearer (fail closed) | `/api/sync-events`, `/api/enrich-artists`, `/api/notify` |
+| Supabase JWT (user session) | `/api/saved-events`, `/api/follows`, `/api/notifications`, `/api/notification-prefs` |
+| Public (intentional) | `/api/events` GET (read-only feed), `/api/spotlight` GET, `/api/submissions` POST, `/api/reports` POST |
+| Public + rate limited | `/api/flag-event` POST |
+
+**Supabase RLS Status:**
+- All user tables enforce `auth.uid() = user_id` — users can only access their own data
+- Events/venues/spotlight/pills are public read-only (SELECT)
+- `user_follows` table (legacy, unused) has wide-open policies — should be dropped
+- `artists` table may need RLS policy verification in Supabase dashboard
+
+### Pending / TODO
+- **Drop `user_follows` table** — Legacy, not used by any code, has fully open RLS policies
+- **Verify `artists` table RLS** in Supabase dashboard — no policy found in migration files
+- **Cloudflare Bot Fight Mode** — Check if available under Security → Bots → General tab (broader than just AI bots)
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.

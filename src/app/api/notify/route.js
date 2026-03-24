@@ -14,6 +14,21 @@ function getAdminClient() {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Delete notifications older than 48 hours (runs at start of every cron trigger) */
+async function purgeExpiredNotifications(supabase) {
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const { count, error } = await supabase
+    .from('notifications')
+    .delete({ count: 'exact' })
+    .lt('created_at', cutoff);
+  if (error) {
+    console.error('[purge] Error deleting expired notifications:', error.message);
+    return 0;
+  }
+  if (count > 0) console.log(`[purge] Deleted ${count} expired notifications (older than 48h)`);
+  return count || 0;
+}
+
 /** Get today's date in Eastern time as YYYY-MM-DD */
 function todayEastern() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
@@ -281,16 +296,19 @@ async function triggerArtistDiscovery(supabase) {
  */
 
 export async function GET(request) {
-  // Optional auth check for cron
+  // Auth check for cron — fail closed if SYNC_SECRET not configured
   const authHeader = request.headers.get('Authorization') || '';
   const secret = process.env.SYNC_SECRET;
-  if (secret && authHeader !== `Bearer ${secret}`) {
+  if (!secret || authHeader !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const supabase = getAdminClient();
   const { searchParams } = new URL(request.url);
   const trigger = searchParams.get('trigger');
+
+  // Housekeeping: purge notifications older than 48h on every cron run
+  const purged = await purgeExpiredNotifications(supabase);
 
   let result;
   if (trigger === 'tracked_show') {
@@ -301,14 +319,14 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Provide ?trigger=tracked_show or artist_discovery' }, { status: 400 });
   }
 
-  return NextResponse.json(result);
+  return NextResponse.json({ ...result, purged });
 }
 
 export async function POST(request) {
-  // Internal calls from sync pipeline — use admin auth
+  // Internal calls from sync pipeline — fail closed if SYNC_SECRET not configured
   const authHeader = request.headers.get('Authorization') || '';
   const secret = process.env.SYNC_SECRET;
-  if (secret && authHeader !== `Bearer ${secret}`) {
+  if (!secret || authHeader !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
