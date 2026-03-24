@@ -38,6 +38,7 @@ import { scrapeWaterStreet } from '@/lib/scrapers/waterStreet';
 import { scrapeCrossroads } from '@/lib/scrapers/crossroads';
 import { scrapeEventideGrille } from '@/lib/scrapers/eventideGrille';
 import { scrapeTriumphBrewing } from '@/lib/scrapers/triumphBrewing';
+import { scrapeBlackSwan } from '@/lib/scrapers/blackSwan';
 // House of Independents removed — Etix serves bare React shell (2KB) to datacenter IPs, no JSON-LD
 // Scraper file kept at houseOfIndependents.js — works from residential IPs, revisit if proxy is added
 // Starland Ballroom removed — AEG/Carbonhouse platform blocks datacenter IPs, AJAX endpoint returns empty/blocked
@@ -229,7 +230,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -267,6 +268,7 @@ export async function POST(request) {
     scrapeCrossroads(),
     scrapeEventideGrille(),
     scrapeTriumphBrewing(),
+    scrapeBlackSwan(),
   ]);
 
   const scraperResults = {
@@ -307,6 +309,7 @@ export async function POST(request) {
     Crossroads: { count: crossroads.events.length, error: crossroads.error },
     EventideGrille: { count: eventideGrille.events.length, error: eventideGrille.error },
     TriumphBrewing: { count: triumphBrewing.events.length, error: triumphBrewing.error },
+    BlackSwan: { count: blackSwan.events.length, error: blackSwan.error },
   };
 
   // ── Write scraper health to database ──────────────────────────────────────
@@ -348,6 +351,7 @@ export async function POST(request) {
     Crossroads: { venue: 'Crossroads', url: 'https://www.xxroads.com', source: 'Eventbrite API' },
     EventideGrille: { venue: 'Eventide Grille', url: 'https://eventidegrille.com', source: 'Image Poster' },
     TriumphBrewing: { venue: 'Triumph Brewing Red Bank', url: 'https://www.triumphbrewing.com', source: 'WordPress HTML (The Events Calendar)' },
+    BlackSwan: { venue: 'The Black Swan', url: 'https://www.theblackswanap.com', source: 'Squarespace' },
   };
 
   try {
@@ -408,6 +412,7 @@ export async function POST(request) {
     ...crossroads.events,
     ...eventideGrille.events,
     ...triumphBrewing.events,
+    ...blackSwan.events,
   ].map(ev => mapEvent(ev, venueMap, defaultTimes));
 
   // Filter out events with no external_id or date, and deduplicate by external_id
