@@ -2308,7 +2308,7 @@ export default function AdminPage() {
                       <TrafficDot field="vibes" hasData={hasVibe} label="Vibe" />
                     </div>}
 
-                    {/* Action buttons — lock + wand + pencil + trash */}
+                    {/* Action buttons — lock + pencil + trash */}
                     <div style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0, width: isMobile ? 'auto' : '140px', justifyContent: 'flex-end' }}>
                       {/* Lock toggle — prevents scrapers/enrichment from overwriting */}
                       <button
@@ -2334,15 +2334,6 @@ export default function AdminPage() {
                             : <path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z" fill="currentColor" />
                           }
                         </svg>
-                      </button>
-                      {/* AI Enrich (magic wand) — single-artist shortcut */}
-                      <button
-                        title="Run AI Enrichment on this artist"
-                        onClick={() => setEnrichConfirm([artist])}
-                        className="p-1.5 rounded"
-                        style={{ color: '#E8722A', cursor: 'pointer', background: 'none', border: 'none' }}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M7.5 5.6L10 7 8.6 4.5 10 2 7.5 3.4 5 2l1.4 2.5L5 7zm12 9.8L17 14l1.4 2.5L17 19l2.5-1.4L22 19l-1.4-2.5L22 14zM22 2l-2.5 1.4L17 2l1.4 2.5L17 7l2.5-1.4L22 7l-1.4-2.5zm-7.63 5.29a.996.996 0 00-1.41 0L1.29 18.96a.996.996 0 000 1.41l2.34 2.34c.39.39 1.02.39 1.41 0L16.71 11.04a.996.996 0 000-1.41l-2.34-2.34zM5.71 21.29L2.71 18.29l1.41-1.41 3 3-1.41 1.41z" fill="currentColor" /></svg>
                       </button>
                       {/* Edit (pencil) */}
                       <button
