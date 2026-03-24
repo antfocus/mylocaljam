@@ -69,6 +69,38 @@ export default function AdminPage() {
   const [mergeConfirm, setMergeConfirm] = useState(null); // array of artist objects, or null
   const [mergeMasterId, setMergeMasterId] = useState(null); // selected master artist id
   const [mergeLoading, setMergeLoading] = useState(false);
+  const [duplicateNameWarning, setDuplicateNameWarning] = useState(null); // existing artist name that conflicts
+  const dupCheckTimer = useRef(null);
+
+  // Proactive duplicate name check — debounced 500ms on artist name input
+  useEffect(() => {
+    if (dupCheckTimer.current) clearTimeout(dupCheckTimer.current);
+    setDuplicateNameWarning(null);
+
+    if (!editingArtist || !artistForm.name) return;
+    const trimmed = artistForm.name.trim();
+    // Don't warn if name hasn't changed
+    if (trimmed === editingArtist.name) return;
+    if (trimmed.length < 2) return;
+
+    dupCheckTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/artists?search=${encodeURIComponent(trimmed)}`, {
+          headers: { Authorization: `Bearer ${password}` },
+        });
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          const exact = data.find(a => a.name.toLowerCase() === trimmed.toLowerCase() && a.id !== editingArtist.id);
+          if (exact) {
+            setDuplicateNameWarning(exact.name);
+          }
+        }
+      } catch { /* ignore check failures */ }
+    }, 500);
+
+    return () => { if (dupCheckTimer.current) clearTimeout(dupCheckTimer.current); };
+  }, [artistForm.name, editingArtist, password]);
+
   const [regeneratingField, setRegeneratingField] = useState(null); // 'bio' | 'image_url' | 'genres' | null
   const [imageCandidates, setImageCandidates] = useState([]); // top 5 image URLs from Serper
   const [imageCarouselIdx, setImageCarouselIdx] = useState(0);
@@ -1780,7 +1812,12 @@ export default function AdminPage() {
                   placeholder="Clean display name"
                   style={{ ...inputStyle, marginTop: '4px', fontWeight: 700, fontSize: '15px' }}
                 />
-                {artistForm.name && editingArtist && artistForm.name !== editingArtist.name && (
+                {duplicateNameWarning && (
+                  <div style={{ fontSize: '11px', color: '#facc15', marginTop: '4px', fontFamily: "'DM Sans', sans-serif", background: 'rgba(250,204,21,0.08)', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(250,204,21,0.2)' }}>
+                    ⚠️ An artist named &ldquo;{duplicateNameWarning}&rdquo; already exists. Saving will fail — use the <strong>Merge</strong> tool instead.
+                  </div>
+                )}
+                {!duplicateNameWarning && artistForm.name && editingArtist && artistForm.name !== editingArtist.name && (
                   <div style={{ fontSize: '10px', color: '#E8722A', marginTop: '3px', fontFamily: "'DM Sans', sans-serif" }}>
                     Renaming from &ldquo;{editingArtist.name}&rdquo; — old name will be saved as an alias
                   </div>
@@ -2061,11 +2098,24 @@ export default function AdminPage() {
                       payload.name = artistForm.name.trim();
                       payload.old_name = editingArtist.name; // triggers alias creation on backend
                     }
-                    await fetch('/api/admin/artists', {
+                    const res = await fetch('/api/admin/artists', {
                       method: 'PUT', headers,
                       body: JSON.stringify(payload),
                     });
+                    const result = await res.json().catch(() => ({}));
+                    if (!res.ok || result.error) {
+                      const errMsg = result.error || 'Unknown error';
+                      // Detect unique constraint violation (duplicate artist name)
+                      if (errMsg.includes('unique') || errMsg.includes('duplicate') || errMsg.includes('23505') || errMsg.includes('artists_name_key')) {
+                        setArtistToast({ type: 'error', message: `An artist named "${artistForm.name.trim()}" already exists. Select both from the list and use the Merge tool.` });
+                      } else {
+                        setArtistToast({ type: 'error', message: `Save failed: ${errMsg}` });
+                      }
+                      setTimeout(() => setArtistToast(null), 6000);
+                      return; // Don't close modal on error
+                    }
                     setEditingArtist(null);
+                    setDuplicateNameWarning(null);
                     fetchArtists(artistsSearch, artistsNeedsInfo);
                     setArtistToast({ type: 'success', message: nameChanged ? `Renamed & saved — "${editingArtist.name}" saved as alias` : (approve ? 'Approved & published — all fields locked' : 'Saved — edited fields locked') });
                     setTimeout(() => setArtistToast(null), 3000);
