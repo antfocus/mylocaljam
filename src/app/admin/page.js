@@ -972,28 +972,36 @@ export default function AdminPage() {
           {/* Health & Inventory */}
           <SectionHeader title="Health & Inventory" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
-            <MetricCard
-              label="Successful Syncs"
-              value={scraperHealth.filter(s => s.status === 'success' && s.last_sync && (Date.now() - new Date(s.last_sync).getTime()) < 24 * 60 * 60 * 1000).length}
-              sub={`of ${scraperHealth.length} total scrapers`}
-              color="#22c55e"
-              onClick={() => {
-                setActiveTab('venues');
-                setVenuesFilter('success');
-                fetchScraperHealth();
-              }}
-            />
-            <MetricCard
-              label="Failing Scrapers"
-              value={scraperHealth.filter(s => s.status === 'fail').length}
-              sub={scraperHealth.filter(s => s.status === 'fail').length === 0 ? 'All scrapers healthy' : 'Click to view →'}
-              color={scraperHealth.filter(s => s.status === 'fail').length > 0 ? '#ef4444' : '#22c55e'}
-              onClick={scraperHealth.filter(s => s.status === 'fail').length > 0 ? () => {
-                setActiveTab('venues');
-                setVenuesFilter('fail');
-                fetchScraperHealth();
-              } : undefined}
-            />
+            {(() => {
+              const ok = scraperHealth.filter(s => s.status === 'success').length;
+              const fail = scraperHealth.filter(s => s.status === 'fail').length;
+              const warn = scraperHealth.filter(s => s.status === 'warning').length;
+              const total = scraperHealth.length;
+              return (<>
+                <MetricCard
+                  label="Successful Syncs"
+                  value={ok}
+                  sub={`of ${total} scrapers${warn > 0 ? ` · ${warn} warning` : ''}`}
+                  color="#22c55e"
+                  onClick={() => {
+                    setActiveTab('venues');
+                    setVenuesFilter('success');
+                    fetchScraperHealth();
+                  }}
+                />
+                <MetricCard
+                  label="Failing Scrapers"
+                  value={fail}
+                  sub={fail === 0 ? 'All scrapers healthy' : 'Click to view →'}
+                  color={fail > 0 ? '#ef4444' : '#22c55e'}
+                  onClick={fail > 0 ? () => {
+                    setActiveTab('venues');
+                    setVenuesFilter('fail');
+                    fetchScraperHealth();
+                  } : undefined}
+                />
+              </>);
+            })()}
             <MetricCard
               label="New Events (24h)"
               value={newEvents24h}
