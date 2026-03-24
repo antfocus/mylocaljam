@@ -2258,8 +2258,33 @@ export default function AdminPage() {
                       <TrafficDot field="vibes" hasData={hasVibe} label="Vibe" />
                     </div>}
 
-                    {/* Action buttons — wand + pencil + trash */}
-                    <div style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0, width: isMobile ? 'auto' : '120px', justifyContent: 'flex-end' }}>
+                    {/* Action buttons — lock + wand + pencil + trash */}
+                    <div style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0, width: isMobile ? 'auto' : '140px', justifyContent: 'flex-end' }}>
+                      {/* Lock toggle — prevents scrapers/enrichment from overwriting */}
+                      <button
+                        title={artist.is_locked ? 'Unlock — allow scrapers to update' : 'Lock — protect from scraper overwrites'}
+                        onClick={async () => {
+                          try {
+                            await fetch('/api/admin/artists', {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+                              body: JSON.stringify({ id: artist.id, is_locked: !artist.is_locked }),
+                            });
+                            fetchArtists(artistsSearch, artistsNeedsInfo);
+                            setArtistToast({ type: 'success', message: artist.is_locked ? `${artist.name} unlocked` : `${artist.name} locked — protected from overwrites` });
+                            setTimeout(() => setArtistToast(null), 3000);
+                          } catch {}
+                        }}
+                        className="p-1.5 rounded"
+                        style={{ color: artist.is_locked ? '#22c55e' : 'var(--text-muted)', cursor: 'pointer', background: 'none', border: 'none', opacity: artist.is_locked ? 1 : 0.5 }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                          {artist.is_locked
+                            ? <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" fill="currentColor" />
+                            : <path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z" fill="currentColor" />
+                          }
+                        </svg>
+                      </button>
                       {/* AI Enrich (magic wand) — single-artist shortcut */}
                       <button
                         title="Run AI Enrichment on this artist"

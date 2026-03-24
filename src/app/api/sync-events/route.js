@@ -176,8 +176,9 @@ function mapEvent(ev, venueMap, defaultTimes) {
     venue_name: ev.venue,
     venue_id: venueId,
     event_date: eventDate,
-    // artist_bio intentionally omitted — that column is managed exclusively
-    // by the Last.fm enrichment step below, not by scraper descriptions.
+    // Pass through scraper description — used for scraper-first artist enrichment
+    _scraper_bio: ev.description || null,
+    _scraper_image: ev.image_url || null,
     // Only store ticket_link if it points to a real external ticketing site
     // (different domain than the venue's own source_url)
     ticket_link: (() => {
@@ -436,7 +437,7 @@ export async function POST(request) {
         .from('events')
         .select('external_id')
         .in('external_id', chunk)
-        .eq('is_human_edited', true);
+        .or('is_human_edited.eq.true,is_locked.eq.true');
       for (const row of (locked || [])) protectedIds.add(row.external_id);
     }
   } catch { /* proceed without protection if query fails */ }
@@ -450,8 +451,9 @@ export async function POST(request) {
   const upsertErrors = [];
 
   // Full upsert for non-protected events
+  // Strip internal _scraper_* fields before sending to Supabase
   for (let i = 0; i < unprotectedEvents.length; i += BATCH_SIZE) {
-    const batch = unprotectedEvents.slice(i, i + BATCH_SIZE);
+    const batch = unprotectedEvents.slice(i, i + BATCH_SIZE).map(({ _scraper_bio, _scraper_image, ...rest }) => rest);
     const { error } = await supabase
       .from('events')
       .upsert(batch, {
@@ -639,6 +641,78 @@ export async function POST(request) {
     blacklistedNames = new Set((blacklist || []).map(b => b.name_lower));
   } catch { /* table may not exist yet */ }
 
+  // --- Phase 0: Scraper-First Artist Enrichment ─────────────────────────────
+  // Before Last.fm, seed the artists table with bios/images from scrapers.
+  // Scrapers are the primary source for local artists that Last.fm doesn't know.
+  let scraperEnrichResult = { created: 0, updated: 0 };
+  try {
+    // Collect scraper bio/image data grouped by artist name
+    const scraperArtistData = {};
+    for (const ev of validEvents) {
+      const name = ev.artist_name?.trim();
+      if (!name) continue;
+      if (blacklistedNames.has(name.toLowerCase())) continue;
+      const bio = ev._scraper_bio;
+      const image = ev._scraper_image;
+      if (!bio && !image) continue;
+      const key = name.toLowerCase();
+      // Keep the longest bio and first image found across events
+      if (!scraperArtistData[key]) {
+        scraperArtistData[key] = { name, bio: bio || null, image_url: image || null };
+      } else {
+        if (bio && (!scraperArtistData[key].bio || bio.length > scraperArtistData[key].bio.length)) {
+          scraperArtistData[key].bio = bio;
+        }
+        if (image && !scraperArtistData[key].image_url) {
+          scraperArtistData[key].image_url = image;
+        }
+      }
+    }
+
+    const scraperNames = Object.keys(scraperArtistData);
+    if (scraperNames.length > 0) {
+      // Load existing artist rows
+      const nameValues = scraperNames.map(k => scraperArtistData[k].name);
+      const { data: existing } = await supabase
+        .from('artists')
+        .select('id, name, bio, image_url, is_locked')
+        .in('name', nameValues.slice(0, 200));
+
+      const existingMap = {};
+      for (const a of (existing || [])) existingMap[a.name.toLowerCase()] = a;
+
+      for (const key of scraperNames) {
+        const sd = scraperArtistData[key];
+        const ex = existingMap[key];
+
+        // Never touch locked artists
+        if (ex?.is_locked) continue;
+
+        if (!ex) {
+          // Create new artist row from scraper data
+          await supabase.from('artists').upsert({
+            name: sd.name,
+            bio: sd.bio,
+            image_url: sd.image_url,
+            last_fetched: new Date().toISOString(),
+          }, { onConflict: 'name' });
+          scraperEnrichResult.created++;
+        } else {
+          // Update only empty fields (don't overwrite existing bios/images)
+          const update = {};
+          if (!ex.bio && sd.bio) update.bio = sd.bio;
+          if (!ex.image_url && sd.image_url) update.image_url = sd.image_url;
+          if (Object.keys(update).length > 0) {
+            await supabase.from('artists').update(update).eq('id', ex.id);
+            scraperEnrichResult.updated++;
+          }
+        }
+      }
+    }
+  } catch (scraperEnrichErr) {
+    console.error('Scraper artist enrichment error:', scraperEnrichErr);
+  }
+
   // --- Auto-enrich new artists via Last.fm + link events → artists via artist_id ---
   let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, eventsLinked: 0, blacklisted: 0, humanSkipped: 0, errors: [] };
   try {
@@ -646,7 +720,7 @@ export async function POST(request) {
     // Only enrich events categorized as Live Music (or uncategorized) — skip drink specials, trivia, etc.
     const { data: unenriched } = await supabase
       .from('events')
-      .select('id, artist_name, image_url, artist_bio, artist_id, is_human_edited, category')
+      .select('id, artist_name, image_url, artist_bio, artist_id, is_human_edited, is_locked, category')
       .eq('status', 'published')
       .not('artist_name', 'is', null)
       .gte('event_date', new Date().toISOString())
@@ -654,9 +728,9 @@ export async function POST(request) {
       .limit(500);
 
     if (unenriched?.length) {
-      // Golden Rule: skip human-edited events — never overwrite admin changes
+      // Golden Rule: skip human-edited or locked events — never overwrite admin changes
       const enrichable = unenriched.filter(e => {
-        if (e.is_human_edited) { enrichResult.humanSkipped++; return false; }
+        if (e.is_human_edited || e.is_locked) { enrichResult.humanSkipped++; return false; }
         return true;
       });
 
@@ -809,6 +883,10 @@ export async function POST(request) {
     priceExtractor: {
       pricesExtracted: priceResult.extracted,
       decimalsCleaned: priceResult.cleaned,
+    },
+    scraperArtistEnrich: {
+      created: scraperEnrichResult.created,
+      updated: scraperEnrichResult.updated,
     },
     enrichment: {
       artistsLookedUp: enrichResult.artistsLookedUp,

@@ -153,11 +153,33 @@ export async function enrichWithLastfm(artistName, supabase, { blacklist } = {})
   }
 
   if (cached) {
+    // Never touch locked artists — return cached data as-is
+    if (cached.is_locked) return cached;
+
+    // If the artist already has BOTH bio and image (from scraper or manual),
+    // skip Last.fm entirely — scraper/manual data takes priority
+    if (cached.bio && cached.image_url) {
+      const age = Date.now() - new Date(cached.last_fetched || 0).getTime();
+      if (age < CACHE_TTL_MS) return cached; // still fresh
+      // Even if stale, only refresh tags/genres from Last.fm — don't overwrite bio/image
+      const fresh = await fetchFromLastfm(name);
+      if (fresh?.tags) {
+        const update = { tags: fresh.tags, last_fetched: new Date().toISOString() };
+        const genresFromTags = fresh.tags.split(',').slice(0, 3).map(t => t.trim()).filter(Boolean)
+          .map(t => t.charAt(0).toUpperCase() + t.slice(1));
+        if (genresFromTags.length > 0 && (!cached.genres || cached.genres.length === 0)) {
+          update.genres = genresFromTags;
+        }
+        await supabase.from('artists').update(update).eq('id', cached.id);
+      }
+      return { ...cached, tags: fresh?.tags || cached.tags };
+    }
+
     const age = Date.now() - new Date(cached.last_fetched || 0).getTime();
     if (age < CACHE_TTL_MS) return cached; // still fresh
   }
 
-  // --- 2. Fetch from Last.fm ---
+  // --- 2. Fetch from Last.fm (secondary fallback) ---
   const fresh = await fetchFromLastfm(name);
 
   // Cache the result even if Last.fm returned nothing ("not found").
@@ -170,9 +192,10 @@ export async function enrichWithLastfm(artistName, supabase, { blacklist } = {})
 
   const record = {
     name: fresh?.name || name,
-    image_url: fresh?.image_url || null,
-    bio: fresh?.bio || null,
-    tags: fresh?.tags || null,
+    // Only fill bio/image from Last.fm if scraper didn't already provide them
+    image_url: cached?.image_url || fresh?.image_url || null,
+    bio: cached?.bio || fresh?.bio || null,
+    tags: fresh?.tags || cached?.tags || null,
     last_fetched: new Date().toISOString(),
   };
 
