@@ -37,6 +37,7 @@ import { scrapeCrabsClaw } from '@/lib/scrapers/crabsClaw';
 import { scrapeWaterStreet } from '@/lib/scrapers/waterStreet';
 import { scrapeCrossroads } from '@/lib/scrapers/crossroads';
 import { scrapeEventideGrille } from '@/lib/scrapers/eventideGrille';
+import { scrapeTriumphBrewing } from '@/lib/scrapers/triumphBrewing';
 // House of Independents removed — Etix serves bare React shell (2KB) to datacenter IPs, no JSON-LD
 // Scraper file kept at houseOfIndependents.js — works from residential IPs, revisit if proxy is added
 // Starland Ballroom removed — AEG/Carbonhouse platform blocks datacenter IPs, AJAX endpoint returns empty/blocked
@@ -50,10 +51,10 @@ import { enrichWithLastfm } from '@/lib/enrichLastfm';
 
 export const dynamic = 'force-dynamic';
 
-// Optional: protect with a secret so only cron/authorized callers can trigger
+// Protect with a secret so only cron/authorized callers can trigger
 function isAuthorized(request) {
   const secret = process.env.SYNC_SECRET;
-  if (!secret) return true; // no secret set = open (dev mode)
+  if (!secret) return false; // fail closed — SYNC_SECRET must be configured
   const auth = request.headers.get('authorization');
   return auth === `Bearer ${secret}`;
 }
@@ -228,7 +229,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -265,6 +266,7 @@ export async function POST(request) {
     scrapeWaterStreet(),
     scrapeCrossroads(),
     scrapeEventideGrille(),
+    scrapeTriumphBrewing(),
   ]);
 
   const scraperResults = {
@@ -304,6 +306,7 @@ export async function POST(request) {
     WaterStreet: { count: waterStreet.events.length, error: waterStreet.error },
     Crossroads: { count: crossroads.events.length, error: crossroads.error },
     EventideGrille: { count: eventideGrille.events.length, error: eventideGrille.error },
+    TriumphBrewing: { count: triumphBrewing.events.length, error: triumphBrewing.error },
   };
 
   // ── Write scraper health to database ──────────────────────────────────────
@@ -344,6 +347,7 @@ export async function POST(request) {
     WaterStreet: { venue: 'Water Street Bar & Grill', url: 'https://www.waterstreetnj.com', source: 'Squarespace' },
     Crossroads: { venue: 'Crossroads', url: 'https://www.xxroads.com', source: 'Eventbrite API' },
     EventideGrille: { venue: 'Eventide Grille', url: 'https://eventidegrille.com', source: 'Image Poster' },
+    TriumphBrewing: { venue: 'Triumph Brewing Red Bank', url: 'https://www.triumphbrewing.com', source: 'WordPress HTML (The Events Calendar)' },
   };
 
   try {
@@ -403,6 +407,7 @@ export async function POST(request) {
     ...waterStreet.events,
     ...crossroads.events,
     ...eventideGrille.events,
+    ...triumphBrewing.events,
   ].map(ev => mapEvent(ev, venueMap, defaultTimes));
 
   // Filter out events with no external_id or date, and deduplicate by external_id
