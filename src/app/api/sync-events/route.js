@@ -671,7 +671,7 @@ export async function POST(request) {
 
     const scraperNames = Object.keys(scraperArtistData);
     if (scraperNames.length > 0) {
-      // Load existing artist rows
+      // Load existing artist rows by name
       const nameValues = scraperNames.map(k => scraperArtistData[k].name);
       const { data: existing } = await supabase
         .from('artists')
@@ -680,6 +680,37 @@ export async function POST(request) {
 
       const existingMap = {};
       for (const a of (existing || [])) existingMap[a.name.toLowerCase()] = a;
+
+      // Also check aliases for any names not found by direct match
+      // This prevents creating duplicate artist rows when a scraper sends
+      // an old or variant name that was already saved as an alias
+      const unmatchedKeys = scraperNames.filter(k => !existingMap[k]);
+      if (unmatchedKeys.length > 0) {
+        try {
+          const { data: aliasRows } = await supabase
+            .from('artist_aliases')
+            .select('artist_id, alias_lower')
+            .in('alias_lower', unmatchedKeys.slice(0, 200));
+
+          if (aliasRows?.length) {
+            const aliasArtistIds = [...new Set(aliasRows.map(a => a.artist_id))];
+            const { data: aliasArtists } = await supabase
+              .from('artists')
+              .select('id, name, bio, image_url, is_locked')
+              .in('id', aliasArtistIds);
+
+            const artistById = {};
+            for (const a of (aliasArtists || [])) artistById[a.id] = a;
+
+            for (const row of aliasRows) {
+              const master = artistById[row.artist_id];
+              if (master && !existingMap[row.alias_lower]) {
+                existingMap[row.alias_lower] = master;
+              }
+            }
+          }
+        } catch { /* artist_aliases table may not exist yet */ }
+      }
 
       for (const key of scraperNames) {
         const sd = scraperArtistData[key];

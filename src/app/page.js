@@ -788,7 +788,7 @@ export default function HomePage() {
 
         return {
           ...e,
-          name:       decodeEntities(e.event_title || e.artist_name  || e.name  || ''),
+          name:       decodeEntities(e.event_title || e.artists?.name || e.artist_name  || e.name  || ''),
           venue:      e.venues?.name || e.venue_name || e.venue || '',
           date: (() => {
             const raw = e.event_date || '';

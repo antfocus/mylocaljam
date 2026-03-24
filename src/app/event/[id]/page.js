@@ -68,7 +68,7 @@ function flattenEvent(e) {
 
   return {
     id:             e.id,
-    artist_name:    e.artist_name,
+    artist_name:    e.artists?.name || e.artist_name,
     event_title:    e.event_title || null,
     venue_name:     e.venues?.name || e.venue_name || '',
     event_date:     e.event_date,
