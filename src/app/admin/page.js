@@ -1022,64 +1022,6 @@ export default function AdminPage() {
             />
           </div>
 
-          {/* Failed Scrapes Audit Log — only shown when there are failures */}
-          {scraperHealth.filter(s => s.status === 'fail').length > 0 && (<>
-            <SectionHeader title="Failed Scrapes" />
-            <div style={{ background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border)', overflow: 'hidden', marginBottom: '16px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: "'DM Sans', sans-serif", fontSize: '12px' }}>
-                <thead>
-                  <tr style={{ background: 'rgba(239,68,68,0.06)', borderBottom: '1px solid var(--border)' }}>
-                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Venue</th>
-                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Platform</th>
-                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Last Attempt</th>
-                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Error</th>
-                    <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--text-muted)', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.5px', width: '60px' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scraperHealth.filter(s => s.status === 'fail').map(s => (
-                    <tr key={s.scraper_key} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {s.venue_name}
-                        {s.website_url && (
-                          <a href={s.website_url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: '6px', color: 'var(--text-muted)', textDecoration: 'none' }}>
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle' }}><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                          </a>
-                        )}
-                      </td>
-                      <td style={{ padding: '10px 12px', color: 'var(--text-muted)' }}>{s.platform || 'Unknown'}</td>
-                      <td style={{ padding: '10px 12px', color: 'var(--text-muted)' }}>
-                        {s.last_sync ? new Date(s.last_sync).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}
-                      </td>
-                      <td style={{ padding: '10px 12px' }}>
-                        <code style={{ fontSize: '11px', color: '#ef4444', background: 'rgba(239,68,68,0.06)', padding: '2px 6px', borderRadius: '4px', wordBreak: 'break-word', display: 'inline-block', maxWidth: '300px' }}>
-                          {s.error_message || 'Unknown error'}
-                        </code>
-                      </td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                        <button
-                          onClick={() => handleForceSync(s.scraper_key)}
-                          disabled={!!forceSyncing}
-                          style={{
-                            padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 700,
-                            background: forceSyncing === s.scraper_key ? '#E8722A' : 'rgba(232,114,42,0.12)',
-                            color: forceSyncing === s.scraper_key ? '#fff' : '#E8722A',
-                            border: '1px solid rgba(232,114,42,0.3)',
-                            fontFamily: "'DM Sans', sans-serif",
-                            cursor: forceSyncing ? 'not-allowed' : 'pointer',
-                            opacity: forceSyncing && forceSyncing !== s.scraper_key ? 0.4 : 1,
-                          }}
-                        >
-                          {forceSyncing === s.scraper_key ? '⟳' : 'Retry'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>)}
-
           {/* Action Items / Triage */}
           <SectionHeader title="Action Items" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
