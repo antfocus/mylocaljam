@@ -682,31 +682,24 @@ export default function AdminPage() {
     });
   };
 
-  // Quick-create a new venue from the queue triage card
+  // Quick-create a new venue from the queue triage card (via admin API to bypass RLS)
   const handleCreateVenue = async () => {
     if (!newVenueName.trim()) return;
     setNewVenueLoading(true);
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      const res = await fetch(`${supabaseUrl}/rest/v1/venues`, {
+      const res = await fetch('/api/admin/venues', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          Prefer: 'return=representation',
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
         body: JSON.stringify({
           name: newVenueName.trim(),
           address: newVenueAddress.trim() || null,
         }),
       });
+      const result = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `Error ${res.status}`);
+        throw new Error(result.error || `Error ${res.status}`);
       }
-      const [created] = await res.json();
+      const created = result;
       // Add to venues state so it's immediately selectable
       setVenues(prev => [...prev, created].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
       // Auto-fill the queue form with the new venue name
