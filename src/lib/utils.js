@@ -119,11 +119,13 @@ export function getVenueColor(venueName) {
 export const GENRES = [
   'Rock', 'Pop', 'Country', 'Reggae', 'Jazz/Blues', 'R&B/Soul',
   'Hip-Hop', 'EDM/DJ', 'Tribute/Cover', 'Alternative', 'Jam Band',
+  'Folk/Americana', 'Funk', 'Latin', 'Metal/Punk',
 ];
 
 export const VIBES = [
   'High-Energy', 'Chill/Acoustic', 'Dance Heavy', 'Sing-Along',
   'Background Music', 'Family Friendly', 'Late Night',
+  'Outdoors', 'Festival', 'All Ages', 'Brunch/Day Party',
 ];
 
 // ── New: clean time range formatting ─────────────────────────────────────────
