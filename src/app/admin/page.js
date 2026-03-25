@@ -3222,6 +3222,34 @@ export default function AdminPage() {
               <span style={{ fontSize: '48px' }}>🫙</span>
               <p className="font-display font-bold text-lg">Queue is empty</p>
               <p className="text-sm" style={{ color: qTextMuted }}>All submissions have been reviewed.</p>
+              <input
+                ref={adminFlyerRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => { if (e.target.files?.[0]) handleAdminFlyerUpload(e.target.files[0]); e.target.value = ''; }}
+                style={{ display: 'none' }}
+              />
+              <div
+                onClick={() => !adminFlyerUploading && adminFlyerRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setAdminFlyerDragOver(true); }}
+                onDragLeave={() => setAdminFlyerDragOver(false)}
+                onDrop={(e) => { e.preventDefault(); setAdminFlyerDragOver(false); const f = e.dataTransfer?.files?.[0]; if (f && f.type.startsWith('image/')) handleAdminFlyerUpload(f); }}
+                style={{
+                  padding: '24px 32px', borderRadius: '12px', cursor: adminFlyerUploading ? 'wait' : 'pointer',
+                  border: `2px dashed ${adminFlyerDragOver ? '#E8722A' : qBorder}`,
+                  background: adminFlyerDragOver ? 'rgba(232,114,42,0.08)' : qSurface,
+                  textAlign: 'center', transition: 'all 0.15s',
+                }}
+              >
+                {adminFlyerUploading ? (
+                  <p className="text-sm font-medium" style={{ color: '#E8722A' }}>Processing flyer...</p>
+                ) : (
+                  <>
+                    <p className="font-display font-bold text-sm" style={{ color: qText }}>Upload a Flyer / Poster</p>
+                    <p className="text-xs mt-1" style={{ color: qTextMuted }}>Drop an image or click to upload — OCR will extract artists automatically</p>
+                  </>
+                )}
+              </div>
               <button onClick={fetchQueue} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ border: `1px solid ${qBorder}`, background: qSurface, color: qText }}>
                 ↻ Refresh
               </button>
