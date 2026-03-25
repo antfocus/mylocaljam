@@ -37,7 +37,14 @@ Extraction Rules:
 7. Do NOT invent, guess, or look up any information not on the poster.
 8. Do NOT write bios or descriptions.
 9. If the image is unreadable or contains no music events, return an empty array [].
-10. JSON Schema: Return an array of objects matching this exact structure: [{"event_name": "string", "venue": "string", "date": "YYYY-MM-DD", "artist_name": "string"}]. Do not include any markdown formatting or explanations outside of the JSON array.`;
+10. Smart Categorization: For each extracted artist, assign a "category" and "confidence_score" using your knowledge:
+    - If the name is a widely recognized band, solo artist, or musical act (e.g., Mumford & Sons, Bruce Springsteen, The War on Drugs), set category to "Live Music" and confidence_score to 95-100.
+    - If the name appears to be a DJ or electronic act, set category to "DJ" and confidence_score based on your recognition (80-100 for known DJs, 50-70 for unknown).
+    - If the name is a comedy act, set category to "Comedy".
+    - If it looks like a festival name or event series rather than a performer, set category to "Festival".
+    - If you are uncertain what the act is, set category to "Live Music" (default) and confidence_score to 50-70.
+    - confidence_score ranges: 95-100 = definitely recognized artist, 80-94 = probably correct, 50-79 = uncertain/best guess, below 50 = very unsure.
+11. JSON Schema: Return an array of objects matching this exact structure: [{"event_name": "string", "venue": "string", "date": "YYYY-MM-DD", "artist_name": "string", "time": "string or null", "category": "string", "confidence_score": integer}]. Do not include any markdown formatting or explanations outside of the JSON array.`;
 
 /**
  * Detect MIME type from URL extension or default to JPEG.
@@ -132,8 +139,10 @@ export async function extractEventsFromFlyer(imageUrl, { venueName, year, month 
               date: { type: 'STRING', description: 'Event date in YYYY-MM-DD format' },
               artist_name: { type: 'STRING', description: 'Artist or band name exactly as written on the poster' },
               time: { type: 'STRING', nullable: true, description: 'Start time like "7:00 PM" or null if not shown' },
+              category: { type: 'STRING', description: 'Event category: Live Music, DJ, Comedy, Festival, or Other' },
+              confidence_score: { type: 'INTEGER', description: 'AI confidence 1-100 that the category is correct' },
             },
-            required: ['artist_name', 'date'],
+            required: ['artist_name', 'date', 'category', 'confidence_score'],
           },
         },
         temperature: 0.1, // Low temperature for precise OCR extraction
@@ -186,6 +195,8 @@ export async function extractEventsFromFlyer(imageUrl, { venueName, year, month 
       time: typeof e.time === 'string' ? e.time.trim() : null,
       event_name: typeof e.event_name === 'string' ? e.event_name.trim() : null,
       venue: typeof e.venue === 'string' ? e.venue.trim() : null,
+      category: typeof e.category === 'string' ? e.category.trim() : 'Live Music',
+      confidence_score: typeof e.confidence_score === 'number' ? e.confidence_score : 50,
     }))
     .filter(e => e.date); // Drop events where we couldn't get a date
 

@@ -71,8 +71,10 @@ export async function POST(request) {
       event_date: e.date ? new Date(`${e.date}T${e.time || '00:00'}:00`).toISOString() : null,
       image_url: image_url, // Poster image for the EVENT, not the artist
       event_name: e.event_name || festivalName || null,
+      category: e.category || 'Live Music',
+      confidence_score: e.confidence_score || 50,
       status: 'pending',
-      notes: `[Admin AI Upload] Extracted via Gemini OCR${e.event_name ? ` — ${e.event_name}` : ''}${isFestival ? ' [Festival]' : ''}${e.time ? ` — Time: ${e.time}` : ''}`,
+      notes: `[Admin AI Upload] Extracted via Gemini OCR${e.event_name ? ` — ${e.event_name}` : ''}${isFestival ? ' [Festival]' : ''}${e.time ? ` — Time: ${e.time}` : ''} [AI: ${e.category || 'Live Music'} @ ${e.confidence_score || 50}%]`,
     }));
 
     const { error: insertErr } = await supabase

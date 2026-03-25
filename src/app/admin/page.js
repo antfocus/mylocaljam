@@ -150,6 +150,7 @@ export default function AdminPage() {
   const [queueForm, setQueueForm] = useState({
     artist_name: '', venue_name: '', event_date: '', event_time: '',
     genre: '', vibe: '', cover: '', ticket_link: '', event_name: '',
+    category: '', confidence_score: 0,
   });
   const [queueDuplicates, setQueueDuplicates] = useState([]);
   const [queueDupLoading, setQueueDupLoading] = useState(false);
@@ -656,6 +657,8 @@ export default function AdminPage() {
       cover: sub.cover || '',
       ticket_link: sub.ticket_link || '',
       event_name: sub.event_name || '',
+      category: sub.category || '',
+      confidence_score: sub.confidence_score || 0,
     });
     setQueueDuplicates([]);
   };
@@ -3532,6 +3535,31 @@ export default function AdminPage() {
                           ))}
                         </div>
                       )}
+                      <div>
+                        <label style={qLabelStyle}>Category {queueForm.confidence_score > 0 && (
+                          <span style={{
+                            marginLeft: '8px', fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px',
+                            background: queueForm.confidence_score >= 90 ? '#23CE6B22' : queueForm.confidence_score >= 70 ? '#F59E0B22' : '#EF444422',
+                            color: queueForm.confidence_score >= 90 ? '#23CE6B' : queueForm.confidence_score >= 70 ? '#F59E0B' : '#EF4444',
+                          }}>
+                            AI {queueForm.confidence_score}%{queueForm.confidence_score >= 90 ? ' ✓ auto-routed' : ''}
+                          </span>
+                        )}</label>
+                        <select style={{
+                          ...qInputStyle, cursor: 'pointer',
+                          borderColor: queueForm.confidence_score >= 90 ? '#23CE6B44' : qInputStyle.borderColor || 'var(--border)',
+                        }} value={queueForm.category} onChange={e => updateQueueForm('category', e.target.value)}>
+                          <option value="">Select...</option>
+                          <option value="Live Music">Live Music</option>
+                          <option value="DJ">DJ</option>
+                          <option value="Comedy">Comedy</option>
+                          <option value="Festival">Festival</option>
+                          <option value="Food & Drink Special">Food & Drink Special</option>
+                          <option value="Trivia">Trivia</option>
+                          <option value="Sports / Watch Party">Sports / Watch Party</option>
+                          <option value="Other / Special Event">Other / Special Event</option>
+                        </select>
+                      </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
                           <label style={qLabelStyle}>Genre</label>

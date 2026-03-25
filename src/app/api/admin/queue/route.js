@@ -38,10 +38,10 @@ export async function POST(request) {
   const body = await request.json();
   const { submission_id, event_data, is_featured } = body;
 
-  // Fetch the submission to get image_url and event_name for linking
+  // Fetch the submission to get image_url, event_name, and AI classification for linking
   const { data: submission } = await supabase
     .from('submissions')
-    .select('image_url, event_name')
+    .select('image_url, event_name, category, confidence_score')
     .eq('id', submission_id)
     .single();
 
@@ -60,6 +60,8 @@ export async function POST(request) {
       event_date: event_data.event_date,
       genre: event_data.genre || null,
       vibe: event_data.vibe || null,
+      category: event_data.category || submission?.category || 'Live Music',
+      triage_status: (submission?.confidence_score >= 90 || event_data.confidence_score >= 90) ? 'reviewed' : 'pending',
       cover: event_data.cover || null,
       ticket_link: event_data.ticket_link || null,
       image_url: submission?.image_url || event_data.image_url || null,
