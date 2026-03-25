@@ -697,6 +697,21 @@ export default function AdminPage() {
       });
       const result = await res.json().catch(() => ({}));
       if (!res.ok) {
+        // 409 = venue already exists — auto-select the existing one instead of erroring
+        if (res.status === 409 && result.venue) {
+          // Make sure it's in our local venues list
+          setVenues(prev => {
+            const exists = prev.some(v => v.id === result.venue.id);
+            return exists ? prev : [...prev, result.venue].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          });
+          updateQueueForm('venue_name', result.venue.name);
+          setNewVenueOpen(false);
+          setNewVenueName('');
+          setNewVenueAddress('');
+          showQueueToast(`✅ Venue "${result.venue.name}" already exists — auto-selected`);
+          setNewVenueLoading(false);
+          return;
+        }
         throw new Error(result.error || `Error ${res.status}`);
       }
       const created = result;
