@@ -155,6 +155,10 @@ export default function AdminPage() {
   const [queueDupLoading, setQueueDupLoading] = useState(false);
   const [queueLightboxUrl, setQueueLightboxUrl] = useState(null);
   const [queueToast, setQueueToast] = useState(null);
+  const [newVenueOpen, setNewVenueOpen] = useState(false);
+  const [newVenueName, setNewVenueName] = useState('');
+  const [newVenueAddress, setNewVenueAddress] = useState('');
+  const [newVenueLoading, setNewVenueLoading] = useState(false);
   const [adminFlyerUploading, setAdminFlyerUploading] = useState(false);
   const [adminFlyerDragOver, setAdminFlyerDragOver] = useState(false);
   const adminFlyerRef = useRef(null);
@@ -646,6 +650,11 @@ export default function AdminPage() {
   const selectQueueItem = (idx) => {
     setQueueSelectedIdx(idx);
     if (queue[idx]) populateQueueForm(queue[idx]);
+    // Reset all validation states when switching submissions
+    setQueueDuplicates([]);
+    setNewVenueOpen(false);
+    setNewVenueName('');
+    setNewVenueAddress('');
   };
 
   const toastTimerRef = useRef(null);
@@ -671,6 +680,45 @@ export default function AdminPage() {
       }
       return next;
     });
+  };
+
+  // Quick-create a new venue from the queue triage card
+  const handleCreateVenue = async () => {
+    if (!newVenueName.trim()) return;
+    setNewVenueLoading(true);
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      const res = await fetch(`${supabaseUrl}/rest/v1/venues`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({
+          name: newVenueName.trim(),
+          address: newVenueAddress.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `Error ${res.status}`);
+      }
+      const [created] = await res.json();
+      // Add to venues state so it's immediately selectable
+      setVenues(prev => [...prev, created].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+      // Auto-fill the queue form with the new venue name
+      updateQueueForm('venue_name', created.name);
+      setNewVenueOpen(false);
+      setNewVenueName('');
+      setNewVenueAddress('');
+      showQueueToast(`✅ Venue "${created.name}" created`);
+    } catch (err) {
+      showQueueToast({ type: 'error', msg: `⛔ Failed to create venue: ${err.message}` });
+    }
+    setNewVenueLoading(false);
   };
 
   // Resolve venue_name text to a venue_id by matching against known venues
@@ -802,7 +850,8 @@ export default function AdminPage() {
   const updateQueueForm = (k, v) => setQueueForm(f => ({ ...f, [k]: v }));
   const queueSelected = queue[queueSelectedIdx] || null;
 
-  // Queue duplicate check
+  // Queue duplicate check — filters out the current artist to avoid false positives
+  // (e.g. festival posters where 30 acts share the same venue+date)
   const checkQueueDuplicates = useCallback(async () => {
     if (!queueForm.venue_name || !queueForm.event_date) { setQueueDuplicates([]); return; }
     setQueueDupLoading(true);
@@ -812,10 +861,15 @@ export default function AdminPage() {
         { headers: { Authorization: `Bearer ${password}` } }
       );
       const data = await res.json();
-      setQueueDuplicates(data.duplicates || []);
+      // Filter out matches for the SAME artist — those aren't duplicates, they're siblings
+      const currentArtist = (queueForm.artist_name || '').trim().toLowerCase();
+      const filtered = (data.duplicates || []).filter(d =>
+        (d.artist_name || '').trim().toLowerCase() !== currentArtist
+      );
+      setQueueDuplicates(filtered);
     } catch { setQueueDuplicates([]); }
     setQueueDupLoading(false);
-  }, [queueForm.venue_name, queueForm.event_date, password]);
+  }, [queueForm.venue_name, queueForm.event_date, queueForm.artist_name, password]);
 
   useEffect(() => {
     if (authenticated && queueForm.venue_name && queueForm.event_date) {
@@ -3333,8 +3387,65 @@ export default function AdminPage() {
                           {venues.map(v => <option key={v.id} value={v.name} />)}
                         </datalist>
                         {queueForm.venue_name && !resolveVenueId(queueForm.venue_name) && (
-                          <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', fontFamily: "'DM Sans', sans-serif" }}>
-                            Not a registered venue — select one from the dropdown to publish
+                          <div style={{ marginTop: '6px' }}>
+                            <div style={{ fontSize: '11px', color: '#ef4444', fontFamily: "'DM Sans', sans-serif", marginBottom: '6px' }}>
+                              Not a registered venue — select from dropdown or create new
+                            </div>
+                            {!newVenueOpen ? (
+                              <button
+                                onClick={() => { setNewVenueName(queueForm.venue_name); setNewVenueOpen(true); }}
+                                style={{
+                                  padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                                  background: 'rgba(232,114,42,0.1)', color: '#E8722A',
+                                  border: '1px solid rgba(232,114,42,0.3)',
+                                }}
+                              >
+                                + Create &ldquo;{queueForm.venue_name}&rdquo; as New Venue
+                              </button>
+                            ) : (
+                              <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(232,114,42,0.06)', border: '1px solid rgba(232,114,42,0.2)' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                  <input
+                                    type="text"
+                                    value={newVenueName}
+                                    onChange={e => setNewVenueName(e.target.value)}
+                                    placeholder="Venue name"
+                                    style={{ ...qInputStyle, fontSize: '12px', padding: '6px 10px' }}
+                                  />
+                                  <input
+                                    type="text"
+                                    value={newVenueAddress}
+                                    onChange={e => setNewVenueAddress(e.target.value)}
+                                    placeholder="Address (optional)"
+                                    style={{ ...qInputStyle, fontSize: '12px', padding: '6px 10px' }}
+                                  />
+                                  <div style={{ display: 'flex', gap: '6px' }}>
+                                    <button
+                                      onClick={handleCreateVenue}
+                                      disabled={newVenueLoading || !newVenueName.trim()}
+                                      style={{
+                                        padding: '5px 14px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                                        fontFamily: "'DM Sans', sans-serif", cursor: newVenueLoading ? 'wait' : 'pointer',
+                                        background: '#E8722A', color: '#fff', border: 'none',
+                                      }}
+                                    >
+                                      {newVenueLoading ? 'Creating...' : 'Create Venue'}
+                                    </button>
+                                    <button
+                                      onClick={() => { setNewVenueOpen(false); setNewVenueName(''); setNewVenueAddress(''); }}
+                                      style={{
+                                        padding: '5px 10px', borderRadius: '6px', fontSize: '11px',
+                                        fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                                        background: 'none', color: qTextMuted, border: `1px solid ${qBorder}`,
+                                      }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

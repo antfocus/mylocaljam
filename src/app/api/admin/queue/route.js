@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase';
+import { enrichWithLastfm } from '@/lib/enrichLastfm';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -78,6 +79,33 @@ export async function POST(request) {
 
   if (subError) {
     return NextResponse.json({ error: subError.message }, { status: 500 });
+  }
+
+  // Fire-and-forget: enrich the artist via Last.fm so bio/image appear immediately
+  // This runs async — don't block the approval response on it
+  try {
+    const artistName = event_data.artist_name?.trim();
+    if (artistName) {
+      await enrichWithLastfm(artistName, supabase).catch(err =>
+        console.warn(`[queue] Last.fm enrich failed for "${artistName}":`, err.message)
+      );
+
+      // Link the new event to the artist row if one exists
+      const { data: artist } = await supabase
+        .from('artists')
+        .select('id')
+        .ilike('name', artistName)
+        .single();
+
+      if (artist?.id && newEvent?.id) {
+        await supabase
+          .from('events')
+          .update({ artist_id: artist.id })
+          .eq('id', newEvent.id);
+      }
+    }
+  } catch (enrichErr) {
+    console.warn('[queue] Post-publish enrichment error:', enrichErr.message);
   }
 
   // Invalidate the live feed cache so the new event appears immediately
