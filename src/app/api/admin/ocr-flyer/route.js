@@ -56,17 +56,23 @@ export async function POST(request) {
       });
     }
 
+    // Detect if this is a festival (multiple artists with the same event_name)
+    const eventNames = [...new Set(extracted.map(e => e.event_name).filter(Boolean))];
+    const isFestival = eventNames.length > 0 && extracted.length > 3;
+    const festivalName = eventNames[0] || null;
+
     // Create a pending submission for each extracted event
     // IMPORTANT: image_url is set to the flyer poster for the EVENT record only.
-    // We do NOT set artist image_url — leave it blank so Phase 2 Last.fm
-    // scraper is triggered to find official artist press photos.
+    // We do NOT set artist image_url — leave it blank so the universal enrichment
+    // pipeline (MusicBrainz → Discogs → Last.fm) finds official artist press photos.
     const drafts = extracted.map(e => ({
       artist_name: e.artist || 'Unknown Artist',
       venue_name: e.venue || venue_name || null,
       event_date: e.date ? new Date(`${e.date}T${e.time || '00:00'}:00`).toISOString() : null,
       image_url: image_url, // Poster image for the EVENT, not the artist
+      event_name: e.event_name || festivalName || null,
       status: 'pending',
-      notes: `[Admin AI Upload] Extracted via Gemini OCR${e.event_name ? ` — ${e.event_name}` : ''}${e.time ? ` — Time: ${e.time}` : ''}`,
+      notes: `[Admin AI Upload] Extracted via Gemini OCR${e.event_name ? ` — ${e.event_name}` : ''}${isFestival ? ' [Festival]' : ''}${e.time ? ` — Time: ${e.time}` : ''}`,
     }));
 
     const { error: insertErr } = await supabase

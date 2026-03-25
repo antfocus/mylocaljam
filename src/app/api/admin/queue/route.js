@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase';
-import { enrichWithLastfm } from '@/lib/enrichLastfm';
+import { enrichArtist } from '@/lib/enrichArtist';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -38,12 +38,16 @@ export async function POST(request) {
   const body = await request.json();
   const { submission_id, event_data, is_featured } = body;
 
-  // Fetch the submission to get image_url for linking
+  // Fetch the submission to get image_url and event_name for linking
   const { data: submission } = await supabase
     .from('submissions')
-    .select('image_url')
+    .select('image_url, event_name')
     .eq('id', submission_id)
     .single();
+
+  // Detect festival: if submission has an event_name, flag it
+  const eventName = submission?.event_name || event_data.event_name || null;
+  const isFestival = !!eventName;
 
   // Create the event with image_url from the submission's uploaded poster
   const { data: newEvent, error: eventError } = await supabase
@@ -60,6 +64,8 @@ export async function POST(request) {
       ticket_link: event_data.ticket_link || null,
       image_url: submission?.image_url || event_data.image_url || null,
       is_featured: is_featured || false,
+      ...(eventName ? { event_title: eventName } : {}),
+      ...(isFestival ? { is_festival: true } : {}),
       status: 'published',
       source: 'Community Submitted',
       verified_at: new Date().toISOString(),
@@ -81,13 +87,13 @@ export async function POST(request) {
     return NextResponse.json({ error: subError.message }, { status: 500 });
   }
 
-  // Fire-and-forget: enrich the artist via Last.fm so bio/image appear immediately
-  // This runs async — don't block the approval response on it
+  // Universal Enrichment Hook: MusicBrainz → Discogs → Last.fm
+  // Runs after approval so artist bio/image appear on the live feed immediately
   try {
     const artistName = event_data.artist_name?.trim();
     if (artistName) {
-      await enrichWithLastfm(artistName, supabase).catch(err =>
-        console.warn(`[queue] Last.fm enrich failed for "${artistName}":`, err.message)
+      await enrichArtist(artistName, supabase).catch(err =>
+        console.warn(`[queue] Enrichment failed for "${artistName}":`, err.message)
       );
 
       // Link the new event to the artist row if one exists

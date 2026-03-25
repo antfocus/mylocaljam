@@ -50,6 +50,7 @@ import { scrapePaganosUva } from '@/lib/scrapers/paganosUva';
 import { scrapeCaptainsInn } from '@/lib/scrapers/captainsInn';
 import { scrapeCharleysOceanGrill } from '@/lib/scrapers/charleysOceanGrill';
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
+import { enrichArtist } from '@/lib/enrichArtist';
 
 
 export const dynamic = 'force-dynamic';
@@ -828,14 +829,13 @@ export async function POST(request) {
       const cachedMap = {};
       for (const a of (cached || [])) cachedMap[a.name.toLowerCase()] = a;
 
-      // Look up uncached artists (max 30 per sync to stay within timeout)
-      // Also skip blacklisted from Last.fm lookup
-      const uncached = cleanNames.filter(n => !cachedMap[n.toLowerCase()]).slice(0, 30);
+      // Look up uncached artists (max 15 per sync — universal pipeline is slower due to 3 APIs)
+      // Uses the Universal Enrichment Hook: MusicBrainz → Discogs → Last.fm
+      const uncached = cleanNames.filter(n => !cachedMap[n.toLowerCase()]).slice(0, 15);
       for (const name of uncached) {
         try {
-          await enrichWithLastfm(name, supabase, { blacklist: blacklistedNames });
+          await enrichArtist(name, supabase, { blacklist: blacklistedNames });
           enrichResult.artistsLookedUp++;
-          await new Promise(r => setTimeout(r, 200));
         } catch (err) {
           enrichResult.errors.push(`${name}: ${err.message}`);
         }
