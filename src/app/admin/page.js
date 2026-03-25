@@ -149,7 +149,7 @@ export default function AdminPage() {
   const [queueActionLoading, setQueueActionLoading] = useState(false);
   const [queueForm, setQueueForm] = useState({
     artist_name: '', venue_name: '', event_date: '', event_time: '',
-    genre: '', vibe: '', cover: '', ticket_link: '',
+    genre: '', vibe: '', cover: '', ticket_link: '', event_name: '',
   });
   const [queueDuplicates, setQueueDuplicates] = useState([]);
   const [queueDupLoading, setQueueDupLoading] = useState(false);
@@ -655,6 +655,7 @@ export default function AdminPage() {
       vibe: sub.vibe || '',
       cover: sub.cover || '',
       ticket_link: sub.ticket_link || '',
+      event_name: sub.event_name || '',
     });
     setQueueDuplicates([]);
   };
@@ -3396,6 +3397,18 @@ export default function AdminPage() {
                       <div>
                         <label style={qLabelStyle}>Artist / Band Name *</label>
                         <input style={qInputStyle} value={queueForm.artist_name} onChange={e => updateQueueForm('artist_name', e.target.value)} placeholder="e.g. The Gaslight Anthem" />
+                      </div>
+                      <div>
+                        <label style={qLabelStyle}>Event / Festival Name</label>
+                        <input style={{
+                          ...qInputStyle,
+                          borderColor: queueForm.event_name ? '#f59e0b' : qInputStyle.borderColor || 'var(--border)',
+                        }} value={queueForm.event_name} onChange={e => updateQueueForm('event_name', e.target.value)} placeholder="e.g. Sea Hear Now 2026 (optional — groups artists under one festival)" />
+                        {queueForm.event_name && (
+                          <div style={{ fontSize: '11px', color: '#f59e0b', fontFamily: "'DM Sans', sans-serif", marginTop: '4px' }}>
+                            🔥 Festival mode — this event will be tagged &amp; searchable as &ldquo;{queueForm.event_name}&rdquo;
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label style={qLabelStyle}>Venue *</label>
