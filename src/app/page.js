@@ -442,6 +442,7 @@ export default function HomePage() {
 
     const artistSet = new Map();   // normalized → display name
     const venueSet = new Map();    // normalized → display name
+    const festivalSet = new Map(); // normalized → display name
 
     // Words/phrases that indicate an event title, not an artist name
     const EVENT_TITLE_RE = /\b(presents?|featuring|feat\.|fest(ival)?|parade|rodeo|celebration|fundraiser|benefit|memorial|comedy show|bingo|trivia|karaoke|open mic|recreation|block party|car show|craft fair|flea market|fireworks|5k|run walk|jams presents)\b/i;
@@ -460,10 +461,20 @@ export default function HomePage() {
         const key = venue.toLowerCase();
         if (key.includes(q) && !venueSet.has(key)) venueSet.set(key, venue);
       }
+      // Festivals: from event_title (deduplicated)
+      const festival = (e.event_title ?? '').trim();
+      if (festival) {
+        const key = festival.toLowerCase();
+        if (key.includes(q) && !festivalSet.has(key)) festivalSet.set(key, festival);
+      }
     }
 
     const results = [];
-    // Venues first (fewer, more precise), then artists
+    // Festivals first (most specific), then venues, then artists
+    for (const [, display] of festivalSet) {
+      if (results.length >= 6) break;
+      results.push({ type: 'festival', label: display });
+    }
     for (const [, display] of venueSet) {
       if (results.length >= 6) break;
       results.push({ type: 'venue', label: display });
@@ -790,7 +801,8 @@ export default function HomePage() {
 
         return {
           ...e,
-          name:       decodeEntities(e.event_title || e.artists?.name || e.artist_name  || e.name  || ''),
+          name:       decodeEntities(e.artists?.name || e.artist_name  || e.name  || ''),
+          event_title: e.event_title || null,
           venue:      e.venues?.name || e.venue_name || e.venue || '',
           date: (() => {
             const raw = e.event_date || '';
@@ -1170,7 +1182,8 @@ export default function HomePage() {
       list = list.filter(e =>
         normalizeVenue(e.name).includes(q) ||
         normalizeVenue(e.venue).includes(q) ||
-        normalizeVenue(e.genre ?? '').includes(q)
+        normalizeVenue(e.genre ?? '').includes(q) ||
+        normalizeVenue(e.event_title ?? '').includes(q)
       );
     }
 
@@ -1863,8 +1876,8 @@ export default function HomePage() {
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                               <path
-                                d={s.type === 'venue' ? MATERIAL_ICON_PATHS.location_on : MATERIAL_ICON_PATHS.music_note}
-                                fill={s.type === 'venue' ? '#a78bfa' : '#E8722A'}
+                                d={s.type === 'festival' ? MATERIAL_ICON_PATHS.local_fire_department : s.type === 'venue' ? MATERIAL_ICON_PATHS.location_on : MATERIAL_ICON_PATHS.music_note}
+                                fill={s.type === 'festival' ? '#f59e0b' : s.type === 'venue' ? '#a78bfa' : '#E8722A'}
                               />
                             </svg>
                             <span style={{
