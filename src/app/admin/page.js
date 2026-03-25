@@ -649,10 +649,13 @@ export default function AdminPage() {
   };
 
   const toastTimerRef = useRef(null);
-  const showQueueToast = (msg, undoFn = null) => {
+  const showQueueToast = (msgOrObj, undoFn = null) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setQueueToast({ msg, undoFn });
-    toastTimerRef.current = setTimeout(() => { setQueueToast(null); toastTimerRef.current = null; }, undoFn ? 5000 : 3000);
+    // Accept either a plain string or an object { type: 'error', msg: '...' }
+    const toast = typeof msgOrObj === 'string' ? { msg: msgOrObj, undoFn } : { ...msgOrObj, undoFn };
+    setQueueToast(toast);
+    const duration = toast.type === 'error' ? 8000 : (undoFn ? 5000 : 3000);
+    toastTimerRef.current = setTimeout(() => { setQueueToast(null); toastTimerRef.current = null; }, duration);
   };
 
   const advanceQueue = () => {
@@ -670,6 +673,14 @@ export default function AdminPage() {
     });
   };
 
+  // Resolve venue_name text to a venue_id by matching against known venues
+  const resolveVenueId = (venueName) => {
+    if (!venueName || !venues || venues.length === 0) return null;
+    const normalized = venueName.trim().toLowerCase();
+    const match = venues.find(v => v.name && v.name.trim().toLowerCase() === normalized);
+    return match ? match.id : null;
+  };
+
   const handleQueueApprove = async () => {
     const sub = queue[queueSelectedIdx];
     if (!sub) return;
@@ -677,6 +688,14 @@ export default function AdminPage() {
       alert('Please fill in Artist, Venue, and Date before approving.');
       return;
     }
+
+    // Venue ID guard — require a registered venue match before publishing
+    const venueId = resolveVenueId(queueForm.venue_name);
+    if (!venueId) {
+      showQueueToast({ type: 'error', msg: `⛔ "${queueForm.venue_name}" is not a registered venue. Please select one from the dropdown before publishing.` });
+      return;
+    }
+
     setQueueActionLoading(true);
     try {
       // Title Case sanitization
@@ -691,14 +710,23 @@ export default function AdminPage() {
         const etOff = probe.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? '-04:00' : '-05:00';
         eventDate = new Date(`${sanitized.event_date}T${sanitized.event_time}:00${etOff}`).toISOString();
       }
-      await fetch('/api/admin/queue', {
+      const res = await fetch('/api/admin/queue', {
         method: 'POST', headers,
-        body: JSON.stringify({ submission_id: sub.id, event_data: { ...sanitized, event_date: eventDate } }),
+        body: JSON.stringify({ submission_id: sub.id, event_data: { ...sanitized, event_date: eventDate, venue_id: venueId } }),
       });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.error) {
+        const errMsg = result.error || `Server error ${res.status}`;
+        showQueueToast({ type: 'error', msg: `⛔ Publish failed: ${errMsg}` });
+        setQueueActionLoading(false);
+        return; // DO NOT advance queue on failure
+      }
       showQueueToast(`✅ Approved: ${sanitized.artist_name}`);
       advanceQueue();
       fetchAll();
-    } catch { alert('Approve failed'); }
+    } catch (err) {
+      showQueueToast({ type: 'error', msg: `⛔ Publish failed: ${err.message || 'Network error'}` });
+    }
     setQueueActionLoading(false);
   };
 
@@ -3297,10 +3325,18 @@ export default function AdminPage() {
                       </div>
                       <div>
                         <label style={qLabelStyle}>Venue *</label>
-                        <input list="queue-venue-options" style={qInputStyle} value={queueForm.venue_name} onChange={e => updateQueueForm('venue_name', e.target.value)} placeholder="Start typing..." />
+                        <input list="queue-venue-options" style={{
+                          ...qInputStyle,
+                          borderColor: queueForm.venue_name && !resolveVenueId(queueForm.venue_name) ? '#ef4444' : qInputStyle.borderColor || 'var(--border)',
+                        }} value={queueForm.venue_name} onChange={e => updateQueueForm('venue_name', e.target.value)} placeholder="Start typing..." />
                         <datalist id="queue-venue-options">
-                          {QUEUE_VENUE_OPTIONS.map(v => <option key={v} value={v} />)}
+                          {venues.map(v => <option key={v.id} value={v.name} />)}
                         </datalist>
+                        {queueForm.venue_name && !resolveVenueId(queueForm.venue_name) && (
+                          <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px', fontFamily: "'DM Sans', sans-serif" }}>
+                            Not a registered venue — select one from the dropdown to publish
+                          </div>
+                        )}
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                         <div>
@@ -4383,8 +4419,10 @@ export default function AdminPage() {
         <div style={{
           position: 'fixed', top: '24px', left: '50%', transform: 'translateX(-50%)',
           padding: '14px 24px', borderRadius: '14px',
-          background: '#1A1A24', border: '1px solid #3A3A4A',
-          color: '#F0F0F5', fontWeight: 700, fontSize: '14px',
+          background: queueToast?.type === 'error' ? '#3A1A1A' : '#1A1A24',
+          border: queueToast?.type === 'error' ? '1px solid #ef4444' : '1px solid #3A3A4A',
+          color: queueToast?.type === 'error' ? '#fca5a5' : '#F0F0F5',
+          fontWeight: 700, fontSize: '14px',
           boxShadow: '0 12px 40px rgba(0,0,0,0.5)', zIndex: 500,
           fontFamily: "'DM Sans', sans-serif",
           animation: 'slideDown 0.25s ease-out',
