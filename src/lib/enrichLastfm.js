@@ -190,6 +190,9 @@ export async function enrichWithLastfm(artistName, supabase, { blacklist } = {})
         .map(t => t.charAt(0).toUpperCase() + t.slice(1))
     : null;
 
+  // Determine the metadata source — if Last.fm provided bio or image, stamp 'lastfm'
+  const lastfmProvidedData = !!(fresh?.bio || fresh?.image_url);
+
   const record = {
     name: fresh?.name || name,
     // Only fill bio/image from Last.fm if scraper didn't already provide them
@@ -197,6 +200,8 @@ export async function enrichWithLastfm(artistName, supabase, { blacklist } = {})
     bio: cached?.bio || fresh?.bio || null,
     tags: fresh?.tags || cached?.tags || null,
     last_fetched: new Date().toISOString(),
+    // Track where the metadata came from (only stamp if not already set)
+    ...((!cached?.metadata_source && lastfmProvidedData) ? { metadata_source: 'lastfm' } : {}),
   };
 
   // Only set genres from Last.fm tags if the artist doesn't already have curated genres

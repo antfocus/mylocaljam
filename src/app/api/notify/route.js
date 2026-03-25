@@ -296,10 +296,15 @@ async function triggerArtistDiscovery(supabase) {
  */
 
 export async function GET(request) {
-  // Auth check for cron — fail closed if SYNC_SECRET not configured
+  // Auth check for cron — accept either CRON_SECRET (sent by Vercel Cron)
+  // or SYNC_SECRET (sent by internal calls / manual triggers)
   const authHeader = request.headers.get('Authorization') || '';
-  const secret = process.env.SYNC_SECRET;
-  if (!secret || authHeader !== `Bearer ${secret}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  const syncSecret = process.env.SYNC_SECRET;
+  const validSecrets = [cronSecret, syncSecret].filter(Boolean);
+  const isAuthed = validSecrets.length > 0 &&
+    validSecrets.some(s => authHeader === `Bearer ${s}`);
+  if (!isAuthed) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -323,10 +328,14 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  // Internal calls from sync pipeline — fail closed if SYNC_SECRET not configured
+  // Internal calls from sync pipeline — accept CRON_SECRET or SYNC_SECRET
   const authHeader = request.headers.get('Authorization') || '';
-  const secret = process.env.SYNC_SECRET;
-  if (!secret || authHeader !== `Bearer ${secret}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  const syncSecret = process.env.SYNC_SECRET;
+  const validSecrets = [cronSecret, syncSecret].filter(Boolean);
+  const isAuthed = validSecrets.length > 0 &&
+    validSecrets.some(s => authHeader === `Bearer ${s}`);
+  if (!isAuthed) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

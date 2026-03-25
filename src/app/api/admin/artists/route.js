@@ -133,6 +133,16 @@ export async function PUT(request) {
       .eq('artist_id', id);
   }
 
+  // If meaningful fields are being updated from admin, stamp metadata_source as 'manual'
+  // (unless explicitly passed — e.g. bulk AI enrich passes 'ai_generated')
+  if (!updates.metadata_source) {
+    const manualFields = ['bio', 'image_url', 'genres', 'vibes', 'instagram_url'];
+    const hasManualEdit = manualFields.some(f => updates[f] !== undefined);
+    if (hasManualEdit) {
+      updates.metadata_source = 'manual';
+    }
+  }
+
   const { data, error } = await supabase
     .from('artists')
     .update(updates)

@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/notify?trigger=tracked_show",
-      "schedule": "0 15 * * *"
+      "schedule": "0 14 * * *"
     },
     {
       "path": "/api/notify?trigger=artist_discovery",

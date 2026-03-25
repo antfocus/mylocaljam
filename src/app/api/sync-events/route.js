@@ -39,25 +39,30 @@ import { scrapeCrossroads } from '@/lib/scrapers/crossroads';
 import { scrapeEventideGrille } from '@/lib/scrapers/eventideGrille';
 import { scrapeTriumphBrewing } from '@/lib/scrapers/triumphBrewing';
 import { scrapeBlackSwan } from '@/lib/scrapers/blackSwan';
-// House of Independents removed — Etix serves bare React shell (2KB) to datacenter IPs, no JSON-LD
-// Scraper file kept at houseOfIndependents.js — works from residential IPs, revisit if proxy is added
-// Starland Ballroom removed — AEG/Carbonhouse platform blocks datacenter IPs, AJAX endpoint returns empty/blocked
-// Scraper file kept at starlandBallroom.js — revisit if a proxy/workaround is found
-// Algonquin Arts Theatre removed — algonquinarts.org returns HTTP 403 from datacenter IPs (Vercel)
-// Scraper file kept at algonquinArts.js — revisit if a proxy/workaround is found
+// ── Proxy-routed scrapers (IPRoyal residential proxy) ──
+import { scrapeAlgonquinArts } from '@/lib/scrapers/algonquinArts';
+import { scrapeTimMcLoones } from '@/lib/scrapers/timMcLoones';
+// House of Independents — proxy connects but Etix does browser fingerprinting (serves 2KB shell). Needs headless browser.
+// Starland Ballroom — proxy connects but AJAX returns empty. Needs headless browser.
+// ── Vision OCR scrapers (Gemini 2.5 Flash — image flyer extraction) ──
+import { scrapeMjsRestaurant } from '@/lib/scrapers/mjsRestaurant';
+import { scrapePaganosUva } from '@/lib/scrapers/paganosUva';
+import { scrapeCaptainsInn } from '@/lib/scrapers/captainsInn';
+import { scrapeCharleysOceanGrill } from '@/lib/scrapers/charleysOceanGrill';
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
-// Tim McLoone's removed — all McLoone's domains behind Cloudflare+reCAPTCHA, blocks all datacenter IPs
-// Source: mcloones.ticketbud.com (Ticketbud organizer page) — revisit if a workaround is found
 
 
 export const dynamic = 'force-dynamic';
 
 // Protect with a secret so only cron/authorized callers can trigger
+// Accepts either CRON_SECRET (sent by Vercel Cron) or SYNC_SECRET (manual/internal)
 function isAuthorized(request) {
-  const secret = process.env.SYNC_SECRET;
-  if (!secret) return false; // fail closed — SYNC_SECRET must be configured
+  const cronSecret = process.env.CRON_SECRET;
+  const syncSecret = process.env.SYNC_SECRET;
+  const validSecrets = [cronSecret, syncSecret].filter(Boolean);
+  if (validSecrets.length === 0) return false; // fail closed — at least one secret must be configured
   const auth = request.headers.get('authorization');
-  return auth === `Bearer ${secret}`;
+  return validSecrets.some(s => auth === `Bearer ${s}`);
 }
 
 // Return the correct Eastern UTC offset for a given date string (YYYY-MM-DD)
@@ -236,7 +241,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -275,6 +280,14 @@ export async function POST(request) {
     scrapeEventideGrille(),
     scrapeTriumphBrewing(),
     scrapeBlackSwan(),
+    // Proxy-routed scrapers (IPRoyal residential proxy)
+    scrapeAlgonquinArts(),
+    scrapeTimMcLoones(),
+    // Vision OCR scrapers (Perplexity Sonar — image flyer extraction)
+    scrapeMjsRestaurant(),
+    scrapePaganosUva(),
+    scrapeCaptainsInn(),
+    scrapeCharleysOceanGrill(),
   ]);
 
   const scraperResults = {
@@ -316,6 +329,14 @@ export async function POST(request) {
     EventideGrille: { count: eventideGrille.events.length, error: eventideGrille.error },
     TriumphBrewing: { count: triumphBrewing.events.length, error: triumphBrewing.error },
     BlackSwan: { count: blackSwan.events.length, error: blackSwan.error },
+    // Proxy-routed scrapers (IPRoyal residential proxy)
+    AlgonquinArts: { count: algonquinArts.events.length, error: algonquinArts.error },
+    TimMcLoones: { count: timMcLoones.events.length, error: timMcLoones.error },
+    // Vision OCR scrapers (Gemini 2.5 Flash)
+    MjsRestaurant: { count: mjsRestaurant.events.length, error: mjsRestaurant.error },
+    PaganosUva: { count: paganosUva.events.length, error: paganosUva.error },
+    CaptainsInn: { count: captainsInn.events.length, error: captainsInn.error },
+    CharleysOcean: { count: charleysOceanGrill.events.length, error: charleysOceanGrill.error },
   };
 
   // ── Write scraper health to database ──────────────────────────────────────
@@ -358,6 +379,14 @@ export async function POST(request) {
     EventideGrille: { venue: 'Eventide Grille', url: 'https://eventidegrille.com', source: 'Image Poster' },
     TriumphBrewing: { venue: 'Triumph Brewing Red Bank', url: 'https://www.triumphbrewing.com', source: 'WordPress HTML (The Events Calendar)' },
     BlackSwan: { venue: 'The Black Swan', url: 'https://www.theblackswanap.com', source: 'Squarespace' },
+    // Proxy-routed scrapers
+    AlgonquinArts: { venue: 'Algonquin Arts Theatre', url: 'https://www.algonquinarts.org', source: 'PHP HTML (proxy)' },
+    TimMcLoones: { venue: "Tim McLoone's Supper Club", url: 'https://mcloones.ticketbud.com', source: 'Ticketbud HTML (proxy)' },
+    // Vision OCR scrapers (Gemini 2.5 Flash)
+    MjsRestaurant: { venue: "MJ's Restaurant Bar & Grill", url: 'https://www.mjsrestaurant.com/Neptune/live-music/', source: 'Vision OCR (Gemini)' },
+    PaganosUva: { venue: "Pagano's UVA Ristorante", url: 'https://www.uvaonmain.com/live-music/', source: 'Vision OCR (Gemini)' },
+    CaptainsInn: { venue: "Captain's Inn", url: 'https://www.captainsinnnj.com/calendar', source: 'Vision OCR (Gemini)' },
+    CharleysOcean: { venue: "Charley's Ocean Bar & Grill", url: 'https://www.charleysoceangrill.com/events.php', source: 'Vision OCR (Gemini)' },
   };
 
   try {
@@ -419,6 +448,14 @@ export async function POST(request) {
     ...eventideGrille.events,
     ...triumphBrewing.events,
     ...blackSwan.events,
+    // Proxy-routed scrapers
+    ...algonquinArts.events,
+    ...timMcLoones.events,
+    // Vision OCR scrapers (Gemini 2.5 Flash)
+    ...mjsRestaurant.events,
+    ...paganosUva.events,
+    ...captainsInn.events,
+    ...charleysOceanGrill.events,
   ].map(ev => mapEvent(ev, venueMap, defaultTimes));
 
   // Filter out events with no external_id or date, and deduplicate by external_id
@@ -731,6 +768,7 @@ export async function POST(request) {
             bio: sd.bio,
             image_url: sd.image_url,
             last_fetched: new Date().toISOString(),
+            metadata_source: 'scraper',
           }, { onConflict: 'name' });
           scraperEnrichResult.created++;
         } else {

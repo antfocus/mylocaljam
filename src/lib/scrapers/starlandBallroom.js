@@ -22,6 +22,8 @@
  *   3. Check if the endpoint or HTML structure changed
  */
 
+import { proxyFetch } from '@/lib/proxyFetch';
+
 const AJAX_URL = 'https://www.starlandballroom.com/events/events_ajax';
 const EVENTS_URL = 'https://www.starlandballroom.com/events/all';
 const VENUE = 'Starland Ballroom';
@@ -121,7 +123,7 @@ function parseEntries(html, todayStr, seen) {
 export async function scrapeStarlandBallroom() {
   try {
     const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       'Accept': 'text/html, */*; q=0.01',
       'Accept-Language': 'en-US,en;q=0.9',
       'X-Requested-With': 'XMLHttpRequest',
@@ -136,7 +138,7 @@ export async function scrapeStarlandBallroom() {
     // Fetch pages — 20 events per page, fetch up to 3 pages (60 events max)
     for (let offset = 0; offset < 60; offset += 20) {
       const url = `${AJAX_URL}/${offset}`;
-      const res = await fetch(url, { headers, next: { revalidate: 0 } });
+      const res = await proxyFetch(url, { headers });
 
       if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
 

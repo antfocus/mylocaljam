@@ -6,7 +6,7 @@
 ---
 
 ## Current Event Count
-**~1500+ events** across 35 active scrapers (as of March 21, 2026)
+**~1500+ events** across 39 active scrapers (as of March 24, 2026)
 
 ---
 
@@ -52,7 +52,7 @@
 | 23 | Wild Air Beerworks | `wildAir.js` | Square Online (HTML + API) | ✅ Working | ~12 |
 | 24 | Asbury Park Brewery | `asburyParkBrewery.js` | Squarespace JSON | ✅ Working | ~54 |
 | 25 | Boatyard 401 | `boatyard401.js` | WordPress Simple Calendar (AJAX) | ✅ Working | ~40+ |
-| 26 | Tim McLoone's Supper Club | _(removed)_ | Ticketbud HTML | ❌ Blocked — all McLoone's domains behind Cloudflare+reCAPTCHA, blocks all datacenter IPs. Scraper removed. | 0 |
+| 26 | Tim McLoone's Supper Club | `timMcLoones.js` | Ticketbud HTML (proxy) | ✅ Working — routed through IPRoyal residential proxy | ~12 |
 | 27 | Windward Tavern | `windwardTavern.js` | Google Calendar iCal | ✅ Working | ~15+ |
 | 28 | Jamian's Food & Drink | `jamians.js` | Squarespace HTML (plain-text schedule) | ✅ Working | ~30+ |
 | 29 | The Cabin | `theCabin.js` | Squarespace GetItemsByMonth API | ✅ Working | 10 |
@@ -65,9 +65,14 @@
 | 36 | The Crab's Claw Inn | `crabsClaw.js` | RestaurantPassion iframe HTML | ✅ Working | ~10+ |
 | 37 | Water Street Bar & Grill | `waterStreet.js` | Squarespace JSON API | ✅ Working | ~5 |
 | 38 | Crossroads | `crossroads.js` | Eventbrite showmore JSON API | ✅ Working | ~24 |
-| ~~39~~ | ~~Algonquin Arts Theatre~~ | ~~`algonquinArts.js`~~ | ~~Custom PHP HTML~~ | ❌ Blocked (403) | — |
-| ~~39~~ | ~~Starland Ballroom~~ | ~~`starlandBallroom.js`~~ | ~~AXS/Carbonhouse AJAX~~ | ❌ Blocked (datacenter IP) | — |
-| ~~39~~ | ~~House of Independents~~ | ~~`houseOfIndependents.js`~~ | ~~Etix JSON-LD~~ | ❌ Blocked (datacenter IP) | — |
+| 39 | Algonquin Arts Theatre | `algonquinArts.js` | Custom PHP HTML (proxy) | ✅ Working — routed through IPRoyal residential proxy | ~16 |
+| 40 | Tim McLoone's Supper Club | `timMcLoones.js` | Ticketbud HTML (proxy) | ✅ Working — routed through IPRoyal residential proxy | ~12 |
+| 41 | MJ's Restaurant | `mjsRestaurant.js` | Vision OCR (Gemini) | ✅ Working — flyer from WordPress uploads | ~2 |
+| 42 | Pagano's UVA | `paganosUva.js` | Vision OCR (Gemini) | ✅ Working — flyer pattern `music_YYYYMM.jpg` | ~6 |
+| 43 | Captain's Inn | `captainsInn.js` | Vision OCR (Gemini) | ✅ Working — Wix site, month-name matching for flyer | ~4 |
+| 44 | Charley's Ocean Bar & Grill | `charleysOceanGrill.js` | Vision OCR (Gemini) | ✅ Working — WP JSON API fetch for flyer | ~5 |
+| ~~45~~ | ~~Starland Ballroom~~ | ~~`starlandBallroom.js`~~ | ~~AXS/Carbonhouse AJAX~~ | ❌ Disabled — proxy connects but AJAX returns empty (browser fingerprinting). Needs headless browser. | — |
+| ~~46~~ | ~~House of Independents~~ | ~~`houseOfIndependents.js`~~ | ~~Etix JSON-LD~~ | ❌ Disabled — proxy connects but Etix serves 2KB shell (browser fingerprinting). Needs headless browser. | — |
 
 ---
 
@@ -273,15 +278,13 @@
 - **Address:** 401 South Main St, Manasquan, NJ 08736
 - **Note:** The nonce is publicly available in the page source (`simcal_default_calendar` JS variable). Includes all events (music, DJs, specials). ~39 events per month.
 
-### Tim McLoone's Supper Club — ❌ BLOCKED (scraper removed)
-- **URL:** https://www.timmcloonessupperclub.com/events.php
-- **Alternate source tried:** https://mcloones.ticketbud.com (Ticketbud organizer page)
-- **Platform:** Custom PHP site behind Cloudflare + reCAPTCHA
-- **Problem:** All McLoone's domains (`timmcloonessupperclub.com`, `mcloones.ticketbud.com`, `mcloones.com`) are behind Cloudflare with aggressive bot detection that blocks all datacenter IPs. Tried: browser-like headers, Vercel Edge Runtime proxy (runs on Cloudflare's own network), and Ticketbud as alternate source — all return HTTP 403.
-- **Ticketbud page structure (for future reference):** Server-rendered HTML with `.card.vertical` containers, `.event-title` (H6), `.date`, `.time` classes, images from S3 (`s3.amazonaws.com/attachments.ticketbud.com`), pagination via `?page=N`
-- **Other sources checked:** Bandsintown (no events listed), Facebook (requires auth), parent McLoone's site (also Cloudflare)
+### Tim McLoone's Supper Club (`timMcLoones.js`) — ✅ WORKING (proxy)
+- **URL:** https://mcloones.ticketbud.com (Ticketbud organizer page)
+- **Platform:** Ticketbud HTML — was previously blocked by Cloudflare on all McLoone's domains from datacenter IPs
+- **Fix:** Routed through IPRoyal residential proxy (March 24, 2026). Ticketbud page now accessible.
+- **Approach:** HTML parsing of `.card.vertical` containers. Each card has `.event-title` (H6), `.date` ("Sun, Mar 29, 2026"), `.time` ("7:00 pm - 9:30 pm"), `img.card-image` (S3-hosted images), and `a[href]` ticket links. Pagination via `?page=N`, up to 4 pages.
+- **External ID pattern:** `mcloones-{ticketbud-slug}` (from URL path)
 - **Address:** 1200 Ocean Ave, Asbury Park, NJ 07712
-- **To revisit:** Check if venue gets listed on Ticketmaster or Bandsintown, or if Ticketbud opens a public API. A headless browser (Puppeteer/Playwright) running outside Vercel could also work.
 
 ### Windward Tavern (`windwardTavern.js`)
 - **URL:** https://www.windwardtavern.com/music-events
@@ -388,26 +391,32 @@
 - **Note:** Active music venue with ~24 upcoming events. Tickets sold via Eventbrite with prices. Events include live bands, tribute acts, comedy shows, and festivals.
 - **Discovery story:** JSON-LD was missing half the events. Investigated `window.__SERVER_DATA__` which showed `num_future_events: 24` but only `futureCount: 12` loaded. The "Show more" button on the Eventbrite page triggers the `/org/{id}/showmore/` API endpoint. See "Eventbrite Organizer Pages" in the platform detection reference below.
 
-### Starland Ballroom — ❌ BLOCKED
+### Starland Ballroom — ❌ DISABLED (needs headless browser)
 - **URL:** https://www.starlandballroom.com/events/all
 - **Platform:** AEG/Carbonhouse platform, ticketed by AXS
-- **Status:** Main page is a JS shell; events load via AJAX at `/events/events_ajax/{offset}`. Both the main page and AJAX endpoint block datacenter IPs (Vercel) — returns 0 events with no error. Full browser headers and X-Requested-With did not help.
-- **Scraper file:** `starlandBallroom.js` kept for reference — can be re-enabled if a proxy workaround is found.
+- **Status:** Tested with IPRoyal residential proxy (March 24, 2026) — proxy connects successfully (no HTTP error) but AJAX endpoint at `/events/events_ajax/{offset}` returns empty HTML. Like Etix, Carbonhouse does browser fingerprinting that requires actual JavaScript execution.
+- **Scraper file:** `starlandBallroom.js` kept with `proxyFetch` integration — parsing logic ready, just needs a headless browser environment.
+- **Commented out** in `sync-events/route.js` to avoid wasting proxy bandwidth.
+- **To revisit:** Same headless browser solution as House of Independents (Browserless, Puppeteer Lambda, Playwright Cloud).
 - **Address:** 570 Jernee Mill Rd, Sayreville, NJ 08872
 
-### Algonquin Arts Theatre — ❌ BLOCKED
+### Algonquin Arts Theatre (`algonquinArts.js`) — ✅ WORKING (proxy)
 - **URL:** https://www.algonquinarts.org/calendar.php?s=14
-- **Platform:** Custom PHP site
-- **Status:** Returns HTTP 403 from Vercel datacenter IPs. Full browser-like headers (Sec-Fetch-*, Referer, Connection) did not help. Site blocks server-side requests entirely.
-- **Scraper file:** `algonquinArts.js` kept for reference — can be re-enabled if a proxy workaround is found.
+- **Platform:** Custom PHP site — was previously blocked (HTTP 403) from Vercel datacenter IPs
+- **Fix:** Routed through IPRoyal residential proxy (March 24, 2026). Returns full HTML with event data.
+- **Approach:** HTML parsing of `.calendar-full-container` blocks. Extracts `.calendar-full-dates` (date), `.calendar-full-title` (h2, event name), `.calendar-full-series` (category — Broadway, Concerts, Jazz), `.calendar-full-description`, `.calendar-full-image` (img), and `calendar.php?id=XXX` detail links.
+- **Season param:** `?s=14` is the current season. If events stop appearing, try incrementing (`s=15`, `s=16`).
+- **External ID pattern:** `algonquin-{date}-{title-slug}`
 - **Address:** 173 Main St, Manasquan, NJ 08736
 
-### House of Independents — ❌ BLOCKED
+### House of Independents — ❌ DISABLED (needs headless browser)
 - **URL:** https://www.etix.com/ticket/v/33546/calendars
 - **Platform:** Etix (React SPA with server-rendered JSON-LD)
-- **Status:** Etix serves a bare React app shell (~2KB, no title, no JSON-LD) to Vercel datacenter IPs. From residential IPs, the same URL returns ~44KB with 2 JSON-LD blocks including an array of 20 Event objects. The Etix search API (`POST /ticket/api/online/search`) was also investigated but returns encrypted/encoded data that can't be decoded server-side.
-- **What works from residential IP:** JSON-LD extraction — 20 upcoming events with name, image, ticket URL, startDate ("Sat Mar 21 17:30:00 EDT 2026" format), and offers (price in USD). Venue ID is 33546.
-- **Scraper file:** `houseOfIndependents.js` kept for reference — fully functional from non-datacenter IPs, can be re-enabled if a proxy workaround is found.
+- **Status:** Tested with IPRoyal residential proxy (March 24, 2026) — proxy connects successfully but Etix still serves the bare 2KB React shell. Etix does browser fingerprinting beyond IP detection (likely checking for JavaScript execution, cookies, or TLS fingerprint). A simple HTTP proxy is not enough.
+- **What works from a real browser:** JSON-LD extraction — 20 upcoming events with name, image, ticket URL, startDate ("Sat Mar 21 17:30:00 EDT 2026" format), and offers (price in USD). Venue ID is 33546.
+- **Scraper file:** `houseOfIndependents.js` kept with `proxyFetch` integration — fully functional, just needs a headless browser environment to execute.
+- **Commented out** in `sync-events/route.js` to avoid wasting proxy bandwidth.
+- **To revisit:** Browserless.io, Puppeteer on AWS Lambda, or Playwright Cloud. Scraper code is ready — just needs a JS-executing runtime.
 - **Address:** 572 Cookman Avenue, Asbury Park, NJ 07712
 
 ### Wild Air Beerworks (`wildAir.js`)
@@ -594,7 +603,7 @@ The following elements from the redesign prototype have been integrated into the
 - **Broadway Bar and Grill** — Not yet investigated
 - **Leggetts Sand Bar** (https://www.leggetts.us/calendar) — ❌ Investigated, cannot scrape. Wix site using Boomtech Boom Event Calendar widget (third-party app running in cross-origin iframe). No public API, no iCal export, no Wix Events API access, no event data in page source. Events are entirely locked inside the Boomtech iframe. Address: 217 1st Ave, Manasquan, NJ 08736. Revisit if they switch to a Google Calendar or other accessible platform.
 - **Heights 27** (https://www.heights27.com/calendar) — ❌ Investigated, cannot scrape. Wix site using native Wix Events TPA (third-party app). Events render entirely client-side inside an iframe — no SSR data, no public API, no iCal feed, no JSON-LD, no individual event pages, no sitemap entries. Tried: `_api/events-server/v1/events` (403 — needs instance auth), `_api/wix-one-events-server/html/v2/events` (404), Wix Data collections (404). Facebook page has no upcoming events. Address: 2407 NJ-71, Spring Lake Heights, NJ 07762. Revisit if they add a Google Calendar embed or if Wix opens a public events API.
-- **Boathouse Belmar** (https://www.boathousebelmar.com/events) — ❌ Investigated, cannot scrape. Wix site using MarketPush Google Calendar Embed app. Calendar is embedded via a custom HTML iframe (`filesusr.com`) that receives the Google Calendar URL via Wix's internal `postMessage` — the calendar ID is never exposed in page source or network requests. No public API, no iCal feed. Events are posted weekly as image posters on Instagram (@boathousebelmarnj). Address: 1309 Main Street, Belmar, NJ 07719. Revisit if they add a direct Google Calendar link or switch to a public calendar.
+- **Boathouse Belmar** (https://www.boathousebelmar.com/events) — ❌ Re-investigated March 24, 2026, still cannot scrape. Previous MarketPush Google Calendar Embed appears to have been removed — page now just shows "Events Calendar" heading and happy hour specials (623 chars total text). No calendar widget, no iframe, no event listings. MarketPush and filesusr references still exist in Wix framework code but no calendar renders. Events only posted as image posters on Instagram (@boathousebelmarnj). Address: 1309 Main Street, Belmar, NJ 07719.
 - **Woody's Roadside Tavern** (https://www.woodysroadside.com/events/) — ❌ Investigated, cannot scrape. Events page just has a "Click Here for Upcoming Events" link that leads to an image poster flyer — no structured event data, no calendar widget, no API. Events are only published as image flyers. Address: 105 Academy St, Farmingdale, NJ 07727. Revisit if they add a proper calendar or event listing.
 - **Driftwood Tiki Bar** (https://driftwoodtikibar.com/calender/) — ❌ Investigated, cannot scrape. Events posted as image posters only — no structured event data. Address: Seaside Park, NJ. Revisit if they add a proper calendar or event listing.
 - **MJ's Restaurant Bar & Grill** (https://www.mjsrestaurant.com/Neptune/live-music/) — ❌ Investigated, cannot scrape. Live music page contains only an image poster (JPEG uploaded monthly). No structured event data, no calendar widget, no API. Address: 3205 Rt 66, Neptune, NJ 07753. Revisit if they add a proper calendar or event listing.
@@ -2553,6 +2562,145 @@ const [expanded, setExpanded] = useState(autoExpand);
 - **Drop `user_follows` table** — Legacy, not used by any code, has fully open RLS policies
 - **Verify `artists` table RLS** in Supabase dashboard — no policy found in migration files
 - **Cloudflare Bot Fight Mode** — Check if available under Security → Bots → General tab (broader than just AI bots)
+
+## Session: March 24, 2026 (cont.) — Cron Auth Fix, IPRoyal Proxy Integration, is_time_tbd Fix
+
+### What Changed
+
+1. **Fixed Daily Email Notifications Not Triggering (Cron Auth)**
+   - **Root cause:** Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` but code only checked `SYNC_SECRET`. If `CRON_SECRET` wasn't set or differed from `SYNC_SECRET`, cron requests got 401.
+   - **Fix:** Updated auth checks in `notify/route.js` (GET + POST) and `sync-events/route.js` to accept either `CRON_SECRET` or `SYNC_SECRET` as valid Bearer tokens.
+   - **Timezone fix:** Changed tracked_show cron from `0 15 * * *` (11 AM EDT) to `0 14 * * *` (10 AM EDT) in `vercel.json`.
+   - **Verified:** Manual "Run" from Vercel Cron Jobs page returned 200 with "[Trigger A] Found 5 tracked events for today."
+
+2. **Fixed `is_time_tbd` Backfill SQL Bug**
+   - **Root cause:** Backfill used `EXTRACT(HOUR FROM event_date) IN (0, 4, 5)` which caught real 8 PM EDT shows stored as 00:00 UTC.
+   - **Fix:** Updated `supabase-is-time-tbd.sql` to reset all flags to `false` and let the next sync set them correctly via `mapEvent()` which knows at scrape-time whether a real time was found.
+
+3. **IPRoyal Residential Proxy Integration**
+   - **New file:** `src/lib/proxyFetch.js` — Shared utility using `undici` `ProxyAgent` to route requests through IPRoyal rotating residential proxies. Falls back to direct fetch if env vars not set.
+   - **Env vars:** `IPROYAL_PROXY_HOST`, `IPROYAL_PROXY_PORT`, `IPROYAL_PROXY_USER`, `IPROYAL_PROXY_PASS`
+   - **Plan:** IPRoyal Pay-As-You-Go ($7/1GB)
+   - **Only used by proxy-routed scrapers** — all 38 other scrapers use standard `fetch()` with no proxy.
+
+4. **Algonquin Arts Theatre — ✅ UNBLOCKED via proxy**
+   - Was returning HTTP 403 from datacenter IPs. Now routed through IPRoyal residential proxy.
+   - **16 events** on first sync. Custom PHP HTML parsing of `.calendar-full-container` blocks.
+
+5. **Tim McLoone's Supper Club — ✅ NEW SCRAPER via proxy**
+   - Previously blocked by Cloudflare on all McLoone's domains. New scraper targets `mcloones.ticketbud.com` through IPRoyal proxy.
+   - **12 events** on first sync. HTML parsing of `.card.vertical` containers with pagination.
+   - **New file:** `src/lib/scrapers/timMcLoones.js`
+
+6. **House of Independents & Starland Ballroom — ❌ STILL BLOCKED (disabled)**
+   - Tested with proxy — both connect successfully but still serve empty/shell content. Etix and Carbonhouse do browser fingerprinting beyond IP detection (require JavaScript execution).
+   - **Commented out** from sync-events route to save proxy bandwidth.
+   - **Backlog:** Revisit with Browserless.io, Puppeteer Lambda, or Playwright Cloud.
+
+7. **Boathouse Belmar — Re-investigated, still dead end**
+   - Calendar page now just shows happy hour specials (623 chars total). Previous MarketPush Google Calendar embed appears removed. Events only on Instagram.
+
+8. **MJ's Restaurant — ✅ NOW WORKING via Vision OCR**
+   - Previously listed as "cannot scrape" (image-only poster). Now handled by Gemini 2.5 Flash vision OCR pipeline. See Vision OCR session below.
+
+### New Files
+- `src/lib/proxyFetch.js` — IPRoyal proxy-aware fetch utility
+- `src/lib/scrapers/timMcLoones.js` — Tim McLoone's Ticketbud scraper
+
+### Files Modified
+- `src/app/api/sync-events/route.js` — Dual CRON_SECRET/SYNC_SECRET auth, added Algonquin + McLoone's scrapers, disabled HoI + Starland
+- `src/app/api/notify/route.js` — Dual CRON_SECRET/SYNC_SECRET auth (GET + POST)
+- `src/lib/scrapers/algonquinArts.js` — Switched from direct `fetch` to `proxyFetch`
+- `src/lib/scrapers/houseOfIndependents.js` — Switched to `proxyFetch` (disabled in route)
+- `src/lib/scrapers/starlandBallroom.js` — Switched to `proxyFetch` (disabled in route)
+- `vercel.json` — Fixed tracked_show cron to `0 14 * * *` (10 AM EDT)
+- `supabase-is-time-tbd.sql` — Fixed backfill to reset all flags instead of UTC hour guessing
+
+### Env Vars Required
+- `CRON_SECRET` — Must match `SYNC_SECRET` value (or set independently). Added in Vercel for cron auth.
+- `IPROYAL_PROXY_HOST` — `geo.iproyal.com`
+- `IPROYAL_PROXY_PORT` — `12321`
+- `IPROYAL_PROXY_USER` — (set in Vercel)
+- `IPROYAL_PROXY_PASS` — (set in Vercel)
+
+### SQL to Run in Supabase
+```sql
+-- Reset is_time_tbd flags (then trigger a sync to repopulate correctly)
+UPDATE events SET is_time_tbd = false WHERE is_time_tbd = true;
+```
+
+### Pending / TODO
+- **Run `is_time_tbd` reset SQL** in Supabase, then trigger a sync
+- **Headless browser architecture** for House of Independents + Starland Ballroom (Browserless.io / Puppeteer Lambda)
+- **Deploy** via `npx vercel --prod`
+
+---
+
+## Session: March 24, 2026 (cont.) — Vision OCR Pipeline (Gemini 2.5 Flash)
+
+### What Changed
+
+**Built a Vision OCR pipeline** for venues that only post image flyers (no structured data). Uses Google Gemini 2.5 Flash (free tier) to extract artist names, dates, and times from flyer images. The vision AI only does OCR extraction — existing Phase 2 Last.fm enrichment handles bios/images automatically.
+
+### Architecture
+
+1. **Core module:** `src/lib/visionOCR.js`
+   - Exports `extractEventsFromFlyer(imageUrl, { venueName, year, month })`
+   - Downloads flyer image → base64 encodes → sends to Gemini 2.5 Flash with structured JSON schema
+   - Uses `response_mime_type: 'application/json'` + `response_schema` for forced structured output
+   - Returns `[{ artist, date, time }]`
+   - API: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`
+   - Env var: `GOOGLE_AI_KEY`
+
+2. **Handoff to enrichment:** Vision scrapers return events with `description: null` and `image_url: null`. The existing Phase 2 Last.fm enrichment pipeline automatically picks up new artists and fills in bios/images. No bios from OCR.
+
+### Vision Scrapers (4 total)
+
+| Venue | File | How Flyer is Found | Status |
+|---|---|---|---|
+| MJ's Restaurant | `mjsRestaurant.js` | WordPress `wp-content/uploads` pattern: `MJS-NEPTUNE-LIVE-MUSIC-MONTH-YYYY.jpg` | ✅ 2 events |
+| Pagano's UVA | `paganosUva.js` | Static pattern: `music_YYYYMM.jpg` | ✅ 6 events |
+| Captain's Inn | `captainsInn.js` | Wix site — searches `src`, `data-src`, `data-pin-media` for month-name match in URL (e.g. "MARCH 2026 NEW.png") | ✅ 4 events |
+| Charley's Ocean Bar | `charleysOceanGrill.js` | Fetches WordPress JSON API at `charleys.prime-cms.net/wp-json/wp/v2/pages/73`, extracts `music-lineup-MM-YYYY.png` from `content.rendered`. Falls back to predicted URL pattern via HEAD request. | ✅ 5 events (all March, filtered by date) |
+
+### Debugging History
+
+- **Captain's Inn (round 1):** `count: 0, error: null` — flyer URL was found but Gemini returned 0 events. Root cause: Wix uses `data-src` for lazy loading (not `src`), and stripping query params broke Wix image URLs. Fix: added `data-src`/`data-pin-media` to regex, month-name matching as priority strategy, stopped stripping query params.
+- **Charley's Ocean (round 1):** `error: "No flyer image found"` — page content loaded via JavaScript from WordPress JSON API, not in static HTML. Fix: scraper now fetches WP JSON API directly (`pages/73`), parses `content.rendered` for image URLs.
+- **Charley's Ocean (round 2):** `count: 0, error: null` → diagnostic revealed "Gemini found 5 events but all before 2026-03-24". The March flyer only had events in early March. Working correctly — will pick up April flyer automatically.
+
+### Venues Assessed but Not Scraped
+
+- **Driftwood** — Seasonal venue, no current content
+- **The Wharf** — No extractable flyer images
+- **Icarus** — Vercel timeout issues
+- **Woody's Ocean Grille** — Mixed flyer formats (risky for OCR)
+
+### New Files
+- `src/lib/visionOCR.js` — Core Gemini 2.5 Flash vision OCR module
+- `src/lib/scrapers/mjsRestaurant.js` — MJ's Restaurant vision scraper
+- `src/lib/scrapers/paganosUva.js` — Pagano's UVA vision scraper
+- `src/lib/scrapers/captainsInn.js` — Captain's Inn vision scraper (Wix)
+- `src/lib/scrapers/charleysOceanGrill.js` — Charley's Ocean Bar vision scraper (WP JSON API)
+
+### Files Modified
+- `src/app/api/sync-events/route.js` — Added imports and registration for all 4 vision scrapers in Promise.all, VENUE_REGISTRY (source: 'Vision OCR (Gemini)'), and allEvents array
+
+### Env Vars Required
+- `GOOGLE_AI_KEY` — Google AI Studio API key for Gemini 2.5 Flash (free tier)
+
+### Tim McLoone's — Artist Bios (ABANDONED)
+
+Attempted to fetch artist description/bios from Ticketbud detail pages:
+- Added `fetchDescription()` with ql-editor regex targeting
+- Multiple regex strategies failed (content nesting, Cloudflare blocking, proxy IP rotation broke IPRoyal pay-as-you-go plan)
+- Vercel 10s timeout made multi-page fetching impractical (12 detail pages with delays)
+- **Decision:** Disabled detail page fetching entirely. User will add bios manually via admin dashboard.
+- Code (`fetchDescription`, `sleep`) still exists in `timMcLoones.js` but is unused.
+
+### Pending / TODO
+- **Run `is_time_tbd` reset SQL** in Supabase (still pending from previous session)
+- **Headless browser architecture** for House of Independents + Starland Ballroom (backlog)
 
 ---
 

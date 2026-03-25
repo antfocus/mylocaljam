@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { formatDate, formatTime, GENRES, VIBES } from '@/lib/utils';
 import { Icons } from '@/components/Icons';
+import { supabase } from '@/lib/supabase';
 
 // ── Title Case formatter (respects common lowercase words) ───────────────────
 const TITLE_CASE_MINOR = new Set(['a','an','the','and','but','or','nor','for','yet','so','in','on','at','to','by','of','up','as','is']);
@@ -54,6 +55,9 @@ export default function AdminPage() {
   const [artistsNeedsInfo, setArtistsNeedsInfo] = useState(false);
   const [artistMissingFilters, setArtistMissingFilters] = useState({ bio: false, image_url: false, genres: false, vibes: false });
   const [artistsSortBy, setArtistsSortBy] = useState('name'); // 'name' | 'next_event'
+  const [artistSourceFilter, setArtistSourceFilter] = useState('all'); // 'all' | 'lastfm' | 'scraper' | 'ai_generated' | 'manual' | 'unknown'
+  const [artistSubTab, setArtistSubTab] = useState('directory'); // 'directory' | 'triage'
+  const [directorySort, setDirectorySort] = useState({ col: 'date_added', dir: 'desc' }); // col: 'name' | 'next_event' | 'date_added'
   const [editingArtist, setEditingArtist] = useState(null);
   const [artistForm, setArtistForm] = useState({ name: '', bio: '', genres: '', vibes: '', image_url: '', instagram_url: '' });
   const [artistActionLoading, setArtistActionLoading] = useState(null);
@@ -151,6 +155,9 @@ export default function AdminPage() {
   const [queueDupLoading, setQueueDupLoading] = useState(false);
   const [queueLightboxUrl, setQueueLightboxUrl] = useState(null);
   const [queueToast, setQueueToast] = useState(null);
+  const [adminFlyerUploading, setAdminFlyerUploading] = useState(false);
+  const [adminFlyerDragOver, setAdminFlyerDragOver] = useState(false);
+  const adminFlyerRef = useRef(null);
   const [flagsViewFilter, setFlagsViewFilter] = useState('pending'); // 'pending' | 'archived'
   const [scraperHealth, setScraperHealth] = useState([]);
   const [venuesFilter, setVenuesFilter] = useState('all'); // 'all' | 'fail' | 'warning' | 'success'
@@ -283,6 +290,7 @@ export default function AdminPage() {
         // Only save if there's something to update
         if (Object.keys(update).length > 1) {
           update.field_status = newStatus;
+          update.metadata_source = 'ai_generated';
           await fetch('/api/admin/artists', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
@@ -586,6 +594,40 @@ export default function AdminPage() {
       }
     } catch (err) { console.error(err); }
   }, [password]);
+
+  // ── Admin Flyer Upload → Gemini OCR → Draft Submissions ──────────────────
+  const handleAdminFlyerUpload = async (file) => {
+    if (!file || adminFlyerUploading) return;
+    const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!ALLOWED.includes(file.type)) { setQueueToast({ type: 'error', message: 'Invalid file type' }); return; }
+    if (file.size > 15 * 1024 * 1024) { setQueueToast({ type: 'error', message: 'File too large (max 15MB)' }); return; }
+
+    setAdminFlyerUploading(true);
+    try {
+      // 1. Upload to Supabase storage
+      const ext = file.name.split('.').pop().toLowerCase();
+      const fileName = `admin-${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('posters').upload(fileName, file, { contentType: file.type });
+      if (upErr) throw upErr;
+      const { data: urlData } = supabase.storage.from('posters').getPublicUrl(fileName);
+
+      // 2. Send to Gemini OCR pipeline
+      const res = await fetch('/api/admin/ocr-flyer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+        body: JSON.stringify({ image_url: urlData.publicUrl }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'OCR failed');
+
+      setQueueToast({ type: 'success', message: `AI extracted ${result.drafts_created} events — added to queue` });
+      fetchQueue(); // Refresh the queue
+    } catch (err) {
+      setQueueToast({ type: 'error', message: `Upload failed: ${err.message}` });
+    }
+    setAdminFlyerUploading(false);
+    setAdminFlyerDragOver(false);
+  };
 
   const populateQueueForm = (sub) => {
     setQueueForm({
@@ -1596,6 +1638,33 @@ export default function AdminPage() {
       {/* Artists Audit Dashboard */}
       {activeTab === 'artists' && !loading && (
         <div>
+          {/* ── Artists Sub-Tab Navigation ─────────────────────────── */}
+          <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', padding: '3px', borderRadius: '10px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', width: 'fit-content' }}>
+            {[
+              { key: 'directory', label: 'Directory' },
+              { key: 'triage', label: 'Metadata Triage' },
+            ].map(st => {
+              const active = artistSubTab === st.key;
+              return (
+                <button
+                  key={st.key}
+                  onClick={() => setArtistSubTab(st.key)}
+                  style={{
+                    padding: '7px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 700,
+                    fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: 'none',
+                    background: active ? '#E8722A' : 'transparent',
+                    color: active ? '#fff' : 'var(--text-muted)',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {st.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ── TRIAGE SUB-TAB ──────────────────────────────────── */}
+          {artistSubTab === 'triage' && (<>
           {/* Toolbar row 1: Search + count */}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
             <div style={{ flex: '1 1 200px', maxWidth: '400px', position: 'relative' }}>
@@ -1657,7 +1726,39 @@ export default function AdminPage() {
             })}
           </div>
 
-          {/* Toolbar row 2: CSV export */}
+          {/* Toolbar row 2b: Metadata Source filter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", marginRight: '4px' }}>Source:</span>
+            {[
+              { key: 'all', label: 'All' },
+              { key: 'lastfm', label: 'Last.fm' },
+              { key: 'scraper', label: 'Scraper' },
+              { key: 'ai_generated', label: 'AI Generated' },
+              { key: 'manual', label: 'Manual' },
+              { key: 'unknown', label: 'Unknown' },
+            ].map(s => {
+              const active = artistSourceFilter === s.key;
+              const sourceColors = { all: '#888', lastfm: '#d51007', scraper: '#3AADA0', ai_generated: '#8B5CF6', manual: '#E8722A', unknown: '#6b7280' };
+              const c = sourceColors[s.key] || '#888';
+              return (
+                <button
+                  key={s.key}
+                  onClick={() => setArtistSourceFilter(s.key)}
+                  style={{
+                    padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                    fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                    border: active ? `1px solid ${c}` : '1px solid var(--border)',
+                    background: active ? `${c}18` : 'var(--bg-elevated)',
+                    color: active ? c : 'var(--text-secondary)',
+                  }}
+                >
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Toolbar row 3: CSV export */}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
             <div style={{ flex: 1 }} />
             <button
@@ -1670,7 +1771,7 @@ export default function AdminPage() {
                   if (artistMissingFilters.vibes && (!a.vibes || a.vibes.length === 0)) return true;
                   return false;
                 }) : artists;
-                const header = ['Artist Name','Bio Status','Image Status','Genre Status','Vibe Status','Database ID'];
+                const header = ['Artist Name','Bio Status','Image Status','Genre Status','Vibe Status','Metadata Source','Database ID'];
                 const rows = exportList.map(a => {
                   const fs = a.field_status || {};
                   return [
@@ -1679,6 +1780,7 @@ export default function AdminPage() {
                     a.image_url ? (fs.image_url || 'live') : 'missing',
                     (a.genres?.length > 0) ? (fs.genres || 'live') : 'missing',
                     (a.vibes?.length > 0) ? (fs.vibes || 'live') : 'missing',
+                    a.metadata_source || 'unknown',
                     a.id,
                   ];
                 });
@@ -2142,14 +2244,28 @@ export default function AdminPage() {
 
           {/* Artist list */}
           {(() => {
-            const anyFilterActive = Object.values(artistMissingFilters).some(Boolean);
-            let displayArtists = anyFilterActive ? artists.filter(a => {
-              if (artistMissingFilters.bio && !a.bio) return true;
-              if (artistMissingFilters.image_url && !a.image_url) return true;
-              if (artistMissingFilters.genres && (!a.genres || a.genres.length === 0)) return true;
-              if (artistMissingFilters.vibes && (!a.vibes || a.vibes.length === 0)) return true;
-              return false;
-            }) : [...artists];
+            const anyFilterActive = Object.values(artistMissingFilters).some(Boolean) || artistSourceFilter !== 'all';
+            let displayArtists = artists.filter(a => {
+              // Missing data filters (OR logic — show if ANY checked field is missing)
+              if (Object.values(artistMissingFilters).some(Boolean)) {
+                let matchesMissing = false;
+                if (artistMissingFilters.bio && !a.bio) matchesMissing = true;
+                if (artistMissingFilters.image_url && !a.image_url) matchesMissing = true;
+                if (artistMissingFilters.genres && (!a.genres || a.genres.length === 0)) matchesMissing = true;
+                if (artistMissingFilters.vibes && (!a.vibes || a.vibes.length === 0)) matchesMissing = true;
+                if (!matchesMissing) return false;
+              }
+              // Metadata source filter
+              if (artistSourceFilter !== 'all') {
+                if (artistSourceFilter === 'unknown') {
+                  if (a.metadata_source) return false;
+                } else {
+                  if (a.metadata_source !== artistSourceFilter) return false;
+                }
+              }
+              return true;
+            });
+            if (!anyFilterActive) displayArtists = [...artists];
 
             // Sort by next event: artists with upcoming gigs first (ascending by date), nulls to bottom
             if (artistsSortBy === 'next_event') {
@@ -2283,11 +2399,35 @@ export default function AdminPage() {
                       }
                     </div>
 
-                    {/* Name */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    {/* Name + Source Badge */}
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
                         {artist.name}
                       </span>
+                      {(() => {
+                        const src = artist.metadata_source;
+                        if (!src) return null;
+                        const sourceConfig = {
+                          lastfm: { label: 'Last.fm', color: '#d51007', bg: 'rgba(213,16,7,0.1)' },
+                          scraper: { label: 'Scraper', color: '#3AADA0', bg: 'rgba(58,173,160,0.1)' },
+                          ai_generated: { label: 'AI', color: '#8B5CF6', bg: 'rgba(139,92,246,0.1)' },
+                          manual: { label: 'Manual', color: '#E8722A', bg: 'rgba(232,114,42,0.1)' },
+                        };
+                        const cfg = sourceConfig[src];
+                        if (!cfg) return null;
+                        return (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center',
+                            padding: '1px 6px', borderRadius: '4px',
+                            fontSize: '9px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
+                            textTransform: 'uppercase', letterSpacing: '0.3px',
+                            background: cfg.bg, color: cfg.color,
+                            flexShrink: 0,
+                          }}>
+                            {cfg.label}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Next Event date — hidden on mobile */}
@@ -2400,6 +2540,202 @@ export default function AdminPage() {
             </div>
           </>);
           })()}
+          </>)}
+
+          {/* ── DIRECTORY SUB-TAB ────────────────────────────────── */}
+          {artistSubTab === 'directory' && (<>
+          {/* Directory search */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+            <div style={{ flex: '1 1 200px', maxWidth: '400px', position: 'relative' }}>
+              <input
+                type="text"
+                placeholder="Search artists..."
+                value={artistsSearch}
+                onChange={e => { setArtistsSearch(e.target.value); fetchArtists(e.target.value, artistsNeedsInfo); }}
+                style={{
+                  width: '100%', padding: '9px 32px 9px 14px',
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: '8px', color: 'var(--text-primary)',
+                  fontFamily: "'DM Sans', sans-serif", fontSize: '14px', outline: 'none',
+                }}
+              />
+              {artistsSearch && (
+                <button
+                  onClick={() => { setArtistsSearch(''); fetchArtists('', artistsNeedsInfo); }}
+                  style={{
+                    position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                    color: 'var(--text-muted)', display: 'flex', alignItems: 'center',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="currentColor" /></svg>
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+              {artists.filter(a => a.bio && a.image_url).length} approved artist{artists.filter(a => a.bio && a.image_url).length !== 1 ? 's' : ''}
+            </div>
+          </div>
+
+          {/* Directory list — sortable, read-only */}
+          {(() => {
+            const SortChevron = ({ col }) => {
+              if (directorySort.col !== col) return null;
+              return (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginLeft: '3px', display: 'inline-block', verticalAlign: 'middle' }}>
+                  {directorySort.dir === 'asc'
+                    ? <path d="M5 2L9 7H1L5 2Z" fill="currentColor" />
+                    : <path d="M5 8L1 3H9L5 8Z" fill="currentColor" />
+                  }
+                </svg>
+              );
+            };
+            const toggleSort = (col) => {
+              setDirectorySort(prev => prev.col === col
+                ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+                : { col, dir: col === 'name' ? 'asc' : 'desc' }
+              );
+            };
+            const headerStyle = (col) => ({
+              fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px',
+              color: directorySort.col === col ? '#E8722A' : 'var(--text-muted)',
+              fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', userSelect: 'none',
+              display: 'inline-flex', alignItems: 'center',
+            });
+
+            const approvedArtists = artists
+              .filter(a => a.bio && a.image_url)
+              .sort((a, b) => {
+                const { col, dir } = directorySort;
+                const mult = dir === 'asc' ? 1 : -1;
+                if (col === 'name') {
+                  return mult * (a.name || '').localeCompare(b.name || '');
+                }
+                if (col === 'next_event') {
+                  const aD = a.next_event_date, bD = b.next_event_date;
+                  if (!aD && !bD) return 0;
+                  if (!aD) return 1;
+                  if (!bD) return -1;
+                  return mult * (aD < bD ? -1 : aD > bD ? 1 : 0);
+                }
+                if (col === 'date_added') {
+                  const aD = a.created_at || '', bD = b.created_at || '';
+                  if (!aD && !bD) return 0;
+                  if (!aD) return 1;
+                  if (!bD) return -1;
+                  return mult * (aD < bD ? -1 : aD > bD ? 1 : 0);
+                }
+                return 0;
+              });
+
+            if (approvedArtists.length === 0) return (
+              <div style={{ textAlign: 'center', padding: '48px 0' }}>
+                <p style={{ fontSize: '32px', marginBottom: '12px' }}>🎵</p>
+                <p style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '18px', color: 'var(--text-primary)' }}>
+                  No fully approved artists yet
+                </p>
+                <p style={{ fontSize: '14px', marginTop: '4px', color: 'var(--text-muted)' }}>
+                  Artists with both a bio and image will appear here.
+                </p>
+              </div>
+            );
+
+            return (<>
+              {/* Header row — sortable */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '14px', padding: '8px 16px',
+                borderRadius: '8px', background: 'var(--bg-elevated)', marginBottom: '4px',
+                position: 'sticky', top: 0, zIndex: 10,
+              }}>
+                <span style={{ width: '36px', flexShrink: 0 }} />
+                <span style={{ flex: 1 }} onClick={() => toggleSort('name')}>
+                  <span style={headerStyle('name')}>Artist<SortChevron col="name" /></span>
+                </span>
+                {!isMobile && <span style={{ width: '120px', textAlign: 'center' }} onClick={() => toggleSort('next_event')}>
+                  <span style={headerStyle('next_event')}>Next Event<SortChevron col="next_event" /></span>
+                </span>}
+                {!isMobile && <span style={{ width: '110px', textAlign: 'center' }} onClick={() => toggleSort('date_added')}>
+                  <span style={headerStyle('date_added')}>Date Added<SortChevron col="date_added" /></span>
+                </span>}
+                {!isMobile && <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", width: '120px', textAlign: 'center' }}>
+                  Genres
+                </span>}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {approvedArtists.map(artist => (
+                  <div
+                    key={artist.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '14px',
+                      padding: '10px 16px', borderRadius: '10px',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border)',
+                      transition: 'all 0.1s ease',
+                    }}
+                  >
+                    {/* Avatar */}
+                    <div style={{
+                      width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0,
+                      overflow: 'hidden',
+                    }}>
+                      <img src={artist.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+
+                    {/* Name */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
+                        {artist.name}
+                      </span>
+                      {isMobile && artist.next_event_date && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", marginTop: '2px' }}>
+                          {new Date(artist.next_event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Next Event */}
+                    {!isMobile && <div style={{ width: '120px', textAlign: 'center', flexShrink: 0 }}>
+                      {artist.next_event_date ? (
+                        <span style={{ fontSize: '11px', fontWeight: 600, fontFamily: "'DM Sans', sans-serif", color: 'var(--text-muted)' }}>
+                          {new Date(artist.next_event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', opacity: 0.5, fontFamily: "'DM Sans', sans-serif" }}>—</span>
+                      )}
+                    </div>}
+
+                    {/* Date Added */}
+                    {!isMobile && <div style={{ width: '110px', textAlign: 'center', flexShrink: 0 }}>
+                      {artist.created_at ? (
+                        <span style={{ fontSize: '11px', fontWeight: 600, fontFamily: "'DM Sans', sans-serif", color: 'var(--text-muted)' }}>
+                          {new Date(artist.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', opacity: 0.5, fontFamily: "'DM Sans', sans-serif" }}>—</span>
+                      )}
+                    </div>}
+
+                    {/* Genres */}
+                    {!isMobile && <div style={{ width: '120px', textAlign: 'center', flexShrink: 0 }}>
+                      {artist.genres && artist.genres.length > 0 ? (
+                        <span style={{
+                          fontSize: '10px', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+                          color: 'var(--text-secondary)', lineHeight: '1.4',
+                        }}>
+                          {(Array.isArray(artist.genres) ? artist.genres : [artist.genres]).slice(0, 2).join(', ')}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', opacity: 0.5 }}>—</span>
+                      )}
+                    </div>}
+                  </div>
+                ))}
+              </div>
+            </>);
+          })()}
+          </>)}
+
         </div>
       )}
 
@@ -2792,6 +3128,45 @@ export default function AdminPage() {
               {/* ── Left: Queue Sidebar — on mobile, only show when detail is closed ── */}
               {(!isMobile || !mobileQueueDetail) && (
               <div style={{ width: isMobile ? '100%' : '240px', minWidth: isMobile ? 'auto' : '240px', borderRight: isMobile ? 'none' : `1px solid ${qBorder}`, overflowY: 'auto', background: isMobile ? 'transparent' : qSurface }}>
+                {/* ── Admin Flyer Upload Zone ──────────────────────────── */}
+                <input
+                  ref={adminFlyerRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => { if (e.target.files?.[0]) handleAdminFlyerUpload(e.target.files[0]); e.target.value = ''; }}
+                  style={{ display: 'none' }}
+                />
+                <div
+                  onClick={() => !adminFlyerUploading && adminFlyerRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); setAdminFlyerDragOver(true); }}
+                  onDragLeave={() => setAdminFlyerDragOver(false)}
+                  onDrop={(e) => { e.preventDefault(); setAdminFlyerDragOver(false); const f = e.dataTransfer?.files?.[0]; if (f && f.type.startsWith('image/')) handleAdminFlyerUpload(f); }}
+                  style={{
+                    margin: '10px', padding: adminFlyerUploading ? '12px 10px' : '14px 10px',
+                    borderRadius: '10px',
+                    border: adminFlyerDragOver ? '2px solid #E8722A' : '2px dashed #3A3A50',
+                    background: adminFlyerDragOver ? 'rgba(232,114,42,0.12)' : 'rgba(232,114,42,0.04)',
+                    cursor: adminFlyerUploading ? 'wait' : 'pointer',
+                    textAlign: 'center', transition: 'all 0.15s ease',
+                  }}
+                >
+                  {adminFlyerUploading ? (
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#E8722A', fontFamily: "'DM Sans', sans-serif" }}>
+                      Processing with AI...
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '20px', marginBottom: '4px' }}>&#128302;</div>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: qText, fontFamily: "'DM Sans', sans-serif" }}>
+                        Drop Flyer Here
+                      </div>
+                      <div style={{ fontSize: '10px', color: qTextMuted, fontFamily: "'DM Sans', sans-serif", marginTop: '2px' }}>
+                        AI reads it instantly
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <div style={{ padding: '12px 16px', borderBottom: `1px solid ${qBorder}`, fontSize: '11px', fontWeight: 700, color: qTextMuted, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
                   Pending ({queue.length})
                 </div>

@@ -17,6 +17,7 @@ import Toast             from '@/components/Toast';
 // FollowSnackbar removed — follow upsell now handled inline in EventCardV2
 import FollowingTab      from '@/components/FollowingTab';
 import ArtistProfileScreen from '@/components/ArtistProfileScreen';
+import FeedbackModal     from '@/components/FeedbackModal';
 // FilterBar removed — filters now live in the omnibar panel
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -286,6 +287,7 @@ export default function HomePage() {
   const [milesRadius,    setMilesRadius]    = useState(null);  // null = any distance
   const profileRadiusRef = useRef(null); // saved profile default (null for guests)
   const [showSubmit,     setShowSubmit]     = useState(false);
+  const [showFeedback,   setShowFeedback]   = useState(false);
   // reportEvent state removed — flagging now handled inline in EventCardV2
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [activeFilterCard, setActiveFilterCard] = useState(null); // 'distance' | 'when' | 'artist' | 'venue'
@@ -2621,7 +2623,7 @@ export default function HomePage() {
             {/* ── Section 4: Support & Business ── */}
             <p style={sectionLabel}>Support</p>
             <div style={sectionCard}>
-              <button onClick={() => setShowSubmit(true)} style={rowBase(false)}>
+              <button onClick={() => setShowFeedback(true)} style={rowBase(false)}>
                 <span style={rowLabel(false)}>{mIcon('chat_bubble')}Give Feedback</span>
                 {chevron}
               </button>
@@ -2819,6 +2821,9 @@ export default function HomePage() {
       {/* ── Modals ────────────────────────────────────────────────────────── */}
       {showSubmit && (
         <SubmitEventModal darkMode={darkMode} onClose={() => setShowSubmit(false)} onSubmit={() => { setToastVariant('success'); setToast('Dropped in the Jar! We\'ll review it shortly.'); }} />
+      )}
+      {showFeedback && (
+        <FeedbackModal darkMode={darkMode} onClose={() => setShowFeedback(false)} userEmail={user?.email || null} />
       )}
       {/* ReportIssueModal removed — flagging now handled inline in EventCardV2 */}
 

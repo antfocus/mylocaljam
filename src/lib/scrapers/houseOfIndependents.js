@@ -24,22 +24,10 @@
  * Address: 572 Cookman Avenue, Asbury Park, NJ 07712
  */
 
+import { proxyFetch, BROWSER_HEADERS } from '@/lib/proxyFetch';
+
 const VENUE = 'House of Independents';
 const CALENDAR_URL = 'https://www.etix.com/ticket/v/33546/calendars';
-
-/**
- * Browser-like headers — Etix may block bare bot User-Agents.
- */
-const BROWSER_HEADERS = {
-  'User-Agent':
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  Accept:
-    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Accept-Encoding': 'gzip, deflate, br',
-  'Cache-Control': 'no-cache',
-  Pragma: 'no-cache',
-};
 
 /**
  * Parse the Etix startDate format into { date: 'YYYY-MM-DD', time: 'H:MM PM' }.
@@ -91,9 +79,8 @@ function extractPerformanceId(url) {
 
 export async function scrapeHouseOfIndependents() {
   try {
-    const res = await fetch(CALENDAR_URL, {
+    const res = await proxyFetch(CALENDAR_URL, {
       headers: BROWSER_HEADERS,
-      next: { revalidate: 0 },
     });
 
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching calendar page`);
