@@ -524,6 +524,7 @@ export default function AdminPage() {
     fetchTriage();
     fetchArtists(); // needed for Dashboard data health metrics
     fetchScraperHealth(); // needed for Dashboard + Venues tab
+    fetchVenues(); // populate venue datalist for queue triage
   };
 
   const deleteEvent = async (id) => {
@@ -584,6 +585,17 @@ export default function AdminPage() {
       setEvents(prev);
     }
   };
+
+  // ── Venue loader (populates datalist for queue triage) ──────────────────────
+  const fetchVenues = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('venues')
+        .select('id, name')
+        .order('name');
+      if (!error && data) setVenues(data);
+    } catch (err) { console.error('Failed to load venues:', err); }
+  }, []);
 
   // ── Queue functions ─────────────────────────────────────────────────────────
   const fetchQueue = useCallback(async () => {
