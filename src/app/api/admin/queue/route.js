@@ -207,5 +207,42 @@ export async function PUT(request) {
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
 }
 
+// PATCH — batch update fields on multiple submissions (Queue Memory)
+export async function PATCH(request) {
+  if (!checkAuth(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const supabase = getAdminClient();
+  const body = await request.json();
+  const { submission_ids, updates } = body;
+
+  if (!Array.isArray(submission_ids) || submission_ids.length === 0) {
+    return NextResponse.json({ error: 'submission_ids required' }, { status: 400 });
+  }
+
+  // Whitelist allowed fields for batch update
+  const ALLOWED_FIELDS = ['event_name', 'venue_name', 'category', 'event_date'];
+  const safeUpdates = {};
+  for (const [k, v] of Object.entries(updates || {})) {
+    if (ALLOWED_FIELDS.includes(k)) safeUpdates[k] = v;
+  }
+
+  if (Object.keys(safeUpdates).length === 0) {
+    return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from('submissions')
+    .update(safeUpdates)
+    .in('id', submission_ids);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true, updated: submission_ids.length });
+}
+
 // Duplicate check endpoint via query params
 // GET /api/admin/queue?check_duplicate=true&venue=X&date=YYYY-MM-DD

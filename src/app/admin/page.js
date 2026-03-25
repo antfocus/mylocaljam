@@ -526,6 +526,7 @@ export default function AdminPage() {
     fetchArtists(); // needed for Dashboard data health metrics
     fetchScraperHealth(); // needed for Dashboard + Venues tab
     fetchVenues(); // populate venue datalist for queue triage
+    fetchFestivalNames(); // populate festival name autocomplete
   };
 
   const deleteEvent = async (id) => {
@@ -597,6 +598,26 @@ export default function AdminPage() {
       if (!error && data) setVenues(data);
     } catch (err) { console.error('Failed to load venues:', err); }
   }, []);
+
+  // ── Festival name autocomplete (distinct event_titles from events) ──────────
+  const [festivalNames, setFestivalNames] = useState([]);
+  const fetchFestivalNames = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('events')
+        .select('event_title')
+        .not('event_title', 'is', null)
+        .not('event_title', 'eq', '')
+        .limit(500);
+      if (!error && data) {
+        const unique = [...new Set(data.map(e => e.event_title).filter(Boolean))].sort();
+        setFestivalNames(unique);
+      }
+    } catch (err) { console.error('Failed to load festival names:', err); }
+  }, []);
+
+  // ── Queue Memory state ────────────────────────────────────────────────────
+  const [batchApplyPrompt, setBatchApplyPrompt] = useState(null); // { field, value, count, flyerUrl }
 
   // ── Queue functions ─────────────────────────────────────────────────────────
   const fetchQueue = useCallback(async () => {
@@ -871,7 +892,55 @@ export default function AdminPage() {
     }
   };
 
-  const updateQueueForm = (k, v) => setQueueForm(f => ({ ...f, [k]: v }));
+  const updateQueueForm = (k, v) => {
+    setQueueForm(f => ({ ...f, [k]: v }));
+
+    // Queue Memory: when event_name or venue_name changes, check for batch siblings
+    if ((k === 'event_name' || k === 'venue_name') && v && queue.length > 1) {
+      const currentSub = queue[queueSelectedIdx];
+      if (currentSub?.image_url) {
+        const siblings = queue.filter((s, i) =>
+          i !== queueSelectedIdx && s.image_url === currentSub.image_url
+        );
+        if (siblings.length > 0) {
+          setBatchApplyPrompt({ field: k, value: v, count: siblings.length, flyerUrl: currentSub.image_url });
+        }
+      }
+    }
+  };
+
+  // Batch apply a field value to all queue items from the same flyer
+  const applyBatchToFlyer = async () => {
+    if (!batchApplyPrompt) return;
+    const { field, value, flyerUrl } = batchApplyPrompt;
+    const supabaseAdmin = supabase; // client-side supabase
+
+    // Update all pending submissions with the same image_url
+    const siblingIds = queue
+      .filter(s => s.image_url === flyerUrl)
+      .map(s => s.id);
+
+    if (siblingIds.length > 0) {
+      try {
+        const res = await fetch('/api/admin/queue', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+          body: JSON.stringify({ submission_ids: siblingIds, updates: { [field]: value } }),
+        });
+        if (res.ok) {
+          // Update local queue state
+          setQueue(prev => prev.map(s =>
+            siblingIds.includes(s.id) ? { ...s, [field]: value } : s
+          ));
+          showQueueToast(`✅ Applied "${value}" to ${siblingIds.length} submissions from this flyer`);
+        }
+      } catch (err) {
+        showQueueToast({ type: 'error', msg: `⛔ Batch update failed: ${err.message}` });
+      }
+    }
+    setBatchApplyPrompt(null);
+  };
+
   const queueSelected = queue[queueSelectedIdx] || null;
 
   // Queue duplicate check — filters out the current artist to avoid false positives
@@ -3431,13 +3500,49 @@ export default function AdminPage() {
                       </div>
                       <div>
                         <label style={qLabelStyle}>Event / Festival Name</label>
-                        <input style={{
+                        <input list="queue-festival-options" style={{
                           ...qInputStyle,
                           borderColor: queueForm.event_name ? '#f59e0b' : qInputStyle.borderColor || 'var(--border)',
-                        }} value={queueForm.event_name} onChange={e => updateQueueForm('event_name', e.target.value)} placeholder="e.g. Sea Hear Now 2026 (optional — groups artists under one festival)" />
+                        }} value={queueForm.event_name} onChange={e => updateQueueForm('event_name', e.target.value)} placeholder="Start typing to search or create new..." />
+                        <datalist id="queue-festival-options">
+                          {festivalNames.map(f => <option key={f} value={f} />)}
+                        </datalist>
                         {queueForm.event_name && (
                           <div style={{ fontSize: '11px', color: '#f59e0b', fontFamily: "'DM Sans', sans-serif", marginTop: '4px' }}>
                             🔥 Festival mode — this event will be tagged &amp; searchable as &ldquo;{queueForm.event_name}&rdquo;
+                          </div>
+                        )}
+                        {batchApplyPrompt && batchApplyPrompt.field === 'event_name' && (
+                          <div style={{
+                            marginTop: '8px', padding: '10px 12px', borderRadius: '8px',
+                            background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+                            fontFamily: "'DM Sans', sans-serif",
+                          }}>
+                            <div style={{ fontSize: '12px', color: '#f59e0b', fontWeight: 600, marginBottom: '6px' }}>
+                              📋 {batchApplyPrompt.count} other submissions from this flyer
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={applyBatchToFlyer}
+                                style={{
+                                  padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                                  background: '#f59e0b', color: '#000', border: 'none',
+                                }}
+                              >
+                                Apply &ldquo;{batchApplyPrompt.value}&rdquo; to all {batchApplyPrompt.count}
+                              </button>
+                              <button
+                                onClick={() => setBatchApplyPrompt(null)}
+                                style={{
+                                  padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                                  background: 'transparent', color: qTextMuted, border: `1px solid ${qBorder}`,
+                                }}
+                              >
+                                Skip
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -3510,6 +3615,39 @@ export default function AdminPage() {
                                 </div>
                               </div>
                             )}
+                          </div>
+                        )}
+                        {batchApplyPrompt && batchApplyPrompt.field === 'venue_name' && (
+                          <div style={{
+                            marginTop: '8px', padding: '10px 12px', borderRadius: '8px',
+                            background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+                            fontFamily: "'DM Sans', sans-serif",
+                          }}>
+                            <div style={{ fontSize: '12px', color: '#f59e0b', fontWeight: 600, marginBottom: '6px' }}>
+                              📋 {batchApplyPrompt.count} other submissions from this flyer
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={applyBatchToFlyer}
+                                style={{
+                                  padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                                  background: '#f59e0b', color: '#000', border: 'none',
+                                }}
+                              >
+                                Apply &ldquo;{batchApplyPrompt.value}&rdquo; to all {batchApplyPrompt.count}
+                              </button>
+                              <button
+                                onClick={() => setBatchApplyPrompt(null)}
+                                style={{
+                                  padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                                  background: 'transparent', color: qTextMuted, border: `1px solid ${qBorder}`,
+                                }}
+                              >
+                                Skip
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
