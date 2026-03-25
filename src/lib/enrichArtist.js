@@ -79,15 +79,46 @@ async function fetchMusicBrainzImage(mbid) {
     const data = await res.json();
 
     const relations = data.relations || [];
-    // Look for image relation types
+
+    // 1. Direct image relation (rare but best quality)
     const imageRel = relations.find(r =>
       r.type === 'image' && r.url?.resource
     );
     if (imageRel?.url?.resource) return imageRel.url.resource;
 
-    // Fallback: look for a Wikimedia Commons image via Wikidata relation
-    // (This would require a second API call to Wikidata, so we skip for now
-    //  and fall through to Discogs)
+    // 2. Wikidata relation → fetch Wikidata → get Wikimedia Commons image
+    const wikidataRel = relations.find(r =>
+      r.type === 'wikidata' && r.url?.resource
+    );
+    if (wikidataRel?.url?.resource) {
+      try {
+        // Extract Wikidata entity ID (e.g., Q727786)
+        const wdUrl = wikidataRel.url.resource;
+        const entityId = wdUrl.split('/').pop();
+        if (entityId?.startsWith('Q')) {
+          const wdRes = await fetch(
+            `https://www.wikidata.org/wiki/Special:EntityData/${entityId}.json`,
+            { headers: { 'User-Agent': MB_USER_AGENT } }
+          );
+          if (wdRes.ok) {
+            const wdData = await wdRes.json();
+            const entity = wdData.entities?.[entityId];
+            // P18 = "image" property in Wikidata
+            const imageClaim = entity?.claims?.P18?.[0];
+            const imageFile = imageClaim?.mainsnak?.datavalue?.value;
+            if (imageFile) {
+              // Convert filename to Wikimedia Commons URL
+              const encoded = encodeURIComponent(imageFile.replace(/ /g, '_'));
+              // Use Wikimedia thumbnail API for a reasonable size
+              return `https://commons.wikimedia.org/wiki/Special:FilePath/${encoded}?width=500`;
+            }
+          }
+        }
+      } catch {
+        // Wikidata fetch failed — fall through to Discogs
+      }
+    }
+
     return null;
   } catch {
     return null;
@@ -285,16 +316,21 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
 
   // ── 2. Image: MusicBrainz → Discogs → Last.fm fallback ────
   let imageUrl = cached?.image_url || null;
+  let imageSource = null;
   if (!imageUrl && !imageLocked) {
-    // Try MusicBrainz relations first
+    // Try MusicBrainz relations first (includes Wikidata → Wikimedia Commons)
     if (mbid) {
       imageUrl = await fetchMusicBrainzImage(mbid);
+      if (imageUrl) imageSource = 'musicbrainz';
+      console.log(`[enrich] ${name}: MusicBrainz image ${imageUrl ? '✓' : '✗'} (mbid: ${mbid})`);
       await new Promise(r => setTimeout(r, 1100)); // MB rate limit
     }
 
     // Discogs fallback
     if (!imageUrl) {
       imageUrl = await fetchDiscogsImage(name);
+      if (imageUrl) imageSource = 'discogs';
+      console.log(`[enrich] ${name}: Discogs image ${imageUrl ? '✓' : '✗'}`);
       await new Promise(r => setTimeout(r, 1100)); // Be polite to Discogs
     }
   }
@@ -305,7 +341,9 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
   // Use Last.fm image only if we still have nothing
   if (!imageUrl && !imageLocked && lastfm?.image_url) {
     imageUrl = lastfm.image_url;
+    imageSource = 'lastfm';
   }
+  console.log(`[enrich] ${name}: Final image → ${imageUrl ? `${imageSource}: ${imageUrl.substring(0, 80)}...` : 'NONE'}`);
 
   const bio = (!bioLocked && !cached?.bio) ? (lastfm?.bio || null) : (cached?.bio || null);
   const tags = lastfm?.tags || cached?.tags || null;
