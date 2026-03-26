@@ -1387,7 +1387,7 @@ export default function HomePage() {
 
         {/* ── Top Nav ────────────────────────────────────────────────────── */}
         <header onClick={() => { if (filtersExpanded) { setFiltersExpanded(false); setActiveFilterCard(null); } }} style={{
-          position: 'sticky', top: 0, zIndex: 100,
+          position: 'sticky', top: 0, zIndex: filtersExpanded ? 115 : 100,
           background: darkMode ? '#1E1E2C' : '#FFFFFF',
           borderBottom: `1px solid ${t.border}`,
           boxShadow: darkMode ? '0 2px 16px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.08)',
@@ -1746,17 +1746,27 @@ export default function HomePage() {
           </>
         )}
 
-        {/* ── Filter Panel (expands from header) ─────────────────────── */}
+        {/* ── Filter Panel (overlay — fixed, slides down from header) ─── */}
         <div style={{
-          maxHeight: filtersExpanded ? '600px' : '0px',
+          position: 'fixed',
+          top: 'calc(60px + env(safe-area-inset-top))',
+          left: '50%',
+          transform: filtersExpanded
+            ? 'translateX(-50%) translateY(0)'
+            : 'translateX(-50%) translateY(-10px)',
+          width: '100%',
+          maxWidth: '480px',
+          boxSizing: 'border-box',
+          zIndex: 120,
           opacity: filtersExpanded ? 1 : 0,
-          overflow: filtersExpanded ? 'visible' : 'hidden',
-          transition: filtersExpanded
-            ? 'max-height 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease'
-            : 'max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease',
+          pointerEvents: filtersExpanded ? 'auto' : 'none',
+          transition: 'opacity 0.2s ease, transform 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
           background: darkMode ? '#1A1A28' : '#F2F0ED',
           borderBottom: filtersExpanded ? `1px solid ${t.border}` : 'none',
-          position: 'relative', zIndex: 99,
+          borderRadius: '0 0 16px 16px',
+          boxShadow: filtersExpanded ? '0 12px 40px rgba(0,0,0,0.3)' : 'none',
+          overflow: filtersExpanded ? 'visible' : 'hidden',
+          maxHeight: filtersExpanded ? '80vh' : '0px',
         }}>
           {activeTab === 'home' && (
             <div style={{ padding: '6px 12px 8px' }}>
@@ -2202,13 +2212,18 @@ export default function HomePage() {
           )}
         </div>
 
-        {/* Scrim overlay when filter panel is open */}
-        {filtersExpanded && (
-          <div onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 98,
-            background: 'rgba(0,0,0,0.3)',
-          }} />
-        )}
+        {/* Scrim overlay when filter panel is open — dims content, click to close */}
+        <div
+          onClick={() => { if (filtersExpanded) { setFiltersExpanded(false); setActiveFilterCard(null); } }}
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 110,
+            background: filtersExpanded ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0)',
+            backdropFilter: filtersExpanded ? 'blur(4px)' : 'none',
+            WebkitBackdropFilter: filtersExpanded ? 'blur(4px)' : 'none',
+            pointerEvents: filtersExpanded ? 'auto' : 'none',
+            transition: 'background 0.2s ease, backdrop-filter 0.2s ease',
+          }}
+        />
 
         {/* ── Hero (home tab only) — swipeable spotlight ────────────────── */}
         {activeTab === 'home' && (
