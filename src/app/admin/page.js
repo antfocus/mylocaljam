@@ -54,7 +54,7 @@ export default function AdminPage() {
   const [artistsSearch, setArtistsSearch] = useState('');
   const [artistsNeedsInfo, setArtistsNeedsInfo] = useState(false);
   const [artistMissingFilters, setArtistMissingFilters] = useState({ bio: false, image_url: false, genres: false, vibes: false });
-  const [artistsSortBy, setArtistsSortBy] = useState('name'); // 'name' | 'next_event'
+  const [artistsSortBy, setArtistsSortBy] = useState('name'); // 'name' | 'next_event' | 'date_added'
   const [artistSourceFilter, setArtistSourceFilter] = useState('all'); // 'all' | 'lastfm' | 'scraper' | 'ai_generated' | 'manual' | 'unknown'
   const [artistSubTab, setArtistSubTab] = useState('directory'); // 'directory' | 'triage'
   const [directorySort, setDirectorySort] = useState({ col: 'date_added', dir: 'desc' }); // col: 'name' | 'next_event' | 'date_added'
@@ -1842,8 +1842,8 @@ export default function AdminPage() {
 
           {/* ── TRIAGE SUB-TAB ──────────────────────────────────── */}
           {artistSubTab === 'triage' && (<>
-          {/* Toolbar row 1: Search + count */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          {/* Toolbar: Search + compact filter bar */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
             <div style={{ flex: '1 1 200px', maxWidth: '400px', position: 'relative' }}>
               <input
                 type="text"
@@ -1870,69 +1870,91 @@ export default function AdminPage() {
                 </button>
               )}
             </div>
+
+            {/* Filter Missing dropdown */}
+            {(() => {
+              const activeMissing = Object.entries(artistMissingFilters).filter(([, v]) => v).map(([k]) => k);
+              const missingLabel = activeMissing.length === 0 ? 'Missing: All' : `Missing: ${activeMissing.length}`;
+              const missingOptions = [
+                { key: 'bio', label: 'Bio' },
+                { key: 'image_url', label: 'Image' },
+                { key: 'genres', label: 'Genre' },
+                { key: 'vibes', label: 'Vibe' },
+              ];
+              return (
+                <div style={{ position: 'relative' }}>
+                  <select
+                    value=""
+                    onChange={e => {
+                      if (e.target.value === '__clear__') {
+                        setArtistMissingFilters({ bio: false, image_url: false, genres: false, vibes: false });
+                      } else if (e.target.value) {
+                        setArtistMissingFilters(prev => ({ ...prev, [e.target.value]: !prev[e.target.value] }));
+                      }
+                    }}
+                    style={{
+                      padding: '7px 28px 7px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                      fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', appearance: 'none',
+                      background: activeMissing.length > 0 ? 'rgba(239,68,68,0.12)' : 'var(--bg-card)',
+                      border: activeMissing.length > 0 ? '1px solid #ef4444' : '1px solid var(--border)',
+                      color: activeMissing.length > 0 ? '#ef4444' : 'var(--text-secondary)',
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+                    }}
+                  >
+                    <option value="" disabled>{missingLabel} ▾</option>
+                    {missingOptions.map(f => (
+                      <option key={f.key} value={f.key}>{artistMissingFilters[f.key] ? '✓ ' : '  '}{f.label}</option>
+                    ))}
+                    {activeMissing.length > 0 && <option value="__clear__">✕ Clear filters</option>}
+                  </select>
+                </div>
+              );
+            })()}
+
+            {/* Source dropdown */}
+            <select
+              value={artistSourceFilter}
+              onChange={e => setArtistSourceFilter(e.target.value)}
+              style={{
+                padding: '7px 28px 7px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', appearance: 'none',
+                background: artistSourceFilter !== 'all' ? 'rgba(138,43,226,0.08)' : 'var(--bg-card)',
+                border: artistSourceFilter !== 'all' ? '1px solid #8B5CF6' : '1px solid var(--border)',
+                color: artistSourceFilter !== 'all' ? '#8B5CF6' : 'var(--text-secondary)',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+              }}
+            >
+              <option value="all">Source: All</option>
+              <option value="lastfm">Last.fm</option>
+              <option value="scraper">Scraper</option>
+              <option value="ai_generated">AI Generated</option>
+              <option value="manual">Manual</option>
+              <option value="unknown">Unknown</option>
+            </select>
+
+            {/* Sort dropdown — matches Directory tab */}
+            <select
+              value={artistsSortBy}
+              onChange={e => setArtistsSortBy(e.target.value)}
+              style={{
+                padding: '7px 28px 7px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', appearance: 'none',
+                background: 'var(--bg-card)', border: '1px solid var(--border)',
+                color: 'var(--text-secondary)',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+              }}
+            >
+              <option value="name">Sort: Name</option>
+              <option value="next_event">Sort: Next Event</option>
+              <option value="date_added">Sort: Date Added</option>
+            </select>
+
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
               {artists.length} artist{artists.length !== 1 ? 's' : ''}
             </div>
-          </div>
-
-          {/* Toolbar row 2: Granular missing-data filter chips */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", marginRight: '4px' }}>Filter Missing:</span>
-            {[
-              { key: 'bio', label: 'Bio' },
-              { key: 'image_url', label: 'Image' },
-              { key: 'genres', label: 'Genre' },
-              { key: 'vibes', label: 'Vibe' },
-            ].map(f => {
-              const active = artistMissingFilters[f.key];
-              return (
-                <button
-                  key={f.key}
-                  onClick={() => setArtistMissingFilters(prev => ({ ...prev, [f.key]: !prev[f.key] }))}
-                  style={{
-                    padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
-                    fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
-                    border: active ? '1px solid #ef4444' : '1px solid var(--border)',
-                    background: active ? 'rgba(239,68,68,0.12)' : 'var(--bg-elevated)',
-                    color: active ? '#ef4444' : 'var(--text-secondary)',
-                  }}
-                >
-                  {active ? '✓ ' : ''}{f.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Toolbar row 2b: Metadata Source filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", marginRight: '4px' }}>Source:</span>
-            {[
-              { key: 'all', label: 'All' },
-              { key: 'lastfm', label: 'Last.fm' },
-              { key: 'scraper', label: 'Scraper' },
-              { key: 'ai_generated', label: 'AI Generated' },
-              { key: 'manual', label: 'Manual' },
-              { key: 'unknown', label: 'Unknown' },
-            ].map(s => {
-              const active = artistSourceFilter === s.key;
-              const sourceColors = { all: '#888', lastfm: '#d51007', scraper: '#3AADA0', ai_generated: '#8B5CF6', manual: '#E8722A', unknown: '#6b7280' };
-              const c = sourceColors[s.key] || '#888';
-              return (
-                <button
-                  key={s.key}
-                  onClick={() => setArtistSourceFilter(s.key)}
-                  style={{
-                    padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
-                    fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
-                    border: active ? `1px solid ${c}` : '1px solid var(--border)',
-                    background: active ? `${c}18` : 'var(--bg-elevated)',
-                    color: active ? c : 'var(--text-secondary)',
-                  }}
-                >
-                  {s.label}
-                </button>
-              );
-            })}
           </div>
 
           {/* Toolbar row 3: CSV export */}
@@ -2453,6 +2475,18 @@ export default function AdminPage() {
                 if (!aDate) return 1;  // no gigs → bottom
                 if (!bDate) return -1;
                 return aDate < bDate ? -1 : aDate > bDate ? 1 : 0;
+              });
+            }
+
+            // Sort by date added: newest first (descending by created_at)
+            if (artistsSortBy === 'date_added') {
+              displayArtists.sort((a, b) => {
+                const aDate = a.created_at || '';
+                const bDate = b.created_at || '';
+                if (!aDate && !bDate) return 0;
+                if (!aDate) return 1;
+                if (!bDate) return -1;
+                return bDate < aDate ? -1 : bDate > aDate ? 1 : 0;
               });
             }
             return displayArtists.length === 0 ? (
