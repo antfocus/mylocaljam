@@ -3,6 +3,9 @@
 /**
  * HeroSection.js — "Today's Spotlight" swipeable hero with auto-rotate.
  *
+ * Full-bleed artist imagery with gradient overlay, "Meet the Artist" pill
+ * that opens a bottom-sheet bio drawer with swipe-to-dismiss.
+ *
  * Auto-rotates every 5s, loops back to start at the end.
  * Pauses on touch/mouse interaction, resumes 2s after release.
  * Uses custom touch handlers with translateX (proven on iOS Safari).
@@ -41,9 +44,17 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
   const canSwipe = featured.length > 1;
 
   const [active, setActive] = useState(0);
-  const activeRef = useRef(0); // Mirror of active for use in non-React callbacks
+  const activeRef = useRef(0);
   const trackRef = useRef(null);
   const viewportRef = useRef(null);
+
+  // Bio bottom sheet state
+  const [bioSheet, setBioSheet] = useState(null); // event object or null
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const sheetRef = useRef(null);
+  const sheetDragY = useRef(0);
+  const sheetStartY = useRef(0);
+  const sheetDragging = useRef(false);
 
   // Touch state refs
   const dragging = useRef(false);
@@ -126,9 +137,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     if (!vp || !canSwipe) return;
 
     const onTouchStart = (e) => {
-      // PAUSE auto-rotate immediately
       pauseAutoRotate();
-
       if (trackRef.current) trackRef.current.style.transition = 'none';
       dragging.current = true;
       directionLocked.current = null;
@@ -149,7 +158,6 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
 
       if (directionLocked.current === 'y') {
         dragging.current = false;
-        // Resume auto-rotate since user is scrolling vertically
         scheduleResume();
         return;
       }
@@ -164,7 +172,6 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
 
     const onTouchEnd = () => {
       if (!dragging.current && directionLocked.current !== 'x') {
-        // RESUME auto-rotate after non-swipe interaction
         scheduleResume();
         return;
       }
@@ -178,12 +185,9 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
       directionLocked.current = null;
       if (animFrame.current) cancelAnimationFrame(animFrame.current);
       snapTo(newIdx);
-
-      // RESUME auto-rotate after 2s delay
       scheduleResume();
     };
 
-    // Mouse handlers for desktop
     const onMouseDown = () => { pauseAutoRotate(); };
     const onMouseUp = () => { scheduleResume(); };
 
@@ -210,12 +214,70 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     if (featured.length) snapTo(0, false);
   }, [featured.length, snapTo]);
 
-  // Pause auto-rotate when dot is tapped, resume after delay
   const handleDotClick = useCallback((i) => {
     pauseAutoRotate();
     snapTo(i);
     scheduleResume();
   }, [pauseAutoRotate, snapTo, scheduleResume]);
+
+  // ── Bio Bottom Sheet ──────────────────────────────────────────────────────
+  const openBioSheet = useCallback((ev) => {
+    setBioSheet(ev);
+    // Trigger animation on next frame
+    requestAnimationFrame(() => setSheetVisible(true));
+  }, []);
+
+  const closeBioSheet = useCallback(() => {
+    setSheetVisible(false);
+    setTimeout(() => setBioSheet(null), 300); // wait for slide-down animation
+  }, []);
+
+  // Swipe-to-dismiss on the bottom sheet
+  useEffect(() => {
+    const el = sheetRef.current;
+    if (!el || !bioSheet) return;
+
+    const onStart = (e) => {
+      sheetDragging.current = true;
+      sheetStartY.current = e.touches[0].clientY;
+      sheetDragY.current = 0;
+      el.style.transition = 'none';
+    };
+
+    const onMove = (e) => {
+      if (!sheetDragging.current) return;
+      const dy = e.touches[0].clientY - sheetStartY.current;
+      if (dy > 0) { // only allow dragging down
+        sheetDragY.current = dy;
+        el.style.transform = `translateY(${dy}px)`;
+        e.preventDefault();
+      }
+    };
+
+    const onEnd = () => {
+      if (!sheetDragging.current) return;
+      sheetDragging.current = false;
+      el.style.transition = 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)';
+      if (sheetDragY.current > 80) {
+        closeBioSheet();
+      } else {
+        el.style.transform = 'translateY(0)';
+      }
+      sheetDragY.current = 0;
+    };
+
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    el.addEventListener('touchcancel', onEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, [bioSheet, closeBioSheet]);
 
   return (
     <div style={{
@@ -245,7 +307,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                 <div key="skeleton" style={{
                   width: '100%', flexShrink: 0, position: 'relative',
                   display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-                  padding: '12px 20px 24px', minHeight: '150px',
+                  padding: '12px 20px 24px', minHeight: '220px',
                 }}>
                   <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #1A1A24, #2A2A3A)', animation: 'shimmer 1.5s ease-in-out infinite alternate' }} />
                   <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -261,6 +323,9 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
             const timeStr = formatTimeFull(ev.start_time);
             const realImage = ev.artist_image || ev.image_url || ev.venues?.photo_url || null;
             const brandedGradient = BRANDED_GRADIENTS[i % BRANDED_GRADIENTS.length];
+            const hasBio = !!(ev.description && ev.description.trim());
+            const hasGenres = ev.artist_genres && ev.artist_genres.length > 0;
+            const showMeetArtist = hasBio || hasGenres;
 
             return (
               <div
@@ -272,24 +337,24 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'flex-end',
-                  padding: '12px 20px 24px',
-                  minHeight: '150px',
+                  padding: '0',
+                  minHeight: '240px',
                   WebkitUserSelect: 'none',
                   userSelect: 'none',
                 }}
               >
-                {/* Background — real image or branded gradient fallback */}
+                {/* Full-bleed background — real image or branded gradient fallback */}
                 <div style={{
                   position: 'absolute', inset: 0, pointerEvents: 'none',
                   ...(realImage
-                    ? { backgroundImage: `url(${realImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                    ? { backgroundImage: `url(${realImage})`, backgroundSize: 'cover', backgroundPosition: 'center top' }
                     : { background: brandedGradient }
                   ),
                 }} />
                 {/* Branded watermark when using gradient fallback */}
                 {!realImage && (
                   <div style={{
-                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -60%)',
+                    position: 'absolute', top: '40%', left: '50%', transform: 'translate(-50%, -50%)',
                     fontSize: '28px', fontWeight: 900, color: 'rgba(255,255,255,0.06)',
                     fontFamily: "'DM Sans', sans-serif", letterSpacing: '2px', whiteSpace: 'nowrap',
                     pointerEvents: 'none', textTransform: 'uppercase',
@@ -298,63 +363,113 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                   </div>
                 )}
 
-                {/* Dark gradient overlay */}
+                {/* Gradient overlay — heavier at bottom for text readability */}
                 <div style={{
                   position: 'absolute', inset: 0, pointerEvents: 'none',
-                  background: 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.80) 100%)',
+                  background: realImage
+                    ? 'linear-gradient(to top, rgba(15,15,20,0.95) 0%, rgba(15,15,20,0.7) 35%, rgba(15,15,20,0.2) 60%, transparent 100%)'
+                    : 'linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.75) 100%)',
                 }} />
 
-                {/* Subtle warm glow */}
+                {/* Subtle warm glow accents */}
                 <div style={{
                   position: 'absolute', inset: 0, pointerEvents: 'none',
                   backgroundImage: `
-                    radial-gradient(circle at 10% 80%, rgba(232,114,42,0.12) 0%, transparent 45%),
-                    radial-gradient(circle at 90% 20%, rgba(58,173,160,0.08) 0%, transparent 40%)`,
+                    radial-gradient(circle at 10% 80%, rgba(232,114,42,0.1) 0%, transparent 45%),
+                    radial-gradient(circle at 90% 20%, rgba(58,173,160,0.06) 0%, transparent 40%)`,
                 }} />
 
-                {/* Spotlight badge */}
-                <div style={{ position: 'relative', zIndex: 10, display: 'flex', alignItems: 'center', marginBottom: '14px' }}>
-                  <span style={{
-                    background: '#5E2A84', color: '#FFFFFF', fontSize: '13px', fontWeight: 900,
-                    textTransform: 'uppercase', letterSpacing: '1.5px', padding: '6px 14px 6px 10px', borderRadius: '999px',
-                    display: 'inline-flex', alignItems: 'center', gap: '5px', lineHeight: 1,
-                    fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
-                    textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                  }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="#FFFFFF" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-                      <path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z" />
-                    </svg>
-                    {isToday ? "Today's Spotlight" : 'Coming Up'}
-                  </span>
-                </div>
+                {/* Content — positioned at bottom */}
+                <div style={{ position: 'relative', zIndex: 10, padding: '16px 20px 24px' }}>
+                  {/* Spotlight badge */}
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                    <span style={{
+                      background: '#5E2A84', color: '#FFFFFF', fontSize: '11px', fontWeight: 900,
+                      textTransform: 'uppercase', letterSpacing: '1.5px', padding: '5px 12px 5px 9px', borderRadius: '999px',
+                      display: 'inline-flex', alignItems: 'center', gap: '4px', lineHeight: 1,
+                      fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
+                      textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                    }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#FFFFFF" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                        <path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z" />
+                      </svg>
+                      {isToday ? "Today's Spotlight" : 'Coming Up'}
+                    </span>
+                  </div>
 
-                {/* Event info */}
-                <div style={{ position: 'relative', zIndex: 10 }}>
+                  {/* Artist name */}
                   <h2 style={{
-                    color: 'white', fontSize: 'clamp(18px, 5vw, 22px)', fontWeight: 900, lineHeight: 1.2,
+                    color: 'white', fontSize: 'clamp(20px, 6vw, 26px)', fontWeight: 900, lineHeight: 1.15,
                     margin: '0 0 6px 0',
                     display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                     overflow: 'hidden', textOverflow: 'ellipsis',
-                    textShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                    textShadow: '0 2px 12px rgba(0,0,0,0.6)',
+                    fontFamily: "'DM Sans', sans-serif",
                   }}>
                     {name}
                   </h2>
 
+                  {/* Venue + Time */}
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: '0', flexWrap: 'nowrap',
-                    color: 'rgba(255,255,255,0.85)', fontSize: '14px', fontWeight: 500,
+                    color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: 500,
                     textShadow: '0 1px 4px rgba(0,0,0,0.4)',
+                    fontFamily: "'DM Sans', sans-serif",
                   }}>
                     {timeStr && (
                       <>
                         <span>🕒 {timeStr}</span>
-                        <span style={{ margin: '0 8px', opacity: 0.5 }}>•</span>
+                        <span style={{ margin: '0 8px', opacity: 0.4 }}>•</span>
                       </>
                     )}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       📍 {venue}
                     </span>
                   </div>
+
+                  {/* Genre pills (compact, below venue) */}
+                  {hasGenres && (
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                      {ev.artist_genres.slice(0, 3).map((g, gi) => (
+                        <span key={gi} style={{
+                          padding: '3px 10px', borderRadius: '999px',
+                          fontSize: '10px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
+                          textTransform: 'uppercase', letterSpacing: '0.5px',
+                          background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)',
+                          backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                        }}>
+                          {g}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Meet the Artist button */}
+                  {showMeetArtist && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openBioSheet(ev); }}
+                      style={{
+                        marginTop: '12px',
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        padding: '8px 18px', borderRadius: '999px',
+                        background: 'rgba(255,255,255,0.12)',
+                        backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                        border: '1px solid rgba(255,255,255,0.18)',
+                        color: '#FFFFFF', fontSize: '12px', fontWeight: 700,
+                        fontFamily: "'DM Sans', sans-serif",
+                        letterSpacing: '0.3px',
+                        cursor: 'pointer',
+                        transition: 'background 0.2s ease, transform 0.15s ease',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
+                    >
+                      <span style={{ fontSize: '14px' }}>🎵</span>
+                      Meet the Artist
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -376,6 +491,155 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
           ))}
         </div>
       )}
+
+      {/* ── Bio Bottom Sheet ────────────────────────────────────────────── */}
+      {bioSheet && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={closeBioSheet}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 500,
+              background: sheetVisible ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0)',
+              backdropFilter: sheetVisible ? 'blur(3px)' : 'none',
+              WebkitBackdropFilter: sheetVisible ? 'blur(3px)' : 'none',
+              transition: 'background 0.3s ease, backdrop-filter 0.3s ease',
+            }}
+          />
+          {/* Sheet */}
+          <div
+            ref={sheetRef}
+            style={{
+              position: 'fixed',
+              bottom: 0, left: 0, right: 0,
+              zIndex: 501,
+              background: '#1A1A28',
+              borderRadius: '20px 20px 0 0',
+              maxHeight: '70vh',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+              transform: sheetVisible ? 'translateY(0)' : 'translateY(100%)',
+              transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+              boxShadow: '0 -8px 40px rgba(0,0,0,0.5)',
+              paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
+            }}
+          >
+            {/* Drag handle */}
+            <div style={{
+              display: 'flex', justifyContent: 'center', padding: '12px 0 4px',
+              cursor: 'grab', position: 'sticky', top: 0,
+              background: '#1A1A28', zIndex: 2,
+              borderRadius: '20px 20px 0 0',
+            }}>
+              <div style={{
+                width: '36px', height: '4px', borderRadius: '2px',
+                background: 'rgba(255,255,255,0.2)',
+              }} />
+            </div>
+
+            <div style={{ padding: '8px 24px 24px' }}>
+              {/* Artist header in the sheet */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
+                {/* Thumbnail */}
+                {(bioSheet.artist_image || bioSheet.image_url) ? (
+                  <div style={{
+                    width: '56px', height: '56px', borderRadius: '14px', flexShrink: 0,
+                    overflow: 'hidden',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                    border: '2px solid rgba(255,255,255,0.1)',
+                  }}>
+                    <img
+                      src={bioSheet.artist_image || bioSheet.image_url}
+                      alt=""
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  </div>
+                ) : (
+                  <div style={{
+                    width: '56px', height: '56px', borderRadius: '14px', flexShrink: 0,
+                    background: 'linear-gradient(135deg, #E8722A, #3AADA0)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '24px',
+                  }}>
+                    🎵
+                  </div>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3 style={{
+                    color: '#FFFFFF', fontSize: '18px', fontWeight: 800, margin: '0 0 2px',
+                    fontFamily: "'DM Sans', sans-serif",
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {bioSheet.name || bioSheet.artist_name || ''}
+                  </h3>
+                  <div style={{
+                    color: 'rgba(255,255,255,0.55)', fontSize: '12px', fontWeight: 500,
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    {bioSheet.venue || bioSheet.venue_name || ''}
+                  </div>
+                </div>
+              </div>
+
+              {/* Genre tags */}
+              {bioSheet.artist_genres && bioSheet.artist_genres.length > 0 && (
+                <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                  {bioSheet.artist_genres.map((g, gi) => (
+                    <span key={gi} style={{
+                      padding: '4px 12px', borderRadius: '999px',
+                      fontSize: '11px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
+                      textTransform: 'uppercase', letterSpacing: '0.5px',
+                      background: 'rgba(232,114,42,0.15)', color: '#E8722A',
+                      border: '1px solid rgba(232,114,42,0.25)',
+                    }}>
+                      {g}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Bio text */}
+              {bioSheet.description && bioSheet.description.trim() && (
+                <p style={{
+                  color: 'rgba(255,255,255,0.8)', fontSize: '14px', lineHeight: 1.65,
+                  fontFamily: "'DM Sans', sans-serif", fontWeight: 400,
+                  margin: 0,
+                }}>
+                  {bioSheet.description.trim()}
+                </p>
+              )}
+
+              {/* No bio fallback */}
+              {(!bioSheet.description || !bioSheet.description.trim()) && (
+                <p style={{
+                  color: 'rgba(255,255,255,0.4)', fontSize: '13px', fontStyle: 'italic',
+                  fontFamily: "'DM Sans', sans-serif", margin: 0,
+                }}>
+                  No bio available yet for this artist.
+                </p>
+              )}
+
+              {/* Close button */}
+              <button
+                onClick={closeBioSheet}
+                style={{
+                  marginTop: '24px', width: '100%',
+                  padding: '12px', borderRadius: '12px',
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: 'rgba(255,255,255,0.6)', fontSize: '13px', fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif",
+                  cursor: 'pointer',
+                  transition: 'background 0.2s ease',
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       <style>{`@keyframes shimmer { from { opacity: 0.6; } to { opacity: 1; } }`}</style>
     </div>
   );
