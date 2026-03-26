@@ -1912,7 +1912,7 @@ export default function AdminPage() {
                     padding: '7px 18px', borderRadius: '8px', fontSize: '13px', fontWeight: 700,
                     fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: 'none',
                     background: active ? '#E8722A' : 'transparent',
-                    color: active ? '#fff' : 'var(--text-muted)',
+                    color: active ? '#1C1917' : 'var(--text-muted)',
                     transition: 'all 0.15s ease',
                   }}
                 >
@@ -3399,7 +3399,7 @@ export default function AdminPage() {
                       style={{
                         padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 700,
                         background: forceSyncing === s.scraper_key ? '#E8722A' : 'rgba(232, 114, 42, 0.12)',
-                        color: forceSyncing === s.scraper_key ? '#FFFFFF' : '#E8722A',
+                        color: forceSyncing === s.scraper_key ? '#1C1917' : '#E8722A',
                         border: '1px solid rgba(232, 114, 42, 0.3)',
                         fontFamily: "'DM Sans', sans-serif",
                         cursor: forceSyncing ? 'not-allowed' : 'pointer',

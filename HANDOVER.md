@@ -2704,6 +2704,84 @@ Attempted to fetch artist description/bios from Ticketbud detail pages:
 
 ---
 
+## Session: March 25, 2026 — Split Source Tracking, Admin Auth, Spotlight Routing Fixes, Triage UI Polish
+
+### What Changed
+
+#### 1. Metadata Triage UI — Date Added Sort (completed from prior session)
+- Added `date_added` sort logic to the triage artist list (sorts by `created_at` descending, newest first)
+- Sort dropdown already had the option; now the actual sorting code is wired up
+- File: `src/app/admin/page.js` (~line 2480)
+
+#### 2. Split Source Tracking (image_source / bio_source)
+- **Database:** Two new columns on `artists` table: `image_source` (TEXT, default 'Unknown') and `bio_source` (TEXT, default 'Unknown')
+- **Enrichment pipeline** (`src/lib/enrichArtist.js`): Tracks provenance per-field through the entire pipeline:
+  - MusicBrainz image → `image_source: 'MusicBrainz'`
+  - Discogs fallback → `image_source: 'Discogs'`
+  - Last.fm fallback → `image_source: 'Last.fm'` (both image and bio)
+  - If artist was initially 'Scraped' but enrichment finds API data, the API name **overwrites** the Scraped tag
+- **Scraper upsert** (`src/app/api/sync-events/route.js`): New artists from scrapers get `image_source: 'Scraped'` / `bio_source: 'Scraped'`; updates to existing artists also set the source
+- **Triage UI** (`src/app/admin/page.js`): Single source badge replaced with two compact badges: `Img: MusicBrainz` and `Bio: Last.fm` (color-coded per source)
+- **Source filter dropdown**: Now lists actual API names (MusicBrainz, Discogs, Last.fm, Scraped, Manual, Unknown); filters if EITHER image_source or bio_source matches
+- **CSV export**: Now includes separate `Image Source` and `Bio Source` columns instead of single `Metadata Source`
+
+#### 3. Admin Login — Session Persistence, Autofill & Password Toggle
+- **Session persistence**: Password saved to `sessionStorage` on login, auto-restored on refresh/new tab. All data-fetch functions fire automatically on session restore. Cleared on 401 response.
+- **Browser autofill**: Hidden `<input type="text" name="username" autocomplete="username" value="admin">` + password field has `autocomplete="current-password"`. Chrome/Safari now offer to save credentials.
+- **Password visibility toggle**: Eye icon inside password input toggles between hidden/visible text. SVG icons for open eye / crossed-out eye.
+- **Password change**: Update `ADMIN_PASSWORD` env var in Vercel project settings → redeploy. Old sessions auto-clear on first 401.
+
+#### 4. Spotlight "Edit Image" Routing Fix
+- **Bug**: Clicking "Edit Artist Profile" from Spotlight missing-image modal kicked to main Directory instead of the artist edit panel. Two root causes:
+  1. `artists` array was empty (only loaded on Artists tab visit, not Spotlight)
+  2. Didn't switch to `triage` sub-tab where the edit panel renders
+- **Fix**: Button is now `async`, fetches artists on-demand if array is empty, then routes to `artists` tab → `triage` sub-tab with edit panel pre-populated
+
+#### 5. Post-Edit Return Routing (Spotlight → Edit → Save → Spotlight)
+- **Bug**: After editing an artist from Spotlight and saving, user was left on the Artists/Triage tab instead of returning to Spotlight
+- **Fix**: New `returnToTab` state variable. Set to `'spotlight'` when navigating from Spotlight modal. After successful save, cancel, or close (✕), automatically switches back to the stored tab and refreshes Spotlight events. State is cleared after use so it never interferes with normal navigation.
+- Generic pattern: any future tab can use `setReturnToTab('tab-name')` before routing to artist edit
+
+#### 6. Smart Categorization & Triage Bypass (confirmed from prior session)
+- Already implemented: Gemini OCR returns `category` + `confidence_score` per artist
+- Triage auto-routing: `confidence_score >= 90` → `triage_status: 'reviewed'` (bypasses triage)
+- Requires SQL: `ALTER TABLE submissions ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Live Music'; ALTER TABLE submissions ADD COLUMN IF NOT EXISTS confidence_score INTEGER DEFAULT 0;`
+
+### SQL Migrations Required (Run in Supabase SQL Editor)
+
+```sql
+-- Split source tracking
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS image_source TEXT DEFAULT 'Unknown';
+ALTER TABLE artists ADD COLUMN IF NOT EXISTS bio_source TEXT DEFAULT 'Unknown';
+
+-- Smart categorization (if not already run)
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'Live Music';
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS confidence_score INTEGER DEFAULT 0;
+```
+
+### Files Modified
+- `src/lib/enrichArtist.js` — Split source tracking (image_source, bio_source) through MusicBrainz → Discogs → Last.fm pipeline
+- `src/app/api/sync-events/route.js` — Scraper upserts now set image_source/bio_source to 'Scraped'
+- `src/app/admin/page.js` — All UI changes: date_added sort, split source badges, source filter dropdown, CSV export, session persistence, autofill hack, password toggle, Spotlight edit routing fix, return-to-tab routing
+
+### Deploy Steps
+1. Run SQL migrations above in Supabase
+2. From local terminal:
+   ```bash
+   git add -A
+   git commit -m "Split source tracking, admin auth, Spotlight routing fixes"
+   git push origin main
+   ```
+3. If webhook doesn't trigger: `npx vercel --prod`
+
+### Pending / TODO
+- **Test full Spotlight → Edit → Save → Return flow** with a missing-image artist
+- **Re-upload Sea Hear Now poster** to test smart categorization + autocomplete + batch apply
+- **Test enrichment image pipeline** — verify Wikidata → Wikimedia Commons images populate `image_source: 'MusicBrainz'`
+- **Headless browser architecture** for House of Independents + Starland Ballroom (backlog)
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.

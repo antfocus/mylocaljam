@@ -17,7 +17,7 @@ import Toast             from '@/components/Toast';
 // FollowSnackbar removed — follow upsell now handled inline in EventCardV2
 import FollowingTab      from '@/components/FollowingTab';
 import ArtistProfileScreen from '@/components/ArtistProfileScreen';
-import FeedbackModal     from '@/components/FeedbackModal';
+import SupportModal      from '@/components/SupportModal';
 // FilterBar removed — filters now live in the omnibar panel
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -287,7 +287,7 @@ export default function HomePage() {
   const [milesRadius,    setMilesRadius]    = useState(null);  // null = any distance
   const profileRadiusRef = useRef(null); // saved profile default (null for guests)
   const [showSubmit,     setShowSubmit]     = useState(false);
-  const [showFeedback,   setShowFeedback]   = useState(false);
+  const [showSupport,    setShowSupport]    = useState(false);
   // reportEvent state removed — flagging now handled inline in EventCardV2
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [activeFilterCard, setActiveFilterCard] = useState(null); // 'distance' | 'when' | 'artist' | 'venue'
@@ -1929,7 +1929,7 @@ export default function HomePage() {
                           padding: '7px 14px', borderRadius: '20px',
                           border: isActive ? '1.5px solid #E8722A' : `1px solid ${darkMode ? '#3A3A4A' : '#D1D5DB'}`,
                           background: isActive ? '#E8722A' : (darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)'),
-                          color: isActive ? '#FFFFFF' : (darkMode ? '#C0C0D0' : '#4B5563'),
+                          color: isActive ? '#1C1917' : (darkMode ? '#C0C0D0' : '#4B5563'),
                           fontSize: '12px', fontWeight: isActive ? 700 : 500,
                           fontFamily: "'DM Sans', sans-serif",
                           whiteSpace: 'nowrap', flexShrink: 0, cursor: 'pointer',
@@ -2130,7 +2130,7 @@ export default function HomePage() {
                           }} style={{
                             flex: 1, padding: '10px 6px', borderRadius: '20px', border: 'none', cursor: 'pointer',
                             background: dateKey === opt.key ? '#E8722A' : (darkMode ? '#2A2A3C' : '#E8E6E2'),
-                            color: dateKey === opt.key ? '#fff' : t.text,
+                            color: dateKey === opt.key ? '#1C1917' : t.text,
                             fontSize: '13px', fontWeight: dateKey === opt.key ? 700 : 500,
                             fontFamily: "'DM Sans', sans-serif",
                             minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2145,7 +2145,7 @@ export default function HomePage() {
                         <div style={{
                           width: '100%', padding: '12px 16px', borderRadius: '12px',
                           background: dateKey === 'pick' ? '#E8722A' : (darkMode ? '#2A2A3C' : '#E8E6E2'),
-                          color: dateKey === 'pick' ? '#fff' : t.text,
+                          color: dateKey === 'pick' ? '#1C1917' : t.text,
                           fontSize: '14px', fontWeight: dateKey === 'pick' ? 700 : 500,
                           fontFamily: "'DM Sans', sans-serif",
                           minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
@@ -2274,7 +2274,7 @@ export default function HomePage() {
                     border: 'none',
                     cursor: 'pointer',
                     padding: '10px 0',
-                    color: savedSegment === seg.key ? '#FFFFFF' : '#888888',
+                    color: savedSegment === seg.key ? '#1C1917' : '#888888',
                     fontSize: '14px',
                     fontWeight: savedSegment === seg.key ? 600 : 400,
                     fontFamily: "'DM Sans', sans-serif",
@@ -2651,12 +2651,8 @@ export default function HomePage() {
             {/* ── Section 4: Support & Business ── */}
             <p style={sectionLabel}>Support</p>
             <div style={sectionCard}>
-              <button onClick={() => setShowFeedback(true)} style={rowBase(false)}>
-                <span style={rowLabel(false)}>{mIcon('chat_bubble')}Give Feedback</span>
-                {chevron}
-              </button>
-              <button onClick={() => { window.location.href = 'mailto:mylocaljam@gmail.com'; }} style={rowBase(false)}>
-                <span style={rowLabel(false)}>{mIcon('help_outline')}Contact Support</span>
+              <button onClick={() => setShowSupport(true)} style={rowBase(false)}>
+                <span style={rowLabel(false)}>{mIcon('help_outline')}Help & Feedback</span>
                 {chevron}
               </button>
               <button onClick={() => window.open('/terms', '_blank')} style={rowBase(false)}>
@@ -2850,8 +2846,8 @@ export default function HomePage() {
       {showSubmit && (
         <SubmitEventModal darkMode={darkMode} onClose={() => setShowSubmit(false)} onSubmit={() => { setToastVariant('success'); setToast('Dropped in the Jar! We\'ll review it shortly.'); }} />
       )}
-      {showFeedback && (
-        <FeedbackModal darkMode={darkMode} onClose={() => setShowFeedback(false)} userEmail={user?.email || null} />
+      {showSupport && (
+        <SupportModal darkMode={darkMode} onClose={() => setShowSupport(false)} userEmail={user?.email || null} />
       )}
       {/* ReportIssueModal removed — flagging now handled inline in EventCardV2 */}
 
