@@ -379,24 +379,29 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                     radial-gradient(circle at 90% 20%, rgba(58,173,160,0.06) 0%, transparent 40%)`,
                 }} />
 
+                {/* Spotlight badge — anchored top-left like a "LIVE" badge */}
+                <div style={{
+                  position: 'absolute', top: '14px', left: '16px', zIndex: 12,
+                }}>
+                  <span style={{
+                    background: 'rgba(94,42,132,0.9)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+                    color: '#FFFFFF', fontSize: '10px', fontWeight: 900,
+                    textTransform: 'uppercase', letterSpacing: '1.5px', padding: '5px 11px 5px 8px', borderRadius: '999px',
+                    display: 'inline-flex', alignItems: 'center', gap: '4px', lineHeight: 1,
+                    fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
+                    textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  }}>
+                    {/* Material: bolt */}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#FFFFFF" style={{ flexShrink: 0 }}>
+                      <path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z" />
+                    </svg>
+                    {isToday ? "Today's Spotlight" : 'Coming Up'}
+                  </span>
+                </div>
+
                 {/* Content — positioned at bottom */}
                 <div style={{ position: 'relative', zIndex: 10, padding: '16px 20px 24px' }}>
-                  {/* Spotlight badge */}
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
-                    <span style={{
-                      background: '#5E2A84', color: '#FFFFFF', fontSize: '11px', fontWeight: 900,
-                      textTransform: 'uppercase', letterSpacing: '1.5px', padding: '5px 12px 5px 9px', borderRadius: '999px',
-                      display: 'inline-flex', alignItems: 'center', gap: '4px', lineHeight: 1,
-                      fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
-                      textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                    }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#FFFFFF" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-                        <path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z" />
-                      </svg>
-                      {isToday ? "Today's Spotlight" : 'Coming Up'}
-                    </span>
-                  </div>
-
                   {/* Artist name */}
                   <h2 style={{
                     color: 'white', fontSize: 'clamp(20px, 6vw, 26px)', fontWeight: 900, lineHeight: 1.15,
@@ -418,12 +423,22 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                   }}>
                     {timeStr && (
                       <>
-                        <span>🕒 {timeStr}</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                          {/* Material: schedule */}
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0, opacity: 0.85 }}>
+                            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" />
+                          </svg>
+                          {timeStr}
+                        </span>
                         <span style={{ margin: '0 8px', opacity: 0.4 }}>•</span>
                       </>
                     )}
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      📍 {venue}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {/* Material: place */}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0, opacity: 0.85 }}>
+                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                      </svg>
+                      {venue}
                     </span>
                   </div>
 
@@ -466,7 +481,10 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                       onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
                     >
-                      <span style={{ fontSize: '14px' }}>🎵</span>
+                      {/* Material: music_note */}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                      </svg>
                       Meet the Artist
                     </button>
                   )}
@@ -559,9 +577,11 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                     width: '56px', height: '56px', borderRadius: '14px', flexShrink: 0,
                     background: 'linear-gradient(135deg, #E8722A, #3AADA0)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '24px',
                   }}>
-                    🎵
+                    {/* Material: music_note */}
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="rgba(255,255,255,0.9)">
+                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                    </svg>
                   </div>
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
