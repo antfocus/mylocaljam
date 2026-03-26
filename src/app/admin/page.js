@@ -700,7 +700,7 @@ export default function AdminPage() {
     // Accept either a plain string or an object { type: 'error', msg: '...' }
     const toast = typeof msgOrObj === 'string' ? { msg: msgOrObj, undoFn } : { ...msgOrObj, undoFn };
     setQueueToast(toast);
-    const duration = toast.type === 'error' ? 8000 : (undoFn ? 5000 : 3000);
+    const duration = toast.type === 'error' ? 8000 : toast.type === 'success' ? 4000 : (undoFn ? 5000 : 3000);
     toastTimerRef.current = setTimeout(() => { setQueueToast(null); toastTimerRef.current = null; }, duration);
   };
 
@@ -814,7 +814,9 @@ export default function AdminPage() {
         setQueueActionLoading(false);
         return; // DO NOT advance queue on failure
       }
-      showQueueToast(`✅ Approved: ${sanitized.artist_name}`);
+      const confidence = queueForm.confidence_score || 0;
+      const triageNote = confidence >= 90 ? ' → auto-routed (skipped triage)' : '';
+      showQueueToast({ type: 'success', msg: `✅ ${sanitized.artist_name} published!${triageNote}` });
       advanceQueue();
       fetchAll();
     } catch (err) {
@@ -4757,9 +4759,9 @@ export default function AdminPage() {
         <div style={{
           position: 'fixed', top: '24px', left: '50%', transform: 'translateX(-50%)',
           padding: '14px 24px', borderRadius: '14px',
-          background: queueToast?.type === 'error' ? '#3A1A1A' : '#1A1A24',
-          border: queueToast?.type === 'error' ? '1px solid #ef4444' : '1px solid #3A3A4A',
-          color: queueToast?.type === 'error' ? '#fca5a5' : '#F0F0F5',
+          background: queueToast?.type === 'error' ? '#3A1A1A' : queueToast?.type === 'success' ? '#0D2818' : '#1A1A24',
+          border: queueToast?.type === 'error' ? '1px solid #ef4444' : queueToast?.type === 'success' ? '1px solid #23CE6B' : '1px solid #3A3A4A',
+          color: queueToast?.type === 'error' ? '#fca5a5' : queueToast?.type === 'success' ? '#86efac' : '#F0F0F5',
           fontWeight: 700, fontSize: '14px',
           boxShadow: '0 12px 40px rgba(0,0,0,0.5)', zIndex: 500,
           fontFamily: "'DM Sans', sans-serif",
