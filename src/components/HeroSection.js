@@ -379,29 +379,27 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                     radial-gradient(circle at 90% 20%, rgba(58,173,160,0.06) 0%, transparent 40%)`,
                 }} />
 
-                {/* Spotlight badge — anchored top-left like a "LIVE" badge */}
-                <div style={{
-                  position: 'absolute', top: '14px', left: '16px', zIndex: 12,
-                }}>
-                  <span style={{
-                    background: 'rgba(94,42,132,0.9)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-                    color: '#FFFFFF', fontSize: '10px', fontWeight: 900,
-                    textTransform: 'uppercase', letterSpacing: '1.5px', padding: '5px 11px 5px 8px', borderRadius: '999px',
-                    display: 'inline-flex', alignItems: 'center', gap: '4px', lineHeight: 1,
-                    fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
-                    textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                  }}>
-                    {/* Material: bolt */}
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="#FFFFFF" style={{ flexShrink: 0 }}>
-                      <path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z" />
-                    </svg>
-                    {isToday ? "Today's Spotlight" : 'Coming Up'}
-                  </span>
-                </div>
-
                 {/* Content — positioned at bottom */}
                 <div style={{ position: 'relative', zIndex: 10, padding: '16px 20px 24px' }}>
+                  {/* Spotlight badge — grouped above text with breathing room */}
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '24px' }}>
+                    <span style={{
+                      background: 'rgba(94,42,132,0.9)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+                      color: '#FFFFFF', fontSize: '10px', fontWeight: 900,
+                      textTransform: 'uppercase', letterSpacing: '1.5px', padding: '5px 11px 5px 8px', borderRadius: '999px',
+                      display: 'inline-flex', alignItems: 'center', gap: '4px', lineHeight: 1,
+                      fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
+                      textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                    }}>
+                      {/* Material: bolt */}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#FFFFFF" style={{ flexShrink: 0 }}>
+                        <path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z" />
+                      </svg>
+                      {isToday ? "Today's Spotlight" : 'Coming Up'}
+                    </span>
+                  </div>
+
                   {/* Artist name */}
                   <h2 style={{
                     color: 'white', fontSize: 'clamp(20px, 6vw, 26px)', fontWeight: 900, lineHeight: 1.15,
