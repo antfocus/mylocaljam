@@ -34,6 +34,7 @@ const QUEUE_VENUE_OPTIONS = [
 export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [authenticated, setAuthenticated] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dashDateRange, setDashDateRange] = useState('7d'); // 'today' | '7d' | '30d' | 'all'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -46,6 +47,20 @@ export default function AdminPage() {
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+
+  // ── Session persistence: restore auth from sessionStorage on mount ──
+  const sessionRestored = useRef(false);
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('mlj_admin_pw');
+      if (saved) {
+        setPassword(saved);
+        setAuthenticated(true);
+        sessionRestored.current = true;
+      }
+    } catch { /* SSR or sessionStorage blocked */ }
+  }, []);
+
   const [events, setEvents] = useState([]);
   const [venues, setVenues] = useState([]);
   const [submissions, setSubmissions] = useState([]);
@@ -177,7 +192,7 @@ export default function AdminPage() {
       if (missingTime) params.set('missingTime', 'true');
       if (recentlyAdded) params.set('recentlyAdded', 'true');
       const res = await fetch(`/api/admin?${params}`, { headers: { Authorization: `Bearer ${password}` } });
-      if (res.status === 401) { setAuthenticated(false); alert('Invalid password'); return; }
+      if (res.status === 401) { setAuthenticated(false); try { sessionStorage.removeItem('mlj_admin_pw'); } catch {} alert('Invalid password'); return; }
       const data = await res.json();
       if (data.events) {
         setEvents(prev => page === 1 ? data.events : [...prev, ...data.events]);
@@ -517,9 +532,24 @@ export default function AdminPage() {
     }
   };
 
+  // ── Auto-fetch when session is restored from sessionStorage ──
+  useEffect(() => {
+    if (authenticated && sessionRestored.current) {
+      sessionRestored.current = false; // only fire once
+      fetchAll();
+      fetchQueue();
+      fetchTriage();
+      fetchArtists();
+      fetchScraperHealth();
+      fetchVenues();
+      fetchFestivalNames();
+    }
+  }, [authenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleLogin = (e) => {
     e.preventDefault();
     setAuthenticated(true);
+    try { sessionStorage.setItem('mlj_admin_pw', password); } catch { /* blocked */ }
     fetchAll();
     fetchQueue();
     fetchTriage();
@@ -637,8 +667,8 @@ export default function AdminPage() {
   const handleAdminFlyerUpload = async (file) => {
     if (!file || adminFlyerUploading) return;
     const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!ALLOWED.includes(file.type)) { setQueueToast({ type: 'error', message: 'Invalid file type' }); return; }
-    if (file.size > 15 * 1024 * 1024) { setQueueToast({ type: 'error', message: 'File too large (max 15MB)' }); return; }
+    if (!ALLOWED.includes(file.type)) { showQueueToast({ type: 'error', msg: '❌ Invalid file type — use JPG, PNG, WebP, or GIF' }); return; }
+    if (file.size > 15 * 1024 * 1024) { showQueueToast({ type: 'error', msg: '❌ File too large (max 15 MB)' }); return; }
 
     setAdminFlyerUploading(true);
     try {
@@ -646,7 +676,7 @@ export default function AdminPage() {
       const ext = file.name.split('.').pop().toLowerCase();
       const fileName = `admin-${crypto.randomUUID()}.${ext}`;
       const { error: upErr } = await supabase.storage.from('posters').upload(fileName, file, { contentType: file.type });
-      if (upErr) throw upErr;
+      if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
       const { data: urlData } = supabase.storage.from('posters').getPublicUrl(fileName);
 
       // 2. Send to Gemini OCR pipeline
@@ -655,13 +685,35 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
         body: JSON.stringify({ image_url: urlData.publicUrl }),
       });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'OCR failed');
 
-      setQueueToast({ type: 'success', message: `AI extracted ${result.drafts_created} events — added to queue` });
+      // Handle non-JSON responses (e.g. Vercel 504 timeout, 413 payload too large)
+      let result;
+      try {
+        result = await res.json();
+      } catch {
+        throw new Error(`Server error (${res.status}): ${res.statusText || 'No response body'}`);
+      }
+      if (!res.ok) throw new Error(result.error || `OCR failed (${res.status})`);
+
+      if (result.drafts_created === 0) {
+        showQueueToast({ type: 'error', msg: '⚠️ AI could not extract any events from this flyer — try a clearer image' });
+      } else {
+        showQueueToast({ type: 'success', msg: `✅ AI extracted ${result.drafts_created} event${result.drafts_created > 1 ? 's' : ''} — added to queue` });
+      }
       fetchQueue(); // Refresh the queue
     } catch (err) {
-      setQueueToast({ type: 'error', message: `Upload failed: ${err.message}` });
+      console.error('[flyer-upload] Error:', err);
+      // Classify the error for a helpful message
+      const msg = err.message || 'Unknown error';
+      if (msg.includes('413') || msg.includes('payload') || msg.includes('too large')) {
+        showQueueToast({ type: 'error', msg: '❌ Upload failed: Image file too large for server' });
+      } else if (msg.includes('504') || msg.includes('timeout') || msg.includes('Timeout')) {
+        showQueueToast({ type: 'error', msg: '❌ Upload failed: AI processing timed out — try a simpler flyer' });
+      } else if (msg.includes('Storage upload')) {
+        showQueueToast({ type: 'error', msg: `❌ Upload failed: Could not save image — ${msg}` });
+      } else {
+        showQueueToast({ type: 'error', msg: `❌ Upload failed: ${msg}` });
+      }
     }
     setAdminFlyerUploading(false);
     setAdminFlyerDragOver(false);
@@ -1019,14 +1071,43 @@ export default function AdminPage() {
             </div>
             <div className="font-display font-extrabold text-xl">Admin Panel</div>
           </div>
+          {/* Hidden username for browser autofill */}
+          <input type="text" name="username" autoComplete="username" defaultValue="admin" style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden', opacity: 0, pointerEvents: 'none' }} tabIndex={-1} aria-hidden="true" />
           <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Password</label>
-          <input
-            type="password"
-            style={inputStyle}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter admin password"
-          />
+          <div style={{ position: 'relative' }}>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              name="password"
+              autoComplete="current-password"
+              style={{ ...inputStyle, paddingRight: '42px' }}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter admin password"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(prev => !prev)}
+              style={{
+                position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
+                color: 'var(--text-muted)', display: 'flex', alignItems: 'center',
+              }}
+              tabIndex={-1}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              )}
+            </button>
+          </div>
           <button type="submit" className="w-full mt-4 py-3 rounded-xl font-display font-semibold text-white" style={{ background: 'var(--accent)' }}>
             Login
           </button>
@@ -1912,7 +1993,7 @@ export default function AdminPage() {
               );
             })()}
 
-            {/* Source dropdown */}
+            {/* Source dropdown — filters by image_source or bio_source */}
             <select
               value={artistSourceFilter}
               onChange={e => setArtistSourceFilter(e.target.value)}
@@ -1927,11 +2008,12 @@ export default function AdminPage() {
               }}
             >
               <option value="all">Source: All</option>
-              <option value="lastfm">Last.fm</option>
-              <option value="scraper">Scraper</option>
-              <option value="ai_generated">AI Generated</option>
-              <option value="manual">Manual</option>
-              <option value="unknown">Unknown</option>
+              <option value="MusicBrainz">MusicBrainz</option>
+              <option value="Discogs">Discogs</option>
+              <option value="Last.fm">Last.fm</option>
+              <option value="Scraped">Scraped</option>
+              <option value="Manual">Manual</option>
+              <option value="Unknown">Unknown</option>
             </select>
 
             {/* Sort dropdown — matches Directory tab */}
@@ -1970,7 +2052,7 @@ export default function AdminPage() {
                   if (artistMissingFilters.vibes && (!a.vibes || a.vibes.length === 0)) return true;
                   return false;
                 }) : artists;
-                const header = ['Artist Name','Bio Status','Image Status','Genre Status','Vibe Status','Metadata Source','Database ID'];
+                const header = ['Artist Name','Bio Status','Image Status','Genre Status','Vibe Status','Image Source','Bio Source','Database ID'];
                 const rows = exportList.map(a => {
                   const fs = a.field_status || {};
                   return [
@@ -1979,7 +2061,8 @@ export default function AdminPage() {
                     a.image_url ? (fs.image_url || 'live') : 'missing',
                     (a.genres?.length > 0) ? (fs.genres || 'live') : 'missing',
                     (a.vibes?.length > 0) ? (fs.vibes || 'live') : 'missing',
-                    a.metadata_source || 'unknown',
+                    a.image_source || 'Unknown',
+                    a.bio_source || 'Unknown',
                     a.id,
                   ];
                 });
@@ -2454,12 +2537,17 @@ export default function AdminPage() {
                 if (artistMissingFilters.vibes && (!a.vibes || a.vibes.length === 0)) matchesMissing = true;
                 if (!matchesMissing) return false;
               }
-              // Metadata source filter
+              // Split source filter — match if EITHER image_source or bio_source matches
               if (artistSourceFilter !== 'all') {
-                if (artistSourceFilter === 'unknown') {
-                  if (a.metadata_source) return false;
+                if (artistSourceFilter === 'Unknown') {
+                  // Show artists where both sources are unknown/missing
+                  const imgSrc = a.image_source || 'Unknown';
+                  const bioSrc = a.bio_source || 'Unknown';
+                  if (imgSrc !== 'Unknown' || bioSrc !== 'Unknown') return false;
                 } else {
-                  if (a.metadata_source !== artistSourceFilter) return false;
+                  const imgSrc = a.image_source || '';
+                  const bioSrc = a.bio_source || '';
+                  if (imgSrc !== artistSourceFilter && bioSrc !== artistSourceFilter) return false;
                 }
               }
               return true;
@@ -2610,32 +2698,35 @@ export default function AdminPage() {
                       }
                     </div>
 
-                    {/* Name + Source Badge */}
-                    <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {/* Name + Split Source Badges (Img / Bio) */}
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                       <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
                         {artist.name}
                       </span>
                       {(() => {
-                        const src = artist.metadata_source;
-                        if (!src) return null;
-                        const sourceConfig = {
-                          lastfm: { label: 'Last.fm', color: '#d51007', bg: 'rgba(213,16,7,0.1)' },
-                          scraper: { label: 'Scraper', color: '#3AADA0', bg: 'rgba(58,173,160,0.1)' },
-                          ai_generated: { label: 'AI', color: '#8B5CF6', bg: 'rgba(139,92,246,0.1)' },
-                          manual: { label: 'Manual', color: '#E8722A', bg: 'rgba(232,114,42,0.1)' },
+                        const sourceColors = {
+                          'MusicBrainz': { color: '#2563eb', bg: 'rgba(37,99,235,0.1)' },
+                          'Discogs':     { color: '#ea580c', bg: 'rgba(234,88,12,0.1)' },
+                          'Last.fm':     { color: '#d51007', bg: 'rgba(213,16,7,0.1)' },
+                          'Scraped':     { color: '#3AADA0', bg: 'rgba(58,173,160,0.1)' },
+                          'Manual':      { color: '#E8722A', bg: 'rgba(232,114,42,0.1)' },
+                          'Unknown':     { color: '#888', bg: 'rgba(136,136,136,0.08)' },
                         };
-                        const cfg = sourceConfig[src];
-                        if (!cfg) return null;
+                        const imgSrc = artist.image_source || (artist.metadata_source === 'scraper' ? 'Scraped' : null);
+                        const bioSrc = artist.bio_source || (artist.metadata_source === 'lastfm' ? 'Last.fm' : null);
+                        const badgeStyle = (cfg) => ({
+                          display: 'inline-flex', alignItems: 'center',
+                          padding: '1px 5px', borderRadius: '4px',
+                          fontSize: '8px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
+                          textTransform: 'uppercase', letterSpacing: '0.3px',
+                          background: cfg?.bg || 'rgba(136,136,136,0.08)',
+                          color: cfg?.color || '#888',
+                          flexShrink: 0, whiteSpace: 'nowrap',
+                        });
                         return (
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center',
-                            padding: '1px 6px', borderRadius: '4px',
-                            fontSize: '9px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
-                            textTransform: 'uppercase', letterSpacing: '0.3px',
-                            background: cfg.bg, color: cfg.color,
-                            flexShrink: 0,
-                          }}>
-                            {cfg.label}
+                          <span style={{ display: 'inline-flex', gap: '3px', flexShrink: 0 }}>
+                            {imgSrc && <span style={badgeStyle(sourceColors[imgSrc])}>Img: {imgSrc}</span>}
+                            {bioSrc && <span style={badgeStyle(sourceColors[bioSrc])}>Bio: {bioSrc}</span>}
                           </span>
                         );
                       })()}
@@ -4802,7 +4893,7 @@ export default function AdminPage() {
           animation: 'slideDown 0.25s ease-out',
           display: 'flex', alignItems: 'center', gap: '12px',
         }}>
-          <span>{typeof queueToast === 'string' ? queueToast : queueToast.msg}</span>
+          <span>{typeof queueToast === 'string' ? queueToast : (queueToast.msg || queueToast.message || 'Something went wrong')}</span>
           {queueToast?.undoFn && (
             <button
               onClick={() => { queueToast.undoFn(); setQueueToast(null); }}
