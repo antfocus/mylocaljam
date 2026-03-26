@@ -35,6 +35,7 @@ export default function AdminPage() {
   const [password, setPassword] = useState('');
   const [authenticated, setAuthenticated] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [returnToTab, setReturnToTab] = useState(null); // remembers which tab to return to after artist edit
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dashDateRange, setDashDateRange] = useState('7d'); // 'today' | '7d' | '30d' | 'all'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -2162,7 +2163,7 @@ export default function AdminPage() {
                     {aiLoading ? '⏳ Searching...' : '✨ Auto-Fill with AI'}
                   </button>
                   <button
-                    onClick={() => setEditingArtist(null)}
+                    onClick={() => { setEditingArtist(null); if (returnToTab) { setActiveTab(returnToTab); setReturnToTab(null); } }}
                     style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '18px' }}
                   >✕</button>
                 </div>
@@ -2433,7 +2434,7 @@ export default function AdminPage() {
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '16px', justifyContent: 'flex-end' }}>
                 <button
-                  onClick={() => setEditingArtist(null)}
+                  onClick={() => { setEditingArtist(null); if (returnToTab) { setActiveTab(returnToTab); setReturnToTab(null); } }}
                   style={{
                     padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
                     background: 'var(--bg-card)', color: 'var(--text-secondary)',
@@ -2507,6 +2508,13 @@ export default function AdminPage() {
                     fetchArtists(artistsSearch, artistsNeedsInfo);
                     setArtistToast({ type: 'success', message: nameChanged ? `Renamed & saved — "${editingArtist.name}" saved as alias` : (approve ? 'Approved & published — all fields locked' : 'Saved — edited fields locked') });
                     setTimeout(() => setArtistToast(null), 3000);
+                    // Return to previous tab if we came from Spotlight (or elsewhere)
+                    if (returnToTab) {
+                      const dest = returnToTab;
+                      setReturnToTab(null);
+                      setActiveTab(dest);
+                      if (dest === 'spotlight') fetchSpotlightEvents(spotlightDate);
+                    }
                   };
                   return (<>
                     <button onClick={() => doSave(false)} style={{
@@ -4157,7 +4165,8 @@ export default function AdminPage() {
                     ? pool.find(a => a.id === ev.artist_id)
                     : pool.find(a => a.name?.toLowerCase() === ev.artist_name?.toLowerCase());
 
-                  // Always route to Artists → Triage sub-tab
+                  // Remember where we came from, then route to Artists → Triage sub-tab
+                  setReturnToTab('spotlight');
                   setActiveTab('artists');
                   setArtistSubTab('triage');
 
