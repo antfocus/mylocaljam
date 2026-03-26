@@ -230,7 +230,7 @@ function EntityBottomSheet({ type, name, events, darkMode, isFollowing, onFollow
               borderTop: i > 0 ? `1px solid ${t.border}` : 'none',
             }}>
               <div style={{
-                background: t.accent, color: 'white', fontSize: '10px', fontWeight: 800,
+                background: t.accent, color: '#1C1917', fontSize: '10px', fontWeight: 800,
                 padding: '4px 8px', borderRadius: '6px', flexShrink: 0,
                 textAlign: 'center', minWidth: '52px',
               }}>
@@ -1520,11 +1520,11 @@ export default function HomePage() {
             {hasActiveFilters ? (<>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: '2px',
-                fontSize: '9px', fontWeight: 700, color: '#FFFFFF',
+                fontSize: '9px', fontWeight: 700, color: '#1C1917',
                 background: t.accent, borderRadius: '8px',
                 padding: '1px 5px', flexShrink: 0, lineHeight: '14px',
               }}>
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="#FFFFFF" /></svg>
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="#1C1917" /></svg>
                 {activeFilterCount}
               </span>
               {/* Quick clear X — resets all filters without opening the panel */}
@@ -1562,7 +1562,7 @@ export default function HomePage() {
                   background: t.accent,
                   cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="white" /></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="#1C1917" /></svg>
               </button>
             )}
 
@@ -2200,7 +2200,7 @@ export default function HomePage() {
                 }}>
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                     padding: '10px 24px', borderRadius: '10px', border: 'none',
-                    background: t.accent, color: 'white', cursor: 'pointer',
+                    background: t.accent, color: '#1C1917', cursor: 'pointer',
                     fontSize: '13px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
                     width: '100%',
                   }}>
@@ -2361,7 +2361,7 @@ export default function HomePage() {
                         </p>
                         <button onClick={() => openAuth('save')} style={{
                           padding: '13px 40px', borderRadius: '999px', border: 'none',
-                          background: t.accent, color: 'white', fontWeight: 700, fontSize: '15px',
+                          background: t.accent, color: '#1C1917', fontWeight: 700, fontSize: '15px',
                           cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
                           boxShadow: '0 2px 12px rgba(232,114,42,0.3)',
                         }}>
@@ -2534,7 +2534,7 @@ export default function HomePage() {
                     background: t.accent, border: `3px solid ${t.bg}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 15.2a3.2 3.2 0 100-6.4 3.2 3.2 0 000 6.4z" fill="white"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" fill="white"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 15.2a3.2 3.2 0 100-6.4 3.2 3.2 0 000 6.4z" fill="#1C1917"/><path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" fill="#1C1917"/></svg>
                   </div>
                 )}
               </div>
@@ -2564,7 +2564,7 @@ export default function HomePage() {
                   <p style={{ fontSize: '13px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>Sign in to save events across devices</p>
                   <button onClick={() => openAuth('profile')} style={{
                     marginTop: '10px', padding: '10px 32px', borderRadius: '999px', border: 'none',
-                    background: t.accent, color: 'white', fontWeight: 700, fontSize: '14px',
+                    background: t.accent, color: '#1C1917', fontWeight: 700, fontSize: '14px',
                     cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
                   }}>
                     Sign In
@@ -3120,7 +3120,7 @@ export default function HomePage() {
                 }}
                 style={{
                   flex: 1, padding: '12px', borderRadius: '12px', fontSize: '14px', fontWeight: 700,
-                  background: '#E8722A', color: '#fff', border: 'none',
+                  background: '#E8722A', color: '#1C1917', border: 'none',
                   cursor: editProfileSaving ? 'wait' : 'pointer',
                   opacity: editProfileSaving ? 0.6 : 1,
                 }}

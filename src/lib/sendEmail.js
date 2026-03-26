@@ -69,7 +69,7 @@ export function buildEmailHtml({ title, body, linkUrl, linkLabel = 'View Event' 
     <div style="background:#1A1A24;border-radius:12px;padding:24px;border:1px solid #2A2A3A;">
       <h2 style="margin:0 0 8px;color:#F0F0F5;font-size:18px;font-weight:700;">${title}</h2>
       <p style="margin:0 0 20px;color:#9898B8;font-size:14px;line-height:1.5;">${body}</p>
-      <a href="${fullLink}" style="display:inline-block;padding:12px 28px;background:#E8722A;color:white;text-decoration:none;border-radius:999px;font-size:14px;font-weight:700;">
+      <a href="${fullLink}" style="display:inline-block;padding:12px 28px;background:#E8722A;color:#1C1917;text-decoration:none;border-radius:999px;font-size:14px;font-weight:700;">
         ${linkLabel}
       </a>
     </div>

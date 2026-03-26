@@ -635,7 +635,7 @@ function UnifiedSearchBlock({
             </button>
             <button onClick={() => { onClose?.(); setActiveCard(null); }} style={{
               padding: '7px 18px', borderRadius: '8px', border: 'none',
-              background: t.accent, color: 'white', cursor: 'pointer',
+              background: t.accent, color: '#1C1917', cursor: 'pointer',
               fontSize: '11px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
             }}>
               Show {eventCount} events
@@ -757,7 +757,7 @@ function BottomSheet({ type = 'venue', data, events = [], darkMode = true, onClo
               borderTop: i > 0 ? `1px solid ${t.border}` : 'none',
             }}>
               <div style={{
-                background: t.accent, color: 'white', fontSize: '10px', fontWeight: 800,
+                background: t.accent, color: '#1C1917', fontSize: '10px', fontWeight: 800,
                 padding: '4px 8px', borderRadius: '6px', flexShrink: 0,
                 textAlign: 'center', minWidth: '52px',
               }}>
@@ -837,7 +837,7 @@ function SavedTab({ darkMode = true, onVenueTap, onArtistTap }) {
                 background: t.cardBg, border: `1px solid ${t.border}`,
               }}>
                 <div style={{
-                  background: t.accent, color: 'white', fontSize: '10px', fontWeight: 800,
+                  background: t.accent, color: '#1C1917', fontSize: '10px', fontWeight: 800,
                   padding: '4px 8px', borderRadius: '6px', flexShrink: 0, minWidth: '48px', textAlign: 'center',
                 }}>
                   {ev.time}
@@ -1281,7 +1281,7 @@ export default function SearchFilterRedesign() {
           }}>
             {/* Material Add icon */}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="white" />
+              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="#1C1917" />
             </svg>
           </button>
         </div>
@@ -1351,7 +1351,7 @@ export default function SearchFilterRedesign() {
                 <div style={{ width: '4px', background: t.accent, flexShrink: 0 }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', flex: 1 }}>
                   <div style={{
-                    background: t.accent, color: 'white', fontSize: '11px', fontWeight: 800,
+                    background: t.accent, color: '#1C1917', fontSize: '11px', fontWeight: 800,
                     padding: '3px 7px', borderRadius: '6px', flexShrink: 0, minWidth: '44px', textAlign: 'center',
                   }}>
                     {ev.time}
@@ -1450,7 +1450,7 @@ export default function SearchFilterRedesign() {
         {activeTab === 'profile' && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '64px 32px', textAlign: 'center' }}>
             <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: `linear-gradient(135deg, ${t.accent}, ${t.accentAlt})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <svg width="36" height="36" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="white" /></svg>
+              <svg width="36" height="36" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="#1C1917" /></svg>
             </div>
             <p style={{ fontWeight: 800, fontSize: '18px', color: t.text, marginTop: '16px' }}>Your Profile</p>
             <p style={{ fontSize: '13px', color: t.textMuted }}>Sign in to save events across devices</p>

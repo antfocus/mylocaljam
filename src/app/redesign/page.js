@@ -640,7 +640,7 @@ export default function HomePage() {
               background: t.accent,
               cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="white" /></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="#1C1917" /></svg>
           </button>
         </header>
 
@@ -939,7 +939,7 @@ export default function HomePage() {
                   </button>
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                     padding: '7px 18px', borderRadius: '8px', border: 'none',
-                    background: t.accent, color: 'white', cursor: 'pointer',
+                    background: t.accent, color: '#1C1917', cursor: 'pointer',
                     fontSize: '11px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
                   }}>
                     Show {filteredEvents.length} events
@@ -1078,7 +1078,7 @@ export default function HomePage() {
               </div>
               <p style={{ fontWeight: 800, fontSize: '18px', color: t.text, marginTop: '8px' }}>Your Profile</p>
               <p style={{ fontSize: '13px', color: t.textMuted }}>Sign in to save events across devices</p>
-              <button style={{ marginTop: '12px', padding: '10px 32px', borderRadius: '999px', border: 'none', background: t.accent, color: 'white', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
+              <button style={{ marginTop: '12px', padding: '10px 32px', borderRadius: '999px', border: 'none', background: t.accent, color: '#1C1917', fontWeight: 700, fontSize: '14px', cursor: 'pointer' }}>
                 Sign In
               </button>
             </div>

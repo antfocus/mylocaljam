@@ -655,7 +655,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                       style={{
                         padding: '8px 18px', borderRadius: '8px',
                         background: flagOtherText.trim() ? '#E8722A' : (darkMode ? '#2A2A3A' : '#D1D5DB'),
-                        color: flagOtherText.trim() ? '#fff' : textMuted,
+                        color: flagOtherText.trim() ? '#1C1917' : textMuted,
                         fontSize: '13px', fontWeight: 700, border: 'none',
                         cursor: flagOtherText.trim() ? 'pointer' : 'not-allowed',
                         fontFamily: "'DM Sans', sans-serif",
@@ -734,7 +734,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                 marginTop: '10px', width: '100%',
                 display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px',
                 padding: '8px 12px', borderRadius: '8px', border: 'none',
-                background: '#E8722A', color: '#FFFFFF',
+                background: '#E8722A', color: '#1C1917',
                 fontSize: '12px', fontWeight: 700, cursor: 'pointer',
                 fontFamily: "'DM Sans', sans-serif",
                 transition: 'opacity 0.15s',
@@ -742,7 +742,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                 overflow: 'hidden',
               }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1C1917" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                 <path d="M12 5v14M5 12h14" />
               </svg>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

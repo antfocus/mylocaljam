@@ -1166,7 +1166,7 @@ export default function AdminPage() {
             }}
             onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (artists.length === 0) fetchArtists(); fetchReports(); fetchScraperHealth(); } if (tab.key === 'events') fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (tab.key === 'triage') fetchTriage(); if (tab.key === 'spotlight') { setSpotlightSearch(''); fetchSpotlight(spotlightDate); if (artists.length === 0) fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); fetchQueue(); } if (tab.key === 'artists') fetchArtists(artistsSearch, artistsNeedsInfo); if (tab.key === 'venues') fetchScraperHealth(); if (tab.key === 'reports') { setFlagsViewFilter('pending'); fetchReports(); } }}
           >
-            {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? 'white' : 'var(--text-secondary)' }}>{tab.count}</span>}
+            {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? '#1C1917' : 'var(--text-secondary)' }}>{tab.count}</span>}
           </button>
         ))}
       </div>
@@ -2154,7 +2154,7 @@ export default function AdminPage() {
                     style={{
                       padding: '6px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
                       background: aiLoading ? 'rgba(232,114,42,0.15)' : 'linear-gradient(135deg, #E8722A, #d35f1a)',
-                      color: aiLoading ? 'var(--text-muted)' : '#fff',
+                      color: aiLoading ? 'var(--text-muted)' : '#1C1917',
                       border: 'none', cursor: aiLoading ? 'not-allowed' : 'pointer',
                       fontFamily: "'DM Sans', sans-serif",
                       transition: 'all 0.15s ease',
@@ -3731,7 +3731,7 @@ export default function AdminPage() {
                                       style={{
                                         padding: '5px 14px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
                                         fontFamily: "'DM Sans', sans-serif", cursor: newVenueLoading ? 'wait' : 'pointer',
-                                        background: '#E8722A', color: '#fff', border: 'none',
+                                        background: '#E8722A', color: '#1C1917', border: 'none',
                                       }}
                                     >
                                       {newVenueLoading ? 'Creating...' : 'Create Venue'}
@@ -4081,7 +4081,7 @@ export default function AdminPage() {
                           }}
                           style={{
                             padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
-                            background: '#E8722A', color: '#fff',
+                            background: '#E8722A', color: '#1C1917',
                             border: 'none', cursor: 'pointer',
                             fontFamily: "'DM Sans', sans-serif", outline: 'none',
                           }}
@@ -4305,7 +4305,7 @@ export default function AdminPage() {
                   style={{
                     flex: 1, padding: '10px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
                     background: bulkTime ? '#E8722A' : 'rgba(232,114,42,0.2)',
-                    color: bulkTime ? '#fff' : '#666',
+                    color: bulkTime ? '#1C1917' : '#666',
                     border: 'none', cursor: bulkTime ? 'pointer' : 'not-allowed',
                   }}
                 >Save Time</button>
@@ -4385,7 +4385,7 @@ export default function AdminPage() {
               }}
               style={{
                 padding: '10px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: 700,
-                background: 'linear-gradient(135deg, #E8722A, #d35f1a)', color: '#fff',
+                background: 'linear-gradient(135deg, #E8722A, #d35f1a)', color: '#1C1917',
                 border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
               }}
             >
@@ -4527,7 +4527,7 @@ export default function AdminPage() {
                 }}
                 style={{
                   padding: '10px 20px', borderRadius: '8px', fontSize: '13px', fontWeight: 700,
-                  background: 'linear-gradient(135deg, #E8722A, #d35f1a)', color: '#fff',
+                  background: 'linear-gradient(135deg, #E8722A, #d35f1a)', color: '#1C1917',
                   border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
                 }}
               >

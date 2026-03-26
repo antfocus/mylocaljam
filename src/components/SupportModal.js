@@ -277,7 +277,7 @@ export default function SupportModal({ onClose, darkMode = true, userEmail = nul
                 style={{
                   width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
                   background: submitting ? t.textMuted : t.accent,
-                  color: 'white', fontWeight: 700, fontSize: '15px',
+                  color: '#1C1917', fontWeight: 700, fontSize: '15px',
                   cursor: submitting ? 'default' : 'pointer',
                   fontFamily: "'DM Sans', sans-serif",
                   opacity: submitting ? 0.7 : 1,

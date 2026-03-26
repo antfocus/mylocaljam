@@ -175,7 +175,7 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
                 onClick={handleClose}
                 style={{
                   padding: '12px 36px', borderRadius: '999px', border: 'none',
-                  background: t.accent, color: 'white', fontWeight: 700, fontSize: '15px',
+                  background: t.accent, color: '#1C1917', fontWeight: 700, fontSize: '15px',
                   cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
                 }}
               >
@@ -284,7 +284,7 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
               style={{
                 display: 'block', width: '100%', marginTop: '12px',
                 padding: '14px', borderRadius: '12px', border: 'none',
-                background: t.accent, color: 'white',
+                background: t.accent, color: '#1C1917',
                 fontSize: '15px', fontWeight: 700, cursor: sending ? 'wait' : 'pointer',
                 fontFamily: "'DM Sans', sans-serif",
                 opacity: (!email.trim() || sending) ? 0.5 : 1,

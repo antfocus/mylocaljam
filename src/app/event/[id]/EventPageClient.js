@@ -90,7 +90,7 @@ export default function EventPageClient({ event }) {
         </a>
         <a href="/" style={{
           padding: '8px 20px', borderRadius: '999px', background: '#E8722A',
-          color: 'white', textDecoration: 'none', fontWeight: 700, fontSize: '13px',
+          color: '#1C1917', textDecoration: 'none', fontWeight: 700, fontSize: '13px',
         }}>
           Browse Events
         </a>
@@ -317,7 +317,7 @@ export default function EventPageClient({ event }) {
             href="/?signup=true"
             style={{
               padding: '10px 20px', borderRadius: '999px',
-              background: '#E8722A', color: 'white',
+              background: '#E8722A', color: '#1C1917',
               textDecoration: 'none', fontWeight: 700, fontSize: '13px',
               whiteSpace: 'nowrap', flexShrink: 0,
               boxShadow: '0 2px 12px rgba(232,114,42,0.3)',
@@ -361,7 +361,7 @@ export default function EventPageClient({ event }) {
               style={{
                 display: 'inline-block',
                 padding: '13px 40px', borderRadius: '999px',
-                background: '#E8722A', color: 'white',
+                background: '#E8722A', color: '#1C1917',
                 textDecoration: 'none', fontWeight: 700, fontSize: '15px',
                 boxShadow: '0 2px 12px rgba(232,114,42,0.3)',
               }}

@@ -111,7 +111,7 @@ export default function WelcomeModal({ darkMode = true, onSignIn, onDismiss }) {
             style={{
               display: 'block', width: '100%', padding: '14px',
               borderRadius: '12px', border: 'none',
-              background: t.accent, color: 'white',
+              background: t.accent, color: '#1C1917',
               fontSize: '15px', fontWeight: 700, cursor: 'pointer',
               fontFamily: "'DM Sans', sans-serif",
               marginBottom: '10px',

@@ -159,7 +159,7 @@ export default function MapView({ events = [], onClose, darkMode = true }) {
           <button
             type="submit"
             disabled={searching || !addressInput.trim()}
-            style={{ padding: '8px 16px', borderRadius: '12px', border: 'none', cursor: 'pointer', background: '#E8722A', color: 'white', fontWeight: 700, fontSize: '13px', flexShrink: 0, opacity: (searching || !addressInput.trim()) ? 0.5 : 1 }}
+            style={{ padding: '8px 16px', borderRadius: '12px', border: 'none', cursor: 'pointer', background: '#E8722A', color: '#1C1917', fontWeight: 700, fontSize: '13px', flexShrink: 0, opacity: (searching || !addressInput.trim()) ? 0.5 : 1 }}
           >
             {searching ? '…' : 'Go'}
           </button>

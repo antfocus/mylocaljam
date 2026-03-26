@@ -239,7 +239,7 @@ export default async function EventPage({ params }) {
         </p>
         <a href="/" style={{
           padding: '12px 32px', borderRadius: '999px', background: '#E8722A',
-          color: 'white', textDecoration: 'none', fontWeight: 700, fontSize: '14px',
+          color: '#1C1917', textDecoration: 'none', fontWeight: 700, fontSize: '14px',
         }}>
           Browse Events
         </a>

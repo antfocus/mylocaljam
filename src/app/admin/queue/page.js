@@ -261,7 +261,7 @@ export default function AdminQueuePage() {
           />
           <button type="submit" style={{
             width: '100%', marginTop: '16px', padding: '12px', borderRadius: '10px',
-            border: 'none', background: accent, color: 'white', fontWeight: 700,
+            border: 'none', background: accent, color: '#1C1917', fontWeight: 700,
             fontSize: '15px', cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
           }}>
             Login
@@ -282,7 +282,7 @@ export default function AdminQueuePage() {
           <button onClick={fetchQueue} style={{ padding: '10px 24px', borderRadius: '10px', border: `1px solid ${border}`, background: surface, color: text, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontSize: '14px' }}>
             ↻ Refresh
           </button>
-          <a href="/admin" style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', background: accent, color: 'white', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontSize: '14px', textDecoration: 'none' }}>
+          <a href="/admin" style={{ padding: '10px 24px', borderRadius: '10px', border: 'none', background: accent, color: '#1C1917', fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans', sans-serif", fontSize: '14px', textDecoration: 'none' }}>
             Back to Admin
           </a>
         </div>
@@ -609,7 +609,7 @@ export default function AdminQueuePage() {
             style={{
               position: 'absolute', top: '20px', right: '20px',
               padding: '8px 16px', borderRadius: '8px',
-              background: accent, color: 'white', fontWeight: 600,
+              background: accent, color: '#1C1917', fontWeight: 600,
               fontSize: '13px', textDecoration: 'none',
             }}
           >

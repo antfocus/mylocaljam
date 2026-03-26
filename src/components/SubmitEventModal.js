@@ -498,7 +498,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                     style={{
                       width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
                       background: uploading ? t.textMuted : t.accent,
-                      color: 'white', fontWeight: 700, fontSize: '15px',
+                      color: '#1C1917', fontWeight: 700, fontSize: '15px',
                       cursor: uploading ? 'default' : 'pointer',
                       fontFamily: "'DM Sans', sans-serif",
                       opacity: uploading ? 0.7 : 1,
@@ -549,7 +549,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                 style={{
                   display: 'block', width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
                   background: submitting ? t.textMuted : t.accent,
-                  color: 'white', fontWeight: 700, fontSize: '15px',
+                  color: '#1C1917', fontWeight: 700, fontSize: '15px',
                   cursor: submitting ? 'default' : 'pointer',
                   fontFamily: "'DM Sans', sans-serif",
                   opacity: submitting ? 0.7 : 1,
