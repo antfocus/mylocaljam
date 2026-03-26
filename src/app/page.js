@@ -2225,8 +2225,8 @@ export default function HomePage() {
           }}
         />
 
-        {/* ── Hero (home tab only) — swipeable spotlight ────────────────── */}
-        {activeTab === 'home' && (
+        {/* ── Hero (home tab only) — hidden when searching or filtering ── */}
+        {activeTab === 'home' && !hasActiveFilters && (
           <HeroSection events={heroEvents} spotlightEvents={spotlightCarouselEvents} isToday={heroIsToday} />
         )}
 
