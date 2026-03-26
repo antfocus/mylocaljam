@@ -316,12 +316,12 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
 
   // ── 2. Image: MusicBrainz → Discogs → Last.fm fallback ────
   let imageUrl = cached?.image_url || null;
-  let imageSource = null;
+  let imageSource = cached?.image_source || null;
   if (!imageUrl && !imageLocked) {
     // Try MusicBrainz relations first (includes Wikidata → Wikimedia Commons)
     if (mbid) {
       imageUrl = await fetchMusicBrainzImage(mbid);
-      if (imageUrl) imageSource = 'musicbrainz';
+      if (imageUrl) imageSource = 'MusicBrainz';
       console.log(`[enrich] ${name}: MusicBrainz image ${imageUrl ? '✓' : '✗'} (mbid: ${mbid})`);
       await new Promise(r => setTimeout(r, 1100)); // MB rate limit
     }
@@ -329,7 +329,7 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
     // Discogs fallback
     if (!imageUrl) {
       imageUrl = await fetchDiscogsImage(name);
-      if (imageUrl) imageSource = 'discogs';
+      if (imageUrl) imageSource = 'Discogs';
       console.log(`[enrich] ${name}: Discogs image ${imageUrl ? '✓' : '✗'}`);
       await new Promise(r => setTimeout(r, 1100)); // Be polite to Discogs
     }
@@ -337,15 +337,20 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
 
   // ── 3. Last.fm: Bio + Tags + Image fallback ───────────────
   const lastfm = await fetchFromLastfm(name);
+  let bioSource = cached?.bio_source || null;
 
   // Use Last.fm image only if we still have nothing
   if (!imageUrl && !imageLocked && lastfm?.image_url) {
     imageUrl = lastfm.image_url;
-    imageSource = 'lastfm';
+    imageSource = 'Last.fm';
   }
   console.log(`[enrich] ${name}: Final image → ${imageUrl ? `${imageSource}: ${imageUrl.substring(0, 80)}...` : 'NONE'}`);
 
   const bio = (!bioLocked && !cached?.bio) ? (lastfm?.bio || null) : (cached?.bio || null);
+  // Track bio source: if we just pulled a new bio from Last.fm, record it
+  if (!bioLocked && !cached?.bio && lastfm?.bio) {
+    bioSource = 'Last.fm';
+  }
   const tags = lastfm?.tags || cached?.tags || null;
 
   // Convert tags → genres (top 3, capitalized)
@@ -354,23 +359,27 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
         .map(t => t.charAt(0).toUpperCase() + t.slice(1))
     : null;
 
-  // ── 4. Determine metadata source ──────────────────────────
+  // ── 4. Determine metadata source (legacy) + split sources ──
   let metadataSource = cached?.metadata_source || null;
   if (!metadataSource) {
-    if (imageUrl && (imageUrl.includes('discogs') || imageUrl.includes('musicbrainz'))) {
-      metadataSource = 'scraper'; // External API source
+    if (imageSource === 'MusicBrainz' || imageSource === 'Discogs') {
+      metadataSource = imageSource.toLowerCase() === 'discogs' ? 'scraper' : 'lastfm';
     } else if (lastfm?.bio || lastfm?.image_url) {
       metadataSource = 'lastfm';
     }
   }
+
+  // Overwrite 'Scraped' sources when API data wins (scraper → API upgrade)
+  const finalImageSource = imageSource || cached?.image_source || 'Unknown';
+  const finalBioSource = bioSource || cached?.bio_source || 'Unknown';
 
   // ── 5. Build record & upsert ──────────────────────────────
   const record = {
     name: lastfm?.name || cached?.name || name,
     ...(mbid ? { mbid } : {}),
     // Respect locks — only set fields that aren't human-edited
-    ...(!imageLocked ? { image_url: imageUrl || cached?.image_url || null } : {}),
-    ...(!bioLocked ? { bio: bio || null } : {}),
+    ...(!imageLocked ? { image_url: imageUrl || cached?.image_url || null, image_source: finalImageSource } : {}),
+    ...(!bioLocked ? { bio: bio || null, bio_source: finalBioSource } : {}),
     tags: tags || null,
     last_fetched: new Date().toISOString(),
     ...(metadataSource ? { metadata_source: metadataSource } : {}),

@@ -4135,13 +4135,33 @@ export default function AdminPage() {
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
-                onClick={() => {
+                onClick={async () => {
                   const ev = spotlightImageWarning;
                   setSpotlightImageWarning(null);
-                  // Find the linked artist and open edit modal
-                  const linkedArtist = ev.artist_id ? artists.find(a => a.id === ev.artist_id) : artists.find(a => a.name?.toLowerCase() === ev.artist_name?.toLowerCase());
+
+                  // Ensure artists are loaded (they may not be if user went straight to Spotlight)
+                  let pool = artists;
+                  if (!pool || pool.length === 0) {
+                    try {
+                      const res = await fetch(`/api/admin/artists?limit=2000`, { headers: { Authorization: `Bearer ${password}` } });
+                      if (res.ok) {
+                        const data = await res.json();
+                        pool = Array.isArray(data) ? data : (data.artists || []);
+                        setArtists(pool);
+                      }
+                    } catch { /* fall through to search fallback */ }
+                  }
+
+                  // Find the linked artist by ID first, then name
+                  const linkedArtist = ev.artist_id
+                    ? pool.find(a => a.id === ev.artist_id)
+                    : pool.find(a => a.name?.toLowerCase() === ev.artist_name?.toLowerCase());
+
+                  // Always route to Artists → Triage sub-tab
+                  setActiveTab('artists');
+                  setArtistSubTab('triage');
+
                   if (linkedArtist) {
-                    setActiveTab('artists');
                     setEditingArtist(linkedArtist);
                     setImageCandidates(linkedArtist.image_url ? [linkedArtist.image_url] : []);
                     setImageCarouselIdx(0);
@@ -4154,7 +4174,7 @@ export default function AdminPage() {
                       instagram_url: linkedArtist.instagram_url || '',
                     });
                   } else {
-                    setActiveTab('artists');
+                    // Fallback: search by name so the user can find and edit
                     setArtistsSearch(ev.artist_name || '');
                     fetchArtists(ev.artist_name || '', false);
                   }

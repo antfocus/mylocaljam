@@ -770,13 +770,15 @@ export async function POST(request) {
             image_url: sd.image_url,
             last_fetched: new Date().toISOString(),
             metadata_source: 'scraper',
+            image_source: sd.image_url ? 'Scraped' : 'Unknown',
+            bio_source: sd.bio ? 'Scraped' : 'Unknown',
           }, { onConflict: 'name' });
           scraperEnrichResult.created++;
         } else {
           // Update only empty fields (don't overwrite existing bios/images)
           const update = {};
-          if (!ex.bio && sd.bio) update.bio = sd.bio;
-          if (!ex.image_url && sd.image_url) update.image_url = sd.image_url;
+          if (!ex.bio && sd.bio) { update.bio = sd.bio; update.bio_source = 'Scraped'; }
+          if (!ex.image_url && sd.image_url) { update.image_url = sd.image_url; update.image_source = 'Scraped'; }
           if (Object.keys(update).length > 0) {
             await supabase.from('artists').update(update).eq('id', ex.id);
             scraperEnrichResult.updated++;

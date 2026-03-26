@@ -77,13 +77,29 @@ export async function POST(request) {
       notes: `[Admin AI Upload] Extracted via Gemini OCR${e.event_name ? ` — ${e.event_name}` : ''}${isFestival ? ' [Festival]' : ''}${e.time ? ` — Time: ${e.time}` : ''} [AI: ${e.category || 'Live Music'} @ ${e.confidence_score || 50}%]`,
     }));
 
-    const { error: insertErr } = await supabase
+    let { error: insertErr } = await supabase
       .from('submissions')
       .insert(drafts);
 
+    // If insert fails (e.g. category/confidence_score columns don't exist yet),
+    // retry without the new columns so the upload still works
     if (insertErr) {
-      console.error('[ocr-flyer] Insert error:', insertErr.message);
-      return NextResponse.json({ error: insertErr.message }, { status: 500 });
+      console.warn('[ocr-flyer] Insert failed, retrying without new columns:', insertErr.message);
+      const fallbackDrafts = drafts.map(({ category, confidence_score, ...rest }) => rest);
+      const { error: retryErr } = await supabase
+        .from('submissions')
+        .insert(fallbackDrafts);
+
+      if (retryErr) {
+        console.error('[ocr-flyer] Insert error (retry):', retryErr.message);
+        return NextResponse.json({ error: retryErr.message }, { status: 500 });
+      }
+      // Succeeded with fallback — note this in response
+      return NextResponse.json({
+        events: extracted,
+        drafts_created: drafts.length,
+        message: `Created ${drafts.length} draft submissions (note: run SQL migration to enable Smart Categorization)`,
+      });
     }
 
     return NextResponse.json({
