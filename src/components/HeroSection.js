@@ -324,8 +324,8 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
             const realImage = ev.artist_image || ev.image_url || ev.venues?.photo_url || null;
             const brandedGradient = BRANDED_GRADIENTS[i % BRANDED_GRADIENTS.length];
             const hasBio = !!(ev.description && ev.description.trim());
-            const hasGenres = ev.artist_genres && ev.artist_genres.length > 0;
-            const showMeetArtist = hasBio || hasGenres;
+            // const hasGenres = ev.artist_genres && ev.artist_genres.length > 0; // Hidden until genre data is audited
+            const showMeetArtist = hasBio;
 
             return (
               <div
@@ -427,7 +427,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                     </span>
                   </div>
 
-                  {/* Genre pills (compact, below venue) */}
+                  {/* Genre pills — hidden until genre data is audited
                   {hasGenres && (
                     <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
                       {ev.artist_genres.slice(0, 3).map((g, gi) => (
@@ -443,7 +443,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                         </span>
                       ))}
                     </div>
-                  )}
+                  )} */}
 
                   {/* Meet the Artist button */}
                   {showMeetArtist && (
@@ -581,7 +581,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                 </div>
               </div>
 
-              {/* Genre tags */}
+              {/* Genre tags — hidden until genre data is audited
               {bioSheet.artist_genres && bioSheet.artist_genres.length > 0 && (
                 <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
                   {bioSheet.artist_genres.map((g, gi) => (
@@ -596,7 +596,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                     </span>
                   ))}
                 </div>
-              )}
+              )} */}
 
               {/* Bio text */}
               {bioSheet.description && bioSheet.description.trim() && (
