@@ -2888,6 +2888,151 @@ CREATE TABLE IF NOT EXISTS support_requests (
 
 ---
 
+## Session: March 27, 2026 — Admin Locks, Instagram Removal, UX Polish, Auth
+
+### 1. Metadata Lock System — Full Rebuild
+**Problem:** Lock state was fragmented — list view pills, edit modal inputs, and the master lock toggle all operated on disconnected state. Toggling a lock in one place didn't reflect in others. LockBadge in the edit modal only updated local React state, never persisted to DB. The `editingArtist` was a stale snapshot taken on pencil click.
+
+**Architecture (two-layer lock system):**
+- `is_locked` BOOLEAN on `artists` — global flag that blocks the enrichment pipeline from overwriting any field
+- `is_human_edited` JSONB on `artists` — per-field lock map (e.g. `{ bio: true, image_url: true }`) that protects individual fields
+
+**Fix — three-layer sync:**
+1. DB → `fetchArtists()` → `artists` array (source of truth)
+2. `useEffect` watches `artists` array and syncs lock fields into `editingArtist` (fixes stale snapshot)
+3. `isFieldLocked()` reads from `editingArtist.is_human_edited` → drives `readOnly`/`disabled` on inputs
+
+**Key changes in `src/app/admin/page.js`:**
+- `useEffect` sync bridge: watches `artists` array, patches `editingArtist` lock fields when they change
+- `LockBadge` component: always-visible toggle (was hidden when unlocked), persists to DB via PUT + `fetchArtists()`
+- `TrafficDot` pills (list view): clickable lock toggles with DB persistence
+- Master lock toggle: now computes `newFieldLocks` from populated fields and sends both `is_locked` + `is_human_edited` in one PUT
+- AI auto-fill in edit modal: respects `is_human_edited` per-field — skips locked fields
+- Image carousel arrows: hidden when `image_url` is locked
+
+**Visual distinction (locked vs unlocked):**
+- Locked: green background `rgba(34,197,94,0.15)`, green text `#22c55e`, green border, padlock icon + "LOCKED" label
+- Unlocked: near-invisible gray `rgba(136,136,136,0.06)`, muted text `rgba(136,136,136,0.5)`, faint border, "OPEN" label (no icon)
+
+**Backend validation in `src/app/api/admin/artists/route.js`:**
+- PUT handler checks existing `is_human_edited` before applying updates
+- Locked fields are stripped from the update payload unless the request is explicitly unlocking them
+- `lockableFields`: `['name', 'bio', 'genres', 'vibes', 'image_url']`
+
+### 2. Instagram URL — Complete Removal
+Deprecated `instagram_url` from the entire codebase. Files modified:
+
+| File | Changes |
+|---|---|
+| `src/app/admin/page.js` | Removed from `artistForm` state, form initialization, save payload, bulk enrich, AI auto-fill, master lock toggle, edit modal fields |
+| `src/app/api/admin/artists/route.js` | Removed from POST insert, needsInfo filter, lockableFields, manualFields |
+| `src/app/api/admin/artists/ai-lookup/route.js` | Removed from AI prompt, response schema, result object |
+| `src/app/page.js` | Removed from Supabase select queries and field mappings |
+| `src/app/event/[id]/page.js` | Removed from artist select query and field mapping |
+| `src/app/api/events/route.js` | Removed from artist select query |
+
+**SQL migration (must run manually):** `supabase-drop-instagram.sql`
+```sql
+ALTER TABLE artists DROP COLUMN IF EXISTS instagram_url;
+```
+
+### 3. Top Nav "Add" Button — Ghost Style
+Changed the "+" button in the top nav from solid orange to ghost/transparent style:
+- `background: 'transparent'`
+- `border: 1px solid` with `rgba(255,255,255,0.2)` dark / `rgba(0,0,0,0.2)` light
+- Icon fill: `rgba(255,255,255,0.8)` dark / `rgba(0,0,0,0.5)` light
+- Hover: `rgba(255,255,255,0.1)` via `.add-jar-btn:hover` in `globals.css`
+
+**Files:** `src/app/page.js`, `src/app/globals.css`
+
+### 4. "My Jam" Toggle — Renamed & Restyled
+- "My Shows" → **"My Stubs"**
+- "My Artists" → **"My Locals"**
+- Font size: 15px → 16px
+- Font weight: both set to 700
+- Inactive color: `rgba(255,255,255,0.85)` (more legible)
+
+**File:** `src/app/page.js`
+
+### 5. My Locals (FollowingTab) — Sort, Filter & UI Cleanup
+**File:** `src/components/FollowingTab.js`
+
+**Sort/filter dropdown:**
+- State: `sortBy` (default `'alpha'`), `onlyUpcoming`, `showSortMenu`
+- Click-outside close via `sortMenuRef` + `useEffect` with `mousedown` listener
+- Menu options: Alphabetical (default), Next Event Date, Recently Added
+
+**Sort logic:**
+- `alpha`: A-Z by name
+- `next_event`: soonest gig first, artists with no upcoming gig sink to bottom
+- `recent`: `created_at` descending
+
+**Upcoming-only toggle:** filters to artists with `next_gig` set
+
+**UI cleanup:**
+- Subtitles removed — single-line artist directory
+- Dates shown only when `sortBy === 'next_event'` (right-aligned: "Tonight" / "Tomorrow" / "Mon, Apr 16")
+
+### 6. Email Magic Link Auth
+**File:** `src/components/AuthModal.js`
+
+Layout reordered to promote magic link as primary auth method:
+1. Magic link email form (top/primary)
+2. "or" divider
+3. Google/Apple OAuth buttons (secondary)
+
+Copy changes: "Send Login Link" → "Send Magic Link", placeholder "you@example.com" → "name@example.com"
+
+Implementation was already complete (`signInWithOtp`, success state, `/auth/callback` redirect) — only needed layout reorder.
+
+**File:** `src/app/auth/callback/route.js` — already existed, handles PKCE code exchange
+
+### 7. Profile Auth Indicators & Email Management
+**File:** `src/app/page.js`
+
+**Auth provider indicator:**
+- Detects provider from `user.app_metadata.provider` (or `.providers[0]`)
+- Renders Google G SVG, Apple logo SVG, or envelope icon below email in profile header
+
+**Editable email:**
+- New state: `editEmail`, `emailChangeNote`
+- Email field in Edit Profile modal converted from read-only to editable input
+- Warning text: "A verification link will be sent to this new address"
+- Save handler: if email changed, calls `supabase.auth.updateUser({ email })` which triggers Supabase's built-in verification flow
+- On success: modal stays open with green "Verification email sent" note instead of closing
+
+### Files Modified (this session)
+- `src/app/admin/page.js` — Lock system rebuild, instagram removal, visual polish
+- `src/app/api/admin/artists/route.js` — Backend lock validation, instagram removal
+- `src/app/api/admin/artists/ai-lookup/route.js` — Instagram removal from AI prompt
+- `src/app/page.js` — Ghost add button, toggle rename, instagram removal, auth provider icons, email editing
+- `src/app/event/[id]/page.js` — Instagram removal
+- `src/app/api/events/route.js` — Instagram removal
+- `src/components/FollowingTab.js` — Sort/filter dropdown, UI cleanup
+- `src/components/AuthModal.js` — Magic link layout reorder
+- `src/app/globals.css` — Add button hover style
+
+### Files Created
+- `supabase-drop-instagram.sql` — Column drop migration
+
+### Deploy Steps
+1. Run `supabase-drop-instagram.sql` in Supabase SQL Editor
+2. Verify "Link accounts with the same email" is enabled in Supabase Auth → Providers (likely on by default)
+3. Push and deploy:
+   ```bash
+   git add -A && git commit -m "feat: lock system rebuild, instagram removal, auth polish, UX updates" && git push && npx vercel --prod
+   ```
+
+### Pending / TODO
+- **Test full lock flow** — toggle lock in list view pill, verify it reflects in edit modal and blocks AI auto-fill
+- **Test magic link auth** — sign up via magic link, verify callback redirect works
+- **Test email change** — edit email in profile, verify verification email arrives, confirm new email works after clicking link
+- **Test account linking** — sign up via magic link, sign out, sign in via Google with same email, verify same account
+- **Run `supabase-drop-instagram.sql`** — drop the `instagram_url` column from `artists` table
+- **Headless browser architecture** for House of Independents + Starland Ballroom (backlog)
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.
