@@ -127,6 +127,23 @@ export default function AdminPage() {
   const editPanelRef = useCallback(node => {
     if (node) node.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [editingArtist]);
+
+  // Keep editingArtist lock state in sync with the artists array (source of truth from DB)
+  // This fires whenever fetchArtists() completes, master toggle changes, or pill toggles fire
+  useEffect(() => {
+    if (!editingArtist) return;
+    const fresh = artists.find(a => a.id === editingArtist.id);
+    if (!fresh) return;
+    // Sync lock-related fields from the freshly-fetched artist data
+    const freshLocks = fresh.is_human_edited || {};
+    const currentLocks = editingArtist.is_human_edited || {};
+    const freshIsLocked = !!fresh.is_locked;
+    const currentIsLocked = !!editingArtist.is_locked;
+    if (JSON.stringify(freshLocks) !== JSON.stringify(currentLocks) || freshIsLocked !== currentIsLocked) {
+      setEditingArtist(prev => prev ? ({ ...prev, is_human_edited: freshLocks, is_locked: fresh.is_locked }) : prev);
+    }
+  }, [artists]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [loading, setLoading] = useState(false);
   const [showEventForm, setShowEventForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
@@ -305,7 +322,7 @@ export default function AdminPage() {
         if (ai.genres?.length && (!artist.genres || artist.genres.length === 0) && !locks.genres) { update.genres = ai.genres; newStatus.genres = 'pending'; }
         if (ai.vibes?.length && (!artist.vibes || artist.vibes.length === 0) && !locks.vibes) { update.vibes = ai.vibes; newStatus.vibes = 'pending'; }
         if (ai.image_url && !artist.image_url && !locks.image_url) { update.image_url = ai.image_url; newStatus.image_url = 'pending'; }
-        if (ai.instagram_url && !artist.instagram_url) update.instagram_url = ai.instagram_url;
+        if (ai.instagram_url && !artist.instagram_url && !locks.instagram_url) update.instagram_url = ai.instagram_url;
         if (ai.is_tribute !== undefined && !artist.is_tribute) update.is_tribute = ai.is_tribute;
 
         // Only save if there's something to update
@@ -2127,13 +2144,14 @@ export default function AdminPage() {
                           throw new Error(err.error || `API error ${res.status}`);
                         }
                         const ai = await res.json();
+                        const eLocks = editingArtist.is_human_edited || {};
                         setArtistForm(prev => ({
                           ...prev,
-                          bio: ai.bio || prev.bio,
-                          genres: ai.genres?.length ? ai.genres.join(', ') : prev.genres,
-                          vibes: ai.vibes?.length ? ai.vibes.join(', ') : prev.vibes,
-                          image_url: ai.image_url || prev.image_url,
-                          instagram_url: ai.instagram_url || prev.instagram_url,
+                          bio: (!eLocks.bio && ai.bio) ? ai.bio : prev.bio,
+                          genres: (!eLocks.genres && ai.genres?.length) ? ai.genres.join(', ') : prev.genres,
+                          vibes: (!eLocks.vibes && ai.vibes?.length) ? ai.vibes.join(', ') : prev.vibes,
+                          image_url: (!eLocks.image_url && ai.image_url) ? ai.image_url : prev.image_url,
+                          instagram_url: (!eLocks.instagram_url && ai.instagram_url) ? ai.instagram_url : prev.instagram_url,
                         }));
                         // Load image carousel with candidates
                         if (ai.image_candidates?.length > 0) {
@@ -2175,6 +2193,58 @@ export default function AdminPage() {
                   border: '1px solid var(--border)', borderRadius: '8px',
                   color: 'var(--text-primary)', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", outline: 'none',
                 };
+                const lockedStyle = {
+                  ...inputStyle,
+                  background: 'var(--bg-elevated)', opacity: 0.6, cursor: 'not-allowed',
+                  border: '1px solid var(--border)',
+                };
+                const fieldLocks = editingArtist.is_human_edited || {};
+                const isFieldLocked = (field) => !!fieldLocks[field];
+                const fieldInputStyle = (field) => isFieldLocked(field) ? lockedStyle : inputStyle;
+                const LockBadge = ({ field }) => {
+                  const locked = isFieldLocked(field);
+                  return (
+                    <button
+                      title={locked ? 'Unlock this field for editing' : 'Lock this field to protect it'}
+                      onClick={async () => {
+                        const updated = { ...fieldLocks };
+                        if (locked) {
+                          delete updated[field];
+                        } else {
+                          updated[field] = true;
+                        }
+                        // Update local state immediately for instant UI feedback
+                        setEditingArtist(prev => ({ ...prev, is_human_edited: updated }));
+                        // Persist to database so list view stays in sync
+                        try {
+                          await fetch('/api/admin/artists', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+                            body: JSON.stringify({ id: editingArtist.id, is_human_edited: updated }),
+                          });
+                          fetchArtists(artistsSearch, artistsNeedsInfo);
+                        } catch {}
+                      }}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '2px',
+                        background: locked ? 'rgba(34,197,94,0.1)' : 'rgba(136,136,136,0.08)',
+                        border: locked ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(136,136,136,0.2)',
+                        borderRadius: '4px', padding: '1px 5px', cursor: 'pointer',
+                        fontSize: '9px', fontWeight: 600,
+                        color: locked ? '#22c55e' : '#888',
+                        fontFamily: "'DM Sans', sans-serif",
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {locked ? (
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" /></svg>
+                      ) : (
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z" /></svg>
+                      )}
+                      {locked ? 'LOCKED' : 'OPEN'}
+                    </button>
+                  );
+                };
                 const RegenBtn = ({ field }) => (
                   <button
                     title={`Regenerate ${field} with AI`}
@@ -2193,13 +2263,17 @@ export default function AdminPage() {
                 return (<>
               {/* Artist Name — full width above the 2-col grid */}
               <div style={{ marginBottom: '12px' }}>
-                <span style={labelStyle}>Artist Name</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={labelStyle}>Artist Name</span>
+                  <LockBadge field="name" />
+                </div>
                 <input
                   type="text"
                   value={artistForm.name}
-                  onChange={e => setArtistForm(p => ({ ...p, name: e.target.value }))}
+                  onChange={e => !isFieldLocked('name') && setArtistForm(p => ({ ...p, name: e.target.value }))}
+                  readOnly={isFieldLocked('name')}
                   placeholder="Clean display name"
-                  style={{ ...inputStyle, marginTop: '4px', fontWeight: 700, fontSize: '15px' }}
+                  style={{ ...(isFieldLocked('name') ? lockedStyle : inputStyle), marginTop: '4px', fontWeight: 700, fontSize: '15px' }}
                 />
                 {duplicateNameWarning && (
                   <div style={{ fontSize: '11px', color: '#facc15', marginTop: '4px', fontFamily: "'DM Sans', sans-serif", background: 'rgba(250,204,21,0.08)', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(250,204,21,0.2)' }}>
@@ -2216,28 +2290,32 @@ export default function AdminPage() {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
                     <span style={labelStyle}>Bio</span>
-                    <RegenBtn field="bio" />
+                    <LockBadge field="bio" />
+                    {!isFieldLocked('bio') && <RegenBtn field="bio" />}
                   </div>
                   <textarea
                     value={artistForm.bio}
-                    onChange={e => setArtistForm(p => ({ ...p, bio: e.target.value }))}
+                    onChange={e => !isFieldLocked('bio') && setArtistForm(p => ({ ...p, bio: e.target.value }))}
+                    readOnly={isFieldLocked('bio')}
                     rows={3}
-                    style={{ ...inputStyle, resize: 'vertical' }}
+                    style={{ ...fieldInputStyle('bio'), resize: isFieldLocked('bio') ? 'none' : 'vertical' }}
                   />
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px', marginTop: '12px' }}>
                     <span style={labelStyle}>Vibes</span>
+                    <LockBadge field="vibes" />
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', opacity: isFieldLocked('vibes') ? 0.5 : 1 }}>
                     {VIBES.map(v => {
                       const selected = artistForm.vibes.split(',').map(s => s.trim()).filter(Boolean).includes(v);
                       return (
-                        <button key={v} type="button" onClick={() => {
+                        <button key={v} type="button" disabled={isFieldLocked('vibes')} onClick={() => {
+                          if (isFieldLocked('vibes')) return;
                           const current = artistForm.vibes.split(',').map(s => s.trim()).filter(Boolean);
                           const next = selected ? current.filter(x => x !== v) : [...current, v];
                           setArtistForm(p => ({ ...p, vibes: next.join(', ') }));
                         }} style={{
                           padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
-                          fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: 'none',
+                          fontFamily: "'DM Sans', sans-serif", cursor: isFieldLocked('vibes') ? 'not-allowed' : 'pointer', border: 'none',
                           background: selected ? 'rgba(232,114,42,0.15)' : 'var(--bg-card)',
                           color: selected ? '#E8722A' : 'var(--text-muted)',
                           outline: selected ? '1.5px solid #E8722A' : '1px solid var(--border)',
@@ -2250,19 +2328,21 @@ export default function AdminPage() {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
                     <span style={labelStyle}>Genres</span>
-                    <RegenBtn field="genres" />
+                    <LockBadge field="genres" />
+                    {!isFieldLocked('genres') && <RegenBtn field="genres" />}
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', opacity: isFieldLocked('genres') ? 0.5 : 1 }}>
                     {GENRES.map(g => {
                       const selected = artistForm.genres.split(',').map(s => s.trim()).filter(Boolean).includes(g);
                       return (
-                        <button key={g} type="button" onClick={() => {
+                        <button key={g} type="button" disabled={isFieldLocked('genres')} onClick={() => {
+                          if (isFieldLocked('genres')) return;
                           const current = artistForm.genres.split(',').map(s => s.trim()).filter(Boolean);
                           const next = selected ? current.filter(x => x !== g) : [...current, g];
                           setArtistForm(p => ({ ...p, genres: next.join(', ') }));
                         }} style={{
                           padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
-                          fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: 'none',
+                          fontFamily: "'DM Sans', sans-serif", cursor: isFieldLocked('genres') ? 'not-allowed' : 'pointer', border: 'none',
                           background: selected ? 'rgba(232,114,42,0.15)' : 'var(--bg-card)',
                           color: selected ? '#E8722A' : 'var(--text-muted)',
                           outline: selected ? '1.5px solid #E8722A' : '1px solid var(--border)',
@@ -2273,7 +2353,8 @@ export default function AdminPage() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px', marginTop: '12px' }}>
                     <span style={labelStyle}>Image URL</span>
-                    <RegenBtn field="image_url" />
+                    <LockBadge field="image_url" />
+                    {!isFieldLocked('image_url') && <RegenBtn field="image_url" />}
                     {imageCandidates.length > 1 && (
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
                         {imageCarouselIdx + 1}/{imageCandidates.length}
@@ -2282,7 +2363,7 @@ export default function AdminPage() {
                   </div>
                   {/* Image URL input with carousel arrows */}
                   <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                    {imageCandidates.length > 1 && (
+                    {imageCandidates.length > 1 && !isFieldLocked('image_url') && (
                       <button
                         onClick={() => {
                           const prev = (imageCarouselIdx - 1 + imageCandidates.length) % imageCandidates.length;
@@ -2301,11 +2382,12 @@ export default function AdminPage() {
                     <input
                       type="text"
                       value={artistForm.image_url}
-                      onChange={e => setArtistForm(p => ({ ...p, image_url: e.target.value }))}
+                      onChange={e => !isFieldLocked('image_url') && setArtistForm(p => ({ ...p, image_url: e.target.value }))}
+                      readOnly={isFieldLocked('image_url')}
                       placeholder="https://..."
-                      style={{ ...inputStyle, flex: 1 }}
+                      style={{ ...(isFieldLocked('image_url') ? lockedStyle : inputStyle), flex: 1 }}
                     />
-                    {imageCandidates.length > 1 && (
+                    {imageCandidates.length > 1 && !isFieldLocked('image_url') && (
                       <button
                         onClick={() => {
                           const next = (imageCarouselIdx + 1) % imageCandidates.length;
@@ -2333,7 +2415,7 @@ export default function AdminPage() {
                           {imageCarouselIdx + 1} of {imageCandidates.length}
                         </span>
                       )}
-                      {imageCandidates.length <= 1 && !regeneratingField && (
+                      {imageCandidates.length <= 1 && !regeneratingField && !isFieldLocked('image_url') && (
                         <button
                           onClick={() => regenerateField('image_url')}
                           style={{
@@ -2363,7 +2445,7 @@ export default function AdminPage() {
                         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '24px' }}>🎤</div>
                       )}
                       {/* Overlay carousel arrows */}
-                      {imageCandidates.length > 1 && (<>
+                      {imageCandidates.length > 1 && !isFieldLocked('image_url') && (<>
                         <button
                           onClick={() => {
                             const prev = (imageCarouselIdx - 1 + imageCandidates.length) % imageCandidates.length;
@@ -2397,13 +2479,15 @@ export default function AdminPage() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px', marginTop: '12px' }}>
                     <span style={labelStyle}>Instagram URL</span>
+                    <LockBadge field="instagram_url" />
                   </div>
                   <input
                     type="text"
                     value={artistForm.instagram_url}
-                    onChange={e => setArtistForm(p => ({ ...p, instagram_url: e.target.value }))}
+                    onChange={e => !isFieldLocked('instagram_url') && setArtistForm(p => ({ ...p, instagram_url: e.target.value }))}
+                    readOnly={isFieldLocked('instagram_url')}
                     placeholder="https://instagram.com/..."
-                    style={inputStyle}
+                    style={isFieldLocked('instagram_url') ? lockedStyle : inputStyle}
                   />
                 </div>
               </div>
@@ -2645,25 +2729,52 @@ export default function AdminPage() {
                 const fs = artist.field_status || {};
 
                 // Traffic light: Red (missing), Yellow (AI pending), Green (approved/live)
+                // Pills are clickable toggles for per-field metadata locks
                 const TrafficDot = ({ field, hasData, label }) => {
                   const status = hasData ? (fs[field] || 'live') : null;
-                  const locked = locks[field];
+                  const locked = !!locks[field];
                   const colors = {
                     live:    { bg: 'rgba(34,197,94,0.12)', color: '#22c55e' },
                     pending: { bg: 'rgba(234,179,8,0.12)', color: '#EAB308' },
                     null:    { bg: 'rgba(239,68,68,0.12)', color: '#ef4444' },
                   };
-                  const c = colors[status] || colors.null;
+                  // When locked, override to green locked style regardless of status
+                  const lockedColors = { bg: 'rgba(34,197,94,0.18)', color: '#22c55e' };
+                  const unlockedMuted = { bg: 'rgba(136,136,136,0.08)', color: '#888' };
+                  // Use status colors when unlocked, green when locked
+                  const c = locked ? lockedColors : (colors[status] || colors.null);
                   return (
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '3px',
-                      padding: '2px 8px', borderRadius: '9999px',
-                      fontSize: '10px', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
-                      background: c.bg, color: c.color,
-                    }}>
-                      {locked && <span style={{ fontSize: '7px' }}>🔒</span>}
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        try {
+                          const newLocks = { ...locks };
+                          if (locked) {
+                            delete newLocks[field];
+                          } else {
+                            newLocks[field] = true;
+                          }
+                          await fetch('/api/admin/artists', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+                            body: JSON.stringify({ id: artist.id, is_human_edited: newLocks }),
+                          });
+                          fetchArtists(artistsSearch, artistsNeedsInfo);
+                        } catch {}
+                      }}
+                      title={locked ? `Unlock ${label} — allow AI/scraper updates` : `Lock ${label} — protect from overwrites`}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '3px',
+                        padding: '2px 8px', borderRadius: '9999px',
+                        fontSize: '10px', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+                        background: c.bg, color: c.color,
+                        border: locked ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent',
+                        cursor: 'pointer', transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <span style={{ fontSize: '7px' }}>{locked ? '🔒' : '🔓'}</span>
                       {label}
-                    </span>
+                    </button>
                   );
                 };
 
@@ -2769,13 +2880,26 @@ export default function AdminPage() {
                         title={artist.is_locked ? 'Unlock — allow scrapers to update' : 'Lock — protect from scraper overwrites'}
                         onClick={async () => {
                           try {
+                            const nowLocking = !artist.is_locked;
+                            // Sync is_human_edited with the master lock:
+                            // Locking → lock all populated fields; Unlocking → clear all field locks
+                            const newFieldLocks = nowLocking
+                              ? {
+                                  ...(artist.bio ? { bio: true } : {}),
+                                  ...(artist.image_url ? { image_url: true } : {}),
+                                  ...(artist.genres?.length ? { genres: true } : {}),
+                                  ...(artist.vibes?.length ? { vibes: true } : {}),
+                                  ...(artist.instagram_url ? { instagram_url: true } : {}),
+                                  ...(artist.name ? { name: true } : {}),
+                                }
+                              : {};
                             await fetch('/api/admin/artists', {
                               method: 'PUT',
                               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-                              body: JSON.stringify({ id: artist.id, is_locked: !artist.is_locked }),
+                              body: JSON.stringify({ id: artist.id, is_locked: nowLocking, is_human_edited: newFieldLocks }),
                             });
                             fetchArtists(artistsSearch, artistsNeedsInfo);
-                            setArtistToast({ type: 'success', message: artist.is_locked ? `${artist.name} unlocked` : `${artist.name} locked — protected from overwrites` });
+                            setArtistToast({ type: 'success', message: nowLocking ? `${artist.name} locked — all fields protected` : `${artist.name} unlocked — all field locks cleared` });
                             setTimeout(() => setArtistToast(null), 3000);
                           } catch {}
                         }}

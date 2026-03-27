@@ -153,28 +153,31 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           <div style={{
             background: isCanceled ? '#DC2626' : config.bg,
             color: isCanceled ? '#FFFFFF' : '#1C1917',
-            fontWeight: 900,
-            width: '48px', height: '48px',
+            fontWeight: 700,
+            width: '52px', minHeight: '48px',
             borderRadius: '12px 0 0 12px', flexShrink: 0,
-            borderRight: '2px dashed rgba(255,255,255,0.4)',
-            display: 'flex',
-            flexDirection: (timeStr && timeStr.includes(':')) ? 'column' : 'row',
+            borderRight: '2px dashed rgba(0,0,0,0.12)',
+            display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center',
-            gap: (timeStr && timeStr.includes(':')) ? '1px' : '0px',
-            fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
-            fontVariantNumeric: 'tabular-nums',
-            letterSpacing: '-0.5px',
+            padding: '4px 0',
+            fontFamily: "'DM Sans', sans-serif",
+            boxSizing: 'border-box',
           }}>
-            {isCanceled ? <span style={{ fontSize: '18px', lineHeight: 1 }}>✕</span> : (() => {
+            {isCanceled ? <span style={{ fontSize: '20px', lineHeight: 1 }}>✕</span> : (() => {
               const raw = timeStr || '—';
-              if (raw === '—') return <span style={{ fontSize: '18px', lineHeight: 1 }}>—</span>;
-              if (!raw.includes(':')) return <span style={{ fontSize: '18px', lineHeight: 1 }}>{raw}</span>;
-              const period = raw.toLowerCase().includes('a') ? 'AM' : 'PM';
+              if (raw === '—') return <span style={{ fontSize: '20px', lineHeight: 1, fontWeight: 700 }}>—</span>;
+              // Extract period (a/p) → AM/PM
+              const periodMatch = raw.match(/([apAP][mM]?)$/);
+              const period = periodMatch ? (periodMatch[1].toLowerCase().startsWith('a') ? 'AM' : 'PM') : '';
               const nums = raw.replace(/[apAP][mM]?$/, '');
-              return (<>
-                <span style={{ fontSize: '15px', lineHeight: 1 }}>{nums}</span>
-                <span style={{ fontSize: '9px', lineHeight: 1, letterSpacing: '0.5px', opacity: 0.85 }}>{period}</span>
-              </>);
+              // Smart format: strip :00 for top-of-hour, keep minutes otherwise
+              const smartTime = nums.replace(/:00$/, '');
+              return (
+                <>
+                  <span style={{ fontSize: smartTime.length > 4 ? '14px' : smartTime.length > 2 ? '18px' : '22px', lineHeight: 1, fontWeight: 900 }}>{smartTime}</span>
+                  {period && <span style={{ fontSize: '9px', lineHeight: 1, fontWeight: 600, letterSpacing: '1.2px', textTransform: 'uppercase', marginTop: '2px', opacity: 0.55 }}>{period}</span>}
+                </>
+              );
             })()}
           </div>
 

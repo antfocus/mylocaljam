@@ -2782,6 +2782,112 @@ ALTER TABLE submissions ADD COLUMN IF NOT EXISTS confidence_score INTEGER DEFAUL
 
 ---
 
+## Session: March 26, 2026 — In-App Support Form, Modal Merge, Global Contrast Fix, Conditional Hero
+
+### What Changed
+
+#### 1. In-App Support Form (replaces mailto: link)
+- **Before**: "Contact Support" button in Profile tab opened `mailto:mylocaljam@gmail.com` (kicked to email client)
+- **After**: Opens a native bottom-sheet-style modal with category selector, message textarea, and success toast
+- **New component**: `src/components/SupportModal.js`
+- **New API endpoint**: `src/app/api/support/route.js` — POST stores to `support_requests` table, GET (admin-only) retrieves with optional status filter
+- **Profile menu**: `mailto:` onClick replaced with `setShowSupport(true)`
+
+#### 2. Merged Feedback + Support Modals into Single "Help & Feedback" Experience
+- **Before**: Two separate menu rows ("Give Feedback" → FeedbackModal, "Contact Support" → SupportModal) with overlapping categories
+- **After**: Single "Help & Feedback" row opens one unified SupportModal with:
+  - Section 1: "How's the vibe?" emoji rating row (1-5 scale, carried over from FeedbackModal)
+  - Section 2: Unified category pills — Account Issue, Event / Listing, Bug Report, Feature Idea, General
+  - Section 3: Single textarea ("Describe what happened or what's on your mind...")
+  - Submit button: "Send Message"
+- **Deleted**: `src/components/FeedbackModal.js` (removed entirely)
+- **Removed**: `showFeedback` state, FeedbackModal import and render from `src/app/page.js`
+- **API updated**: `/api/support` now accepts optional `rating` (1-5) alongside `category`, `message`, `email`
+- Icon changed from `chat_bubble` to `help_outline` for the merged row
+
+#### 3. Global Contrast Fix — No White Text/Icons on Orange (#E8722A) Backgrounds
+- **Design rule**: All orange-background elements now use `#1C1917` (Tailwind gray-900) text/icon color instead of white
+- **Phase 1 (pills/badges/tags)**: Filter shortcut pills, date pills, date picker pill, saved tab segment toggle, admin sub-tab pills, force sync button (6 instances across page.js + admin/page.js)
+- **Phase 2 (full CTAs + SVGs — "no exceptions")**: Every remaining white-on-orange element updated across 15 files:
+  - `src/app/page.js` — filter count badge text + SVG, "+" FAB SVG, "Show X events" CTA, profile camera SVG, "Save Changes" button, notification badges
+  - `src/app/admin/page.js` — tab count badges, Create Venue, Resolve dropdown, Bulk Save Time, AI Enrich, Confirm & Run, Auto-Fill with AI
+  - `src/app/admin/queue/page.js` — Login, Back to Admin, queue action buttons
+  - `src/app/event/[id]/EventPageClient.js` — Browse Events, Create Free Account, Sign Up Free
+  - `src/app/event/[id]/page.js` — Browse Events fallback link
+  - `src/app/redesign/page.js` — "+" FAB SVG, filter CTA, Sign In button
+  - `src/components/EventCardV2.js` — Follow button text + SVG stroke, flag submit
+  - `src/components/MapView.js` — "Go" search button
+  - `src/components/SearchFilterRedesign.js` — "+" FAB SVG, profile avatar SVG, Show Events, notification badges
+  - `src/components/AuthModal.js` — Sign in / submit buttons
+  - `src/components/WelcomeModal.js` — "Get Started" button
+  - `src/components/SubmitEventModal.js` — Upload + Submit buttons
+  - `src/components/SupportModal.js` — "Send Message" button
+  - `src/lib/sendEmail.js` — CTA button in notification emails
+
+#### 4. Conditional Spotlight Hero Rendering
+- **Before**: "Today's Spotlight" hero carousel always displayed on Home tab, pushing search results down
+- **After**: Hero unmounts when any search query or filter is active (`hasActiveFilters` check)
+- **Condition**: `activeTab === 'home' && !hasActiveFilters` — hero shows only when search is empty AND no date/distance/shortcut filters are applied
+- Events list snaps directly under the search bar when filtering, maximizing screen space
+- File: `src/app/page.js` (line ~2229)
+
+### SQL Migrations Required (Run in Supabase SQL Editor)
+
+```sql
+-- Support requests table (new)
+CREATE TABLE IF NOT EXISTS support_requests (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  rating      INTEGER CHECK (rating BETWEEN 1 AND 5),
+  category    TEXT DEFAULT 'general',
+  message     TEXT,
+  email       TEXT,
+  status      TEXT DEFAULT 'open',
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### Files Created
+- `src/components/SupportModal.js` — Unified Help & Feedback modal (emoji rating + categories + message)
+- `src/app/api/support/route.js` — Support request POST/GET endpoint
+
+### Files Deleted
+- `src/components/FeedbackModal.js` — Replaced by merged SupportModal
+
+### Files Modified
+- `src/app/page.js` — Removed FeedbackModal, added SupportModal, merged menu row, contrast fixes, conditional hero rendering
+- `src/app/admin/page.js` — Contrast fixes on all orange buttons/badges
+- `src/app/admin/queue/page.js` — Contrast fixes
+- `src/app/event/[id]/EventPageClient.js` — Contrast fixes
+- `src/app/event/[id]/page.js` — Contrast fixes
+- `src/app/redesign/page.js` — Contrast fixes
+- `src/components/EventCardV2.js` — Contrast fixes (follow button, flag submit)
+- `src/components/MapView.js` — Contrast fix (Go button)
+- `src/components/SearchFilterRedesign.js` — Contrast fixes (FAB, badges, CTA)
+- `src/components/AuthModal.js` — Contrast fixes
+- `src/components/WelcomeModal.js` — Contrast fix
+- `src/components/SubmitEventModal.js` — Contrast fixes
+- `src/lib/sendEmail.js` — Contrast fix (email CTA button)
+
+### Deploy Steps
+1. Run SQL migration above in Supabase (support_requests table)
+2. Push and deploy:
+   ```bash
+   git add -A
+   git commit -m "In-app support, modal merge, global contrast fix, conditional hero"
+   git push origin main
+   ```
+3. If webhook doesn't trigger: `npx vercel --prod`
+
+### Pending / TODO
+- **Test full Spotlight → Edit → Save → Return flow** with a missing-image artist
+- **Re-upload Sea Hear Now poster** to test smart categorization + autocomplete + batch apply
+- **Test enrichment image pipeline** — verify Wikidata → Wikimedia Commons images populate `image_source: 'MusicBrainz'`
+- **Headless browser architecture** for House of Independents + Starland Ballroom (backlog)
+- **Test Help & Feedback modal** — submit a test message, verify it lands in `support_requests` table
+- **Verify contrast** — spot-check orange buttons across the app on mobile (dark + light mode)
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.

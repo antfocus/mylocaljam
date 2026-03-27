@@ -116,6 +116,33 @@ export async function PUT(request) {
   const body = await request.json();
   const { id, old_name, ...updates } = body;
 
+  // Backend lock validation: strip any fields that are locked via is_human_edited
+  // This prevents locked fields from being overwritten even if the frontend is bypassed
+  if (id) {
+    const { data: existing } = await supabase
+      .from('artists')
+      .select('is_human_edited')
+      .eq('id', id)
+      .single();
+
+    if (existing?.is_human_edited && typeof existing.is_human_edited === 'object') {
+      const locks = existing.is_human_edited;
+      const lockableFields = ['name', 'bio', 'genres', 'vibes', 'image_url', 'instagram_url'];
+      for (const field of lockableFields) {
+        // If the field is locked in the DB and the incoming update isn't explicitly unlocking it,
+        // strip it from the update payload
+        if (locks[field] && updates[field] !== undefined) {
+          // Allow the update if is_human_edited is also being sent and the field is being unlocked
+          const incomingLocks = updates.is_human_edited;
+          const isUnlocking = incomingLocks && typeof incomingLocks === 'object' && !incomingLocks[field];
+          if (!isUnlocking) {
+            delete updates[field];
+          }
+        }
+      }
+    }
+  }
+
   // If name was changed, save the old name as an alias
   if (old_name && updates.name && old_name !== updates.name) {
     // Save old name as alias (ignore conflict if already exists)
