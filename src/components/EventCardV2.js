@@ -237,13 +237,13 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             >
               <svg
                 className={isFavorited ? 'save-pop' : ''}
-                width="30" height="30" viewBox="0 0 24 24"
-                fill={isFavorited ? '#E8722A' : 'none'}
+                width="26" height="26" viewBox="0 0 24 24"
+                fill="none"
                 stroke={isFavorited ? '#E8722A' : (darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)')}
-                strokeWidth={isFavorited ? '1.8' : '1.5'} strokeLinecap="round" strokeLinejoin="round"
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
                 style={{ transition: 'all 0.2s ease' }}
               >
-                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="11" />
                 {!isFavorited && (
                   <>
                     <line x1="12" y1="8" x2="12" y2="16" />
@@ -251,7 +251,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                   </>
                 )}
                 {isFavorited && (
-                  <polyline points="8 12 10.5 14.5 16 9" fill="none" stroke="#FFFFFF" strokeWidth="2.5" />
+                  <polyline points="7.5 12 10.5 15 16.5 9" fill="none" stroke="#E8722A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                 )}
               </svg>
             </button>
