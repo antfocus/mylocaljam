@@ -310,6 +310,8 @@ export default function HomePage() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState('');
   const [editAvatarUrl, setEditAvatarUrl] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [emailChangeNote, setEmailChangeNote] = useState(null); // null | 'pending' | 'sent'
   const [editProfileSaving, setEditProfileSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -2546,10 +2548,37 @@ export default function HomePage() {
                   <p style={{ fontWeight: 700, fontSize: '20px', color: t.text, marginTop: '10px', fontFamily: "'DM Sans', sans-serif" }}>
                     {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Your Profile'}
                   </p>
-                  <p style={{ fontSize: '13px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>{user?.email}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                    <p style={{ fontSize: '13px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif", margin: 0 }}>{user?.email}</p>
+                    {(() => {
+                      const provider = user?.app_metadata?.provider || (user?.app_metadata?.providers || [])[0] || 'email';
+                      if (provider === 'google') return (
+                        <svg width="14" height="14" viewBox="0 0 18 18" style={{ flexShrink: 0, opacity: 0.5 }}>
+                          <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+                          <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
+                          <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+                          <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+                        </svg>
+                      );
+                      if (provider === 'apple') return (
+                        <svg width="12" height="14" viewBox="0 0 16 20" fill={darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)'} style={{ flexShrink: 0 }}>
+                          <path d="M13.545 10.239c-.022-2.233 1.823-3.305 1.905-3.356-.037-.054-1.495-2.171-3.822-2.171-1.627 0-2.91.973-3.694.973-.804 0-2.005-.948-3.316-.923C2.757 4.789.935 5.887.935 8.574c0 2.842 2.04 7.294 3.682 7.294.966-.024 1.826-.693 2.614-.693.773 0 1.566.693 2.646.67 1.078-.024 1.95-.979 2.89-2.927.568-1.105.798-2.168.817-2.222-.018-.008-2.054-.816-2.039-3.457z"/>
+                          <path d="M11.152 3.294c.686-.857 1.154-2.025 1.025-3.211-.99.043-2.217.695-2.926 1.529-.633.74-1.198 1.948-1.05 3.09 1.112.087 2.254-.568 2.951-1.408z"/>
+                        </svg>
+                      );
+                      // Default: email/magic link — envelope icon
+                      return (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                          <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" fill={darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)'} />
+                        </svg>
+                      );
+                    })()}
+                  </div>
                   <button onClick={() => {
                     setEditDisplayName(user?.user_metadata?.full_name || user?.email?.split('@')[0] || '');
                     setEditAvatarUrl(user?.user_metadata?.avatar_url || '');
+                    setEditEmail(user?.email || '');
+                    setEmailChangeNote(null);
                     setShowEditProfile(true);
                   }} style={{
                     marginTop: '10px', padding: '8px 24px', borderRadius: '999px',
@@ -3063,24 +3092,32 @@ export default function HomePage() {
               />
             </div>
 
-            {/* Email (read-only) */}
+            {/* Email */}
             <div style={{ padding: '0 24px 20px' }}>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: t.textMuted, marginBottom: '6px' }}>
-                Email (linked Google account)
+                Email
               </label>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '10px',
-                padding: '12px 14px', borderRadius: '10px',
-                background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-                border: `1px solid ${t.border}`,
-              }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                  <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z" fill={t.textMuted} />
-                </svg>
-                <span style={{ fontSize: '14px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
-                  {user?.email || ''}
-                </span>
-              </div>
+              <input
+                type="email"
+                value={editEmail}
+                onChange={e => { setEditEmail(e.target.value); setEmailChangeNote(null); }}
+                placeholder="your@email.com"
+                style={{
+                  width: '100%', padding: '12px 14px', borderRadius: '10px', fontSize: '14px',
+                  background: t.bg, color: t.text, border: `1px solid ${t.border}`,
+                  boxSizing: 'border-box', fontFamily: "'DM Sans', sans-serif",
+                }}
+              />
+              {editEmail && editEmail.trim().toLowerCase() !== (user?.email || '').toLowerCase() && !emailChangeNote && (
+                <p style={{ fontSize: '11px', color: t.accent, marginTop: '6px', lineHeight: 1.4, fontFamily: "'DM Sans', sans-serif" }}>
+                  A verification link will be sent to this new address. Your email won&apos;t change until you confirm it.
+                </p>
+              )}
+              {emailChangeNote === 'sent' && (
+                <p style={{ fontSize: '11px', color: '#22c55e', marginTop: '6px', lineHeight: 1.4, fontFamily: "'DM Sans', sans-serif" }}>
+                  Verification email sent to <strong>{editEmail}</strong>. Check your inbox to confirm the change.
+                </p>
+              )}
             </div>
 
             {/* Save & Cancel */}
@@ -3103,18 +3140,35 @@ export default function HomePage() {
                     if (editAvatarUrl && editAvatarUrl !== user?.user_metadata?.avatar_url) {
                       updates.data.avatar_url = editAvatarUrl;
                     }
+
+                    // Handle email change — triggers verification, doesn't update DB until confirmed
+                    const emailChanged = editEmail && editEmail.trim().toLowerCase() !== (user?.email || '').toLowerCase();
+                    if (emailChanged) {
+                      updates.email = editEmail.trim();
+                    }
+
                     const { error } = await supabase.auth.updateUser(updates);
                     if (error) throw error;
+
                     // Refresh local user object
                     const { data: { user: refreshed } } = await supabase.auth.getUser();
                     if (refreshed) setUser(refreshed);
-                    setShowEditProfile(false);
-                    setToast('Profile updated');
-                    setToastVariant('success');
-                    setTimeout(() => { setToast(null); setToastVariant(null); }, 3000);
+
+                    if (emailChanged) {
+                      // Don't close modal — show confirmation note
+                      setEmailChangeNote('sent');
+                      setToast('Verification email sent — check your inbox');
+                      setToastVariant('success');
+                      setTimeout(() => { setToast(null); setToastVariant(null); }, 4000);
+                    } else {
+                      setShowEditProfile(false);
+                      setToast('Profile updated');
+                      setToastVariant('success');
+                      setTimeout(() => { setToast(null); setToastVariant(null); }, 3000);
+                    }
                   } catch (err) {
                     console.error('Profile save error:', err);
-                    setToast('Failed to save profile');
+                    setToast(err.message || 'Failed to save profile');
                     setToastVariant('error');
                     setTimeout(() => { setToast(null); setToastVariant(null); }, 3000);
                   }
