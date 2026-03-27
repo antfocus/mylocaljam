@@ -222,8 +222,8 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                 try { navigator?.vibrate?.(10); } catch {}
                 const wasSaved = isFavorited;
                 onToggleFavorite?.(event.id);
-                // Show follow popover when saving (not unsaving), if not already following
-                if (!wasSaved && !isArtistFollowed && onFollowArtist && event?.artist_name) {
+                // Show follow popover when saving (not unsaving)
+                if (!wasSaved && event?.artist_name) {
                   setShowFollowPopover(true);
                   setPopoverFading(false);
                 }
@@ -730,7 +730,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
               <p style={{ margin: 0, fontSize: '12px', fontWeight: 600, color: darkMode ? '#C0C0D0' : '#4B5563', lineHeight: 1.4 }}>
-                Saved! Want alerts for future shows?
+                Event Saved!{!isArtistFollowed && ' Want alerts for future shows?'}
               </p>
               <button
                 onClick={dismissPopover}
@@ -741,27 +741,29 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                 </svg>
               </button>
             </div>
-            <button
-              onClick={handlePopoverFollow}
-              style={{
-                marginTop: '10px', width: '100%',
-                display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px',
-                padding: '8px 12px', borderRadius: '8px', border: 'none',
-                background: '#E8722A', color: '#1C1917',
-                fontSize: '12px', fontWeight: 700, cursor: 'pointer',
-                fontFamily: "'DM Sans', sans-serif",
-                transition: 'opacity 0.15s',
-                textAlign: 'left',
-                overflow: 'hidden',
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1C1917" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {(event?.artist_name || '').length > 18 ? 'Follow Artist' : `Follow ${event?.artist_name || ''}`}
-              </span>
-            </button>
+            {!isArtistFollowed && onFollowArtist && (
+              <button
+                onClick={handlePopoverFollow}
+                style={{
+                  marginTop: '10px', width: '100%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px',
+                  padding: '8px 12px', borderRadius: '8px', border: 'none',
+                  background: '#E8722A', color: '#1C1917',
+                  fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'opacity 0.15s',
+                  textAlign: 'left',
+                  overflow: 'hidden',
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1C1917" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {(event?.artist_name || '').length > 18 ? 'Follow Artist' : `Follow ${event?.artist_name || ''}`}
+                </span>
+              </button>
+            )}
           </div>
         </>,
         document.body
