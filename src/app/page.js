@@ -816,8 +816,8 @@ export default function HomePage() {
             return raw.substring(0, 10);
           })(),
           start_time:    extractedStartTime,
-          // Prefer joined artist bio over legacy event-level artist_bio
-          description:   e.artists?.bio || e.artist_bio || e.description || '',
+          // Event-level description (artist_bio on events table) overrides global artist bio
+          description:   e.artist_bio || e.artists?.bio || '',
           // Event-level genre/vibe override artist-level (admin can set per-gig overrides)
           artist_genres: e.genre ? [e.genre] : (e.artists?.genres || []),
           artist_vibes:  e.vibe ? [e.vibe] : (e.artists?.vibes || []),

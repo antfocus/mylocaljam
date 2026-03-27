@@ -80,8 +80,8 @@ function flattenEvent(e) {
     status:         e.status,
     ticket_link:    e.ticket_link || null,
     category:       e.category || 'Live Music',
-    // Flattened from artists join
-    description:    e.artists?.bio || e.artist_bio || '',
+    // Event-level description overrides global artist bio
+    description:    e.artist_bio || e.artists?.bio || '',
     artist_image:   e.artists?.image_url || null,
     artist_genres:  e.genre ? [e.genre] : (e.artists?.genres || []),
     is_tribute:     e.artists?.is_tribute || false,

@@ -5112,8 +5112,9 @@ function EventFormModal({ event, artists = [], onClose, onSave }) {
             <input style={inputStyle} placeholder="Links this event to the artist profile" value={form.artist_name} onChange={(e) => update('artist_name', e.target.value)} />
           </div>
           <div>
-            <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Artist Bio</label>
-            <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: '60px' }} value={form.artist_bio} onChange={(e) => update('artist_bio', e.target.value)} />
+            <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Event Description (Optional)</label>
+            <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: '60px' }} placeholder="Optional — overrides the main artist bio on event cards" value={form.artist_bio} onChange={(e) => update('artist_bio', e.target.value)} />
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>If set, this shows instead of the global artist bio. Leave blank to use the artist&apos;s default bio.</p>
           </div>
           <div>
             <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Venue *</label>
