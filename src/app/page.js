@@ -1556,12 +1556,15 @@ export default function HomePage() {
               <button
                 onClick={(e) => { e.stopPropagation(); setShowSubmit(true); }}
                 title="Add to the Jar"
+                className="add-jar-btn"
                 style={{
-                  width: '30px', height: '30px', borderRadius: '50%', border: 'none',
-                  background: t.accent,
+                  width: '30px', height: '30px', borderRadius: '50%',
+                  border: `1px solid ${darkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}`,
+                  background: 'transparent',
                   cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'background 0.15s ease',
                 }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill="#1C1917" /></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" fill={darkMode ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.5)'} /></svg>
               </button>
             )}
 
