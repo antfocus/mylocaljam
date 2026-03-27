@@ -213,10 +213,10 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             )}
           </div>
 
-          {/* Bookmark button */}
+          {/* Save (plus circle) button */}
           <div ref={bookmarkRef} style={{ flexShrink: 0 }}>
             <button
-              className="bookmark-btn"
+              className="save-btn"
               onClick={e => {
                 e.stopPropagation();
                 try { navigator?.vibrate?.(10); } catch {}
@@ -236,13 +236,23 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               }}
             >
               <svg
-                className={isFavorited ? 'bookmark-pop' : ''}
-                width="22" height="22" viewBox="0 0 24 24" fill={isFavorited ? '#E8722A' : 'none'}
-                stroke={isFavorited ? '#E8722A' : (darkMode ? '#7878A0' : '#9CA3AF')}
-                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                className={isFavorited ? 'save-pop' : ''}
+                width="24" height="24" viewBox="0 0 24 24"
+                fill={isFavorited ? '#E8722A' : 'none'}
+                stroke={isFavorited ? '#E8722A' : (darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)')}
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
                 style={{ transition: 'all 0.2s ease' }}
               >
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                <circle cx="12" cy="12" r="10" />
+                {!isFavorited && (
+                  <>
+                    <line x1="12" y1="8" x2="12" y2="16" />
+                    <line x1="8" y1="12" x2="16" y2="12" />
+                  </>
+                )}
+                {isFavorited && (
+                  <polyline points="9 12 11 14 15 10" fill="none" stroke="#FFFFFF" strokeWidth="2" />
+                )}
               </svg>
             </button>
 
@@ -775,17 +785,17 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           from { transform: translateY(100%); }
           to { transform: translateY(0); }
         }
-        @keyframes bookmarkPop {
+        @keyframes savePop {
           0% { transform: scale(1); }
-          40% { transform: scale(1.35); }
+          40% { transform: scale(1.3); }
           100% { transform: scale(1); }
         }
         @keyframes popoverIn {
           from { opacity: 0; transform: translateY(-4px) scale(0.95); }
           to { opacity: 1; transform: translateY(0) scale(1); }
         }
-        .bookmark-pop {
-          animation: bookmarkPop 0.3s ease-out;
+        .save-pop {
+          animation: savePop 0.3s ease-out;
         }
         .popover-fade-in {
           animation: popoverIn 0.2s ease-out forwards;
@@ -796,7 +806,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           transition: opacity 0.25s ease, transform 0.25s ease;
         }
         @media (hover: hover) {
-          .bookmark-btn:hover svg {
+          .save-btn:hover svg {
             stroke: #E8722A !important;
           }
           .share-btn-detail:hover {

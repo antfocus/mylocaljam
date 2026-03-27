@@ -576,9 +576,9 @@ export default function HomePage() {
     setFavorites(prev => { const next = new Set(prev); next.add(id); return next; });
     const event = events.find(e => e.id === id);
     if (event && notifEnabled) scheduleReminder(event);
-    // PostHog: track stub saved
+    // PostHog: track event bookmarked
     if (event) {
-      posthog.capture?.('Stub Saved', {
+      posthog.capture?.('event_bookmarked', {
         event_id: id,
         artist_name: event.name || event.artist_name || '',
         venue_name: event.venue || event.venue_name || '',
