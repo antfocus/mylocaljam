@@ -4415,6 +4415,7 @@ export default function AdminPage() {
         <EventFormModal
           event={editingEvent}
           artists={artists}
+          venues={venues}
           onClose={() => { setShowEventForm(false); setEditingEvent(null); }}
           onSave={saveEvent}
         />
@@ -5039,7 +5040,7 @@ export default function AdminPage() {
   );
 }
 
-function EventFormModal({ event, artists = [], onClose, onSave }) {
+function EventFormModal({ event, artists = [], venues = [], onClose, onSave }) {
   const [form, setForm] = useState({
     event_title: event?.event_title || '',
     artist_name: event?.artist_name || '',
@@ -5089,10 +5090,12 @@ function EventFormModal({ event, artists = [], onClose, onSave }) {
     outline: 'none',
   };
 
-  const VENUE_OPTIONS = [
-    'The Stone Pony', 'House of Independents', 'The Wonder Bar',
-    'The Saint', 'Asbury Lanes', 'Danny Clinch Transparent Gallery',
-  ];
+  // Build venue options from DB venues, plus ensure the current event's venue is always included
+  const venueNames = venues.map(v => v.name).filter(Boolean);
+  const currentVenue = (form.venue_name || '').trim();
+  const VENUE_OPTIONS = currentVenue && !venueNames.includes(currentVenue)
+    ? [currentVenue, ...venueNames]
+    : venueNames;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
