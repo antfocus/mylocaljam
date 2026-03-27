@@ -55,7 +55,9 @@ export default function EventPageClient({ event }) {
 
   // ── Public (unauthenticated) event view ────────────────────────────────────
 
-  const name = event.artist_name || event.event_title || '';
+  const eventTitle = (event.event_title || '').trim();
+  const artistName = event.artist_name || '';
+  const name = eventTitle || artistName;
   const venue = event.venue_name || '';
   const desc = event.description || '';
   const imageUrl = event.artist_image || event.venue_photo || null;
@@ -143,6 +145,14 @@ export default function EventPageClient({ event }) {
         }}>
           {name}
         </h1>
+        {eventTitle && artistName && eventTitle !== artistName && (
+          <p style={{
+            fontSize: '16px', fontWeight: 500, color: '#A0A0B8',
+            margin: '0 0 6px',
+          }}>
+            {artistName}
+          </p>
+        )}
 
         {/* Venue */}
         {venue && (

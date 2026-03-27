@@ -78,7 +78,9 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
 
   if (!event) return null;
 
-  const name       = event.name        || event.event_title || event.artist_name || '';
+  const eventTitle = (event.event_title || '').trim();
+  const artistName = event.name || event.artist_name || '';
+  const name       = eventTitle || artistName;
   const venue      = event.venue       || event.venue_name  || '';
   const imageUrl   = event.artist_image || event.venue_photo || null;
   const genres     = event.artist_genres || [];
@@ -193,6 +195,14 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             }}>
               {name}
             </span>
+            {eventTitle && artistName && eventTitle !== artistName && (
+              <span style={{
+                fontSize: '13px', fontWeight: 500, color: darkMode ? '#C0C0D0' : '#6B7280',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {artistName}
+              </span>
+            )}
             {venue && (
               <span style={{
                 fontSize: '13px', fontWeight: 500, color: darkMode ? '#A0A0B8' : '#9CA3AF',

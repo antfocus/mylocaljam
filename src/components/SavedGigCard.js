@@ -27,7 +27,9 @@ export default function SavedGigCard({
 
   if (!event) return null;
 
-  const name       = event.name        || event.artist_name || '';
+  const eventTitle = (event.event_title || '').trim();
+  const artistName = event.name || event.artist_name || '';
+  const name       = eventTitle || artistName;
   const venue      = event.venue       || event.venue_name  || '';
   const desc       = event.description || event.artist_bio  || '';
   const imageUrl   = event.image_url   || event.artist_image || event.venue_photo || null;
@@ -216,7 +218,7 @@ export default function SavedGigCard({
             color: labelOrange, letterSpacing: '1.5px',
             textTransform: 'uppercase', lineHeight: 1,
           }}>
-            ARTIST
+            {eventTitle ? 'EVENT' : 'ARTIST'}
           </span>
           <span style={{
             fontFamily: "'DM Sans', sans-serif",
@@ -230,6 +232,16 @@ export default function SavedGigCard({
           }}>
             {name}
           </span>
+          {eventTitle && artistName && eventTitle !== artistName && (
+            <span style={{
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '12px', fontWeight: 500, color: textMuted,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              lineHeight: 1.2,
+            }}>
+              {artistName}
+            </span>
+          )}
 
           {/* VENUE label + name */}
           {venue && (

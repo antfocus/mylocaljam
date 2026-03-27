@@ -25,7 +25,9 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
 
   if (!event) return null;
 
-  const name       = event.name || event.event_title || event.artist_name || '';
+  const eventTitle = (event.event_title || '').trim();
+  const artistName = event.name || event.artist_name || '';
+  const name       = eventTitle || artistName;
   const venue      = event.venue || event.venue_name || '';
   const desc       = event.description || event.artist_bio || '';
   const category   = event.genre || event.vibe || 'Live Music';
@@ -93,7 +95,7 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
             fontSize: '19px',
             fontWeight: 600,
             color: 'var(--text-primary)',
-            marginBottom: '6px',
+            marginBottom: eventTitle && artistName && eventTitle !== artistName ? '2px' : '6px',
             lineHeight: 1.3,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -103,6 +105,19 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
           }}>
             {name}
           </h3>
+          {eventTitle && artistName && eventTitle !== artistName && (
+            <p style={{
+              fontSize: '13px',
+              fontWeight: 500,
+              color: 'var(--text-secondary)',
+              marginBottom: '6px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {artistName}
+            </p>
+          )}
 
           {desc && (
             <p style={{
