@@ -223,8 +223,53 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
             </p>
           </div>
 
+          {/* Magic Link — primary auth method */}
+          <form onSubmit={handleMagicLink} style={{ marginBottom: '24px' }}>
+            <label style={{
+              display: 'block', fontSize: '13px', fontWeight: 600, color: t.textMuted,
+              marginBottom: '6px', fontFamily: "'DM Sans', sans-serif",
+            }}>
+              Email address
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+              autoComplete="email"
+              autoCapitalize="none"
+              style={inputStyle}
+            />
+            <button
+              type="submit"
+              disabled={sending || !email.trim()}
+              style={{
+                display: 'block', width: '100%', marginTop: '12px',
+                padding: '14px', borderRadius: '12px', border: 'none',
+                background: t.accent, color: '#1C1917',
+                fontSize: '15px', fontWeight: 700, cursor: sending ? 'wait' : 'pointer',
+                fontFamily: "'DM Sans', sans-serif",
+                opacity: (!email.trim() || sending) ? 0.5 : 1,
+                transition: 'opacity 0.15s',
+              }}
+            >
+              {sending ? 'Sending...' : 'Send Magic Link'}
+            </button>
+          </form>
+
+          {/* Divider */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px',
+          }}>
+            <div style={{ flex: 1, height: '1px', background: t.border }} />
+            <span style={{ fontSize: '12px', color: t.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              or
+            </span>
+            <div style={{ flex: 1, height: '1px', background: t.border }} />
+          </div>
+
           {/* OAuth buttons */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button
               onClick={() => handleOAuth('google')}
               style={oauthBtnStyle(darkMode ? '#FFFFFF' : '#FFFFFF', '#1F2937')}
@@ -249,51 +294,6 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
               Continue with Apple
             </button>
           </div>
-
-          {/* Divider */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px',
-          }}>
-            <div style={{ flex: 1, height: '1px', background: t.border }} />
-            <span style={{ fontSize: '12px', color: t.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              or
-            </span>
-            <div style={{ flex: 1, height: '1px', background: t.border }} />
-          </div>
-
-          {/* Magic Link */}
-          <form onSubmit={handleMagicLink}>
-            <label style={{
-              display: 'block', fontSize: '13px', fontWeight: 600, color: t.textMuted,
-              marginBottom: '6px', fontFamily: "'DM Sans', sans-serif",
-            }}>
-              Email address
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
-              autoCapitalize="none"
-              style={inputStyle}
-            />
-            <button
-              type="submit"
-              disabled={sending || !email.trim()}
-              style={{
-                display: 'block', width: '100%', marginTop: '12px',
-                padding: '14px', borderRadius: '12px', border: 'none',
-                background: t.accent, color: '#1C1917',
-                fontSize: '15px', fontWeight: 700, cursor: sending ? 'wait' : 'pointer',
-                fontFamily: "'DM Sans', sans-serif",
-                opacity: (!email.trim() || sending) ? 0.5 : 1,
-                transition: 'opacity 0.15s',
-              }}
-            >
-              {sending ? 'Sending...' : 'Send Login Link'}
-            </button>
-          </form>
 
           {/* Error message */}
           {error && (
