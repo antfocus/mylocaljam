@@ -2265,8 +2265,8 @@ export default function HomePage() {
                   boxShadow: '0 4px 15px rgba(255, 100, 0, 0.3)',
                 }} />
                 {[
-                  { key: 'events', label: 'My Shows' },
-                  { key: 'following', label: 'My Artists' },
+                  { key: 'events', label: 'My Stubs' },
+                  { key: 'following', label: 'My Locals' },
                 ].map(seg => (
                   <button key={seg.key} onClick={() => handleSetSavedSegment(seg.key)} style={{
                     position: 'relative',
@@ -2276,9 +2276,9 @@ export default function HomePage() {
                     border: 'none',
                     cursor: 'pointer',
                     padding: '10px 0',
-                    color: savedSegment === seg.key ? '#1C1917' : 'rgba(255,255,255,0.7)',
-                    fontSize: '15px',
-                    fontWeight: savedSegment === seg.key ? 700 : 600,
+                    color: savedSegment === seg.key ? '#1C1917' : 'rgba(255,255,255,0.85)',
+                    fontSize: '16px',
+                    fontWeight: 700,
                     fontFamily: "'DM Sans', sans-serif",
                     transition: 'color 200ms ease',
                     letterSpacing: '0.3px',
