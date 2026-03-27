@@ -41,8 +41,7 @@ export async function GET(request) {
     results = results.filter(a =>
       !a.bio ||
       !a.image_url ||
-      (!a.genres || a.genres.length === 0) ||
-      !a.instagram_url
+      (!a.genres || a.genres.length === 0)
     );
   }
 
@@ -93,7 +92,6 @@ export async function POST(request) {
       genres: body.genres || null,
       vibes: body.vibes || null,
       image_url: body.image_url || null,
-      instagram_url: body.instagram_url || null,
       is_claimed: body.is_claimed || false,
       is_tribute: body.is_tribute || false,
     })
@@ -127,7 +125,7 @@ export async function PUT(request) {
 
     if (existing?.is_human_edited && typeof existing.is_human_edited === 'object') {
       const locks = existing.is_human_edited;
-      const lockableFields = ['name', 'bio', 'genres', 'vibes', 'image_url', 'instagram_url'];
+      const lockableFields = ['name', 'bio', 'genres', 'vibes', 'image_url'];
       for (const field of lockableFields) {
         // If the field is locked in the DB and the incoming update isn't explicitly unlocking it,
         // strip it from the update payload
@@ -163,7 +161,7 @@ export async function PUT(request) {
   // If meaningful fields are being updated from admin, stamp metadata_source as 'manual'
   // (unless explicitly passed — e.g. bulk AI enrich passes 'ai_generated')
   if (!updates.metadata_source) {
-    const manualFields = ['bio', 'image_url', 'genres', 'vibes', 'instagram_url'];
+    const manualFields = ['bio', 'image_url', 'genres', 'vibes'];
     const hasManualEdit = manualFields.some(f => updates[f] !== undefined);
     if (hasManualEdit) {
       updates.metadata_source = 'manual';

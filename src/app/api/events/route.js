@@ -12,7 +12,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('events')
-    .select('*, venues(name, address, color), artists(name, bio, image_url, genres, vibes, is_tribute, instagram_url)')
+    .select('*, venues(name, address, color), artists(name, bio, image_url, genres, vibes, is_tribute)')
     .gte('event_date', start)
     .eq('status', 'published')
     .order('event_date', { ascending: true });

@@ -43,7 +43,7 @@ const EVENT_SELECT = [
   'genre', 'vibe', 'cover', 'ticket_link', 'artist_bio',
   'source', 'status', 'category', 'artist_id',
   'venues(name, address, color, photo_url, venue_type)',
-  'artists(name, bio, image_url, genres, vibes, is_tribute, instagram_url)',
+  'artists(name, bio, image_url, genres, vibes, is_tribute)',
 ].join(', ');
 
 /**
@@ -85,7 +85,6 @@ function flattenEvent(e) {
     artist_image:   e.artists?.image_url || null,
     artist_genres:  e.genre ? [e.genre] : (e.artists?.genres || []),
     is_tribute:     e.artists?.is_tribute || false,
-    artist_instagram: e.artists?.instagram_url || null,
     // Flattened from venues join
     venue_photo:    e.venues?.photo_url || null,
     venue_address:  e.venues?.address || '',

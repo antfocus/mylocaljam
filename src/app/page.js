@@ -756,7 +756,7 @@ export default function HomePage() {
       while (true) {
         const { data: page, error } = await supabase
           .from('events')
-          .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url, instagram_url)')
+          .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url)')
           .gte('event_date', todayLocal)
           .eq('status', 'published')
           .order('event_date', { ascending: true })
@@ -820,7 +820,6 @@ export default function HomePage() {
           artist_genres: e.genre ? [e.genre] : (e.artists?.genres || []),
           artist_vibes:  e.vibe ? [e.vibe] : (e.artists?.vibes || []),
           is_tribute:    e.artists?.is_tribute || false,
-          artist_instagram: e.artists?.instagram_url || null,
           artist_image:  e.artists?.image_url || null,
           venue_type:    e.venues?.venue_type || null,
           venue_tags:    e.venues?.tags || [],

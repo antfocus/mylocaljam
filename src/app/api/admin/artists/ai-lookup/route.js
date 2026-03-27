@@ -130,9 +130,9 @@ Rules:
 2. Focus on Utility: Tell the user who they are, what they play, and the vibe of the show. (e.g., 'The Smithereens are a veteran rock band from Carteret known for their 80s power-pop hits. Expect a high-energy show heavily featuring classic rock covers and original anthems.')
 3. Length: Strictly 2 to 3 sentences. Keep it under 60 words. You MUST complete your final sentence. Never cut off mid-sentence or mid-word.
 4. If the provided data is completely insufficient to figure out who they are, return exactly: NEEDS_MANUAL_REVIEW
-5. Also return: "is_tribute" (boolean — true if they are primarily a cover band or tribute act), and "instagram_url" (their official Instagram URL, or null if not found).
+5. Also return: "is_tribute" (boolean — true if they are primarily a cover band or tribute act).
 
-Respond with valid JSON only: { "bio": "string", "is_tribute": boolean, "instagram_url": "string or null" }
+Respond with valid JSON only: { "bio": "string", "is_tribute": boolean }
 No markdown, no commentary, no code fences.`;
 
     const bioUserPrompt = `Research the band or musical artist named: "${name}". They may perform in the New Jersey / Jersey Shore area, or they may be a nationally known act. Search broadly. Return the JSON object.`;
@@ -196,7 +196,6 @@ No markdown, no commentary, no code fences.`;
       genres: genres.length > 0 ? genres : [],
       vibes: vibes.length > 0 ? vibes : [],
       is_tribute: bioResult?.is_tribute === true,
-      instagram_url: typeof bioResult?.instagram_url === 'string' ? bioResult.instagram_url : null,
       image_url: image_candidates[0] || null,            // best pick (backward compat)
       image_candidates,                                   // top 5 for carousel
       image_source,                                       // 'serper' or 'placeholder'

@@ -75,7 +75,7 @@ export default function AdminPage() {
   const [artistSubTab, setArtistSubTab] = useState('directory'); // 'directory' | 'triage'
   const [directorySort, setDirectorySort] = useState({ col: 'date_added', dir: 'desc' }); // col: 'name' | 'next_event' | 'date_added'
   const [editingArtist, setEditingArtist] = useState(null);
-  const [artistForm, setArtistForm] = useState({ name: '', bio: '', genres: '', vibes: '', image_url: '', instagram_url: '' });
+  const [artistForm, setArtistForm] = useState({ name: '', bio: '', genres: '', vibes: '', image_url: '' });
   const [artistActionLoading, setArtistActionLoading] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [artistToast, setArtistToast] = useState(null);
@@ -322,7 +322,6 @@ export default function AdminPage() {
         if (ai.genres?.length && (!artist.genres || artist.genres.length === 0) && !locks.genres) { update.genres = ai.genres; newStatus.genres = 'pending'; }
         if (ai.vibes?.length && (!artist.vibes || artist.vibes.length === 0) && !locks.vibes) { update.vibes = ai.vibes; newStatus.vibes = 'pending'; }
         if (ai.image_url && !artist.image_url && !locks.image_url) { update.image_url = ai.image_url; newStatus.image_url = 'pending'; }
-        if (ai.instagram_url && !artist.instagram_url && !locks.instagram_url) update.instagram_url = ai.instagram_url;
         if (ai.is_tribute !== undefined && !artist.is_tribute) update.is_tribute = ai.is_tribute;
 
         // Only save if there's something to update
@@ -2151,7 +2150,6 @@ export default function AdminPage() {
                           genres: (!eLocks.genres && ai.genres?.length) ? ai.genres.join(', ') : prev.genres,
                           vibes: (!eLocks.vibes && ai.vibes?.length) ? ai.vibes.join(', ') : prev.vibes,
                           image_url: (!eLocks.image_url && ai.image_url) ? ai.image_url : prev.image_url,
-                          instagram_url: (!eLocks.instagram_url && ai.instagram_url) ? ai.instagram_url : prev.instagram_url,
                         }));
                         // Load image carousel with candidates
                         if (ai.image_candidates?.length > 0) {
@@ -2227,20 +2225,16 @@ export default function AdminPage() {
                       }}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: '2px',
-                        background: locked ? 'rgba(34,197,94,0.1)' : 'rgba(136,136,136,0.08)',
-                        border: locked ? '1px solid rgba(34,197,94,0.3)' : '1px solid rgba(136,136,136,0.2)',
+                        background: locked ? 'rgba(34,197,94,0.1)' : 'rgba(136,136,136,0.06)',
+                        border: locked ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(136,136,136,0.12)',
                         borderRadius: '4px', padding: '1px 5px', cursor: 'pointer',
                         fontSize: '9px', fontWeight: 600,
-                        color: locked ? '#22c55e' : '#888',
+                        color: locked ? '#22c55e' : 'rgba(136,136,136,0.45)',
                         fontFamily: "'DM Sans', sans-serif",
                         transition: 'all 0.15s ease',
                       }}
                     >
-                      {locked ? (
-                        <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" /></svg>
-                      ) : (
-                        <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M12 17c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm6-9h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm0 12H6V10h12v10z" /></svg>
-                      )}
+                      {locked && <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" /></svg>}
                       {locked ? 'LOCKED' : 'OPEN'}
                     </button>
                   );
@@ -2477,18 +2471,6 @@ export default function AdminPage() {
                       </>)}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px', marginTop: '12px' }}>
-                    <span style={labelStyle}>Instagram URL</span>
-                    <LockBadge field="instagram_url" />
-                  </div>
-                  <input
-                    type="text"
-                    value={artistForm.instagram_url}
-                    onChange={e => !isFieldLocked('instagram_url') && setArtistForm(p => ({ ...p, instagram_url: e.target.value }))}
-                    readOnly={isFieldLocked('instagram_url')}
-                    placeholder="https://instagram.com/..."
-                    style={isFieldLocked('instagram_url') ? lockedStyle : inputStyle}
-                  />
                 </div>
               </div>
                 </>);
@@ -2561,7 +2543,6 @@ export default function AdminPage() {
                         genres: genres && genres.length > 0 ? genres : null,
                         vibes: vibes && vibes.length > 0 ? vibes : null,
                         image_url: artistForm.image_url || null,
-                        instagram_url: artistForm.instagram_url || null,
                         is_human_edited: newLocks,
                         field_status: newFS,
                     };
@@ -2733,16 +2714,11 @@ export default function AdminPage() {
                 const TrafficDot = ({ field, hasData, label }) => {
                   const status = hasData ? (fs[field] || 'live') : null;
                   const locked = !!locks[field];
-                  const colors = {
-                    live:    { bg: 'rgba(34,197,94,0.12)', color: '#22c55e' },
-                    pending: { bg: 'rgba(234,179,8,0.12)', color: '#EAB308' },
-                    null:    { bg: 'rgba(239,68,68,0.12)', color: '#ef4444' },
-                  };
-                  // When locked, override to green locked style regardless of status
-                  const lockedColors = { bg: 'rgba(34,197,94,0.18)', color: '#22c55e' };
-                  const unlockedMuted = { bg: 'rgba(136,136,136,0.08)', color: '#888' };
-                  // Use status colors when unlocked, green when locked
-                  const c = locked ? lockedColors : (colors[status] || colors.null);
+                  // Locked: solid green pill with closed padlock
+                  // Unlocked: muted gray pill, no icon — blends into the row
+                  const lockedStyle = { bg: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.35)' };
+                  const unlockedStyle = { bg: 'rgba(136,136,136,0.06)', color: 'rgba(136,136,136,0.5)', border: '1px solid rgba(136,136,136,0.1)' };
+                  const c = locked ? lockedStyle : unlockedStyle;
                   return (
                     <button
                       onClick={async (e) => {
@@ -2766,13 +2742,12 @@ export default function AdminPage() {
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: '3px',
                         padding: '2px 8px', borderRadius: '9999px',
-                        fontSize: '10px', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
-                        background: c.bg, color: c.color,
-                        border: locked ? '1px solid rgba(34,197,94,0.3)' : '1px solid transparent',
+                        fontSize: '10px', fontWeight: locked ? 600 : 500, fontFamily: "'DM Sans', sans-serif",
+                        background: c.bg, color: c.color, border: c.border,
                         cursor: 'pointer', transition: 'all 0.15s ease',
                       }}
                     >
-                      <span style={{ fontSize: '7px' }}>{locked ? '🔒' : '🔓'}</span>
+                      {locked && <span style={{ fontSize: '7px' }}>🔒</span>}
                       {label}
                     </button>
                   );
@@ -2889,7 +2864,6 @@ export default function AdminPage() {
                                   ...(artist.image_url ? { image_url: true } : {}),
                                   ...(artist.genres?.length ? { genres: true } : {}),
                                   ...(artist.vibes?.length ? { vibes: true } : {}),
-                                  ...(artist.instagram_url ? { instagram_url: true } : {}),
                                   ...(artist.name ? { name: true } : {}),
                                 }
                               : {};
@@ -2904,7 +2878,7 @@ export default function AdminPage() {
                           } catch {}
                         }}
                         className="p-1.5 rounded"
-                        style={{ color: artist.is_locked ? '#22c55e' : 'var(--text-muted)', cursor: 'pointer', background: 'none', border: 'none', opacity: artist.is_locked ? 1 : 0.5 }}
+                        style={{ color: artist.is_locked ? '#22c55e' : 'rgba(136,136,136,0.35)', cursor: 'pointer', background: 'none', border: 'none', opacity: 1 }}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                           {artist.is_locked
@@ -2926,7 +2900,6 @@ export default function AdminPage() {
                             genres: artist.genres ? (Array.isArray(artist.genres) ? artist.genres.join(', ') : artist.genres) : '',
                             vibes: artist.vibes ? (Array.isArray(artist.vibes) ? artist.vibes.join(', ') : artist.vibes) : '',
                             image_url: artist.image_url || '',
-                            instagram_url: artist.instagram_url || '',
                           });
                           // Fetch associated events for context
                           try {
@@ -4169,7 +4142,6 @@ export default function AdminPage() {
                               genres: linkedArtist.genres ? (Array.isArray(linkedArtist.genres) ? linkedArtist.genres.join(', ') : linkedArtist.genres) : '',
                               vibes: linkedArtist.vibes ? (Array.isArray(linkedArtist.vibes) ? linkedArtist.vibes.join(', ') : linkedArtist.vibes) : '',
                               image_url: linkedArtist.image_url || '',
-                              instagram_url: linkedArtist.instagram_url || '',
                             });
                           } else {
                             setActiveTab('artists');
@@ -4304,7 +4276,6 @@ export default function AdminPage() {
                       genres: linkedArtist.genres ? (Array.isArray(linkedArtist.genres) ? linkedArtist.genres.join(', ') : linkedArtist.genres) : '',
                       vibes: linkedArtist.vibes ? (Array.isArray(linkedArtist.vibes) ? linkedArtist.vibes.join(', ') : linkedArtist.vibes) : '',
                       image_url: linkedArtist.image_url || '',
-                      instagram_url: linkedArtist.instagram_url || '',
                     });
                   } else {
                     // Fallback: search by name so the user can find and edit
