@@ -228,7 +228,7 @@ export default function FollowingTab({
   // Local search state for artist filtering
   const [localSearch, setLocalSearch] = useState('');
   // Sort & filter state
-  const [sortBy, setSortBy] = useState('next_event'); // 'next_event' | 'alpha' | 'recent'
+  const [sortBy, setSortBy] = useState('alpha'); // 'alpha' | 'next_event' | 'recent'
   const [onlyUpcoming, setOnlyUpcoming] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const sortMenuRef = useRef(null);
@@ -338,8 +338,8 @@ export default function FollowingTab({
               Sort by
             </p>
             {[
-              { key: 'next_event', label: 'Next Event Date' },
               { key: 'alpha', label: 'Alphabetical (A–Z)' },
+              { key: 'next_event', label: 'Next Event Date' },
               { key: 'recent', label: 'Recently Added' },
             ].map(opt => (
               <button
@@ -449,22 +449,36 @@ export default function FollowingTab({
               </svg>
             </div>
 
-            {/* Name + next gig */}
-            <div style={{ flex: 1, minWidth: 0, marginLeft: '14px' }}>
-              <div style={{
-                fontSize: '16px', fontWeight: 600, color: t.text,
-                fontFamily: "'DM Sans', sans-serif",
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {f.entity_name}
-              </div>
-              <div style={{
-                fontSize: '12px', fontWeight: 500, color: f.next_gig ? t.accentAlt : t.textSubtle,
-                fontFamily: "'DM Sans', sans-serif", marginTop: '2px',
-              }}>
-                {formatNextGig(f.next_gig) || 'No upcoming events'}
-              </div>
+            {/* Name */}
+            <div style={{
+              flex: 1, minWidth: 0, marginLeft: '14px',
+              fontSize: '16px', fontWeight: 600, color: t.text,
+              fontFamily: "'DM Sans', sans-serif",
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {f.entity_name}
             </div>
+
+            {/* Conditional date — only visible when sorted by Next Event Date */}
+            {sortBy === 'next_event' && f.next_gig && (
+              <span style={{
+                fontSize: '12px', fontWeight: 500, color: t.textMuted,
+                fontFamily: "'DM Sans', sans-serif",
+                flexShrink: 0, marginLeft: '8px', whiteSpace: 'nowrap',
+              }}>
+                {(() => {
+                  const g = f.next_gig;
+                  const d = new Date((g.event_date || g.date) + (g.event_date ? '' : 'T12:00:00'));
+                  if (isNaN(d)) return '';
+                  const today = new Date();
+                  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+                  const ds = d.toISOString().split('T')[0];
+                  if (ds === today.toISOString().split('T')[0]) return 'Tonight';
+                  if (ds === tomorrow.toISOString().split('T')[0]) return 'Tomorrow';
+                  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                })()}
+              </span>
+            )}
 
             {/* Chevron */}
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, marginLeft: '8px' }}>
