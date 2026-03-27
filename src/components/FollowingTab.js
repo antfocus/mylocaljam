@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 
 // ── Theme (matching page.js DARK/LIGHT) ─────────────────────────────────────
 const DARK = {
@@ -227,11 +227,58 @@ export default function FollowingTab({
 
   // Local search state for artist filtering
   const [localSearch, setLocalSearch] = useState('');
+  // Sort & filter state
+  const [sortBy, setSortBy] = useState('next_event'); // 'next_event' | 'alpha' | 'recent'
+  const [onlyUpcoming, setOnlyUpcoming] = useState(false);
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const sortMenuRef = useRef(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showSortMenu) return;
+    const handler = (e) => {
+      if (sortMenuRef.current && !sortMenuRef.current.contains(e.target)) setShowSortMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showSortMenu]);
+
   const displayList = useMemo(() => {
-    if (!localSearch.trim()) return followingWithNextGig;
-    const q = normalize(localSearch);
-    return followingWithNextGig.filter(f => normalize(f.entity_name).includes(q));
-  }, [followingWithNextGig, localSearch]);
+    let list = followingWithNextGig;
+
+    // Local search filter
+    if (localSearch.trim()) {
+      const q = normalize(localSearch);
+      list = list.filter(f => normalize(f.entity_name).includes(q));
+    }
+
+    // Upcoming-only filter
+    if (onlyUpcoming) {
+      list = list.filter(f => f.next_gig);
+    }
+
+    // Sort
+    list = [...list].sort((a, b) => {
+      if (sortBy === 'alpha') {
+        return a.entity_name.localeCompare(b.entity_name);
+      }
+      if (sortBy === 'recent') {
+        // Most recently followed first (created_at descending)
+        const aDate = a.created_at || '';
+        const bDate = b.created_at || '';
+        return bDate.localeCompare(aDate);
+      }
+      // Default: next_event — soonest gig first, no-gig artists sink to bottom
+      const aGig = a.next_gig?.event_date || a.next_gig?.date || '';
+      const bGig = b.next_gig?.event_date || b.next_gig?.date || '';
+      if (aGig && !bGig) return -1;
+      if (!aGig && bGig) return 1;
+      if (!aGig && !bGig) return a.entity_name.localeCompare(b.entity_name);
+      return aGig.localeCompare(bGig);
+    });
+
+    return list;
+  }, [followingWithNextGig, localSearch, sortBy, onlyUpcoming]);
 
   return (
     <div style={{ padding: '12px 16px 20px' }}>
@@ -254,13 +301,110 @@ export default function FollowingTab({
         />
       </div>
 
-      <p style={{ fontSize: '12px', fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>
-        {displayList.length} following
-      </p>
+      {/* Sort & Filter bar */}
+      <div ref={sortMenuRef} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', position: 'relative' }}>
+        <p style={{ fontSize: '12px', fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '1px', margin: 0 }}>
+          {displayList.length} following
+        </p>
+        <button
+          onClick={() => setShowSortMenu(prev => !prev)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '5px',
+            background: 'transparent', border: `1px solid ${t.border}`,
+            borderRadius: '8px', padding: '5px 10px', cursor: 'pointer',
+            fontSize: '11px', fontWeight: 600, color: t.textMuted,
+            fontFamily: "'DM Sans', sans-serif", transition: 'all 0.15s ease',
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+            <path d="M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z" fill="currentColor" />
+          </svg>
+          {sortBy === 'next_event' ? 'Next Event' : sortBy === 'alpha' ? 'A–Z' : 'Recent'}
+        </button>
 
-      {displayList.length === 0 && (localSearch.trim() || searchQuery.trim()) && (
+        {/* Dropdown menu */}
+        {showSortMenu && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'absolute', top: '100%', right: 0, marginTop: '6px',
+              background: t.surface, border: `1px solid ${t.border}`,
+              borderRadius: '12px', padding: '6px', minWidth: '200px',
+              boxShadow: darkMode ? '0 8px 32px rgba(0,0,0,0.5)' : '0 4px 20px rgba(0,0,0,0.12)',
+              zIndex: 50, fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            <p style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: t.textMuted, padding: '6px 10px 4px', margin: 0 }}>
+              Sort by
+            </p>
+            {[
+              { key: 'next_event', label: 'Next Event Date' },
+              { key: 'alpha', label: 'Alphabetical (A–Z)' },
+              { key: 'recent', label: 'Recently Added' },
+            ].map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => { setSortBy(opt.key); setShowSortMenu(false); }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  width: '100%', padding: '9px 10px', border: 'none',
+                  background: sortBy === opt.key ? (darkMode ? 'rgba(232,114,42,0.08)' : 'rgba(232,114,42,0.06)') : 'transparent',
+                  borderRadius: '8px', cursor: 'pointer',
+                  fontSize: '13px', fontWeight: sortBy === opt.key ? 700 : 500,
+                  color: sortBy === opt.key ? t.accent : t.text,
+                  fontFamily: "'DM Sans', sans-serif", textAlign: 'left',
+                }}
+              >
+                {opt.label}
+                {sortBy === opt.key && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill={t.accent} />
+                  </svg>
+                )}
+              </button>
+            ))}
+
+            <div style={{ height: '1px', background: t.border, margin: '6px 4px' }} />
+
+            <p style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: t.textMuted, padding: '4px 10px 4px', margin: 0 }}>
+              Filter
+            </p>
+            <button
+              onClick={() => { setOnlyUpcoming(prev => !prev); setShowSortMenu(false); }}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                width: '100%', padding: '9px 10px', border: 'none',
+                background: onlyUpcoming ? (darkMode ? 'rgba(232,114,42,0.08)' : 'rgba(232,114,42,0.06)') : 'transparent',
+                borderRadius: '8px', cursor: 'pointer',
+                fontSize: '13px', fontWeight: onlyUpcoming ? 700 : 500,
+                color: onlyUpcoming ? t.accent : t.text,
+                fontFamily: "'DM Sans', sans-serif", textAlign: 'left',
+              }}
+            >
+              Only with upcoming events
+              <div style={{
+                width: '32px', height: '18px', borderRadius: '999px', position: 'relative',
+                background: onlyUpcoming ? t.accent : (darkMode ? '#4A4A6A' : '#D1D5DB'),
+                transition: 'background 0.2s', flexShrink: 0,
+              }}>
+                <div style={{
+                  position: 'absolute', top: '2px',
+                  left: onlyUpcoming ? '16px' : '2px',
+                  width: '14px', height: '14px', borderRadius: '50%',
+                  background: 'white', transition: 'left 0.2s',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                }} />
+              </div>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {displayList.length === 0 && (localSearch.trim() || searchQuery.trim() || onlyUpcoming) && (
         <div style={{ textAlign: 'center', padding: '32px 0' }}>
-          <p style={{ fontSize: '14px', color: t.textMuted }}>No results found</p>
+          <p style={{ fontSize: '14px', color: t.textMuted }}>
+            {onlyUpcoming && !localSearch.trim() ? 'None of your artists have upcoming events' : 'No results found'}
+          </p>
         </div>
       )}
 
@@ -305,14 +449,21 @@ export default function FollowingTab({
               </svg>
             </div>
 
-            {/* Name */}
-            <div style={{
-              flex: 1, minWidth: 0, marginLeft: '14px',
-              fontSize: '16px', fontWeight: 600, color: t.text,
-              fontFamily: "'DM Sans', sans-serif",
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-              {f.entity_name}
+            {/* Name + next gig */}
+            <div style={{ flex: 1, minWidth: 0, marginLeft: '14px' }}>
+              <div style={{
+                fontSize: '16px', fontWeight: 600, color: t.text,
+                fontFamily: "'DM Sans', sans-serif",
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {f.entity_name}
+              </div>
+              <div style={{
+                fontSize: '12px', fontWeight: 500, color: f.next_gig ? t.accentAlt : t.textSubtle,
+                fontFamily: "'DM Sans', sans-serif", marginTop: '2px',
+              }}>
+                {formatNextGig(f.next_gig) || 'No upcoming events'}
+              </div>
             </div>
 
             {/* Chevron */}
