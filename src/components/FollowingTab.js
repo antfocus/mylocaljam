@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { posthog } from '@/lib/posthog';
 
 // ── Theme (matching page.js DARK/LIGHT) ─────────────────────────────────────
 const DARK = {
@@ -344,7 +345,7 @@ export default function FollowingTab({
             ].map(opt => (
               <button
                 key={opt.key}
-                onClick={() => { setSortBy(opt.key); setShowSortMenu(false); }}
+                onClick={() => { setSortBy(opt.key); setShowSortMenu(false); posthog.capture?.('List Sorted/Filtered', { sort_type: opt.key === 'alpha' ? 'A-Z' : opt.key === 'next_event' ? 'Next Event' : 'Recent' }); }}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   width: '100%', padding: '9px 10px', border: 'none',

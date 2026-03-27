@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { posthog } from '@/lib/posthog';
 import { getVenueColor, groupEventsByDate } from '@/lib/utils';
 import { requestNotificationPermission, scheduleReminder, cancelReminder, rehydrateReminders, notificationsGranted } from '@/lib/notifications';
 
@@ -522,6 +523,7 @@ export default function HomePage() {
   // ── Sign out helper ────────────────────────────────────────────────────────
   const handleSignOut = useCallback(async () => {
     await supabase.auth.signOut();
+    posthog.reset?.();
     setUser(null);
     setIsLoggedIn(false);
     setToast('Signed out');
@@ -574,6 +576,14 @@ export default function HomePage() {
     setFavorites(prev => { const next = new Set(prev); next.add(id); return next; });
     const event = events.find(e => e.id === id);
     if (event && notifEnabled) scheduleReminder(event);
+    // PostHog: track stub saved
+    if (event) {
+      posthog.capture?.('Stub Saved', {
+        event_id: id,
+        artist_name: event.name || event.artist_name || '',
+        venue_name: event.venue || event.venue_name || '',
+      });
+    }
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
@@ -669,6 +679,12 @@ export default function HomePage() {
       next_gig: null,
       created_at: new Date().toISOString(),
     };
+    // PostHog: track local followed
+    if (entityType === 'artist') {
+      posthog.capture?.('Local Followed', {
+        artist_name: entityName,
+      });
+    }
     // Optimistic update
     setFollowing(prev => {
       const exists = prev.some(f => f.entity_type === entityType && f.entity_name === entityName);
@@ -871,16 +887,30 @@ export default function HomePage() {
 
   // ── Supabase Auth listener ─────────────────────────────────────────────────
   useEffect(() => {
-    // Check current session on mount
+    // Check current session on mount — identify existing users silently
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setIsLoggedIn(!!session?.user);
-    });
-    // Listen for auth changes (login, logout, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const u = session?.user ?? null;
       setUser(u);
       setIsLoggedIn(!!u);
+      if (u) {
+        posthog.identify?.(u.id, { email: u.email });
+      }
+    });
+    // Listen for auth changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      setIsLoggedIn(!!u);
+      if (u) {
+        posthog.identify?.(u.id, { email: u.email });
+        // Track sign-in event (SIGNED_IN fires on new login, not token refresh)
+        if (event === 'SIGNED_IN') {
+          const provider = u.app_metadata?.provider || (u.app_metadata?.providers || [])[0] || 'email';
+          const method = provider === 'google' ? 'google' : 'magic_link';
+          const isNew = u.created_at && (Date.now() - new Date(u.created_at).getTime()) < 60000;
+          posthog.capture?.('User Signed In', { method, is_new_user: isNew });
+        }
+      }
       if (u && showAuthModal) {
         // User just signed in — close modal
         setShowAuthModal(false);

@@ -1,4 +1,6 @@
 import './globals.css';
+import { Suspense } from 'react';
+import PostHogProvider from '@/components/PostHogProvider';
 
 export const metadata = {
   title: 'MyLocalJam — Live Music at the Jersey Shore',
@@ -45,7 +47,11 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body>
-        {children}
+        <Suspense fallback={null}>
+          <PostHogProvider>
+            {children}
+          </PostHogProvider>
+        </Suspense>
       </body>
     </html>
   );
