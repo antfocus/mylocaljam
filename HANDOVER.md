@@ -3033,6 +3033,100 @@ Implementation was already complete (`signInWithOtp`, success state, `/auth/call
 
 ---
 
+## Session — March 27, 2026 (Event Metadata, PostHog, Save Icon, Festivals, Admin Analytics)
+
+### Changes Made
+
+#### 1. Edit Event Modal — Metadata Separation
+- **File:** `src/app/admin/page.js`
+- Renamed "Artist Bio" label → "Event Description (Optional)" with helper text explaining it overrides global artist bio
+- DB column is still `artist_bio` on `events` table — no schema change needed
+
+#### 2. Event Title Fallback Logic
+- **Files:** `src/components/EventCardV2.js`, `src/components/SiteEventCard.js`, `src/app/event/[id]/EventPageClient.js`, `src/components/SavedGigCard.js`
+- `event_title` now renders as primary headline on event cards
+- `artist_name` shows as subtitle underneath when `event_title` is set and differs
+- Description fallback priority fixed: `e.artist_bio || e.artists?.bio || ''` (event-level overrides global)
+
+#### 3. Admin Venue Dropdown Bug Fix
+- **File:** `src/app/admin/page.js`
+- `EventFormModal` now accepts `venues` prop from DB instead of hardcoded 6-venue list
+- Current venue always included in dropdown even if not in DB venues list
+
+#### 4. Source Icon Update
+- **File:** `src/app/admin/page.js`
+- External-link icon → chain-link icon to distinguish from edit icon
+
+#### 5. Publish/Unpublish State Logic
+- **File:** `src/app/admin/page.js`
+- Status badges: green "Published" or grey "Draft"/"Hidden"
+- Action buttons: only shows the relevant action (Unpublish for published, Publish for draft/hidden)
+
+#### 6. PostHog Analytics (v1.0)
+- **New file:** `src/lib/posthog.js` — singleton PostHog init with autocapture, session recording, SPA tracking
+- **New file:** `src/components/PostHogProvider.js` — client component for SPA page view tracking on route change
+- **File:** `src/app/layout.js` — wrapped children with `PostHogProvider` inside `Suspense`
+- **File:** `src/app/page.js` — identity management (`posthog.identify` on auth, `posthog.reset` on sign out)
+- Custom events tracked: `User Signed In`, `event_bookmarked`, `Local Followed`, `List Sorted/Filtered`
+- **Env vars required:**
+  - `NEXT_PUBLIC_POSTHOG_KEY=phc_4hYcx23N3RcvKnnQ8TpuJvWGNb8uV5PMYuLTWbg0TgG`
+  - `NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com`
+  - `POSTHOG_PERSONAL_API_KEY=phx_TcmwJJOF2eIgv94GQbmLzXgO6Z43JawI0yV1Qb3QvKOnXA7`
+
+#### 7. PostHog Admin Dashboard Widgets
+- **New file:** `src/app/api/admin/analytics/route.js` — server-side route querying PostHog HogQL API
+  - Queries: unique visitors, mobile/desktop breakdown, venue link clicks
+  - Auth: requires admin password via query param
+  - Date range filtering: today / 7d / 30d / all (maps to HogQL interval)
+- **File:** `src/app/admin/page.js` — dashboard MetricCards wired to live PostHog data
+  - `analyticsData` / `analyticsLoading` state
+  - `fetchAnalytics()` called on auth and on date range change
+  - Cards show loading states (`…`), real numbers, and percentage breakdowns
+
+#### 8. Save Icon Evolution (Bookmark → Plus → Orange Minimalist)
+- **File:** `src/components/EventCardV2.js`
+- Went through multiple iterations per user feedback:
+  - Bookmark → Plus circle → Large orange filled circle → **Final: orange outline circle with orange checkmark**
+- Final design: 26px fixed size, `strokeWidth: 1.5` outline matches unsaved state, solid orange `#E8722A` checkmark inside
+- Unsaved: grey circle outline with plus sign
+- Saved: orange circle outline with orange checkmark — "high-contrast minimalist" approach
+
+#### 9. Bookmark Toast & Follow Logic
+- **File:** `src/components/EventCardV2.js`
+- Toast shows for ALL saves (removed `!isArtistFollowed` gate)
+- Follow button hidden when artist already followed
+- Header copy updated, toast scaled up (260px wide, 15px header font)
+- AM/PM contrast fix: `opacity: 0.75`, `fontWeight: 700`
+
+#### 10. Festival Cleanup & Admin Tab
+- **File:** `src/app/admin/page.js` — new "Festivals" management tab
+  - Lists festivals grouped by `event_title` with event counts
+  - Search with case-insensitive `normalizeVenue()` matching
+  - Bulk rename and bulk delete (clears `event_title` + `is_festival`)
+- **File:** `src/app/api/admin/route.js` — PUT handler additions:
+  - `bulk_rename_festival`: updates `event_title` across all matching events
+  - `bulk_clear_festival`: clears `event_title` and `is_festival` for matching events
+- **File:** `src/app/page.js` — festival autocomplete normalization fix using `normalizeVenue()`
+
+### Deploy Instructions
+```bash
+git push origin main
+npx vercel --prod
+```
+
+### Vercel Env Vars to Add (Production)
+- `NEXT_PUBLIC_POSTHOG_KEY` = `phc_4hYcx23N3RcvKnnQ8TpuJvWGNb8uV5PMYuLTWbg0TgG`
+- `NEXT_PUBLIC_POSTHOG_HOST` = `https://us.i.posthog.com`
+- `POSTHOG_PERSONAL_API_KEY` = `phx_TcmwJJOF2eIgv94GQbmLzXgO6Z43JawI0yV1Qb3QvKOnXA7`
+
+### Pending / TODO
+- **Add PostHog env vars to Vercel** — all three vars above need to be in Production environment
+- **Run festival SQL cleanup:** `UPDATE events SET event_title = 'Sea Hear Now 2026' WHERE event_title = 'sea.hear.now';`
+- **Run `supabase-drop-instagram.sql`** — still pending from prior session
+- **Test PostHog dashboard** — verify analytics widgets populate after env vars are set on Vercel
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.
