@@ -38,6 +38,8 @@ export default function AdminPage() {
   const [returnToTab, setReturnToTab] = useState(null); // remembers which tab to return to after artist edit
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dashDateRange, setDashDateRange] = useState('7d'); // 'today' | '7d' | '30d' | 'all'
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [mobileQueueDetail, setMobileQueueDetail] = useState(false);
@@ -224,6 +226,21 @@ export default function AdminPage() {
       if (data.newEvents24h !== undefined) setNewEvents24h(data.newEvents24h);
     } catch (err) { console.error(err); }
   }, [password, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime, eventsRecentlyAdded]);
+
+  const fetchAnalytics = useCallback(async (range) => {
+    setAnalyticsLoading(true);
+    try {
+      const res = await fetch(`/api/admin/analytics?password=${encodeURIComponent(password)}&range=${range || dashDateRange}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAnalyticsData(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch analytics:', err);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [password, dashDateRange]);
 
   const fetchScraperHealth = useCallback(async () => {
     try {
@@ -572,6 +589,7 @@ export default function AdminPage() {
     fetchTriage();
     fetchArtists(); // needed for Dashboard data health metrics
     fetchScraperHealth(); // needed for Dashboard + Venues tab
+    fetchAnalytics(); // PostHog analytics for dashboard
     fetchVenues(); // populate venue datalist for queue triage
     fetchFestivalNames(); // populate festival name autocomplete
   };
@@ -648,17 +666,30 @@ export default function AdminPage() {
 
   // ── Festival name autocomplete (distinct event_titles from events) ──────────
   const [festivalNames, setFestivalNames] = useState([]);
+  const [festivalData, setFestivalData] = useState([]); // { name, count, events[] }
+  const [festivalSearch, setFestivalSearch] = useState('');
+  const [editingFestival, setEditingFestival] = useState(null); // { name, newName }
   const fetchFestivalNames = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('events')
-        .select('event_title')
+        .select('id, event_title, artist_name, event_date, venue_name')
         .not('event_title', 'is', null)
         .not('event_title', 'eq', '')
-        .limit(500);
+        .order('event_title')
+        .limit(1000);
       if (!error && data) {
         const unique = [...new Set(data.map(e => e.event_title).filter(Boolean))].sort();
         setFestivalNames(unique);
+        // Group by festival name with counts
+        const grouped = {};
+        for (const e of data) {
+          const key = e.event_title;
+          if (!grouped[key]) grouped[key] = { name: key, count: 0, events: [] };
+          grouped[key].count++;
+          grouped[key].events.push(e);
+        }
+        setFestivalData(Object.values(grouped).sort((a, b) => a.name.localeCompare(b.name)));
       }
     } catch (err) { console.error('Failed to load festival names:', err); }
   }, []);
@@ -1166,6 +1197,7 @@ export default function AdminPage() {
           { key: 'artists', label: 'Artists', count: artists.length },
           { key: 'spotlight', label: 'Spotlight', count: spotlightPins.length },
           { key: 'venues', label: 'Venues', count: scraperHealth.filter(s => s.status === 'fail').length },
+          { key: 'festivals', label: 'Festivals', count: festivalData.length },
           { key: 'submissions', label: 'Submissions', count: queue.length },
           { key: 'reports', label: 'User Flags', count: reports.filter((r) => r.status === 'pending').length },
         ].map((tab) => (
@@ -1180,7 +1212,7 @@ export default function AdminPage() {
                 ? { background: 'var(--bg-card)', borderBottom: '2px solid #E8722A', color: '#FFFFFF' }
                 : { opacity: 0.6 }),
             }}
-            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (artists.length === 0) fetchArtists(); fetchReports(); fetchScraperHealth(); } if (tab.key === 'events') fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (tab.key === 'triage') fetchTriage(); if (tab.key === 'spotlight') { setSpotlightSearch(''); fetchSpotlight(spotlightDate); if (artists.length === 0) fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); fetchQueue(); } if (tab.key === 'artists') fetchArtists(artistsSearch, artistsNeedsInfo); if (tab.key === 'venues') fetchScraperHealth(); if (tab.key === 'reports') { setFlagsViewFilter('pending'); fetchReports(); } }}
+            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (artists.length === 0) fetchArtists(); fetchReports(); fetchScraperHealth(); } if (tab.key === 'events') fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (tab.key === 'triage') fetchTriage(); if (tab.key === 'spotlight') { setSpotlightSearch(''); fetchSpotlight(spotlightDate); if (artists.length === 0) fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); fetchQueue(); } if (tab.key === 'artists') fetchArtists(artistsSearch, artistsNeedsInfo); if (tab.key === 'venues') fetchScraperHealth(); if (tab.key === 'reports') { setFlagsViewFilter('pending'); fetchReports(); } if (tab.key === 'festivals') fetchFestivalNames(); }}
           >
             {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? '#1C1917' : 'var(--text-secondary)' }}>{tab.count}</span>}
           </button>
@@ -1251,7 +1283,7 @@ export default function AdminPage() {
               ].map(seg => (
                 <button
                   key={seg.key}
-                  onClick={() => setDashDateRange(seg.key)}
+                  onClick={() => { setDashDateRange(seg.key); fetchAnalytics(seg.key); }}
                   style={{
                     padding: '6px 12px', fontSize: '12px', fontWeight: 600,
                     fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
@@ -1270,16 +1302,38 @@ export default function AdminPage() {
           {/* Fan Engagement */}
           <SectionHeader title="Fan Engagement" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
-            <MetricCard label="Total Unique Visitors" value="—" sub={`${dateLabels[dashDateRange]} · Connect analytics to enable`} />
-            <MetricCard label="Mobile Web" value="—" sub="Awaiting analytics integration" />
-            <MetricCard label="Desktop Web" value="—" sub="Awaiting analytics integration" />
+            <MetricCard
+              label="Total Unique Visitors"
+              value={analyticsLoading ? '…' : analyticsData ? analyticsData.uniqueVisitors.toLocaleString() : '—'}
+              sub={analyticsData ? dateLabels[dashDateRange] : `${dateLabels[dashDateRange]} · Loading…`}
+              color={analyticsData?.uniqueVisitors > 0 ? '#3B82F6' : undefined}
+            />
+            <MetricCard
+              label="Mobile Web"
+              value={analyticsLoading ? '…' : analyticsData ? analyticsData.mobile.toLocaleString() : '—'}
+              sub={analyticsData ? `${analyticsData.uniqueVisitors > 0 ? Math.round((analyticsData.mobile / analyticsData.uniqueVisitors) * 100) : 0}% of visitors` : 'Loading…'}
+            />
+            <MetricCard
+              label="Desktop Web"
+              value={analyticsLoading ? '…' : analyticsData ? analyticsData.desktop.toLocaleString() : '—'}
+              sub={analyticsData ? `${analyticsData.uniqueVisitors > 0 ? Math.round((analyticsData.desktop / analyticsData.uniqueVisitors) * 100) : 0}% of visitors` : 'Loading…'}
+            />
           </div>
 
           {/* Venue Value */}
           <SectionHeader title="Venue Value (Outbound)" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
-            <MetricCard label="Venue Link Clicks" value="—" sub={`${dateLabels[dashDateRange]} · Connect click tracking to enable`} />
-            <MetricCard label="Top Venue" value="—" sub="Awaiting click tracking" />
+            <MetricCard
+              label="Venue Link Clicks"
+              value={analyticsLoading ? '…' : analyticsData ? analyticsData.venueClicks.toLocaleString() : '—'}
+              sub={analyticsData ? dateLabels[dashDateRange] : `${dateLabels[dashDateRange]} · Loading…`}
+              color={analyticsData?.venueClicks > 0 ? '#E8722A' : undefined}
+            />
+            <MetricCard
+              label="Top Venue"
+              value={analyticsLoading ? '…' : analyticsData?.topVenue || '—'}
+              sub={analyticsData ? dateLabels[dashDateRange] : 'Loading…'}
+            />
           </div>
 
           {/* Health & Inventory */}
@@ -3518,6 +3572,119 @@ export default function AdminPage() {
             </div>
           )}
         </div>
+        );
+      })()}
+
+      {/* ═══════════════════════ FESTIVALS TAB ═══════════════════════ */}
+      {activeTab === 'festivals' && !loading && (() => {
+        const filteredFestivals = festivalSearch.trim()
+          ? festivalData.filter(f => f.name.toLowerCase().includes(festivalSearch.toLowerCase()))
+          : festivalData;
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+              <h2 className="font-display font-bold text-lg">Festivals & Event Titles ({festivalData.length})</h2>
+              <input
+                placeholder="Search festivals..."
+                value={festivalSearch}
+                onChange={e => setFestivalSearch(e.target.value)}
+                className="px-3 py-2 rounded-lg text-sm"
+                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-primary)', width: '220px' }}
+              />
+            </div>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+              Festival names come from the <code style={{ background: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px' }}>event_title</code> field on events. Renaming updates all linked events. Deleting clears the event_title (events themselves are preserved).
+            </p>
+            {filteredFestivals.length === 0 && <p className="text-center py-8 text-brand-text-muted">{festivalSearch ? 'No matching festivals.' : 'No festivals found.'}</p>}
+            <div className="space-y-2">
+              {filteredFestivals.map(f => (
+                <div key={f.name} className="rounded-xl p-4" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {editingFestival?.name === f.name ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={editingFestival.newName}
+                            onChange={e => setEditingFestival(prev => ({ ...prev, newName: e.target.value }))}
+                            className="px-2 py-1 rounded-lg text-sm flex-1"
+                            style={{ background: 'var(--bg-secondary)', border: '1px solid var(--accent)', color: 'var(--text-primary)' }}
+                            autoFocus
+                            onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                          />
+                          <button
+                            className="px-3 py-1 rounded-lg text-xs font-semibold"
+                            style={{ background: '#E8722A', color: '#1C1917' }}
+                            onClick={async () => {
+                              const newName = editingFestival.newName.trim();
+                              if (!newName || newName === f.name) { setEditingFestival(null); return; }
+                              try {
+                                const res = await fetch('/api/admin', {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+                                  body: JSON.stringify({ bulk_rename_festival: true, old_name: f.name, new_name: newName }),
+                                });
+                                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                                setEditingFestival(null);
+                                fetchFestivalNames();
+                              } catch (err) { alert(`Rename failed: ${err.message}`); }
+                            }}
+                          >Save</button>
+                          <button
+                            className="px-3 py-1 rounded-lg text-xs font-semibold"
+                            style={{ color: 'var(--text-muted)' }}
+                            onClick={() => setEditingFestival(null)}
+                          >Cancel</button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="font-display font-bold text-[15px]" style={{ color: 'var(--text-primary)' }}>{f.name}</span>
+                          <span className="ml-2 text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(245,158,11,0.15)', color: '#F59E0B' }}>
+                            {f.count} event{f.count !== 1 ? 's' : ''}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    {editingFestival?.name !== f.name && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="px-2 py-1 rounded-lg text-xs font-medium"
+                          style={{ border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+                          onClick={() => setEditingFestival({ name: f.name, newName: f.name })}
+                          title="Rename this festival across all events"
+                        >Rename</button>
+                        <button
+                          className="px-2 py-1 rounded-lg text-xs font-medium"
+                          style={{ border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}
+                          onClick={async () => {
+                            if (!window.confirm(`Remove festival name "${f.name}" from ${f.count} event(s)? The events will remain but lose their festival tag.`)) return;
+                            try {
+                              const res = await fetch('/api/admin', {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+                                body: JSON.stringify({ bulk_clear_festival: true, festival_name: f.name }),
+                              });
+                              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                              fetchFestivalNames();
+                            } catch (err) { alert(`Delete failed: ${err.message}`); }
+                          }}
+                          title="Remove festival name from all events (events stay)"
+                        >Delete</button>
+                      </div>
+                    )}
+                  </div>
+                  {/* Show linked events */}
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {f.events.slice(0, 5).map(ev => (
+                      <span key={ev.id} className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>
+                        {ev.artist_name} {ev.event_date ? `· ${new Date(ev.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })}` : ''}
+                      </span>
+                    ))}
+                    {f.events.length > 5 && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>+{f.events.length - 5} more</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         );
       })()}
 
