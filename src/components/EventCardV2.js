@@ -177,7 +177,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               return (
                 <>
                   <span style={{ fontSize: smartTime.length > 4 ? '14px' : smartTime.length > 2 ? '18px' : '22px', lineHeight: 1, fontWeight: 900 }}>{smartTime}</span>
-                  {period && <span style={{ fontSize: '9px', lineHeight: 1, fontWeight: 600, letterSpacing: '1.2px', textTransform: 'uppercase', marginTop: '2px', opacity: 0.55 }}>{period}</span>}
+                  {period && <span style={{ fontSize: '9px', lineHeight: 1, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', marginTop: '2px', opacity: 0.75 }}>{period}</span>}
                 </>
               );
             })()}
@@ -237,10 +237,10 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             >
               <svg
                 className={isFavorited ? 'save-pop' : ''}
-                width="24" height="24" viewBox="0 0 24 24"
+                width="30" height="30" viewBox="0 0 24 24"
                 fill={isFavorited ? '#E8722A' : 'none'}
                 stroke={isFavorited ? '#E8722A' : (darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)')}
-                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                strokeWidth={isFavorited ? '1.8' : '1.5'} strokeLinecap="round" strokeLinejoin="round"
                 style={{ transition: 'all 0.2s ease' }}
               >
                 <circle cx="12" cy="12" r="10" />
@@ -251,7 +251,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                   </>
                 )}
                 {isFavorited && (
-                  <polyline points="9 12 11 14 15 10" fill="none" stroke="#FFFFFF" strokeWidth="2" />
+                  <polyline points="8 12 10.5 14.5 16 9" fill="none" stroke="#FFFFFF" strokeWidth="2.5" />
                 )}
               </svg>
             </button>
@@ -722,16 +722,16 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               position: 'fixed', top: `${popoverPos.top}px`, right: `${popoverPos.right}px`, zIndex: 1000,
               background: darkMode ? '#252535' : '#FFFFFF',
               border: `1px solid ${darkMode ? '#3A3A4A' : '#E5E7EB'}`,
-              borderRadius: '12px',
-              padding: '12px 14px',
-              boxShadow: darkMode ? '0 8px 24px rgba(0,0,0,0.5)' : '0 4px 16px rgba(0,0,0,0.12)',
-              width: '220px',
+              borderRadius: '14px',
+              padding: '14px 16px',
+              boxShadow: darkMode ? '0 12px 32px rgba(0,0,0,0.6)' : '0 6px 24px rgba(0,0,0,0.15)',
+              width: '260px',
               fontFamily: "'DM Sans', sans-serif",
             }}
           >
             {/* Arrow */}
             <div style={{
-              position: 'absolute', top: '-6px', right: '16px',
+              position: 'absolute', top: '-6px', right: '18px',
               width: '12px', height: '12px',
               background: darkMode ? '#252535' : '#FFFFFF',
               border: `1px solid ${darkMode ? '#3A3A4A' : '#E5E7EB'}`,
@@ -739,14 +739,18 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               transform: 'rotate(45deg)',
             }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-              <p style={{ margin: 0, fontSize: '12px', fontWeight: 600, color: darkMode ? '#C0C0D0' : '#4B5563', lineHeight: 1.4 }}>
-                Event Saved!{!isArtistFollowed && ' Want alerts for future shows?'}
+              <p style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: darkMode ? '#E0E0F0' : '#1F2937', lineHeight: 1.35 }}>
+                Event Saved!{!isArtistFollowed && (
+                  <span style={{ fontWeight: 600, color: darkMode ? '#B0B0C8' : '#6B7280' }}>
+                    {' '}Want alerts for future shows?
+                  </span>
+                )}
               </p>
               <button
                 onClick={dismissPopover}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0', flexShrink: 0, display: 'flex', alignItems: 'center' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', flexShrink: 0, display: 'flex', alignItems: 'center', marginTop: '1px' }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={darkMode ? '#7878A0' : '#9CA3AF'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={darkMode ? '#7878A0' : '#9CA3AF'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
@@ -755,18 +759,18 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               <button
                 onClick={handlePopoverFollow}
                 style={{
-                  marginTop: '10px', width: '100%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px',
-                  padding: '8px 12px', borderRadius: '8px', border: 'none',
+                  marginTop: '12px', width: '100%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px',
+                  padding: '10px 14px', borderRadius: '10px', border: 'none',
                   background: '#E8722A', color: '#1C1917',
-                  fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                  fontSize: '14px', fontWeight: 700, cursor: 'pointer',
                   fontFamily: "'DM Sans', sans-serif",
                   transition: 'opacity 0.15s',
                   textAlign: 'left',
                   overflow: 'hidden',
                 }}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#1C1917" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1C1917" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                   <path d="M12 5v14M5 12h14" />
                 </svg>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
