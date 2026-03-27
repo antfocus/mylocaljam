@@ -1830,43 +1830,46 @@ export default function AdminPage() {
                       <option key={c.key} value={c.key}>{c.label}</option>
                     ))}
                   </select>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ev.status === 'published' ? 'bg-green-500/15 text-green-400' : ev.status === 'archived' ? 'bg-gray-500/15 text-gray-400' : 'bg-yellow-500/15 text-yellow-400'}`}>
-                    {ev.status}
-                  </span>
                   {ev.status === 'published' ? (
-                    <button
-                      className="px-2 py-1 rounded-lg text-xs font-medium"
-                      style={{ border: '1px solid #F59E0B33', color: '#F59E0B', background: '#F59E0B11' }}
-                      onClick={() => unpublishEvent(ev)}
-                      title="Pull from live feed"
-                    >
-                      Unpublish
-                    </button>
+                    <>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-500/20 text-green-500">Published</span>
+                      <button
+                        className="px-2 py-1 rounded-lg text-xs font-medium"
+                        style={{ border: '1px solid #F59E0B33', color: '#F59E0B', background: 'transparent' }}
+                        onClick={() => unpublishEvent(ev)}
+                        title="Pull from live feed"
+                      >
+                        Unpublish
+                      </button>
+                    </>
                   ) : (
-                    <button
-                      className="px-2 py-1 rounded-lg text-xs font-medium"
-                      style={{ border: '1px solid #23CE6B33', color: '#23CE6B', background: '#23CE6B11' }}
-                      onClick={async () => {
-                        const prev = events;
-                        setEvents(p => p.map(e => e.id === ev.id ? { ...e, status: 'published' } : e));
-                        try {
-                          const res = await fetch('/api/admin', {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-                            body: JSON.stringify({ id: ev.id, status: 'published' }),
-                          });
-                          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                          showQueueToast(`✅ Republished: ${ev.artist_name}`);
-                        } catch (err) {
-                          console.error('Republish failed:', err);
-                          setEvents(prev);
-                          alert(`Republish failed: ${err.message}`);
-                        }
-                      }}
-                      title="Republish to live feed"
-                    >
-                      Republish
-                    </button>
+                    <>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-500/20 text-gray-400">{ev.status === 'draft' ? 'Draft' : 'Hidden'}</span>
+                      <button
+                        className="px-2 py-1 rounded-lg text-xs font-medium"
+                        style={{ border: '1px solid #23CE6B33', color: '#23CE6B', background: 'transparent' }}
+                        onClick={async () => {
+                          const prev = events;
+                          setEvents(p => p.map(e => e.id === ev.id ? { ...e, status: 'published' } : e));
+                          try {
+                            const res = await fetch('/api/admin', {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+                              body: JSON.stringify({ id: ev.id, status: 'published' }),
+                            });
+                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                            showQueueToast(`✅ Republished: ${ev.artist_name}`);
+                          } catch (err) {
+                            console.error('Republish failed:', err);
+                            setEvents(prev);
+                            alert(`Republish failed: ${err.message}`);
+                          }
+                        }}
+                        title="Publish to live feed"
+                      >
+                        Publish
+                      </button>
+                    </>
                   )}
                   {!isMobile && ev.source && /^https?:\/\//i.test(ev.source) && (
                     <a
