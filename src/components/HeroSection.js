@@ -321,7 +321,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
             const name = ev.name || ev.artist_name || '';
             const venue = ev.venue || ev.venue_name || '';
             const timeStr = formatTimeFull(ev.start_time);
-            const realImage = ev.artist_image || ev.image_url || ev.venues?.photo_url || null;
+            const realImage = ev.event_image || ev.artist_image || ev.image_url || ev.venues?.photo_url || null;
             const brandedGradient = BRANDED_GRADIENTS[i % BRANDED_GRADIENTS.length];
             const hasBio = !!(ev.description && ev.description.trim());
             // const hasGenres = ev.artist_genres && ev.artist_genres.length > 0; // Hidden until genre data is audited

@@ -440,8 +440,9 @@ export default function HomePage() {
 
   // ── Autocomplete suggestions from in-memory events (debounced) ─────────────
   const autoCompleteSuggestions = useMemo(() => {
-    const q = (debouncedSearch ?? '').trim().toLowerCase();
-    if (!q || q.length < 2 || !events.length) return [];
+    const rawQ = (debouncedSearch ?? '').trim().toLowerCase();
+    if (!rawQ || rawQ.length < 2 || !events.length) return [];
+    const q = normalizeVenue(debouncedSearch);
 
     const artistSet = new Map();   // normalized → display name
     const venueSet = new Map();    // normalized → display name
@@ -464,10 +465,10 @@ export default function HomePage() {
         const key = venue.toLowerCase();
         if (key.includes(q) && !venueSet.has(key)) venueSet.set(key, venue);
       }
-      // Festivals: from event_title (deduplicated)
+      // Festivals: from event_title (deduplicated, normalized to catch variants like "sea.hear.now" vs "Sea Hear Now")
       const festival = (e.event_title ?? '').trim();
       if (festival) {
-        const key = festival.toLowerCase();
+        const key = normalizeVenue(festival);
         if (key.includes(q) && !festivalSet.has(key)) festivalSet.set(key, festival);
       }
     }
@@ -838,6 +839,7 @@ export default function HomePage() {
           artist_genres: e.genre ? [e.genre] : (e.artists?.genres || []),
           artist_vibes:  e.vibe ? [e.vibe] : (e.artists?.vibes || []),
           is_tribute:    e.artists?.is_tribute || false,
+          event_image:   e.event_image_url || null,
           artist_image:  e.artists?.image_url || null,
           venue_type:    e.venues?.venue_type || null,
           venue_tags:    e.venues?.tags || [],

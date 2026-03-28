@@ -175,7 +175,7 @@ export default function SpotlightCarousel({ events = [], darkMode = true }) {
           }}
         >
           {events.map((ev, i) => {
-            const img = ev.artist_image || ev.image_url;
+            const img = ev.event_image || ev.artist_image || ev.image_url;
             return (
               <div
                 key={ev.id || i}

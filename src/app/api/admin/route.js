@@ -136,6 +136,7 @@ export async function POST(request) {
       triage_status: 'reviewed',
       status: body.status || 'published',
       source: body.source || 'Admin',
+      event_image_url: body.event_image_url || null,
       verified_at: new Date().toISOString(),
     })
     .select();
@@ -157,6 +158,34 @@ export async function PUT(request) {
   const body = await request.json();
   const { id } = body;
 
+  // ── Bulk festival rename: update event_title across all matching events ────
+  if (body.bulk_rename_festival) {
+    const { old_name, new_name } = body;
+    if (!old_name || !new_name) return NextResponse.json({ error: 'Missing old_name or new_name' }, { status: 400 });
+    const { data, error } = await supabase
+      .from('events')
+      .update({ event_title: new_name, is_human_edited: true })
+      .eq('event_title', old_name)
+      .select('id');
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    revalidatePath('/');
+    return NextResponse.json({ renamed: data?.length || 0 });
+  }
+
+  // ── Bulk festival delete: clear event_title from all matching events ───────
+  if (body.bulk_clear_festival) {
+    const { festival_name } = body;
+    if (!festival_name) return NextResponse.json({ error: 'Missing festival_name' }, { status: 400 });
+    const { data, error } = await supabase
+      .from('events')
+      .update({ event_title: null, is_festival: false, is_human_edited: true })
+      .eq('event_title', festival_name)
+      .select('id');
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    revalidatePath('/');
+    return NextResponse.json({ cleared: data?.length || 0 });
+  }
+
   // Only include known database columns — extra fields like event_time would cause PostgREST errors
   const updates = {
     ...(body.event_title !== undefined && { event_title: body.event_title || null }),
@@ -175,6 +204,7 @@ export async function PUT(request) {
     ...(body.status !== undefined && { status: body.status }),
     ...(body.source !== undefined && { source: body.source }),
     ...(body.image_url !== undefined && { image_url: body.image_url }),
+    ...(body.event_image_url !== undefined && { event_image_url: body.event_image_url || null }),
     ...(body.category !== undefined && { category: body.category }),
     ...(body.triage_status !== undefined && { triage_status: body.triage_status }),
     ...(body.artist_id !== undefined && { artist_id: body.artist_id }),

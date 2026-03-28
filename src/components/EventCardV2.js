@@ -83,7 +83,8 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
   const artistName = event.name || event.artist_name || '';
   const name       = eventTitle || artistName;
   const venue      = event.venue       || event.venue_name  || '';
-  const imageUrl   = event.artist_image || event.venue_photo || null;
+  // Waterfall: event-specific image → artist image → venue photo
+  const imageUrl   = event.event_image || event.artist_image || event.venue_photo || null;
   const genres     = event.artist_genres || [];
   const isTribute  = event.is_tribute || false;
   const rawSource  = event.source       || null;

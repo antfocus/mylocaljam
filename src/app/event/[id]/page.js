@@ -82,6 +82,7 @@ function flattenEvent(e) {
     category:       e.category || 'Live Music',
     // Event-level description overrides global artist bio
     description:    e.artist_bio || e.artists?.bio || '',
+    event_image:    e.event_image_url || null,
     artist_image:   e.artists?.image_url || null,
     artist_genres:  e.genre ? [e.genre] : (e.artists?.genres || []),
     is_tribute:     e.artists?.is_tribute || false,
@@ -155,7 +156,7 @@ export async function generateMetadata({ params }) {
   const venueName = event.venue_name || 'a local venue';
   const dateStr = formatOGDate(event.event_date);
   const timeStr = formatOGTime(event.start_time);
-  const imageUrl = event.artist_image || event.venue_photo || null;
+  const imageUrl = event.event_image || event.artist_image || event.venue_photo || null;
 
   // Build the date/time slug that appears in the OG title — e.g. "Friday, Mar 27 at 8 PM"
   const when = timeStr

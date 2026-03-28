@@ -4693,6 +4693,7 @@ export default function AdminPage() {
           venues={venues}
           onClose={() => { setShowEventForm(false); setEditingEvent(null); }}
           onSave={saveEvent}
+          adminPassword={password}
         />
       )}
 
@@ -5315,7 +5316,7 @@ export default function AdminPage() {
   );
 }
 
-function EventFormModal({ event, artists = [], venues = [], onClose, onSave }) {
+function EventFormModal({ event, artists = [], venues = [], onClose, onSave, adminPassword }) {
   const [form, setForm] = useState({
     event_title: event?.event_title || '',
     artist_name: event?.artist_name || '',
@@ -5327,9 +5328,11 @@ function EventFormModal({ event, artists = [], venues = [], onClose, onSave }) {
     vibe: event?.vibe || '',
     cover: event?.cover || '',
     ticket_link: event?.ticket_link || '',
+    event_image_url: event?.event_image_url || '',
     status: event?.status || 'published',
     source: event?.source || 'Admin',
   });
+  const [aiLoading, setAiLoading] = useState(false);
 
   // Look up linked artist for genre/vibe inheritance
   const linkedArtist = event?.artist_id
@@ -5351,6 +5354,32 @@ function EventFormModal({ event, artists = [], venues = [], onClose, onSave }) {
     const etOffset = probe.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? '-04:00' : '-05:00';
     const eventDate = new Date(`${form.event_date}T${form.event_time}:00${etOffset}`).toISOString();
     onSave({ ...form, event_date: eventDate });
+  };
+
+  const handleAiEnhance = async () => {
+    setAiLoading(true);
+    try {
+      const res = await fetch('/api/admin/ai-enhance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminPassword}` },
+        body: JSON.stringify({
+          artist_name: form.artist_name,
+          venue_name: form.venue_name,
+          event_date: form.event_date,
+          genre: form.genre,
+          current_description: form.artist_bio,
+        }),
+      });
+      const data = await res.json();
+      if (data.enhanced) {
+        update('artist_bio', data.enhanced);
+      } else {
+        alert(data.error || 'AI enhance failed');
+      }
+    } catch (err) {
+      alert('AI enhance error: ' + err.message);
+    }
+    setAiLoading(false);
   };
 
   const inputStyle = {
@@ -5390,7 +5419,24 @@ function EventFormModal({ event, artists = [], venues = [], onClose, onSave }) {
             <input style={inputStyle} placeholder="Links this event to the artist profile" value={form.artist_name} onChange={(e) => update('artist_name', e.target.value)} />
           </div>
           <div>
-            <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Event Description (Optional)</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="font-display font-semibold text-[13px] text-brand-text-secondary">Event Description (Optional)</label>
+              <button
+                type="button"
+                onClick={handleAiEnhance}
+                disabled={aiLoading || !form.artist_name}
+                style={{
+                  padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                  background: aiLoading ? 'var(--border)' : 'linear-gradient(135deg, #7C3AED, #6D28D9)',
+                  color: '#FFFFFF', border: 'none', cursor: aiLoading ? 'wait' : 'pointer',
+                  opacity: !form.artist_name ? 0.4 : 1,
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {aiLoading ? 'Enhancing...' : 'AI Enhance'}
+              </button>
+            </div>
             <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: '60px' }} placeholder="Optional — overrides the main artist bio on event cards" value={form.artist_bio} onChange={(e) => update('artist_bio', e.target.value)} />
             <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>If set, this shows instead of the global artist bio. Leave blank to use the artist&apos;s default bio.</p>
           </div>
@@ -5444,6 +5490,17 @@ function EventFormModal({ event, artists = [], venues = [], onClose, onSave }) {
           <div>
             <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Ticket Link</label>
             <input style={inputStyle} placeholder="https://..." value={form.ticket_link} onChange={(e) => update('ticket_link', e.target.value)} />
+          </div>
+          <div>
+            <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Event Image URL (Optional)</label>
+            <input style={inputStyle} placeholder="https://... — overrides artist/venue image on cards" value={form.event_image_url} onChange={(e) => update('event_image_url', e.target.value)} />
+            {form.event_image_url && (
+              <div style={{ marginTop: '8px', borderRadius: '8px', overflow: 'hidden', aspectRatio: '16/9', maxHeight: '120px' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={form.event_image_url} alt="Event preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
+              </div>
+            )}
+            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>If set, this image takes priority over the artist and venue photos.</p>
           </div>
           <button
             className="w-full py-3 rounded-xl font-display font-semibold text-[15px] text-white"

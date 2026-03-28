@@ -61,7 +61,8 @@ export default function EventPageClient({ event }) {
   const name = eventTitle || artistName;
   const venue = event.venue_name || '';
   const desc = event.description || '';
-  const imageUrl = event.artist_image || event.venue_photo || null;
+  // Waterfall: event-specific image → artist image → venue photo
+  const imageUrl = event.event_image || event.artist_image || event.venue_photo || null;
   const genres = event.artist_genres || [];
   const isTribute = event.is_tribute || false;
   const timeStr = formatTimeRange(event.start_time);

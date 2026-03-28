@@ -32,7 +32,8 @@ export default function SavedGigCard({
   const name       = eventTitle || artistName;
   const venue      = event.venue       || event.venue_name  || '';
   const desc       = event.description || event.artist_bio  || '';
-  const imageUrl   = event.image_url   || event.artist_image || event.venue_photo || null;
+  // Waterfall: event image → artist image → venue photo
+  const imageUrl   = event.event_image || event.image_url || event.artist_image || event.venue_photo || null;
   const genres     = event.artist_genres || [];
   const isTribute  = event.is_tribute || false;
   const rawSource  = event.source       || null;

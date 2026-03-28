@@ -3127,6 +3127,52 @@ npx vercel --prod
 
 ---
 
+## Session: March 28, 2026 — Event Modal Waterfall & AI Enhance
+
+### What Changed
+
+**1. Event-Specific Image Upload (`event_image_url`)**
+- New column `event_image_url` on events table (migration: `sql/add-event-image-url.sql`)
+- Event Edit modal now includes "Event Image URL" field with live preview thumbnail
+- Admin API `POST` and `PUT` handlers updated to persist `event_image_url`
+
+**2. AI Enhance Button for Event Descriptions**
+- New API route: `src/app/api/admin/ai-enhance/route.js`
+- Uses OpenAI `gpt-4o-mini` to generate 2-3 sentence event descriptions
+- Purple "AI Enhance" button in Event Edit modal next to description field
+- Requires `OPENAI_API_KEY` env var on Vercel
+
+**3. Frontend Waterfall Hierarchy**
+- Image waterfall: `event_image` → `artist_image` → `venue_photo`
+- Text waterfall: `event.description` (from `artist_bio` on events) → `artist.bio`
+- Headline waterfall: `event_title` → `artist_name` (already existed)
+- Updated in: EventCardV2, EventPageClient, SavedGigCard, HeroSection, SpotlightCarousel, event detail page (SSR + OG)
+- Homepage `page.js` and `event/[id]/page.js` mappings now include `event_image` field
+
+### Files Modified
+- `src/app/admin/page.js` — EventFormModal: added `event_image_url` field, AI Enhance button, `adminPassword` prop
+- `src/app/api/admin/route.js` — POST/PUT: added `event_image_url` column support
+- `src/app/api/admin/ai-enhance/route.js` — NEW: AI description enhancement endpoint
+- `src/app/page.js` — Event mapping includes `event_image`
+- `src/app/event/[id]/page.js` — flattenEvent + OG image uses waterfall
+- `src/app/event/[id]/EventPageClient.js` — Image waterfall
+- `src/components/EventCardV2.js` — Image waterfall
+- `src/components/SavedGigCard.js` — Image waterfall
+- `src/components/HeroSection.js` — Image waterfall
+- `src/components/SpotlightCarousel.js` — Image waterfall
+- `sql/add-event-image-url.sql` — NEW: migration to add column
+
+### Env Vars Needed
+- `OPENAI_API_KEY` — required for AI Enhance feature (add to Vercel Production env)
+
+### Pending / TODO
+- **Run `sql/add-event-image-url.sql`** in Supabase SQL Editor before deploying
+- **Add `OPENAI_API_KEY` to Vercel** env vars
+- **Run `supabase-drop-instagram.sql`** — still pending from prior session
+- **Run festival SQL cleanup:** `UPDATE events SET event_title = 'Sea Hear Now 2026' WHERE event_title = 'sea.hear.now';`
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.
