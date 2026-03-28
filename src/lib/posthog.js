@@ -17,8 +17,10 @@ export function initPostHog() {
   }
 
   posthog.init(key, {
-    api_host: host,
-    // Auto-capture clicks, page views, etc.
+    // Route through Next.js reverse proxy to bypass ad-blockers
+    api_host: '/ingest',
+    ui_host: 'https://us.posthog.com',
+    // Auto-capture clicks, etc.
     autocapture: true,
     // Session recording for UX review
     disable_session_recording: false,
@@ -26,11 +28,11 @@ export function initPostHog() {
       maskAllInputs: false,        // We don't collect passwords — Supabase handles auth
       maskTextSelector: '[data-ph-mask]', // Opt-in masking via data attribute
     },
-    // SPA page view tracking
-    capture_pageview: true,
+    // Disable SDK auto-pageview — PostHogProvider handles SPA route changes manually
+    capture_pageview: false,
     capture_pageleave: true,
-    // Respect Do Not Track
-    respect_dnt: true,
+    // Do NOT respect DNT — it hides real traffic from our own analytics dashboard
+    respect_dnt: false,
     // Persist across sessions
     persistence: 'localStorage+cookie',
     // Don't load toolbar in prod
