@@ -2831,17 +2831,17 @@ export default function AdminPage() {
                 const fs = artist.field_status || {};
 
                 // Traffic light pills — always visible for every artist
-                // States: Locked (green), Live/has data (subtle green), Missing (red), Pending (yellow)
+                // States: Locked (green), Live/has data (green), Missing (red), Pending (yellow)
                 // Pills are clickable toggles for per-field metadata locks
                 const TrafficDot = ({ field, hasData, label }) => {
                   const status = fs[field] || (hasData ? 'live' : 'missing');
                   const locked = !!locks[field];
 
-                  // Visual styles by state
-                  const lockedStyle   = { bg: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.35)' };
-                  const liveStyle     = { bg: 'rgba(34,197,94,0.08)', color: 'rgba(34,197,94,0.7)', border: '1px solid rgba(34,197,94,0.15)' };
-                  const missingStyle  = { bg: 'rgba(239,68,68,0.08)', color: 'rgba(239,68,68,0.7)', border: '1px solid rgba(239,68,68,0.15)' };
-                  const pendingStyle  = { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.25)' };
+                  // Visual styles — higher contrast for visibility on dark backgrounds
+                  const lockedStyle   = { bg: 'rgba(34,197,94,0.2)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.5)' };
+                  const liveStyle     = { bg: 'rgba(34,197,94,0.12)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' };
+                  const missingStyle  = { bg: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' };
+                  const pendingStyle  = { bg: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.35)' };
 
                   const c = locked ? lockedStyle
                     : status === 'pending' ? pendingStyle
@@ -3002,13 +3002,13 @@ export default function AdminPage() {
                       )}
                     </div>}
 
-                    {/* Traffic light status pills — hidden on mobile */}
-                    {!isMobile && <div style={{ display: 'flex', gap: '4px', flexWrap: 'nowrap', minWidth: '220px', justifyContent: 'center', flexShrink: 0 }}>
+                    {/* Traffic light status pills — always visible */}
+                    <div style={{ display: 'flex', gap: '4px', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: isMobile ? '0' : '220px', justifyContent: 'center', flexShrink: 0 }}>
                       <TrafficDot field="bio" hasData={hasBio} label="Bio" />
                       <TrafficDot field="image_url" hasData={hasImg} label="Img" />
                       <TrafficDot field="genres" hasData={hasGenre} label="Genre" />
                       <TrafficDot field="vibes" hasData={hasVibe} label="Vibe" />
-                    </div>}
+                    </div>
 
                     {/* Action buttons — lock + pencil + trash */}
                     <div style={{ display: 'flex', gap: '2px', alignItems: 'center', flexShrink: 0, width: isMobile ? 'auto' : '140px', justifyContent: 'flex-end' }}>
@@ -3040,7 +3040,7 @@ export default function AdminPage() {
                           } catch {}
                         }}
                         className="p-1.5 rounded"
-                        style={{ color: artist.is_locked ? '#22c55e' : 'rgba(136,136,136,0.35)', cursor: 'pointer', background: 'none', border: 'none', opacity: 1 }}
+                        style={{ color: artist.is_locked ? '#22c55e' : 'rgba(136,136,136,0.6)', cursor: 'pointer', background: 'none', border: 'none', opacity: 1 }}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                           {artist.is_locked
