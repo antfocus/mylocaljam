@@ -2126,6 +2126,7 @@ export default function AdminPage() {
               <option value="Last.fm">Last.fm</option>
               <option value="Scraped">Scraped</option>
               <option value="Manual">Manual</option>
+              <option value="AI">AI Generated</option>
               <option value="Unknown">Unknown</option>
             </select>
 
@@ -2174,8 +2175,8 @@ export default function AdminPage() {
                     a.image_url ? (fs.image_url || 'live') : 'missing',
                     (a.genres?.length > 0) ? (fs.genres || 'live') : 'missing',
                     (a.vibes?.length > 0) ? (fs.vibes || 'live') : 'missing',
-                    a.image_source || 'Unknown',
-                    a.bio_source || 'Unknown',
+                    a.image_source || (a.image_url?.includes('last.fm') || a.image_url?.includes('lastfm') ? 'Last.fm' : a.image_url?.includes('discogs.com') ? 'Discogs' : a.image_url?.includes('musicbrainz.org') ? 'MusicBrainz' : a.image_url ? 'Scraped' : 'None'),
+                    a.bio_source || (a.metadata_source === 'lastfm' ? 'Last.fm' : a.metadata_source === 'manual' ? 'Manual' : a.bio ? 'Scraped' : 'None'),
                     a.id,
                   ];
                 });
@@ -2706,16 +2707,40 @@ export default function AdminPage() {
                 if (artistMissingFilters.vibes && (!a.vibes || a.vibes.length === 0)) matchesMissing = true;
                 if (!matchesMissing) return false;
               }
-              // Split source filter — match if EITHER image_source or bio_source matches
+              // Split source filter — uses same detection as badges (URL keywords + metadata_source)
               if (artistSourceFilter !== 'all') {
+                const detectSrc = (explicit, url, meta) => {
+                  if (explicit) {
+                    const n = explicit.toLowerCase();
+                    if (n === 'musicbrainz') return 'MusicBrainz';
+                    if (n === 'discogs') return 'Discogs';
+                    if (n === 'lastfm' || n === 'last.fm') return 'Last.fm';
+                    if (n === 'manual') return 'Manual';
+                    if (n === 'scraped' || n === 'scraper') return 'Scraped';
+                    if (n === 'ai_generated' || n === 'ai') return 'AI';
+                    return explicit;
+                  }
+                  if (url) {
+                    const u = url.toLowerCase();
+                    if (u.includes('last.fm') || u.includes('lastfm')) return 'Last.fm';
+                    if (u.includes('discogs.com')) return 'Discogs';
+                    if (u.includes('musicbrainz.org')) return 'MusicBrainz';
+                  }
+                  if (meta) {
+                    const m = meta.toLowerCase();
+                    if (m === 'lastfm' || m === 'last.fm') return 'Last.fm';
+                    if (m === 'scraper') return 'Scraped';
+                    if (m === 'manual') return 'Manual';
+                    if (m === 'ai_generated') return 'AI';
+                  }
+                  return null;
+                };
+                const imgSrc = detectSrc(a.image_source, a.image_url, a.metadata_source) || (a.image_url ? 'Scraped' : null);
+                const bioSrc = detectSrc(a.bio_source, null, a.metadata_source) || (a.bio ? 'Scraped' : null);
                 if (artistSourceFilter === 'Unknown') {
-                  // Show artists where both sources are unknown/missing
-                  const imgSrc = a.image_source || 'Unknown';
-                  const bioSrc = a.bio_source || 'Unknown';
-                  if (imgSrc !== 'Unknown' || bioSrc !== 'Unknown') return false;
+                  // Show artists where neither image nor bio has a detectable source
+                  if (imgSrc || bioSrc) return false;
                 } else {
-                  const imgSrc = a.image_source || '';
-                  const bioSrc = a.bio_source || '';
                   if (imgSrc !== artistSourceFilter && bioSrc !== artistSourceFilter) return false;
                 }
               }
@@ -2805,16 +2830,24 @@ export default function AdminPage() {
                 const locks = artist.is_human_edited || {};
                 const fs = artist.field_status || {};
 
-                // Traffic light: Red (missing), Yellow (AI pending), Green (approved/live)
+                // Traffic light pills — always visible for every artist
+                // States: Locked (green), Live/has data (subtle green), Missing (red), Pending (yellow)
                 // Pills are clickable toggles for per-field metadata locks
                 const TrafficDot = ({ field, hasData, label }) => {
-                  const status = hasData ? (fs[field] || 'live') : null;
+                  const status = fs[field] || (hasData ? 'live' : 'missing');
                   const locked = !!locks[field];
-                  // Locked: solid green pill with closed padlock
-                  // Unlocked: muted gray pill, no icon — blends into the row
-                  const lockedStyle = { bg: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.35)' };
-                  const unlockedStyle = { bg: 'rgba(136,136,136,0.06)', color: 'rgba(136,136,136,0.5)', border: '1px solid rgba(136,136,136,0.1)' };
-                  const c = locked ? lockedStyle : unlockedStyle;
+
+                  // Visual styles by state
+                  const lockedStyle   = { bg: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.35)' };
+                  const liveStyle     = { bg: 'rgba(34,197,94,0.08)', color: 'rgba(34,197,94,0.7)', border: '1px solid rgba(34,197,94,0.15)' };
+                  const missingStyle  = { bg: 'rgba(239,68,68,0.08)', color: 'rgba(239,68,68,0.7)', border: '1px solid rgba(239,68,68,0.15)' };
+                  const pendingStyle  = { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.25)' };
+
+                  const c = locked ? lockedStyle
+                    : status === 'pending' ? pendingStyle
+                    : status === 'missing' || !hasData ? missingStyle
+                    : liveStyle;
+
                   return (
                     <button
                       onClick={async (e) => {
@@ -2834,7 +2867,7 @@ export default function AdminPage() {
                           fetchArtists(artistsSearch, artistsNeedsInfo);
                         } catch {}
                       }}
-                      title={locked ? `Unlock ${label} — allow AI/scraper updates` : `Lock ${label} — protect from overwrites`}
+                      title={locked ? `Unlock ${label} — allow AI/scraper updates` : hasData ? `Lock ${label} — protect from overwrites` : `${label} is missing — click to lock field`}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: '3px',
                         padding: '2px 8px', borderRadius: '9999px',
@@ -2900,10 +2933,43 @@ export default function AdminPage() {
                           'Last.fm':     { color: '#d51007', bg: 'rgba(213,16,7,0.1)' },
                           'Scraped':     { color: '#3AADA0', bg: 'rgba(58,173,160,0.1)' },
                           'Manual':      { color: '#E8722A', bg: 'rgba(232,114,42,0.1)' },
-                          'Unknown':     { color: '#888', bg: 'rgba(136,136,136,0.08)' },
+                          'AI':          { color: '#A855F7', bg: 'rgba(168,85,247,0.1)' },
                         };
-                        const imgSrc = artist.image_source || (artist.metadata_source === 'scraper' ? 'Scraped' : null);
-                        const bioSrc = artist.bio_source || (artist.metadata_source === 'lastfm' ? 'Last.fm' : null);
+                        // Detect source from explicit column, then URL keywords, then metadata_source
+                        const detectSource = (explicitSource, url, metaSrc) => {
+                          if (explicitSource) {
+                            // Normalize DB values to display labels
+                            const norm = explicitSource.toLowerCase();
+                            if (norm === 'musicbrainz') return 'MusicBrainz';
+                            if (norm === 'discogs') return 'Discogs';
+                            if (norm === 'lastfm' || norm === 'last.fm') return 'Last.fm';
+                            if (norm === 'manual') return 'Manual';
+                            if (norm === 'scraped' || norm === 'scraper') return 'Scraped';
+                            if (norm === 'ai_generated' || norm === 'ai') return 'AI';
+                            return explicitSource; // pass through unknown labels
+                          }
+                          // Infer from URL keywords
+                          if (url) {
+                            const u = url.toLowerCase();
+                            if (u.includes('last.fm') || u.includes('lastfm')) return 'Last.fm';
+                            if (u.includes('discogs.com')) return 'Discogs';
+                            if (u.includes('musicbrainz.org')) return 'MusicBrainz';
+                          }
+                          // Fallback to metadata_source
+                          if (metaSrc) {
+                            const m = metaSrc.toLowerCase();
+                            if (m === 'lastfm' || m === 'last.fm') return 'Last.fm';
+                            if (m === 'scraper') return 'Scraped';
+                            if (m === 'manual') return 'Manual';
+                            if (m === 'ai_generated') return 'AI';
+                          }
+                          // If data exists but source unknown, assume scraped
+                          return null;
+                        };
+                        const imgSrc = detectSource(artist.image_source, artist.image_url, artist.metadata_source)
+                          || (artist.image_url ? 'Scraped' : null);
+                        const bioSrc = detectSource(artist.bio_source, null, artist.metadata_source)
+                          || (artist.bio ? 'Scraped' : null);
                         const badgeStyle = (cfg) => ({
                           display: 'inline-flex', alignItems: 'center',
                           padding: '1px 5px', borderRadius: '4px',
