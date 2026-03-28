@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 
+// Prevent Next.js / Vercel from caching this route — always fetch fresh from PostHog
+export const dynamic = 'force-dynamic';
+
 // us.i.posthog.com = ingestion (client-side events)
 // us.posthog.com   = API (server-side queries with Personal API Key)
 const POSTHOG_API_HOST = process.env.POSTHOG_API_HOST || 'https://us.posthog.com';
