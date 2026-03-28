@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { formatTimeRange } from '@/lib/utils';
+import { posthog } from '@/lib/posthog';
 
 const CATEGORY_CONFIG = {
   'Live Music':      { color: '#E8722A', bg: '#E8722A', emoji: '🎵' },
@@ -437,7 +438,15 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
                       href={sourceLink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation();
+                        posthog.capture?.('venue_link_clicked', {
+                          venue_name: venue,
+                          artist_name: artistName,
+                          event_id: event.id || '',
+                          source_url: sourceLink,
+                        });
+                      }}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: '5px',
                         fontSize: '11px', fontWeight: 700,

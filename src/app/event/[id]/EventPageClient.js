@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { formatTimeRange } from '@/lib/utils';
+import { posthog } from '@/lib/posthog';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -280,6 +281,14 @@ export default function EventPageClient({ event }) {
                 href={sourceLink}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => {
+                  posthog.capture?.('venue_link_clicked', {
+                    venue_name: venue,
+                    artist_name: artistName,
+                    event_id: event.id || '',
+                    source_url: sourceLink,
+                  });
+                }}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: '6px',
                   fontSize: '13px', fontWeight: 700,

@@ -40,6 +40,7 @@ export default function AdminPage() {
   const [dashDateRange, setDashDateRange] = useState('7d'); // 'today' | '7d' | '30d' | 'all'
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsEnv, setAnalyticsEnv] = useState('production'); // 'production' | 'dev'
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [mobileQueueDetail, setMobileQueueDetail] = useState(false);
@@ -227,10 +228,12 @@ export default function AdminPage() {
     } catch (err) { console.error(err); }
   }, [password, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime, eventsRecentlyAdded]);
 
-  const fetchAnalytics = useCallback(async (range) => {
+  const fetchAnalytics = useCallback(async (range, env) => {
     setAnalyticsLoading(true);
     try {
-      const res = await fetch(`/api/admin/analytics?password=${encodeURIComponent(password)}&range=${range || dashDateRange}`);
+      const r = range || dashDateRange;
+      const e = env || analyticsEnv;
+      const res = await fetch(`/api/admin/analytics?password=${encodeURIComponent(password)}&range=${r}&env=${e}`);
       if (res.ok) {
         const data = await res.json();
         setAnalyticsData(data);
@@ -240,7 +243,7 @@ export default function AdminPage() {
     } finally {
       setAnalyticsLoading(false);
     }
-  }, [password, dashDateRange]);
+  }, [password, dashDateRange, analyticsEnv]);
 
   const fetchScraperHealth = useCallback(async () => {
     try {
@@ -1271,9 +1274,32 @@ export default function AdminPage() {
 
         return (
         <div>
-          {/* Header + Date Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <h2 className="font-display font-bold text-lg" style={{ fontFamily: "'DM Sans', sans-serif", margin: 0 }}>Dashboard</h2>
+          {/* Header + Date Filter + Env Switcher */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h2 className="font-display font-bold text-lg" style={{ fontFamily: "'DM Sans', sans-serif", margin: 0 }}>Dashboard</h2>
+              {/* Environment switcher */}
+              <div style={{ display: 'flex', gap: '0', background: 'var(--card-bg)', borderRadius: '6px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+                {[
+                  { key: 'production', label: 'Prod' },
+                  { key: 'dev', label: 'Dev' },
+                ].map(env => (
+                  <button
+                    key={env.key}
+                    onClick={() => { setAnalyticsEnv(env.key); fetchAnalytics(dashDateRange, env.key); }}
+                    style={{
+                      padding: '3px 10px', fontSize: '11px', fontWeight: 600,
+                      fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                      background: analyticsEnv === env.key ? (env.key === 'production' ? '#22c55e22' : '#3B82F622') : 'transparent',
+                      border: 'none',
+                      color: analyticsEnv === env.key ? (env.key === 'production' ? '#22c55e' : '#3B82F6') : 'var(--text-muted)',
+                    }}
+                  >
+                    {env.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid var(--border)' }}>
               {[
                 { key: 'today', label: 'Today' },
@@ -1299,24 +1325,36 @@ export default function AdminPage() {
             </div>
           </div>
 
+          {analyticsData?.error && (
+            <div style={{ padding: '8px 12px', marginBottom: '12px', borderRadius: '8px', background: '#EF444422', color: '#F87171', fontSize: '12px', fontFamily: "'DM Sans', sans-serif" }}>
+              ⚠ PostHog: {analyticsData.error}
+            </div>
+          )}
+
           {/* Fan Engagement */}
           <SectionHeader title="Fan Engagement" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
             <MetricCard
               label="Total Unique Visitors"
-              value={analyticsLoading ? '…' : analyticsData ? analyticsData.uniqueVisitors.toLocaleString() : '—'}
-              sub={analyticsData ? dateLabels[dashDateRange] : `${dateLabels[dashDateRange]} · Loading…`}
+              value={analyticsLoading ? '…' : (analyticsData?.uniqueVisitors ?? 0).toLocaleString()}
+              sub={dateLabels[dashDateRange]}
               color={analyticsData?.uniqueVisitors > 0 ? '#3B82F6' : undefined}
             />
             <MetricCard
               label="Mobile Web"
-              value={analyticsLoading ? '…' : analyticsData ? analyticsData.mobile.toLocaleString() : '—'}
-              sub={analyticsData ? `${analyticsData.uniqueVisitors > 0 ? Math.round((analyticsData.mobile / analyticsData.uniqueVisitors) * 100) : 0}% of visitors` : 'Loading…'}
+              value={analyticsLoading ? '…' : (analyticsData?.mobile ?? 0).toLocaleString()}
+              sub={analyticsData?.uniqueVisitors > 0 ? `${Math.round(((analyticsData?.mobile || 0) / analyticsData.uniqueVisitors) * 100)}% of visitors` : dateLabels[dashDateRange]}
             />
             <MetricCard
               label="Desktop Web"
-              value={analyticsLoading ? '…' : analyticsData ? analyticsData.desktop.toLocaleString() : '—'}
-              sub={analyticsData ? `${analyticsData.uniqueVisitors > 0 ? Math.round((analyticsData.desktop / analyticsData.uniqueVisitors) * 100) : 0}% of visitors` : 'Loading…'}
+              value={analyticsLoading ? '…' : (analyticsData?.desktop ?? 0).toLocaleString()}
+              sub={analyticsData?.uniqueVisitors > 0 ? `${Math.round(((analyticsData?.desktop || 0) / analyticsData.uniqueVisitors) * 100)}% of visitors` : dateLabels[dashDateRange]}
+            />
+            <MetricCard
+              label="Events Bookmarked"
+              value={analyticsLoading ? '…' : (analyticsData?.bookmarks ?? 0).toLocaleString()}
+              sub={dateLabels[dashDateRange]}
+              color={analyticsData?.bookmarks > 0 ? '#A855F7' : undefined}
             />
           </div>
 
@@ -1325,14 +1363,15 @@ export default function AdminPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
             <MetricCard
               label="Venue Link Clicks"
-              value={analyticsLoading ? '…' : analyticsData ? analyticsData.venueClicks.toLocaleString() : '—'}
-              sub={analyticsData ? dateLabels[dashDateRange] : `${dateLabels[dashDateRange]} · Loading…`}
+              value={analyticsLoading ? '…' : (analyticsData?.venueClicks ?? 0).toLocaleString()}
+              sub={dateLabels[dashDateRange]}
               color={analyticsData?.venueClicks > 0 ? '#E8722A' : undefined}
             />
             <MetricCard
               label="Top Venue"
-              value={analyticsLoading ? '…' : analyticsData?.topVenue || '—'}
-              sub={analyticsData ? dateLabels[dashDateRange] : 'Loading…'}
+              value={analyticsLoading ? '…' : (analyticsData?.topVenue || '—')}
+              sub={analyticsData?.topVenueClicks > 0 ? `${analyticsData.topVenueClicks} clicks` : dateLabels[dashDateRange]}
+              color={analyticsData?.topVenueClicks > 0 ? '#E8722A' : undefined}
             />
           </div>
 

@@ -2,151 +2,214 @@ import { NextResponse } from 'next/server';
 
 const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com';
 const POSTHOG_API_KEY = process.env.POSTHOG_PERSONAL_API_KEY;
-const POSTHOG_PROJECT_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 
-// Helper: build date filter for PostHog queries
-function getDateRange(range) {
-  const now = new Date();
+// Map range param to number of days for HogQL
+function rangeToDays(range) {
   switch (range) {
-    case 'today': return '-1d';
-    case '7d': return '-7d';
-    case '30d': return '-30d';
-    case 'all': return '-180d'; // 6 months back
-    default: return '-7d';
+    case 'today': return 1;
+    case '7d': return 7;
+    case '30d': return 30;
+    case 'all': return 365;
+    default: return 7;
   }
 }
 
-// Query PostHog's Query API (HogQL)
-async function queryPostHog(query, dateFrom) {
-  const projectId = await getProjectId();
-  if (!projectId) return null;
+// Resolve PostHog project ID dynamically
+// Supports environment switching: picks the project whose name includes the env hint
+// If POSTHOG_PROJECT_ID is set explicitly, use that
+let projectCache = null;
+async function getProjectId(envHint) {
+  // Allow explicit override via env var
+  if (process.env.POSTHOG_PROJECT_ID) return process.env.POSTHOG_PROJECT_ID;
 
+  if (!projectCache) {
+    try {
+      const res = await fetch(`${POSTHOG_HOST}/api/projects/`, {
+        headers: { 'Authorization': `Bearer ${POSTHOG_API_KEY}` },
+      });
+      if (!res.ok) {
+        console.error('[Analytics] Failed to list PostHog projects:', res.status);
+        return null;
+      }
+      const data = await res.json();
+      projectCache = data.results || data || [];
+    } catch (err) {
+      console.error('[Analytics] PostHog project lookup error:', err);
+      return null;
+    }
+  }
+
+  if (!projectCache.length) return null;
+
+  // If envHint provided, try to match project name (e.g. "Dev" or "Production")
+  if (envHint && projectCache.length > 1) {
+    const hint = envHint.toLowerCase();
+    const match = projectCache.find(p =>
+      (p.name || '').toLowerCase().includes(hint)
+    );
+    if (match) return match.id;
+  }
+
+  // Default: first project (production)
+  return projectCache[0].id;
+}
+
+// Run a HogQL query against PostHog
+async function hogql(projectId, query) {
   const res = await fetch(`${POSTHOG_HOST}/api/projects/${projectId}/query/`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${POSTHOG_API_KEY}`,
     },
-    body: JSON.stringify({
-      query: {
-        kind: 'HogQLQuery',
-        query,
-      },
-    }),
+    body: JSON.stringify({ query: { kind: 'HogQLQuery', query } }),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    console.error('PostHog query error:', res.status, text);
+    console.error('[Analytics] HogQL error:', res.status, text.slice(0, 300));
     return null;
   }
-
   return res.json();
 }
 
-// Get project ID from PostHog using the API key
-let cachedProjectId = null;
-async function getProjectId() {
-  if (cachedProjectId) return cachedProjectId;
-
-  try {
-    const res = await fetch(`${POSTHOG_HOST}/api/projects/`, {
-      headers: { 'Authorization': `Bearer ${POSTHOG_API_KEY}` },
-    });
-    if (!res.ok) {
-      console.error('Failed to fetch PostHog projects:', res.status);
-      return null;
-    }
-    const data = await res.json();
-    const projects = data.results || data;
-    if (projects.length > 0) {
-      cachedProjectId = projects[0].id;
-      return cachedProjectId;
-    }
-  } catch (err) {
-    console.error('PostHog getProjectId error:', err);
-  }
-  return null;
-}
-
 export async function GET(request) {
-  // Verify admin password
   const { searchParams } = new URL(request.url);
+
+  // Auth: require admin password
   const password = searchParams.get('password');
   if (password !== process.env.ADMIN_PASSWORD) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   if (!POSTHOG_API_KEY) {
-    return NextResponse.json({ error: 'PostHog API key not configured' }, { status: 500 });
+    return NextResponse.json({
+      error: 'PostHog API key not configured',
+      uniqueVisitors: 0, mobile: 0, desktop: 0,
+      venueClicks: 0, topVenue: '—', topVenueClicks: 0,
+      bookmarks: 0,
+    }, { status: 200 }); // Return zeros so dashboard doesn't break
   }
 
   const range = searchParams.get('range') || '7d';
-  const dateFrom = getDateRange(range);
+  const env = searchParams.get('env') || ''; // 'dev' | 'production' | '' (auto)
+  const days = rangeToDays(range);
 
   try {
+    const projectId = await getProjectId(env);
+    if (!projectId) {
+      return NextResponse.json({
+        error: 'Could not resolve PostHog project',
+        uniqueVisitors: 0, mobile: 0, desktop: 0,
+        venueClicks: 0, topVenue: '—', topVenueClicks: 0,
+        bookmarks: 0,
+      });
+    }
+
     // Run all queries in parallel
-    const [uniqueVisitors, deviceBreakdown, venueClicks] = await Promise.all([
-      // 1. Unique visitors
-      queryPostHog(
-        `SELECT count(DISTINCT person_id) as unique_visitors
+    const [visitorsRes, deviceRes, venueClicksRes, topVenueRes, bookmarksRes] = await Promise.all([
+      // 1. Unique visitors — count distinct persons with a $pageview
+      hogql(projectId,
+        `SELECT count(DISTINCT person_id)
          FROM events
          WHERE event = '$pageview'
-         AND timestamp >= now() - toIntervalDay(${range === 'today' ? 1 : range === '7d' ? 7 : range === '30d' ? 30 : 180})`
+           AND timestamp >= now() - toIntervalDay(${days})`
       ),
 
-      // 2. Device breakdown (mobile vs desktop)
-      queryPostHog(
+      // 2. Device breakdown — use $device_type property on $pageview events
+      hogql(projectId,
         `SELECT
-           countIf(DISTINCT person_id, properties.$device_type = 'Mobile') as mobile,
-           countIf(DISTINCT person_id, properties.$device_type = 'Desktop') as desktop
+           properties.$device_type AS device_type,
+           count(DISTINCT person_id) AS visitors
          FROM events
          WHERE event = '$pageview'
-         AND timestamp >= now() - toIntervalDay(${range === 'today' ? 1 : range === '7d' ? 7 : range === '30d' ? 30 : 180})`
+           AND timestamp >= now() - toIntervalDay(${days})
+         GROUP BY device_type
+         ORDER BY visitors DESC`
       ),
 
-      // 3. Venue link clicks (autocapture on outbound links or custom events)
-      queryPostHog(
-        `SELECT
-           count() as total_clicks,
-           properties.$current_url as url
+      // 3. Total venue_link_clicked count
+      hogql(projectId,
+        `SELECT count() AS clicks
          FROM events
-         WHERE (event = '$autocapture' AND properties.$event_type = 'click' AND properties.tag_name = 'a' AND properties.$current_url LIKE '%mylocaljam%')
-            OR event = 'venue_link_clicked'
-         AND timestamp >= now() - toIntervalDay(${range === 'today' ? 1 : range === '7d' ? 7 : range === '30d' ? 30 : 180})
-         GROUP BY url
-         ORDER BY total_clicks DESC
-         LIMIT 20`
+         WHERE event = 'venue_link_clicked'
+           AND timestamp >= now() - toIntervalDay(${days})`
+      ),
+
+      // 4. Top venue by venue_link_clicked → venue_name property
+      hogql(projectId,
+        `SELECT
+           properties.venue_name AS venue,
+           count() AS clicks
+         FROM events
+         WHERE event = 'venue_link_clicked'
+           AND timestamp >= now() - toIntervalDay(${days})
+           AND properties.venue_name IS NOT NULL
+           AND properties.venue_name != ''
+         GROUP BY venue
+         ORDER BY clicks DESC
+         LIMIT 5`
+      ),
+
+      // 5. Total event_bookmarked count
+      hogql(projectId,
+        `SELECT count() AS bookmarks
+         FROM events
+         WHERE event = 'event_bookmarked'
+           AND timestamp >= now() - toIntervalDay(${days})`
       ),
     ]);
 
-    // Parse results
-    const visitors = uniqueVisitors?.results?.[0]?.[0] || 0;
-    const mobile = deviceBreakdown?.results?.[0]?.[0] || 0;
-    const desktop = deviceBreakdown?.results?.[0]?.[1] || 0;
+    // Parse unique visitors
+    const uniqueVisitors = visitorsRes?.results?.[0]?.[0] || 0;
 
-    // Parse venue clicks — total and top venue
-    let totalVenueClicks = 0;
-    let topVenue = '—';
-    if (venueClicks?.results?.length > 0) {
-      for (const row of venueClicks.results) {
-        totalVenueClicks += (row[0] || 0);
+    // Parse device breakdown into mobile / desktop
+    let mobile = 0;
+    let desktop = 0;
+    if (deviceRes?.results) {
+      for (const [deviceType, count] of deviceRes.results) {
+        const dt = (deviceType || '').toLowerCase();
+        if (dt === 'mobile' || dt === 'tablet') {
+          mobile += count;
+        } else if (dt === 'desktop') {
+          desktop += count;
+        }
+        // Other types (Spider, etc.) excluded
       }
-      // Try to extract venue name from the top URL
-      const topUrl = venueClicks.results[0]?.[1] || '';
-      topVenue = topUrl || '—';
     }
 
+    // Parse venue clicks
+    const venueClicks = venueClicksRes?.results?.[0]?.[0] || 0;
+
+    // Parse top venue
+    let topVenue = '—';
+    let topVenueClicks = 0;
+    if (topVenueRes?.results?.length > 0) {
+      topVenue = topVenueRes.results[0][0] || '—';
+      topVenueClicks = topVenueRes.results[0][1] || 0;
+    }
+
+    // Parse bookmarks
+    const bookmarks = bookmarksRes?.results?.[0]?.[0] || 0;
+
     return NextResponse.json({
-      uniqueVisitors: visitors,
+      uniqueVisitors,
       mobile,
       desktop,
-      venueClicks: totalVenueClicks,
+      venueClicks,
       topVenue,
+      topVenueClicks,
+      bookmarks,
       range,
+      projectId,
     });
   } catch (err) {
-    console.error('Analytics API error:', err);
-    return NextResponse.json({ error: 'Failed to fetch analytics' }, { status: 500 });
+    console.error('[Analytics] API error:', err);
+    return NextResponse.json({
+      error: err.message,
+      uniqueVisitors: 0, mobile: 0, desktop: 0,
+      venueClicks: 0, topVenue: '—', topVenueClicks: 0,
+      bookmarks: 0,
+    }, { status: 200 }); // Degrade gracefully
   }
 }
