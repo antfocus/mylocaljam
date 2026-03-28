@@ -283,16 +283,6 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
               Continue with Google
             </button>
 
-            <button
-              onClick={() => handleOAuth('apple')}
-              style={oauthBtnStyle(darkMode ? '#FFFFFF' : '#000000', darkMode ? '#000000' : '#FFFFFF')}
-            >
-              <svg width="16" height="18" viewBox="0 0 16 20" fill={darkMode ? '#000' : '#fff'} xmlns="http://www.w3.org/2000/svg">
-                <path d="M13.545 10.239c-.022-2.233 1.823-3.305 1.905-3.356-.037-.054-1.495-2.171-3.822-2.171-1.627 0-2.91.973-3.694.973-.804 0-2.005-.948-3.316-.923C2.757 4.789.935 5.887.935 8.574c0 2.842 2.04 7.294 3.682 7.294.966-.024 1.826-.693 2.614-.693.773 0 1.566.693 2.646.67 1.078-.024 1.95-.979 2.89-2.927.568-1.105.798-2.168.817-2.222-.018-.008-2.054-.816-2.039-3.457z"/>
-                <path d="M11.152 3.294c.686-.857 1.154-2.025 1.025-3.211-.99.043-2.217.695-2.926 1.529-.633.74-1.198 1.948-1.05 3.09 1.112.087 2.254-.568 2.951-1.408z"/>
-              </svg>
-              Continue with Apple
-            </button>
           </div>
 
           {/* Error message */}
