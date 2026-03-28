@@ -60,8 +60,10 @@ async function getProjectId(envHint) {
 }
 
 // Run a HogQL query against PostHog
+// Returns { data, error, status } for debug visibility
 async function hogql(projectId, query) {
-  const res = await fetch(`${POSTHOG_API_HOST}/api/projects/${projectId}/query/`, {
+  const url = `${POSTHOG_API_HOST}/api/projects/${projectId}/query/`;
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -72,10 +74,11 @@ async function hogql(projectId, query) {
 
   if (!res.ok) {
     const text = await res.text();
-    console.error('[Analytics] HogQL error:', res.status, text.slice(0, 300));
-    return null;
+    console.error('[Analytics] HogQL error:', res.status, text.slice(0, 500));
+    return { data: null, error: `HTTP ${res.status}: ${text.slice(0, 200)}`, status: res.status };
   }
-  return res.json();
+  const data = await res.json();
+  return { data, error: null, status: res.status };
 }
 
 export async function GET(request) {
@@ -87,13 +90,21 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // Debug mode: ?debug=1 returns raw PostHog responses
+  const debug = searchParams.get('debug') === '1';
+
+  // Key diagnostics
+  const keyPrefix = POSTHOG_API_KEY ? POSTHOG_API_KEY.slice(0, 4) + '...' : 'MISSING';
+  const projectIdEnv = process.env.POSTHOG_PROJECT_ID || 'NOT SET';
+
   if (!POSTHOG_API_KEY) {
     return NextResponse.json({
       error: 'PostHog API key not configured',
+      debug: debug ? { keyPrefix, projectIdEnv, apiHost: POSTHOG_API_HOST } : undefined,
       uniqueVisitors: 0, mobile: 0, desktop: 0,
       venueClicks: 0, topVenue: '—', topVenueClicks: 0,
       bookmarks: 0,
-    }, { status: 200 }); // Return zeros so dashboard doesn't break
+    }, { status: 200 });
   }
 
   const range = searchParams.get('range') || '7d';
@@ -105,11 +116,14 @@ export async function GET(request) {
     if (!projectId) {
       return NextResponse.json({
         error: 'Could not resolve PostHog project',
+        debug: debug ? { keyPrefix, projectIdEnv, apiHost: POSTHOG_API_HOST, envHint: env } : undefined,
         uniqueVisitors: 0, mobile: 0, desktop: 0,
         venueClicks: 0, topVenue: '—', topVenueClicks: 0,
         bookmarks: 0,
       });
     }
+
+    console.log(`[Analytics] Querying PostHog — project: ${projectId}, range: ${range} (${days}d), key: ${keyPrefix}, host: ${POSTHOG_API_HOST}`);
 
     // Run all queries in parallel
     const [visitorsRes, deviceRes, venueClicksRes, topVenueRes, bookmarksRes] = await Promise.all([
@@ -165,14 +179,20 @@ export async function GET(request) {
       ),
     ]);
 
+    // Log raw results for debugging
+    console.log('[Analytics] visitors raw:', JSON.stringify(visitorsRes.data?.results || visitorsRes.error));
+    console.log('[Analytics] device raw:', JSON.stringify(deviceRes.data?.results || deviceRes.error));
+    console.log('[Analytics] venueClicks raw:', JSON.stringify(venueClicksRes.data?.results || venueClicksRes.error));
+    console.log('[Analytics] bookmarks raw:', JSON.stringify(bookmarksRes.data?.results || bookmarksRes.error));
+
     // Parse unique visitors
-    const uniqueVisitors = visitorsRes?.results?.[0]?.[0] || 0;
+    const uniqueVisitors = visitorsRes.data?.results?.[0]?.[0] || 0;
 
     // Parse device breakdown into mobile / desktop
     let mobile = 0;
     let desktop = 0;
-    if (deviceRes?.results) {
-      for (const [deviceType, count] of deviceRes.results) {
+    if (deviceRes.data?.results) {
+      for (const [deviceType, count] of deviceRes.data.results) {
         const dt = (deviceType || '').toLowerCase();
         if (dt === 'mobile' || dt === 'tablet') {
           mobile += count;
@@ -184,20 +204,20 @@ export async function GET(request) {
     }
 
     // Parse venue clicks
-    const venueClicks = venueClicksRes?.results?.[0]?.[0] || 0;
+    const venueClicks = venueClicksRes.data?.results?.[0]?.[0] || 0;
 
     // Parse top venue
     let topVenue = '—';
     let topVenueClicks = 0;
-    if (topVenueRes?.results?.length > 0) {
-      topVenue = topVenueRes.results[0][0] || '—';
-      topVenueClicks = topVenueRes.results[0][1] || 0;
+    if (topVenueRes.data?.results?.length > 0) {
+      topVenue = topVenueRes.data.results[0][0] || '—';
+      topVenueClicks = topVenueRes.data.results[0][1] || 0;
     }
 
     // Parse bookmarks
-    const bookmarks = bookmarksRes?.results?.[0]?.[0] || 0;
+    const bookmarks = bookmarksRes.data?.results?.[0]?.[0] || 0;
 
-    return NextResponse.json({
+    const response = {
       uniqueVisitors,
       mobile,
       desktop,
@@ -207,11 +227,33 @@ export async function GET(request) {
       bookmarks,
       range,
       projectId,
-    });
+    };
+
+    // In debug mode, include raw PostHog responses + config info
+    if (debug) {
+      response.debug = {
+        keyPrefix,
+        projectIdEnv,
+        apiHost: POSTHOG_API_HOST,
+        resolvedProjectId: projectId,
+        envHint: env,
+        days,
+        raw: {
+          visitors: visitorsRes.error || visitorsRes.data?.results,
+          device: deviceRes.error || deviceRes.data?.results,
+          venueClicks: venueClicksRes.error || venueClicksRes.data?.results,
+          topVenue: topVenueRes.error || topVenueRes.data?.results,
+          bookmarks: bookmarksRes.error || bookmarksRes.data?.results,
+        },
+      };
+    }
+
+    return NextResponse.json(response);
   } catch (err) {
     console.error('[Analytics] API error:', err);
     return NextResponse.json({
       error: err.message,
+      debug: debug ? { keyPrefix, projectIdEnv, apiHost: POSTHOG_API_HOST, stack: err.stack?.slice(0, 300) } : undefined,
       uniqueVisitors: 0, mobile: 0, desktop: 0,
       venueClicks: 0, topVenue: '—', topVenueClicks: 0,
       bookmarks: 0,
