@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
-const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com';
+// us.i.posthog.com = ingestion (client-side events)
+// us.posthog.com   = API (server-side queries with Personal API Key)
+const POSTHOG_API_HOST = process.env.POSTHOG_API_HOST || 'https://us.posthog.com';
 const POSTHOG_API_KEY = process.env.POSTHOG_PERSONAL_API_KEY;
 
 // Map range param to number of days for HogQL
@@ -24,7 +26,7 @@ async function getProjectId(envHint) {
 
   if (!projectCache) {
     try {
-      const res = await fetch(`${POSTHOG_HOST}/api/projects/`, {
+      const res = await fetch(`${POSTHOG_API_HOST}/api/projects/`, {
         headers: { 'Authorization': `Bearer ${POSTHOG_API_KEY}` },
       });
       if (!res.ok) {
@@ -56,7 +58,7 @@ async function getProjectId(envHint) {
 
 // Run a HogQL query against PostHog
 async function hogql(projectId, query) {
-  const res = await fetch(`${POSTHOG_HOST}/api/projects/${projectId}/query/`, {
+  const res = await fetch(`${POSTHOG_API_HOST}/api/projects/${projectId}/query/`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
