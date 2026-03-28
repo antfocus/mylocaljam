@@ -305,9 +305,24 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
             </p>
           )}
 
+          {/* Continue as Guest */}
+          <button
+            onClick={handleClose}
+            style={{
+              display: 'block', width: '100%', marginTop: '16px',
+              padding: '12px', borderRadius: '12px',
+              border: `1px solid ${t.border}`, background: 'transparent',
+              color: t.textMuted, fontSize: '14px', fontWeight: 600,
+              cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+              transition: 'opacity 0.15s',
+            }}
+          >
+            Continue as Guest
+          </button>
+
           {/* Fine print */}
           <p style={{
-            marginTop: '20px', fontSize: '11px', color: t.textMuted,
+            marginTop: '16px', fontSize: '11px', color: t.textMuted,
             textAlign: 'center', lineHeight: 1.5, paddingBottom: '8px',
           }}>
             By continuing, you agree to our Terms of Service and Privacy Policy.
