@@ -41,7 +41,7 @@ function getServerClient() {
 const EVENT_SELECT = [
   'id', 'artist_name', 'event_title', 'venue_name', 'event_date',
   'genre', 'vibe', 'cover', 'ticket_link', 'artist_bio',
-  'source', 'status', 'category', 'artist_id',
+  'source', 'status', 'category', 'artist_id', 'event_image_url',
   'venues(name, address, color, photo_url, venue_type)',
   'artists(name, bio, image_url, genres, vibes, is_tribute)',
 ].join(', ');
@@ -123,7 +123,7 @@ function formatOGTime(startTime) {
   return `${h12}${mins} ${period}`;
 }
 
-// ── Dynamic OG metadata ─────────────────────────────────────────────────────
+// ── Dynamic OG metadata ─────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({ params }) {
   const { id } = await params;
@@ -156,7 +156,8 @@ export async function generateMetadata({ params }) {
   const venueName = event.venue_name || 'a local venue';
   const dateStr = formatOGDate(event.event_date);
   const timeStr = formatOGTime(event.start_time);
-  const imageUrl = event.event_image || event.artist_image || event.venue_photo || null;
+  // Waterfall: event flyer → master artist photo → venue photo → site logo
+  const imageUrl = event.event_image || event.artist_image || event.venue_photo || '/myLocaljam_Logo_v5.png';
 
   // Build the date/time slug that appears in the OG title — e.g. "Friday, Mar 27 at 8 PM"
   const when = timeStr
@@ -187,18 +188,18 @@ export async function generateMetadata({ params }) {
       type: 'website',
       url: `${baseUrl}/event/${id}`,
       siteName: 'MyLocalJam',
-      ...(imageUrl ? { images: [{ url: imageUrl, width: 800, height: 420, alt: ogTitle }] } : {}),
+      images: [{ url: imageUrl, width: 800, height: 420, alt: ogTitle }],
     },
     twitter: {
-      card: imageUrl ? 'summary_large_image' : 'summary',
+      card: 'summary_large_image',
       title: ogTitle,
       description,
-      ...(imageUrl ? { images: [imageUrl] } : {}),
+      images: [imageUrl],
     },
   };
 }
 
-// ── Page component ──────────────────────────────────────────────────────────
+// ── Page component ──────────────────────────────────────────────────────────────────────
 
 export default async function EventPage({ params }) {
   const { id } = await params;
