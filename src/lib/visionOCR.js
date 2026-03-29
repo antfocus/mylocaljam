@@ -30,10 +30,16 @@ const SYSTEM_INSTRUCTION = `You are an expert data extractor for a live music ev
 Extraction Rules:
 1. Identify the Event/Festival Name: (e.g., Sea.Hear.Now).
 2. Identify the Venue/City: (e.g., Asbury Park, NJ).
-3. Date Mapping: If the poster lists multiple days (e.g., Saturday vs. Sunday) and a general weekend date (e.g., Sept 19 & 20, 2026), you MUST map the correct specific date to the corresponding artists. Saturday artists get the first date; Sunday artists get the second date. Use the current month/year provided in the user message to calculate any relative dates.
+3. Date Mapping & Normalization:
+   - If the poster lists multiple days (e.g., Saturday vs. Sunday) and a general weekend date (e.g., Sept 19 & 20, 2026), you MUST map the correct specific date to the corresponding artists. Saturday artists get the first date; Sunday artists get the second date.
+   - CRITICAL: Convert ALL date references into strict YYYY-MM-DD format. This includes:
+     * Relative terms like "today", "tonight", "this Sunday" → resolve using the exact current date provided in the user message.
+     * Incomplete dates like "3/29", "March 29", "Sunday 3/29" → assume the current year provided in the user message.
+     * Day names like "Saturday", "Sunday" → resolve to the nearest upcoming date from the current date.
+   - If you absolutely cannot determine the date, use null.
 4. Filter Non-Musical Acts: Ignore sponsors, vendors, or specific non-music categories. For example, if there is a "SURF" section, DO NOT extract those names as bands. Exclude drink specials, food events, trivia nights, karaoke, open mic, and non-live-music events.
 5. For "artist": use the exact name as written on the poster. Do not modify capitalization or spelling.
-6. For "time": use 12-hour format like "7:00 PM". If no time is shown, use null.
+6. For "time": use strict 24-hour format HH:MM (e.g., "16:00" for 4 PM, "19:30" for 7:30 PM). If a time range is given (e.g., "4-7pm"), extract ONLY the start time ("16:00"). If no time is shown, use null.
 7. Do NOT invent, guess, or look up any information not on the poster.
 8. Do NOT write bios or descriptions.
 9. If the image is unreadable or contains no music events, return an empty array [].
@@ -44,7 +50,7 @@ Extraction Rules:
     - If it looks like a festival name or event series rather than a performer, set category to "Festival".
     - If you are uncertain what the act is, set category to "Live Music" (default) and confidence_score to 50-70.
     - confidence_score ranges: 95-100 = definitely recognized artist, 80-94 = probably correct, 50-79 = uncertain/best guess, below 50 = very unsure.
-11. JSON Schema: Return an array of objects matching this exact structure: [{"event_name": "string", "venue": "string", "date": "YYYY-MM-DD", "artist_name": "string", "time": "string or null", "category": "string", "confidence_score": integer}]. Do not include any markdown formatting or explanations outside of the JSON array.`;
+11. JSON Schema: Return an array of objects matching this exact structure: [{"event_name": "string", "venue": "string", "date": "YYYY-MM-DD", "artist_name": "string", "time": "HH:MM or null", "category": "string", "confidence_score": integer}]. Do not include any markdown formatting or explanations outside of the JSON array.`;
 
 /**
  * Detect MIME type from URL extension or default to JPEG.
@@ -97,13 +103,16 @@ export async function extractEventsFromFlyer(imageUrl, { venueName, year, month 
   const mimeType = getMimeType(imageUrl);
   console.log(`[VisionOCR] Image downloaded (${Math.round(base64Data.length * 0.75 / 1024)}KB, ${mimeType})`);
 
-  // Build the current month context so Gemini can resolve day names to real dates
+  // Build full current-date context so Gemini can resolve "today", "this Sunday", etc.
   const now = new Date();
   const currentYear = year || now.getFullYear();
   const currentMonth = month || (now.getMonth() + 1);
+  const currentDay = now.getDate();
   const monthName = new Date(currentYear, currentMonth - 1).toLocaleString('en-US', { month: 'long' });
+  const dayName = now.toLocaleString('en-US', { weekday: 'long' });
+  const todayISO = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
 
-  const userMessage = `The current month is ${monthName} ${currentYear}. This is a live music event poster${venueName ? ` for ${venueName}` : ''}. Extract all live music events from this image.`;
+  const userMessage = `Today is ${dayName}, ${monthName} ${currentDay}, ${currentYear} (${todayISO}). This is a live music event poster${venueName ? ` for ${venueName}` : ''}. Extract all live music events from this image.`;
 
   // Gemini REST API request
   const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
@@ -138,7 +147,7 @@ export async function extractEventsFromFlyer(imageUrl, { venueName, year, month 
               venue: { type: 'STRING', description: 'Venue name or city (e.g. Asbury Park, NJ)' },
               date: { type: 'STRING', description: 'Event date in YYYY-MM-DD format' },
               artist_name: { type: 'STRING', description: 'Artist or band name exactly as written on the poster' },
-              time: { type: 'STRING', nullable: true, description: 'Start time like "7:00 PM" or null if not shown' },
+              time: { type: 'STRING', nullable: true, description: 'Start time in 24-hour HH:MM format (e.g. "16:00") or null if not shown' },
               category: { type: 'STRING', description: 'Event category: Live Music, DJ, Comedy, Festival, or Other' },
               confidence_score: { type: 'INTEGER', description: 'AI confidence 1-100 that the category is correct' },
             },

@@ -5,6 +5,43 @@ import { extractEventsFromFlyer } from '@/lib/visionOCR';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30; // Allow up to 30s for Gemini processing
 
+/**
+ * Convert 12-hour time string ("4:00 PM") to 24-hour "HH:MM".
+ * If already 24-hour or unrecognisable, returns as-is or '00:00'.
+ */
+function convertTo24h(timeStr) {
+  if (!timeStr) return '00:00';
+  // Already in HH:MM 24-hour format?
+  if (/^\d{1,2}:\d{2}$/.test(timeStr.trim()) && !timeStr.match(/[APap]/)) return timeStr.trim().padStart(5, '0');
+  const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (!match) return '00:00';
+  let [, h, m, period] = match;
+  h = parseInt(h);
+  if (period.toUpperCase() === 'PM' && h !== 12) h += 12;
+  if (period.toUpperCase() === 'AM' && h === 12) h = 0;
+  return `${String(h).padStart(2, '0')}:${m}`;
+}
+
+/**
+ * Safely parse a date + time into an ISO-8601 string.
+ * Returns null (instead of crashing) if the result is an Invalid Date.
+ */
+function safeParseDatetime(dateStr, timeStr) {
+  if (!dateStr) return null;
+  try {
+    const time24 = convertTo24h(timeStr);
+    const dt = new Date(`${dateStr}T${time24}:00`);
+    if (isNaN(dt.getTime())) {
+      console.warn(`[ocr-flyer] Invalid date skipped: "${dateStr}T${time24}:00"`);
+      return null;
+    }
+    return dt.toISOString();
+  } catch (err) {
+    console.warn(`[ocr-flyer] Date parse error: "${dateStr}" + "${timeStr}" — ${err.message}`);
+    return null;
+  }
+}
+
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
   return authHeader === `Bearer ${process.env.ADMIN_PASSWORD}`;
@@ -68,7 +105,7 @@ export async function POST(request) {
     const drafts = extracted.map(e => ({
       artist_name: e.artist || 'Unknown Artist',
       venue_name: e.venue || venue_name || null,
-      event_date: e.date ? new Date(`${e.date}T${e.time || '00:00'}:00`).toISOString() : null,
+      event_date: safeParseDatetime(e.date, e.time),
       image_url: image_url, // Poster image for the EVENT, not the artist
       event_name: e.event_name || festivalName || null,
       category: e.category || 'Live Music',
