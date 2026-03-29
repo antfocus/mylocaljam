@@ -101,7 +101,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     }
   }, []);
 
-  // ── Auto-rotate ───────────────────────────────────────────────────────────────────────────────
+  // ── Auto-rotate ───────────────────────────────────────────────────────────────────────────────────────
   const startAutoRotate = useCallback(() => {
     if (!canSwipe) return;
     if (autoTimer.current) clearInterval(autoTimer.current);
@@ -132,7 +132,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     };
   }, [canSwipe, startAutoRotate]);
 
-  // ── Touch swipe handlers ────────────────────────────────────────────────────────────────────────────
+  // ── Touch swipe handlers ────────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const vp = viewportRef.current;
     if (!vp || !canSwipe) return;
@@ -223,7 +223,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     scheduleResume();
   }, [pauseAutoRotate, snapTo, scheduleResume]);
 
-  // ── Bio Bottom Sheet ──────────────────────────────────────────────────────────────────────────
+  // ── Bio Bottom Sheet ────────────────────────────────────────────────────────────────────────────────────
   const openBioSheet = useCallback((ev) => {
     setBioSheet(ev);
     // Trigger animation on next frame
@@ -405,12 +405,13 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                     </span>
                   </div>
 
-                  {/* Artist name */}
+                  {/* Artist name — responsive clamp, balanced wrapping, 3-line max */}
                   <h2 style={{
-                    color: 'white', fontSize: 'clamp(20px, 6vw, 26px)', fontWeight: 900, lineHeight: 1.15,
+                    color: 'white', fontSize: 'clamp(18px, 5vw, 26px)', fontWeight: 900, lineHeight: 1.2,
                     margin: '0 0 6px 0',
-                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                    display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
                     overflow: 'hidden', textOverflow: 'ellipsis',
+                    textWrap: 'balance', WebkitTextWrap: 'balance',
                     textShadow: '0 2px 12px rgba(0,0,0,0.6)',
                     fontFamily: "'DM Sans', sans-serif",
                   }}>
@@ -509,7 +510,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
         </div>
       )}
 
-      {/* ── Bio Bottom Sheet ────────────────────────────────────────────────────────────────────────── */}
+      {/* ── Bio Bottom Sheet ──────────────────────────────────────────────────────────────────────────────────── */}
       {bioSheet && (
         <>
           {/* Backdrop */}
