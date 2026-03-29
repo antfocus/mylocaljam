@@ -145,6 +145,10 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Invalidate live feed cache so new event appears immediately
+  revalidatePath('/');
+  revalidatePath('/api/events');
+
   return NextResponse.json(data[0]);
 }
 
