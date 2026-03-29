@@ -321,8 +321,8 @@ export default function AdminPage() {
 
     for (const artist of toEnrich) {
       try {
-        // Respect the source hierarchy: skip human-edited fields
-        const locks = artist.is_human_edited || {};
+        // Skip master-locked artists entirely — their data is protected
+        if (artist.is_locked) { done++; setBulkEnrichProgress({ done, total: toEnrich.length }); continue; }
 
         // Call AI lookup
         const res = await fetch('/api/admin/artists/ai-lookup', {
@@ -338,10 +338,10 @@ export default function AdminPage() {
         const prevStatus = artist.field_status || {};
         const newStatus = { ...prevStatus };
 
-        if (ai.bio && !artist.bio && !locks.bio) { update.bio = ai.bio; newStatus.bio = 'pending'; }
-        if (ai.genres?.length && (!artist.genres || artist.genres.length === 0) && !locks.genres) { update.genres = ai.genres; newStatus.genres = 'pending'; }
-        if (ai.vibes?.length && (!artist.vibes || artist.vibes.length === 0) && !locks.vibes) { update.vibes = ai.vibes; newStatus.vibes = 'pending'; }
-        if (ai.image_url && !artist.image_url && !locks.image_url) { update.image_url = ai.image_url; newStatus.image_url = 'pending'; }
+        if (ai.bio && !artist.bio) { update.bio = ai.bio; newStatus.bio = 'pending'; }
+        if (ai.genres?.length && (!artist.genres || artist.genres.length === 0)) { update.genres = ai.genres; newStatus.genres = 'pending'; }
+        if (ai.vibes?.length && (!artist.vibes || artist.vibes.length === 0)) { update.vibes = ai.vibes; newStatus.vibes = 'pending'; }
+        if (ai.image_url && !artist.image_url) { update.image_url = ai.image_url; newStatus.image_url = 'pending'; }
         if (ai.is_tribute !== undefined && !artist.is_tribute) update.is_tribute = ai.is_tribute;
 
         // Only save if there's something to update
@@ -2240,13 +2240,13 @@ export default function AdminPage() {
                           throw new Error(err.error || `API error ${res.status}`);
                         }
                         const ai = await res.json();
-                        const eLocks = editingArtist.is_human_edited || {};
+                        const ml = !!editingArtist.is_locked;
                         setArtistForm(prev => ({
                           ...prev,
-                          bio: (!eLocks.bio && ai.bio) ? ai.bio : prev.bio,
-                          genres: (!eLocks.genres && ai.genres?.length) ? ai.genres.join(', ') : prev.genres,
-                          vibes: (!eLocks.vibes && ai.vibes?.length) ? ai.vibes.join(', ') : prev.vibes,
-                          image_url: (!eLocks.image_url && ai.image_url) ? ai.image_url : prev.image_url,
+                          bio: ai.bio && !(ml && prev.bio) ? ai.bio : prev.bio,
+                          genres: ai.genres?.length && !(ml && prev.genres) ? ai.genres.join(', ') : prev.genres,
+                          vibes: ai.vibes?.length && !(ml && prev.vibes) ? ai.vibes.join(', ') : prev.vibes,
+                          image_url: ai.image_url && !(ml && prev.image_url) ? ai.image_url : prev.image_url,
                         }));
                         // Load image carousel with candidates
                         if (ai.image_candidates?.length > 0) {
@@ -2293,38 +2293,19 @@ export default function AdminPage() {
                   background: 'var(--bg-elevated)', opacity: 0.6, cursor: 'not-allowed',
                   border: '1px solid var(--border)',
                 };
-                const fieldLocks = editingArtist.is_human_edited || {};
-                const isFieldLocked = (field) => !!fieldLocks[field];
+                const isArtistLocked = !!editingArtist.is_locked;
+                const isFieldLocked = () => isArtistLocked;
                 const fieldInputStyle = (field) => isFieldLocked(field) ? lockedStyle : inputStyle;
                 const LockBadge = ({ field }) => {
-                  const locked = isFieldLocked(field);
+                  const locked = isArtistLocked;
                   return (
-                    <button
-                      title={locked ? 'Unlock this field for editing' : 'Lock this field to protect it'}
-                      onClick={async () => {
-                        const updated = { ...fieldLocks };
-                        if (locked) {
-                          delete updated[field];
-                        } else {
-                          updated[field] = true;
-                        }
-                        // Update local state immediately for instant UI feedback
-                        setEditingArtist(prev => ({ ...prev, is_human_edited: updated }));
-                        // Persist to database so list view stays in sync
-                        try {
-                          await fetch('/api/admin/artists', {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-                            body: JSON.stringify({ id: editingArtist.id, is_human_edited: updated }),
-                          });
-                          fetchArtists(artistsSearch, artistsNeedsInfo);
-                        } catch {}
-                      }}
+                    <span
+                      title={locked ? 'Locked via Master Lock' : 'Unlocked — editable'}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: '2px',
                         background: locked ? 'rgba(34,197,94,0.1)' : 'rgba(136,136,136,0.06)',
                         border: locked ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(136,136,136,0.12)',
-                        borderRadius: '4px', padding: '1px 5px', cursor: 'pointer',
+                        borderRadius: '4px', padding: '1px 5px',
                         fontSize: '9px', fontWeight: 600,
                         color: locked ? '#22c55e' : 'rgba(136,136,136,0.45)',
                         fontFamily: "'DM Sans', sans-serif",
@@ -2333,7 +2314,7 @@ export default function AdminPage() {
                     >
                       {locked && <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" /></svg>}
                       {locked ? 'LOCKED' : 'OPEN'}
-                    </button>
+                    </span>
                   );
                 };
                 const RegenBtn = ({ field }) => (
@@ -2613,34 +2594,19 @@ export default function AdminPage() {
                     const vibes = artistForm.vibes
                       ? artistForm.vibes.split(',').map(v => v.trim()).filter(Boolean)
                       : null;
-                    const prevLocks = editingArtist.is_human_edited || {};
                     const prevFS = editingArtist.field_status || {};
-                    const newLocks = { ...prevLocks };
                     const newFS = { ...prevFS };
-                    // Lock & set status for edited fields
-                    if (artistForm.bio) {
-                      if (approve || artistForm.bio !== (editingArtist.bio || '')) newLocks.bio = true;
-                      newFS.bio = 'live';
-                    }
-                    if (artistForm.image_url) {
-                      if (approve || artistForm.image_url !== (editingArtist.image_url || '')) newLocks.image_url = true;
-                      newFS.image_url = 'live';
-                    }
-                    if (artistForm.genres) {
-                      if (approve || artistForm.genres !== (Array.isArray(editingArtist.genres) ? editingArtist.genres.join(', ') : (editingArtist.genres || ''))) newLocks.genres = true;
-                      newFS.genres = 'live';
-                    }
-                    if (artistForm.vibes) {
-                      if (approve || artistForm.vibes !== (Array.isArray(editingArtist.vibes) ? editingArtist.vibes.join(', ') : (editingArtist.vibes || ''))) newLocks.vibes = true;
-                      newFS.vibes = 'live';
-                    }
+                    // Update field_status only — Publish NEVER touches lock state
+                    if (artistForm.bio) newFS.bio = 'live';
+                    if (artistForm.image_url) newFS.image_url = 'live';
+                    if (artistForm.genres) newFS.genres = 'live';
+                    if (artistForm.vibes) newFS.vibes = 'live';
                     const payload = {
                         id: editingArtist.id,
                         bio: artistForm.bio || null,
                         genres: genres && genres.length > 0 ? genres : null,
                         vibes: vibes && vibes.length > 0 ? vibes : null,
                         image_url: artistForm.image_url || null,
-                        is_human_edited: newLocks,
                         field_status: newFS,
                     };
                     // If name was changed, include it + flag the old name for alias tracking
@@ -2668,7 +2634,7 @@ export default function AdminPage() {
                     setEditingArtist(null);
                     setDuplicateNameWarning(null);
                     fetchArtists(artistsSearch, artistsNeedsInfo);
-                    setArtistToast({ type: 'success', message: nameChanged ? `Renamed & saved — "${editingArtist.name}" saved as alias` : (approve ? 'Approved & published — all fields locked' : 'Saved — edited fields locked') });
+                    setArtistToast({ type: 'success', message: nameChanged ? `Renamed & saved — "${editingArtist.name}" saved as alias` : (approve ? 'Approved & saved' : 'Saved') });
                     setTimeout(() => setArtistToast(null), 3000);
                     // Return to previous tab if we came from Spotlight (or elsewhere)
                     if (returnToTab) {
@@ -2827,15 +2793,15 @@ export default function AdminPage() {
                 const hasVibe = artist.vibes && artist.vibes.length > 0;
                 const isEditing = editingArtist?.id === artist.id;
                 const isSelected = selectedArtists.has(artist.id);
-                const locks = artist.is_human_edited || {};
+                const isMasterLocked = !!artist.is_locked;
                 const fs = artist.field_status || {};
 
                 // Traffic light pills — always visible for every artist
-                // States: Locked (green), Live/has data (green), Missing (red), Pending (yellow)
-                // Pills are clickable toggles for per-field metadata locks
+                // States: Locked (green+lock icon, derived from Master Lock), Live/has data (green), Missing (red), Pending (yellow)
+                // Pills are NOT clickable — lock state is controlled solely by the Master Lock toggle
                 const TrafficDot = ({ field, hasData, label }) => {
                   const status = fs[field] || (hasData ? 'live' : 'missing');
-                  const locked = !!locks[field];
+                  const showLocked = isMasterLocked && hasData;
 
                   // Visual styles — higher contrast for visibility on dark backgrounds
                   const lockedStyle   = { bg: 'rgba(34,197,94,0.2)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.5)' };
@@ -2843,42 +2809,25 @@ export default function AdminPage() {
                   const missingStyle  = { bg: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' };
                   const pendingStyle  = { bg: 'rgba(245,158,11,0.15)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.35)' };
 
-                  const c = locked ? lockedStyle
+                  const c = showLocked ? lockedStyle
                     : status === 'pending' ? pendingStyle
                     : status === 'missing' || !hasData ? missingStyle
                     : liveStyle;
 
                   return (
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        try {
-                          const newLocks = { ...locks };
-                          if (locked) {
-                            delete newLocks[field];
-                          } else {
-                            newLocks[field] = true;
-                          }
-                          await fetch('/api/admin/artists', {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-                            body: JSON.stringify({ id: artist.id, is_human_edited: newLocks }),
-                          });
-                          fetchArtists(artistsSearch, artistsNeedsInfo);
-                        } catch {}
-                      }}
-                      title={locked ? `Unlock ${label} — allow AI/scraper updates` : hasData ? `Lock ${label} — protect from overwrites` : `${label} is missing — click to lock field`}
+                    <span
+                      title={showLocked ? `${label} — locked via Master Lock` : hasData ? `${label} — live` : `${label} — missing`}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: '3px',
                         padding: '2px 8px', borderRadius: '9999px',
-                        fontSize: '10px', fontWeight: locked ? 600 : 500, fontFamily: "'DM Sans', sans-serif",
+                        fontSize: '10px', fontWeight: showLocked ? 600 : 500, fontFamily: "'DM Sans', sans-serif",
                         background: c.bg, color: c.color, border: c.border,
-                        cursor: 'pointer', transition: 'all 0.15s ease',
+                        transition: 'all 0.15s ease',
                       }}
                     >
-                      {locked && <span style={{ fontSize: '7px' }}>🔒</span>}
+                      {showLocked && <span style={{ fontSize: '7px' }}>🔒</span>}
                       {label}
-                    </button>
+                    </span>
                   );
                 };
 
