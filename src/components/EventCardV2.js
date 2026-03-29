@@ -345,7 +345,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
             {desc && (
               <div style={{ margin: '6px 0 8px' }}>
                 <p ref={descRef} style={{
-                  fontSize: '13px', color: textDesc, lineHeight: 1.5, margin: 0,
+                  fontSize: '15px', color: textDesc, lineHeight: 1.65, margin: 0,
                   ...(bioExpanded ? {} : {
                     display: '-webkit-box',
                     WebkitLineClamp: 3,

@@ -64,6 +64,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
   const prevTranslate = useRef(0);
   const animFrame = useRef(null);
   const directionLocked = useRef(null);
+  const didSwipe = useRef(false); // Prevents click-to-open-bio after a swipe gesture
 
   // Auto-rotate refs
   const autoTimer = useRef(null);
@@ -138,6 +139,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
 
     const onTouchStart = (e) => {
       pauseAutoRotate();
+      didSwipe.current = false;
       if (trackRef.current) trackRef.current.style.transition = 'none';
       dragging.current = true;
       directionLocked.current = null;
@@ -165,6 +167,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
       if (directionLocked.current === 'x') {
         e.preventDefault();
         e.stopPropagation();
+        didSwipe.current = true;
         currentTranslate.current = prevTranslate.current + dx;
         animFrame.current = requestAnimationFrame(applyTransform);
       }
@@ -330,6 +333,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
             return (
               <div
                 key={ev.id || i}
+                onClick={() => { if (showMeetArtist && !didSwipe.current) openBioSheet(ev); }}
                 style={{
                   width: '100%',
                   flexShrink: 0,
@@ -341,6 +345,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                   minHeight: '240px',
                   WebkitUserSelect: 'none',
                   userSelect: 'none',
+                  cursor: showMeetArtist ? 'pointer' : 'default',
                 }}
               >
                 {/* Full-bleed background — real image or branded gradient fallback */}
@@ -619,7 +624,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
               {/* Bio text */}
               {bioSheet.description && bioSheet.description.trim() && (
                 <p style={{
-                  color: 'rgba(255,255,255,0.8)', fontSize: '14px', lineHeight: 1.65,
+                  color: 'rgba(255,255,255,0.85)', fontSize: '16px', lineHeight: 1.7,
                   fontFamily: "'DM Sans', sans-serif", fontWeight: 400,
                   margin: 0,
                 }}>
