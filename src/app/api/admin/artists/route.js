@@ -178,9 +178,20 @@ export async function PUT(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // ── Sync bio to events table so the stale events.artist_bio doesn't
+  //    override the fresh artists.bio in the waterfall
+  //    (page.js uses: e.artist_bio || e.artists?.bio || '')
+  if (updates.bio !== undefined) {
+    await supabase
+      .from('events')
+      .update({ artist_bio: updates.bio })
+      .eq('artist_id', id);
+  }
+
   // Invalidate live feed cache so artist changes reflect immediately
   revalidatePath('/');
   revalidatePath('/api/events');
+  revalidatePath('/api/spotlight');
 
   return NextResponse.json(data[0]);
 }
