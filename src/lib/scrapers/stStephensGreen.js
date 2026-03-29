@@ -15,7 +15,7 @@
 const CALENDAR_ID = 'fvqec2fjipa4er26tcnm18ecto@group.calendar.google.com';
 const ICAL_URL = `https://calendar.google.com/calendar/ical/${encodeURIComponent(CALENDAR_ID)}/public/basic.ics`;
 const VENUE = "St. Stephen's Green Publick House";
-const VENUE_URL = 'https://www.ststephensgreenpub.com';
+const VENUE_URL = 'https://www.ssgpub.com';
 
 /**
  * Parse an iCal date string into a JS Date.
