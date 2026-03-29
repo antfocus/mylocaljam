@@ -101,7 +101,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     }
   }, []);
 
-  // ── Auto-rotate ─────────────────────────────────────────────────────────────
+  // ── Auto-rotate ───────────────────────────────────────────────────────────────────────
   const startAutoRotate = useCallback(() => {
     if (!canSwipe) return;
     if (autoTimer.current) clearInterval(autoTimer.current);
@@ -132,7 +132,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     };
   }, [canSwipe, startAutoRotate]);
 
-  // ── Touch swipe handlers ────────────────────────────────────────────────────
+  // ── Touch swipe handlers ────────────────────────────────────────────────────────────────
   useEffect(() => {
     const vp = viewportRef.current;
     if (!vp || !canSwipe) return;
@@ -223,7 +223,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     scheduleResume();
   }, [pauseAutoRotate, snapTo, scheduleResume]);
 
-  // ── Bio Bottom Sheet ──────────────────────────────────────────────────────
+  // ── Bio Bottom Sheet ──────────────────────────────────────────────────────────────
   const openBioSheet = useCallback((ev) => {
     setBioSheet(ev);
     // Trigger animation on next frame
@@ -513,7 +513,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
         </div>
       )}
 
-      {/* ── Bio Bottom Sheet ────────────────────────────────────────────── */}
+      {/* ── Bio Bottom Sheet ────────────────────────────────────────────────────────── */}
       {bioSheet && (
         <>
           {/* Backdrop */}
@@ -641,23 +641,6 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                   No bio available yet for this artist.
                 </p>
               )}
-
-              {/* Close button */}
-              <button
-                onClick={closeBioSheet}
-                style={{
-                  marginTop: '24px', width: '100%',
-                  padding: '12px', borderRadius: '12px',
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: 'rgba(255,255,255,0.6)', fontSize: '13px', fontWeight: 600,
-                  fontFamily: "'DM Sans', sans-serif",
-                  cursor: 'pointer',
-                  transition: 'background 0.2s ease',
-                }}
-              >
-                Close
-              </button>
             </div>
           </div>
         </>
