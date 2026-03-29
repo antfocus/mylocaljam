@@ -101,7 +101,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     }
   }, []);
 
-  // ── Auto-rotate ───────────────────────────────────────────────────────────────────────
+  // ── Auto-rotate ───────────────────────────────────────────────────────────────────────────────
   const startAutoRotate = useCallback(() => {
     if (!canSwipe) return;
     if (autoTimer.current) clearInterval(autoTimer.current);
@@ -132,7 +132,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     };
   }, [canSwipe, startAutoRotate]);
 
-  // ── Touch swipe handlers ────────────────────────────────────────────────────────────────
+  // ── Touch swipe handlers ────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     const vp = viewportRef.current;
     if (!vp || !canSwipe) return;
@@ -223,7 +223,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     scheduleResume();
   }, [pauseAutoRotate, snapTo, scheduleResume]);
 
-  // ── Bio Bottom Sheet ──────────────────────────────────────────────────────────────
+  // ── Bio Bottom Sheet ──────────────────────────────────────────────────────────────────────────
   const openBioSheet = useCallback((ev) => {
     setBioSheet(ev);
     // Trigger animation on next frame
@@ -463,33 +463,29 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                     </div>
                   )} */}
 
-                  {/* Meet the Artist button */}
+                  {/* Meet the Artist — ghost pill hint (entire hero is clickable) */}
                   {showMeetArtist && (
-                    <button
+                    <span
                       onClick={(e) => { e.stopPropagation(); openBioSheet(ev); }}
                       style={{
                         marginTop: '12px',
-                        display: 'inline-flex', alignItems: 'center', gap: '6px',
-                        padding: '8px 18px', borderRadius: '999px',
-                        background: 'rgba(255,255,255,0.12)',
-                        backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-                        border: '1px solid rgba(255,255,255,0.18)',
-                        color: '#FFFFFF', fontSize: '12px', fontWeight: 700,
+                        display: 'inline-flex', alignItems: 'center', gap: '5px',
+                        padding: '6px 14px', borderRadius: '999px',
+                        background: 'transparent',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        color: 'rgba(255,255,255,0.6)', fontSize: '11px', fontWeight: 600,
                         fontFamily: "'DM Sans', sans-serif",
                         letterSpacing: '0.3px',
                         cursor: 'pointer',
-                        transition: 'background 0.2s ease, transform 0.15s ease',
                         WebkitTapHighlightColor: 'transparent',
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.2)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
                     >
-                      {/* Material: music_note */}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
-                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-                      </svg>
                       Meet the Artist
-                    </button>
+                      {/* Chevron right */}
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0, opacity: 0.7 }}>
+                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" />
+                      </svg>
+                    </span>
                   )}
                 </div>
               </div>
@@ -513,7 +509,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
         </div>
       )}
 
-      {/* ── Bio Bottom Sheet ────────────────────────────────────────────────────────── */}
+      {/* ── Bio Bottom Sheet ────────────────────────────────────────────────────────────────────────── */}
       {bioSheet && (
         <>
           {/* Backdrop */}
