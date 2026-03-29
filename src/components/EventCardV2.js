@@ -32,6 +32,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
   const descRef = useRef(null);
   const [isTextTruncated, setIsTextTruncated] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [pressed, setPressed] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -151,7 +152,14 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
         {/* Compact row */}
         <div
           onClick={() => { setExpanded(e => { if (e) setBioExpanded(false); return !e; }); }}
-          style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px 11px 0', cursor: 'pointer' }}
+          onPointerDown={() => setPressed(true)}
+          onPointerUp={() => setPressed(false)}
+          onPointerLeave={() => setPressed(false)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px 11px 0', cursor: 'pointer',
+            background: pressed ? (darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)') : 'transparent',
+            transition: 'background 0.15s ease',
+          }}
         >
           {/* Colored time block — ticket stub with perforation */}
           <div style={{
@@ -214,6 +222,21 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               </span>
             )}
           </div>
+
+          {/* Chevron hint — indicates row is tappable */}
+          <svg
+            width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke={chevronCol}
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            style={{
+              flexShrink: 0,
+              opacity: 0.5,
+              transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s ease, opacity 0.2s ease',
+            }}
+          >
+            <polyline points="9 6 15 12 9 18" />
+          </svg>
 
           {/* Save (plus circle) button */}
           <div ref={bookmarkRef} style={{ flexShrink: 0 }}>
