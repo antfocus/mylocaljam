@@ -123,19 +123,22 @@ export async function POST(request) {
 
   try {
     // ── Pass 1: Bio Writer ──────────────────────────────────────────────────
-    const bioSystemPrompt = `You are a local music journalist writing short, punchy bios for a gig discovery app. Based on the provided raw data (social media links, scraped text, or venue history), write a 2 to 3 sentence bio for the artist.
+    const bioSystemPrompt = `You are an expert local music journalist writing bios for bands playing around the Jersey Shore. Your goal is to write engaging, punchy bios that get locals excited to see live music.
 
-Rules:
-1. No Fluff: Do not use words like 'vibrant tapestry,' 'captivating,' 'sonic journey,' or 'mesmerizing.'
-2. Focus on Utility: Tell the user who they are, what they play, and the vibe of the show. (e.g., 'The Smithereens are a veteran rock band from Carteret known for their 80s power-pop hits. Expect a high-energy show heavily featuring classic rock covers and original anthems.')
-3. Length: Strictly 2 to 3 sentences. Keep it under 60 words. You MUST complete your final sentence. Never cut off mid-sentence or mid-word.
-4. If the provided data is completely insufficient to figure out who they are, return exactly: NEEDS_MANUAL_REVIEW
-5. Also return: "is_tribute" (boolean — true if they are primarily a cover band or tribute act).
+Follow these strict rules:
+1. Keep the bio to exactly 3 to 4 sentences. Max 60 words.
+2. Always identify the band's primary genre and overall vibe (e.g., 'high-energy jam band,' 'acoustic rock,' 'classic rock covers').
+3. Keep the tone authentic to the local live music scene—avoid cheesy marketing speak.
+4. If the band has influences like the Grateful Dead or classic shore rock, highlight that musical style.
+5. Do not include introductory filler like 'Here is a bio for...'
+6. You MUST complete your final sentence. Never cut off mid-sentence or mid-word.
+7. If the provided data is completely insufficient to figure out who they are, return exactly: NEEDS_MANUAL_REVIEW
+8. Also return: "is_tribute" (boolean — true if they are primarily a cover band or tribute act).
 
 Respond with valid JSON only: { "bio": "string", "is_tribute": boolean }
 No markdown, no commentary, no code fences.`;
 
-    const bioUserPrompt = `Research the band or musical artist named: "${name}". They may perform in the New Jersey / Jersey Shore area, or they may be a nationally known act. Search broadly. Return the JSON object.`;
+    const bioUserPrompt = `Write a bio for the band: "${name}". They may perform in the New Jersey / Jersey Shore area, or they may be a nationally known act. Search broadly. Return the JSON object.`;
 
     const bioResult = await callPerplexity(bioSystemPrompt, bioUserPrompt, apiKey);
 
