@@ -2602,27 +2602,30 @@ export default function AdminPage() {
                     if (artistForm.genres) newFS.genres = 'live';
                     if (artistForm.vibes) newFS.vibes = 'live';
                     // If image is a base64 data URI, upload to Supabase storage first
-let finalImageUrl = artistForm.image_url || null;
-if (finalImageUrl && finalImageUrl.startsWith('data:')) {
-  try {
-    const upRes = await fetch('/api/admin/upload-image', {
-      method: 'POST', headers,
-      body: JSON.stringify({ image: finalImageUrl, folder: 'artists' }),
-    });
-    const upResult = await upRes.json();
-    if (upRes.ok && upResult.url) {
-      finalImageUrl = upResult.url;
-      setArtistForm(p => ({ ...p, image_url: upResult.url }));
-    } else {
-      setArtistToast({ type: 'error', message: `Image upload failed: ${upResult.error || 'Unknown error'}` });
-      setTimeout(() => setArtistToast(null), 6000);
-      return;
+// If image is a base64 data URI, upload to Supabase storage first
+    let finalImageUrl = artistForm.image_url || null;
+    if (finalImageUrl && finalImageUrl.startsWith('data:')) {
+      try {
+        const upRes = await fetch('/api/admin/upload-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: finalImageUrl, folder: 'artists' }),
+        });
+        const upResult = await upRes.json();
+        if (upRes.ok && upResult.url) {
+          finalImageUrl = upResult.url;
+          setArtistForm(p => ({ ...p, image_url: upResult.url }));
+        } else {
+          setArtistToast({ type: 'error', message: `Image upload failed: ${upResult.error || 'Unknown error'}` });
+          setTimeout(() => setArtistToast(null), 6000);
+          return;
+        }
+      } catch (upErr) {
+        setArtistToast({ type: 'error', message: `Image upload failed: ${upErr.message}` });
+        setTimeout(() => setArtistToast(null), 6000);
+        return;
+      }
     }
-  } catch (upErr) {
-    setArtistToast({ type: 'error', message: `Image upload failed: ${upErr.message}` });
-    setTimeout(() => setArtistToast(null), 6000);
-    return;
-  }
                     const payload = {
                         id: editingArtist.id,
                         bio: artistForm.bio || null,
