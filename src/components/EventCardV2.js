@@ -274,7 +274,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
           overflow: 'hidden',
           transition: 'max-height 0.25s ease-out',
         }}>
-          <div style={{ padding: '0 12px 12px 12px', borderTop: expanded ? `1px solid ${borderColor}` : '1px solid transparent', background: expandedBg }}>
+          <div onClick={() => { if (desc) setBioExpanded(prev => !prev); }} style={{ padding: '0 12px 12px 12px', borderTop: expanded ? `1px solid ${borderColor}` : '1px solid transparent', background: expandedBg, cursor: desc ? 'pointer' : 'default' }}>
 
             {/* Hero image — 16:9 aspect ratio, no clipping */}
             {imageUrl && (
