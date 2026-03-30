@@ -103,7 +103,6 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
   const venueColor  = darkMode ? '#4DB8B2' : '#2A8F8A';
   const textDesc    = darkMode ? '#AAAACC' : '#4B5563';
   const heartOff    = darkMode ? '#6A5A7A' : '#9B8A8E';
-  const chevronCol  = darkMode ? '#5A5A7A' : '#9CA3AF';
   const expandedBg  = darkMode ? '#14141E' : '#F9FAFB';
   const flagIconCol = darkMode ? '#6A6A8A' : '#9CA3AF';
   const flagIconHov = '#E8722A';
@@ -222,21 +221,6 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               </span>
             )}
           </div>
-
-          {/* Down caret — indicates accordion expand/collapse */}
-          <svg
-            width="14" height="14" viewBox="0 0 24 24" fill="none"
-            stroke={chevronCol}
-            strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-            style={{
-              flexShrink: 0,
-              opacity: 0.45,
-              transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s ease',
-            }}
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
 
           {/* Save (plus circle) button */}
           <div ref={bookmarkRef} style={{ flexShrink: 0 }}>
