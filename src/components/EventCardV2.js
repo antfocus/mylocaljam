@@ -18,27 +18,7 @@ const CATEGORY_CONFIG = {
 
 const DEFAULT_CONFIG = { color: '#E8722A', bg: '#E8722A', emoji: '🎵' };
 
-interface EventCardV2Props {
-  event: any;
-  isFavorited?: boolean;
-  onToggleFavorite?: (eventId: string) => void;
-  darkMode?: boolean;
-  onFollowArtist?: (artistId: string) => void;
-  isArtistFollowed?: boolean;
-  onFlag?: (eventId: string, reason: string) => void;
-  autoExpand?: boolean;
-}
-
-export default function EventCardV2({
-  event,
-  isFavorited = false,
-  onToggleFavorite,
-  darkMode = true,
-  onFollowArtist,
-  isArtistFollowed = false,
-  onFlag,
-  autoExpand = false,
-}: EventCardV2Props) {
+export default function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = true, onFollowArtist, isArtistFollowed, onFlag, autoExpand = false }) {
   const [expanded, setExpanded] = useState(autoExpand);
   const [bioExpanded, setBioExpanded] = useState(false);
   const [flagSheet, setFlagSheet] = useState(false);
@@ -48,38 +28,75 @@ export default function EventCardV2({
   const [showFollowPopover, setShowFollowPopover] = useState(false);
   const [popoverFading, setPopoverFading] = useState(false);
   const [popoverPos, setPopoverPos] = useState({ top: 0, right: 0 });
-  const bookmarkRef = useRef<HTMLButtonElement>(null);
-  const descRef = useRef<HTMLDivElement>(null);
+  const bookmarkRef = useRef(null);
+  const descRef = useRef(null);
   const [isTextTruncated, setIsTextTruncated] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [pressed, setPressed] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
+  // Position popover using fixed coordinates from bookmark button
   useEffect(() => {
-    if (!mounted || !bookmarkRef.current) return;
+    if (showFollowPopover && bookmarkRef.current) {
+      const rect = bookmarkRef.current.getBoundingClientRect();
+      setPopoverPos({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
+    }
+  }, [showFollowPopover]);
 
-    const rect = bookmarkRef.current.getBoundingClientRect();
-    const top = rect.bottom + 8;
-    const right = window.innerWidth - rect.right;
-
-    setPopoverPos({ top, right });
-  }, [mounted, showFollowPopover]);
-
+  // Auto-dismiss popover after 5 seconds
   useEffect(() => {
-    if (!descRef.current) return;
-    const isTruncated = descRef.current.scrollHeight > descRef.current.clientHeight;
-    setIsTextTruncated(isTruncated);
-  }, [event?.description]);
+    if (!showFollowPopover) return;
+    const timer = setTimeout(() => {
+      setPopoverFading(true);
+      setTimeout(() => { setShowFollowPopover(false); setPopoverFading(false); }, 300);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [showFollowPopover]);
 
-  // Default fallback
-  const name = event.title || event.name || 'Untitled Event';
-  const venue = event.venue || event.venue_name || '';
-  const imageUrl = event.event_image || event.artist_image || event.venue_photo || null;
-  const artistName = event.artist_name || '';
-  const defaultBg = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)';
+  const dismissPopover = useCallback(() => {
+    setPopoverFading(true);
+    setTimeout(() => { setShowFollowPopover(false); setPopoverFading(false); }, 300);
+  }, []);
 
-  // Color system
+  const handlePopoverFollow = useCallback(() => {
+    if (!event?.artist_name) return;
+    try { navigator?.vibrate?.(10); } catch {}
+    onFollowArtist?.(event.artist_name);
+    dismissPopover();
+  }, [event?.artist_name, onFollowArtist, dismissPopover]);
+
+  const desc = event?.description || event?.artist_bio || '';
+
+  // Check if description text is actually truncated
+  useEffect(() => {
+    if (descRef.current && !bioExpanded) {
+      setIsTextTruncated(descRef.current.scrollHeight > descRef.current.clientHeight);
+    }
+  }, [expanded, bioExpanded, desc]);
+
+  if (!event) return null;
+
+  const eventTitle = (event.event_title || '').trim();
+  const artistName = event.name || event.artist_name || '';
+  const name       = eventTitle || artistName;
+  const venue      = event.venue       || event.venue_name  || '';
+  // Waterfall: event-specific image → artist image → venue photo
+  const imageUrl   = event.event_image || event.artist_image || event.venue_photo || null;
+  const genres     = event.artist_genres || [];
+  const isTribute  = event.is_tribute || false;
+  const rawSource  = event.source       || null;
+  const sourceLink = rawSource && /^https?:\/\//i.test(rawSource) ? rawSource : null;
+  const category   = event.genre       || event.vibe        || 'Live Music';
+  const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
+  const timeStr    = formatTimeRange(event.start_time);
+  const isCanceled = event.status === 'cancelled' || event.status === 'canceled';
+
+  // Theme colors — all dynamic based on darkMode
+  const cardBg      = darkMode ? '#1A1A24' : '#FFFFFF';
   const borderColor = darkMode ? '#2A2A3A' : '#F3F4F6';
   const textPrimary = darkMode ? '#F0F0F5' : '#1F2937';
   const textMuted   = darkMode ? '#7878A0' : '#6B7280';
@@ -96,458 +113,746 @@ export default function EventCardV2({
   const sheetBorder = darkMode ? '#2A2A3A' : '#E5E7EB';
   const overlayBg   = 'rgba(0,0,0,0.5)';
 
-  const handleFlagSubmit = async (reason: string, otherText?: string) => {
+  const handleFlag = async (flagType) => {
     setFlagSubmitting(true);
-    const finalReason = reason === 'Other' ? (otherText || '') : reason;
-    await onFlag?.(event.id, finalReason);
-    setFlagSheet(false);
-    setFlagOtherOpen(false);
-    setFlagOtherText('');
+    try {
+      // Also increment the flag counter on the event
+      await fetch('/api/flag-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: event.id, flag_type: flagType }),
+      });
+      // Create a report row so it appears in the admin User Flags queue
+      await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: event.id, issue_type: flagType, description: null }),
+      });
+      onFlag?.(`Flag submitted — thanks for the heads up!`);
+    } catch {
+      onFlag?.('Something went wrong. Please try again.');
+    }
     setFlagSubmitting(false);
-  };
-
-  const handleFollowClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (isArtistFollowed) return;
-    onFollowArtist?.(event.artist_id);
-    setShowFollowPopover(true);
-    setPopoverFading(false);
-    setTimeout(() => {
-      setPopoverFading(true);
-      setTimeout(() => setShowFollowPopover(false), 300);
-    }, 1500);
-  };
-
-  // For the "more options" menu button
-  const handleMoreClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+    setFlagSheet(false);
   };
 
   return (
-    <div
-      className={`card-container ${
-        darkMode ? 'dark-mode-card' : 'light-mode-card'
-      }`}
-      style={{
-        position: 'relative',
-        background: darkMode ? '#1A1A24' : '#FFFFFF',
-        border: `1px solid ${borderColor}`,
-        borderRadius: '12px',
-        overflow: 'hidden',
-        transition: 'all 0.2s ease',
-        cursor: 'pointer',
-        userSelect: 'none',
-      }}
-    >
-      {/* Cover Image */}
-      {imageUrl && (
+    <div id={event?.id ? `event-${event.id}` : undefined} style={{
+      background: cardBg,
+      borderRadius: '12px',
+      overflow: 'hidden',
+      boxShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.35)' : '0 1px 6px rgba(0,0,0,0.07)',
+      display: 'flex',
+      border: `1px solid ${borderColor}`,
+      opacity: isCanceled ? 0.6 : 1,
+    }}>
+      {/* Card body */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+
+        {/* Compact row */}
         <div
+          onClick={() => { setExpanded(e => { if (e) setBioExpanded(false); return !e; }); }}
+          onPointerDown={() => setPressed(true)}
+          onPointerUp={() => setPressed(false)}
+          onPointerLeave={() => setPressed(false)}
           style={{
-            position: 'relative',
-            width: '100%',
-            height: '160px',
-            background: defaultBg,
-            backgroundImage: `url("${imageUrl}")`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
+            display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px 11px 0', cursor: 'pointer',
+            background: pressed ? (darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)') : 'transparent',
+            transition: 'background 0.15s ease',
           }}
         >
+          {/* Colored time block — ticket stub with perforation */}
           <div style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.5) 100%)',
-          }} />
-        </div>
-      )}
-
-      {/* Card Content */}
-      <div style={{ padding: '16px' }}>
-        {/* Header: Event Title + Artists */}
-        <div style={{ marginBottom: '12px' }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'space-between',
-            gap: '12px',
-            marginBottom: '8px',
+            background: isCanceled ? '#DC2626' : config.bg,
+            color: isCanceled ? '#FFFFFF' : '#1C1917',
+            fontWeight: 700,
+            width: '52px', minHeight: '48px',
+            borderRadius: '12px 0 0 12px', flexShrink: 0,
+            borderRight: '2px dashed rgba(0,0,0,0.12)',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            padding: '4px 0',
+            fontFamily: "'DM Sans', sans-serif",
+            boxSizing: 'border-box',
           }}>
-            <h3 style={{
-              fontSize: '16px',
-              fontWeight: 700,
-              color: textPrimary,
-              margin: 0,
-              flex: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              display: '-webkit-box',
-              WebkitLineClamp: expanded ? 'unset' : 3,
-              WebkitBoxOrient: 'vertical' as const,
+            {isCanceled ? <span style={{ fontSize: '20px', lineHeight: 1 }}>✕</span> : (() => {
+              const raw = timeStr || '—';
+              if (raw === '—') return <span style={{ fontSize: '20px', lineHeight: 1, fontWeight: 700 }}>—</span>;
+              // Extract period (a/p) → AM/PM
+              const periodMatch = raw.match(/([apAP][mM]?)$/);
+              const period = periodMatch ? (periodMatch[1].toLowerCase().startsWith('a') ? 'AM' : 'PM') : '';
+              const nums = raw.replace(/[apAP][mM]?$/, '');
+              // Smart format: strip :00 for top-of-hour, keep minutes otherwise
+              const smartTime = nums.replace(/:00$/, '');
+              return (
+                <>
+                  <span style={{ fontSize: smartTime.length > 4 ? '14px' : smartTime.length > 2 ? '18px' : '22px', lineHeight: 1, fontWeight: 900 }}>{smartTime}</span>
+                  {period && <span style={{ fontSize: '9px', lineHeight: 1, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', marginTop: '2px', opacity: 0.75 }}>{period}</span>}
+                </>
+              );
+            })()}
+          </div>
+
+          {/* Event name + venue stacked */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <span style={{
+              fontSize: '17px', fontWeight: 600, color: textPrimary,
+              textDecoration: isCanceled ? 'line-through' : 'none',
+              ...(expanded
+                ? { whiteSpace: 'normal', overflow: 'visible' }
+                : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'normal' }
+              ),
             }}>
               {name}
-            </h3>
-            <div style={{
-              display: 'flex',
-              gap: '8px',
-              flexShrink: 0,
-              alignItems: 'center',
-            }}>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleFavorite?.(event.id);
-                }}
-                title={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '20px',
-                  cursor: 'pointer',
-                  padding: '4px',
-                  transition: 'transform 0.2s',
-                }}
-              >
-                {isFavorited ? '❤️' : '🤍'}
-              </button>
-            </div>
+            </span>
+            {eventTitle && artistName && eventTitle !== artistName && (
+              <span style={{
+                fontSize: '13px', fontWeight: 500, color: darkMode ? '#C0C0D0' : '#6B7280',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {artistName}
+              </span>
+            )}
+            {venue && (
+              <span style={{
+                fontSize: '13px', fontWeight: 500, color: darkMode ? '#A0A0B8' : '#6B7280',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {venue}
+              </span>
+            )}
           </div>
 
-          {/* Artist and Venue */}
-          <div style={{ fontSize: '11px', fontWeight: 600, color: '#888', marginBottom: '6px' }}>
-            {artistName || venue ? (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px',
-              }}>
-                {artistName && (
-                  <span style={{
-                    fontSize: '13px', fontWeight: 500, color: darkMode ? '#C0C0D0' : '#6B7280',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {artistName}
-                  </span>
+          {/* Down caret — indicates accordion expand/collapse */}
+          <svg
+            width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke={chevronCol}
+            strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            style={{
+              flexShrink: 0,
+              opacity: 0.45,
+              transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s ease',
+            }}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+
+          {/* Save (plus circle) button */}
+          <div ref={bookmarkRef} style={{ flexShrink: 0 }}>
+            <button
+              className="save-btn"
+              onClick={e => {
+                e.stopPropagation();
+                try { navigator?.vibrate?.(10); } catch {}
+                const wasSaved = isFavorited;
+                onToggleFavorite?.(event.id);
+                // Show follow popover when saving (not unsaving)
+                if (!wasSaved && event?.artist_name) {
+                  setShowFollowPopover(true);
+                  setPopoverFading(false);
+                }
+              }}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: '44px', height: '44px',
+                padding: 0,
+              }}
+            >
+              <svg
+                className={isFavorited ? 'save-pop' : ''}
+                width="26" height="26" viewBox="0 0 24 24"
+                fill="none"
+                stroke={isFavorited ? '#E8722A' : (darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)')}
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transition: 'all 0.2s ease' }}
+              >
+                <circle cx="12" cy="12" r="11" />
+                {!isFavorited && (
+                  <>
+                    <line x1="12" y1="8" x2="12" y2="16" />
+                    <line x1="8" y1="12" x2="16" y2="12" />
+                  </>
                 )}
-                {venue && (
-                  <span style={{
-                    fontSize: '13px', fontWeight: 500, color: darkMode ? '#A0A0B8' : '#6B7280',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {venue}
-                  </span>
+                {isFavorited && (
+                  <polyline points="7.5 12 10.5 15 16.5 9" fill="none" stroke="#E8722A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                 )}
-              </div>
-            ) : null}
+              </svg>
+            </button>
+
           </div>
         </div>
 
-        {/* Time + Icon Grid */}
-        {event.start_time && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            marginBottom: '12px',
-            fontSize: '13px',
-            color: textMuted,
-          }}>
-            <span>🕐</span>
-            <div style={{ flex: 1 }}>
-              {formatTimeRange(event.start_time, event.end_time)}
-              {event.note && (
-                <div style={{
-                  fontSize: '11px',
-                  fontStyle: 'italic',
-                  color: darkMode ? '#5A5A70' : '#999',
-                  marginTop: '2px',
-                }}>
-                  {event.note}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Expanded detail panel — always rendered, animated via max-height */}
+        <div style={{
+          maxHeight: expanded ? '600px' : '0px',
+          overflow: 'hidden',
+          transition: 'max-height 0.25s ease-out',
+        }}>
+          <div style={{ padding: '0 12px 12px 12px', borderTop: expanded ? `1px solid ${borderColor}` : '1px solid transparent', background: expandedBg }}>
 
-        {/* Description */}
-        {event.description && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '8px',
-            marginBottom: '12px',
-            fontSize: '12px',
-            color: textDesc,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            WebkitLineClamp: expanded ? 'unset' : 2,
-            WebkitBoxOrient: 'vertical' as const,
-            display: expanded ? 'block' : '-webkit-box',
-          }}>
-            <span>{event.description}</span>
-          </div>
-        )}
-
-        {/* Categories */}
-        {event.categories && event.categories.length > 0 && (
-          <div style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '4px',
-            marginBottom: '12px',
-          }}>
-            {event.categories.map((cat: string) => {
-              const cfg = CATEGORY_CONFIG[cat as keyof typeof CATEGORY_CONFIG] || DEFAULT_CONFIG;
-              return (
-                <span
-                  key={cat}
+            {/* Hero image — 16:9 aspect ratio, no clipping */}
+            {imageUrl && (
+              <div style={{
+                margin: '10px 0 8px', borderRadius: '8px', overflow: 'hidden',
+                position: 'relative',
+                aspectRatio: '16 / 9',
+              }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={expanded ? imageUrl : undefined}
+                  alt={name}
+                  loading="lazy"
                   style={{
-                    background: cfg.bg,
-                    color: '#FFF',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    fontWeight: 600,
+                    width: '100%', height: '100%',
+                    objectFit: 'cover', objectPosition: 'center center',
+                    display: 'block',
+                  }}
+                  onError={e => { e.currentTarget.parentElement.style.display = 'none'; }}
+                />
+
+                {/* CANCELED overlay on image */}
+                {isCanceled && (
+                  <div style={{
+                    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'rgba(0,0,0,0.6)',
+                  }}>
+                    <span style={{
+                      background: '#DC2626', color: '#FFFFFF',
+                      fontSize: '16px', fontWeight: 900, letterSpacing: '2px',
+                      padding: '8px 20px', borderRadius: '8px',
+                      textTransform: 'uppercase',
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}>
+                      CANCELED
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* CANCELED badge (shown even without image) */}
+            {isCanceled && !imageUrl && (
+              <div style={{
+                display: 'flex', justifyContent: 'center', margin: '10px 0 8px',
+              }}>
+                <span style={{
+                  background: '#DC2626', color: '#FFFFFF',
+                  fontSize: '13px', fontWeight: 900, letterSpacing: '1.5px',
+                  padding: '6px 16px', borderRadius: '8px',
+                  textTransform: 'uppercase',
+                  fontFamily: "'DM Sans', sans-serif",
+                }}>
+                  CANCELED
+                </span>
+              </div>
+            )}
+
+            {/* Cover Charge pill */}
+            {event.cover != null && event.cover !== 'TBA' && !isCanceled && (
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                background: coverPillBg, color: coverPillTx,
+                fontSize: '11px', fontWeight: 700,
+                padding: '4px 10px', borderRadius: '999px',
+                margin: '6px 0 4px',
+                fontFamily: "'DM Sans', sans-serif",
+              }}>
+                {event.cover === '0' || event.cover?.toLowerCase() === 'free' ? '🎵 Free Admission' : `💵 ${event.cover?.startsWith?.('$') ? '' : '$'}${event.cover} Cover`}
+              </div>
+            )}
+
+            {/* Bio / Description — 3-line clamp with Read More */}
+            {desc && (
+              <div style={{ margin: '6px 0 8px' }}>
+                <p ref={descRef} style={{
+                  fontSize: '15px', color: textDesc, lineHeight: 1.65, margin: 0,
+                  ...(bioExpanded ? {} : {
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                  }),
+                }}>
+                  {desc}
+                </p>
+                {(isTextTruncated || bioExpanded) && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setBioExpanded(prev => !prev); }}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0 0',
+                      fontSize: '12px', fontWeight: 600, color: '#E8722A',
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}
+                  >
+                    {bioExpanded ? 'Show Less' : 'Read More'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Genre chips + Tribute badge — temporarily hidden pending backend data cleanup */}
+            {/* {(genres.length > 0 || isTribute) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', margin: '4px 0 6px' }}>
+                {isTribute && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '3px',
+                    fontSize: '10px', fontWeight: 700, padding: '3px 8px',
+                    borderRadius: '999px', background: darkMode ? '#2A1A2A' : '#FDF2F8',
+                    color: darkMode ? '#F0ABFC' : '#A21CAF',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    🎭 Tribute
+                  </span>
+                )}
+                {genres.map(g => (
+                  <span key={g} style={{
+                    fontSize: '10px', fontWeight: 600, padding: '3px 8px',
+                    borderRadius: '999px',
+                    background: darkMode ? '#1E1E2E' : '#F3F4F6',
+                    color: darkMode ? '#9898B8' : '#6B7280',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    {g}
+                  </span>
+                ))}
+              </div>
+            )} */}
+
+            {/* Action row — single flex line: [Follow | Venue | Share] ... [Edit icon] */}
+            {!isCanceled && (
+              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                {/* Primary group — left-aligned pill buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {/* 1. Follow Artist */}
+                  {onFollowArtist && name && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onFollowArtist(name); }}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '5px',
+                        fontSize: '11px', fontWeight: 700,
+                        padding: '8px 16px', borderRadius: '999px', cursor: 'pointer',
+                        border: 'none',
+                        background: isArtistFollowed
+                          ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.1)')
+                          : (darkMode ? '#3A3A4A' : '#374151'),
+                        color: isArtistFollowed ? '#E8722A' : (darkMode ? '#F0F0F5' : '#FFFFFF'),
+                        transition: 'all 0.2s ease',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      {isArtistFollowed ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#E8722A" />
+                        </svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                          <path d="M12 5v14M5 12h14" />
+                        </svg>
+                      )}
+                      {isArtistFollowed ? 'Following' : 'Follow Artist'}
+                    </button>
+                  )}
+
+                  {/* 2. Venue Website */}
+                  {sourceLink && (
+                    <a
+                      href={sourceLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => {
+                        e.stopPropagation();
+                        posthog.capture?.('venue_link_clicked', {
+                          venue_name: venue,
+                          artist_name: artistName,
+                          event_id: event.id || '',
+                          source_url: sourceLink,
+                        });
+                      }}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '5px',
+                        fontSize: '11px', fontWeight: 700,
+                        padding: '8px 14px', borderRadius: '8px',
+                        background: darkMode ? '#2A2A3A' : '#E5E7EB',
+                        color: darkMode ? '#AAAACC' : '#4B5563',
+                        textDecoration: 'none', border: 'none', cursor: 'pointer',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      🌐 Venue
+                    </a>
+                  )}
+
+                  {/* 3. Share button */}
+                  <button
+                    className="share-btn-detail"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const shareText = `${name} at ${venue}`;
+                      const shareUrl = event.id
+                        ? `https://mylocaljam.com/event/${event.id}`
+                        : (event.ticket_link || event.source || window.location.href);
+                      const copyFallback = async () => {
+                        try {
+                          await navigator.clipboard.writeText(`${shareText} — ${shareUrl}`);
+                          onFlag?.('Link copied to clipboard!');
+                        } catch {
+                          onFlag?.('Could not copy link — try again');
+                        }
+                      };
+                      if (navigator.share) {
+                        try {
+                          await navigator.share({ title: shareText, text: shareText, url: shareUrl });
+                        } catch (err) {
+                          // User cancelled share sheet — not an error; only fallback on real failures
+                          if (err.name !== 'AbortError') await copyFallback();
+                        }
+                      } else {
+                        await copyFallback();
+                      }
+                    }}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '5px',
+                      fontSize: '11px', fontWeight: 700,
+                      padding: '8px 14px', borderRadius: '8px',
+                      background: darkMode ? '#2A2A3A' : '#E5E7EB',
+                      color: darkMode ? '#AAAACC' : '#4B5563',
+                      border: 'none', cursor: 'pointer',
+                      fontFamily: "'DM Sans', sans-serif",
+                      transition: 'opacity 0.15s',
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                      <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill="currentColor" />
+                    </svg>
+                    Share
+                  </button>
+                </div>
+
+                {/* Secondary action — outlined icon, pushed right */}
+                <button
+                  className="flag-btn"
+                  onClick={e => { e.stopPropagation(); setFlagSheet(true); }}
+                  title="Report / Suggest Edit"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: '32px', height: '32px', borderRadius: '999px',
+                    background: 'none', cursor: 'pointer',
+                    border: `1.5px solid ${darkMode ? '#3A3A4A' : '#D1D5DB'}`,
+                    color: darkMode ? '#7878A0' : '#9CA3AF',
+                    transition: 'border-color 0.15s, color 0.15s',
+                    flexShrink: 0,
                   }}
                 >
-                  {cfg.emoji} {cat}
-                </span>
-              );
-            })}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 15V4h16v11H4z" style={{ display: 'none' }} />
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                    <line x1="4" y1="22" x2="4" y2="15" />
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
-        )}
-
-        {/* Footer: Action Buttons */}
-        <div style={{
-          display: 'flex',
-          gap: '12px',
-          paddingTop: '12px',
-          borderTop: `1px solid ${borderColor}`,
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded(!expanded);
-            }}
-            style={{
-              flex: 1,
-              padding: '6px 8px',
-              fontSize: '12px',
-              fontWeight: 600,
-              background: darkMode ? '#3A3A4A' : '#E5E7EB',
-              color: darkMode ? '#FFF' : '#1F2937',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'opacity 0.2s',
-            }}
-          >
-            {expanded ? 'Collapse' : 'Expand'}
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setFlagSheet(!flagSheet);
-            }}
-            style={{
-              padding: '6px 8px',
-              fontSize: '12px',
-              fontWeight: 600,
-              background: darkMode ? '#3A3A4A' : '#E5E7EB',
-              color: darkMode ? '#FFF' : '#1F2937',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              transition: 'opacity 0.2s',
-            }}
-          >
-            🚩 Flag
-          </button>
         </div>
       </div>
 
-      {/* Flag Sheet Modal */}
-      {mounted && flagSheet && createPortal(
+      {/* Flag bottom-sheet modal */}
+      {flagSheet && (
         <div
+          onClick={e => { e.stopPropagation(); setFlagSheet(false); }}
           style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'flex-end',
-            zIndex: 50,
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            zIndex: 250, background: overlayBg,
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
           }}
-          onClick={() => !flagSubmitting && setFlagSheet(false)}
         >
           <div
+            onClick={e => e.stopPropagation()}
             style={{
-              width: '100%',
-              maxWidth: '500px',
-              margin: '0 auto',
-              background: darkMode ? '#1A1A24' : '#FFFFFF',
-              borderTopLeftRadius: '12px',
-              borderTopRightRadius: '12px',
-              padding: '20px',
-              boxShadow: '0 -4px 12px rgba(0,0,0,0.1)',
+              width: '100%', maxWidth: '500px',
+              background: sheetBg,
+              borderRadius: '16px 16px 0 0',
+              border: `1px solid ${sheetBorder}`,
+              borderBottom: 'none',
+              padding: '20px 16px 28px',
+              boxShadow: '0 -8px 40px rgba(0,0,0,0.3)',
+              animation: 'slideUp 0.25s ease-out',
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            <h3 style={{
-              fontSize: '18px',
-              fontWeight: 700,
-              marginBottom: '16px',
-              color: textPrimary,
-            }}>
-              Report this event
-            </h3>
+            {/* Drag handle */}
+            <div style={{
+              width: '40px', height: '4px', borderRadius: '2px',
+              background: darkMode ? '#3A3A4A' : '#D1D5DB',
+              margin: '0 auto 16px',
+            }} />
 
-            {[
-              { label: 'Duplicate', value: 'Duplicate' },
-              { label: 'Expired/Closed', value: 'Expired' },
-              { label: 'Inappropriate content', value: 'Inappropriate' },
-              { label: 'Spam', value: 'Spam' },
-              { label: 'Wrong information', value: 'WrongInfo' },
-              { label: 'Other', value: 'Other' },
-            ].map((opt) => (
+            <h3 style={{
+              fontSize: '16px', fontWeight: 800, color: textPrimary,
+              textAlign: 'center', marginBottom: '4px',
+              fontFamily: "'DM Sans', sans-serif",
+            }}>
+              What&apos;s up with this event?
+            </h3>
+            <p style={{
+              fontSize: '12px', color: textMuted, textAlign: 'center', marginBottom: '16px',
+              fontFamily: "'DM Sans', sans-serif",
+            }}>
+              Your report helps us keep info accurate.
+            </p>
+
+            {/* Flag options */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <button
-                key={opt.value}
-                onClick={() => {
-                  if (opt.value === 'Other') {
-                    setFlagOtherOpen(!flagOtherOpen);
-                  } else {
-                    handleFlagSubmit(opt.value);
-                  }
-                }}
+                onClick={() => handleFlag('cancel')}
                 disabled={flagSubmitting}
                 style={{
-                  width: '100%',
-                  padding: '12px 16px',
-                  marginBottom: '8px',
-                  textAlign: 'left',
-                  fontSize: '14px',
-                  background: darkMode ? '#2A2A3A' : '#F3F4F6',
-                  color: textPrimary,
-                  border: `1px solid ${borderColor}`,
-                  borderRadius: '8px',
-                  cursor: flagSubmitting ? 'not-allowed' : 'pointer',
-                  opacity: flagSubmitting ? 0.5 : 1,
-                  transition: 'background 0.2s',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  width: '100%', padding: '14px 16px', borderRadius: '12px',
+                  border: `1px solid ${darkMode ? '#3A2020' : '#FEE2E2'}`,
+                  background: darkMode ? '#1E1018' : '#FEF2F2',
+                  color: darkMode ? '#FCA5A5' : '#DC2626',
+                  fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'transform 0.1s',
                 }}
               >
-                {opt.label}
+                <span style={{ fontSize: '20px' }}>🛑</span>
+                Band Canceled
               </button>
-            ))}
 
-            {flagOtherOpen && (
-              <>
-                <textarea
-                  value={flagOtherText}
-                  onChange={(e) => setFlagOtherText(e.target.value)}
-                  placeholder="Please describe the issue..."
-                  disabled={flagSubmitting}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    marginBottom: '12px',
-                    fontSize: '14px',
-                    background: darkMode ? '#2A2A3A' : '#F9FAFB',
-                    color: textPrimary,
-                    border: `1px solid ${borderColor}`,
-                    borderRadius: '8px',
-                    fontFamily: 'inherit',
-                    resize: 'vertical',
-                    minHeight: '80px',
-                    opacity: flagSubmitting ? 0.5 : 1,
-                    cursor: flagSubmitting ? 'not-allowed' : 'text',
-                  }}
-                />
-                <button
-                  onClick={() => handleFlagSubmit('Other', flagOtherText)}
-                  disabled={!flagOtherText.trim() || flagSubmitting}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    marginBottom: '8px',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    background: flagOtherText.trim() && !flagSubmitting ? '#E8722A' : '#999',
-                    color: '#FFF',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: flagOtherText.trim() && !flagSubmitting ? 'pointer' : 'not-allowed',
-                    opacity: flagSubmitting ? 0.5 : 1,
-                    transition: 'background 0.2s',
-                  }}
-                >
-                  {flagSubmitting ? 'Submitting...' : 'Submit'}
-                </button>
-              </>
-            )}
+              <button
+                onClick={() => handleFlag('cover')}
+                disabled={flagSubmitting}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  width: '100%', padding: '14px 16px', borderRadius: '12px',
+                  border: `1px solid ${darkMode ? '#2A2A1A' : '#FEF3C7'}`,
+                  background: darkMode ? '#1E1A10' : '#FFFBEB',
+                  color: darkMode ? '#FCD34D' : '#B45309',
+                  fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'transform 0.1s',
+                }}
+              >
+                <span style={{ fontSize: '20px' }}>💵</span>
+                Cover Charge Added
+              </button>
 
-            <button
-              onClick={() => {
-                setFlagSheet(false);
-                setFlagOtherOpen(false);
-                setFlagOtherText('');
-              }}
-              disabled={flagSubmitting}
-              style={{
-                width: '100%',
-                padding: '12px',
-                fontSize: '14px',
-                fontWeight: 600,
-                background: darkMode ? '#2A2A3A' : '#E5E7EB',
-                color: darkMode ? '#FFF' : '#1F2937',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: flagSubmitting ? 'not-allowed' : 'pointer',
-                opacity: flagSubmitting ? 0.5 : 1,
-                transition: 'opacity 0.2s',
-              }}
-            >
-              Cancel
-            </button>
+              {/* Other / Incorrect Info */}
+              <button
+                onClick={() => setFlagOtherOpen(prev => !prev)}
+                disabled={flagSubmitting}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  width: '100%', padding: '14px 16px', borderRadius: '12px',
+                  border: `1px solid ${darkMode ? '#1A2A2A' : '#E0F2FE'}`,
+                  background: darkMode ? '#101A1E' : '#F0F9FF',
+                  color: darkMode ? '#7DD3FC' : '#0369A1',
+                  fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'transform 0.1s',
+                }}
+              >
+                <span style={{ fontSize: '20px' }}>💬</span>
+                Other / Incorrect Info
+              </button>
+
+              {/* Expandable text area for Other reports */}
+              {flagOtherOpen && (
+                <div style={{
+                  padding: '12px', borderRadius: '12px',
+                  background: darkMode ? '#14141E' : '#F9FAFB',
+                  border: `1px solid ${sheetBorder}`,
+                }}>
+                  <textarea
+                    value={flagOtherText}
+                    onChange={e => { if (e.target.value.length <= 200) setFlagOtherText(e.target.value); }}
+                    placeholder="What's wrong? (e.g. wrong time, wrong band name, venue changed...)"
+                    maxLength={200}
+                    rows={3}
+                    style={{
+                      width: '100%', padding: '10px 12px', borderRadius: '8px',
+                      background: darkMode ? '#1A1A24' : '#FFFFFF',
+                      border: `1px solid ${sheetBorder}`,
+                      color: textPrimary, fontSize: '13px',
+                      fontFamily: "'DM Sans', sans-serif",
+                      outline: 'none', resize: 'none',
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                    <span style={{ fontSize: '11px', color: textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+                      {flagOtherText.length}/200
+                    </span>
+                    <button
+                      disabled={flagSubmitting || !flagOtherText.trim()}
+                      onClick={async () => {
+                        setFlagSubmitting(true);
+                        try {
+                          await fetch('/api/reports', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              event_id: event.id,
+                              issue_type: 'other',
+                              description: flagOtherText.trim(),
+                            }),
+                          });
+                          onFlag?.('Report submitted — thanks for the heads up!');
+                        } catch {
+                          onFlag?.('Something went wrong. Please try again.');
+                        }
+                        setFlagSubmitting(false);
+                        setFlagSheet(false);
+                        setFlagOtherOpen(false);
+                        setFlagOtherText('');
+                      }}
+                      style={{
+                        padding: '8px 18px', borderRadius: '8px',
+                        background: flagOtherText.trim() ? '#E8722A' : (darkMode ? '#2A2A3A' : '#D1D5DB'),
+                        color: flagOtherText.trim() ? '#1C1917' : textMuted,
+                        fontSize: '13px', fontWeight: 700, border: 'none',
+                        cursor: flagOtherText.trim() ? 'pointer' : 'not-allowed',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      Submit Report
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Close button */}
+              <button
+                onClick={() => { setFlagSheet(false); setFlagOtherOpen(false); setFlagOtherText(''); }}
+                style={{
+                  width: '100%', padding: '12px', borderRadius: '12px',
+                  border: `1px solid ${sheetBorder}`,
+                  background: 'transparent',
+                  color: textMuted,
+                  fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  marginTop: '4px',
+                }}
+              >
+                Close
+              </button>
+            </div>
           </div>
-        </div>,
+        </div>
+      )}
+
+      {/* Follow popover — portaled to body to escape overflow:hidden */}
+      {showFollowPopover && mounted && createPortal(
+        <>
+          {/* Invisible backdrop to dismiss on click-away */}
+          <div onClick={dismissPopover} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999 }} />
+          <div
+            className={popoverFading ? 'popover-fade-out' : 'popover-fade-in'}
+            onClick={e => e.stopPropagation()}
+            style={{
+              position: 'fixed', top: `${popoverPos.top}px`, right: `${popoverPos.right}px`, zIndex: 1000,
+              background: darkMode ? '#252535' : '#FFFFFF',
+              border: `1px solid ${darkMode ? '#3A3A4A' : '#E5E7EB'}`,
+              borderRadius: '14px',
+              padding: '14px 16px',
+              boxShadow: darkMode ? '0 12px 32px rgba(0,0,0,0.6)' : '0 6px 24px rgba(0,0,0,0.15)',
+              width: '260px',
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            {/* Arrow */}
+            <div style={{
+              position: 'absolute', top: '-6px', right: '18px',
+              width: '12px', height: '12px',
+              background: darkMode ? '#252535' : '#FFFFFF',
+              border: `1px solid ${darkMode ? '#3A3A4A' : '#E5E7EB'}`,
+              borderRight: 'none', borderBottom: 'none',
+              transform: 'rotate(45deg)',
+            }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+              <p style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: darkMode ? '#E0E0F0' : '#1F2937', lineHeight: 1.35 }}>
+                Event Saved!{!isArtistFollowed && (
+                  <span style={{ fontWeight: 600, color: darkMode ? '#B0B0C8' : '#6B7280' }}>
+                    {' '}Want alerts for future shows?
+                  </span>
+                )}
+              </p>
+              <button
+                onClick={dismissPopover}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', flexShrink: 0, display: 'flex', alignItems: 'center', marginTop: '1px' }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={darkMode ? '#7878A0' : '#9CA3AF'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            {!isArtistFollowed && onFollowArtist && (
+              <button
+                onClick={handlePopoverFollow}
+                style={{
+                  marginTop: '12px', width: '100%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px',
+                  padding: '10px 14px', borderRadius: '10px', border: 'none',
+                  background: '#E8722A', color: '#1C1917',
+                  fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'opacity 0.15s',
+                  textAlign: 'left',
+                  overflow: 'hidden',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1C1917" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {(event?.artist_name || '').length > 18 ? 'Follow Artist' : `Follow ${event?.artist_name || ''}`}
+                </span>
+              </button>
+            )}
+          </div>
+        </>,
         document.body
       )}
 
-      {/* Follow Popover */}
-      {mounted && showFollowPopover && createPortal(
-        <div
-          style={{
-            position: 'fixed',
-            top: `${popoverPos.top}px`,
-            right: `${popoverPos.right}px`,
-            zIndex: 40,
-            background: darkMode ? '#2A2A3A' : '#F3F4F6',
-            color: darkMode ? '#4DB8B2' : '#059669',
-            padding: '12px 16px',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-            pointerEvents: 'none',
-            transition: 'opacity 0.3s',
-            opacity: popoverFading ? 0 : 1,
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          }}
-        >
-          Following {artistName}!
-        </div>,
-        document.body
-      )}
-
+      {/* Animations + hover states */}
       <style jsx>{`
-        .card-container {
-          user-select: none;
+        @keyframes slideUp {
+          from { transform: translateY(100%); }
+          to { transform: translateY(0); }
         }
-        .card-container:hover {
-          box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-          transform: translateY(-2px);
-          transition: all 0.2s ease;
+        @keyframes savePop {
+          0% { transform: scale(1); }
+          40% { transform: scale(1.3); }
+          100% { transform: scale(1); }
+        }
+        @keyframes popoverIn {
+          from { opacity: 0; transform: translateY(-4px) scale(0.95); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .save-pop {
+          animation: savePop 0.3s ease-out;
+        }
+        .popover-fade-in {
+          animation: popoverIn 0.2s ease-out forwards;
+        }
+        .popover-fade-out {
+          opacity: 0;
+          transform: translateY(-4px) scale(0.95);
+          transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        @media (hover: hover) {
+          .save-btn:hover svg {
+            stroke: #E8722A !important;
+          }
+          .share-btn-detail:hover {
+            opacity: 0.75;
+          }
+          .flag-btn:hover {
+            color: #E8722A !important;
+            border-color: #E8722A !important;
+          }
         }
       `}</style>
     </div>
