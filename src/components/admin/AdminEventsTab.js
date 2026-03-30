@@ -1,6 +1,6 @@
 'use client';
 
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatTime } from '@/lib/utils';
 import { Icons } from '@/components/Icons';
 
 export default function AdminEventsTab({
@@ -9,10 +9,11 @@ export default function AdminEventsTab({
   eventsMissingTime, setEventsMissingTime,
   eventsSortField, setEventsSortField, eventsSortOrder, setEventsSortOrder,
   eventsPage, setEventsPage, eventsTotalPages, eventsTotal,
-  newEvents24h, eventsRecentlyAdded,
-  selectedEvents, setSelectedEvents,
+  newEvents24h, eventsRecentlyAdded, setEventsRecentlyAdded,
+  selectedEvents, setSelectedEvents, setEvents,
   fetchEvents, deleteEvent, toggleFeatured, unpublishEvent, updateEventCategory,
-  setEditingEvent, setShowEventForm, setBulkTimeModal,
+  setEditingEvent, setShowEventForm, setBulkTimeModal, setBulkTime,
+  isMobile, showQueueToast, CATEGORY_OPTIONS,
   password,
 }) {
   const headers = { Authorization: 'Bearer ' + password };

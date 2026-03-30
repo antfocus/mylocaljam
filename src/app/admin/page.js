@@ -302,8 +302,15 @@ export default function AdminPage() {
         fetch('/api/reports', { headers: { Authorization: `Bearer ${password}` } }),
       ]);
 
-      setSubmissions(await subRes.json());
-      setReports(await repRes.json());
+      // Guard against 401/error responses — only set state if we got valid arrays
+      if (subRes.ok) {
+        const subData = await subRes.json();
+        if (Array.isArray(subData)) setSubmissions(subData);
+      }
+      if (repRes.ok) {
+        const repData = await repRes.json();
+        if (Array.isArray(repData)) setReports(repData);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -594,8 +601,25 @@ export default function AdminPage() {
     }
   }, [authenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
+    // Validate password with a lightweight API call before setting authenticated
+    try {
+      const testRes = await fetch('/api/admin?page=1&limit=1', {
+        headers: { Authorization: `Bearer ${password}` },
+      });
+      if (testRes.status === 401) {
+        alert('Invalid password');
+        return;
+      }
+      if (!testRes.ok) {
+        alert(`Login failed (HTTP ${testRes.status})`);
+        return;
+      }
+    } catch (err) {
+      alert(`Login failed: ${err.message}`);
+      return;
+    }
     setAuthenticated(true);
     try { sessionStorage.setItem('mlj_admin_pw', password); } catch { /* blocked */ }
     fetchAll();
@@ -1242,14 +1266,19 @@ export default function AdminPage() {
       {activeTab === 'dashboard' && !loading && (
         <AdminDashboardTab
           events={events} artists={artists} reports={reports} venues={venues}
+          scraperHealth={scraperHealth}
           eventsTotal={eventsTotal} newEvents24h={newEvents24h}
           dashDateRange={dashDateRange} setDashDateRange={setDashDateRange}
           analyticsData={analyticsData} analyticsLoading={analyticsLoading}
           analyticsEnv={analyticsEnv} setAnalyticsEnv={setAnalyticsEnv}
           fetchAnalytics={fetchAnalytics} fetchEvents={fetchEvents}
           fetchArtists={fetchArtists} fetchScraperHealth={fetchScraperHealth}
+          fetchReports={fetchReports}
           eventsSortField={eventsSortField} eventsSortOrder={eventsSortOrder}
-          eventsStatusFilter={eventsStatusFilter} setActiveTab={setActiveTab}
+          eventsStatusFilter={eventsStatusFilter} setEventsStatusFilter={setEventsStatusFilter} setActiveTab={setActiveTab}
+          setVenuesFilter={setVenuesFilter} setEventsRecentlyAdded={setEventsRecentlyAdded}
+          setEvents={setEvents} setFlagsViewFilter={setFlagsViewFilter}
+          setEventsMissingTime={setEventsMissingTime} setArtistMissingFilters={setArtistMissingFilters}
         />
       )}
 
@@ -1269,6 +1298,7 @@ export default function AdminPage() {
       {activeTab === 'events' && !loading && (
         <AdminEventsTab
           events={events} artists={artists} venues={venues} password={password}
+          isMobile={isMobile}
           eventsSearch={eventsSearch} setEventsSearch={setEventsSearch}
           eventsStatusFilter={eventsStatusFilter} setEventsStatusFilter={setEventsStatusFilter}
           eventsMissingTime={eventsMissingTime} setEventsMissingTime={setEventsMissingTime}
@@ -1277,12 +1307,16 @@ export default function AdminPage() {
           eventsPage={eventsPage} setEventsPage={setEventsPage}
           eventsTotalPages={eventsTotalPages} eventsTotal={eventsTotal}
           newEvents24h={newEvents24h} eventsRecentlyAdded={eventsRecentlyAdded}
+          setEventsRecentlyAdded={setEventsRecentlyAdded}
           selectedEvents={selectedEvents} setSelectedEvents={setSelectedEvents}
+          setEvents={setEvents}
           fetchEvents={fetchEvents} deleteEvent={deleteEvent}
           toggleFeatured={toggleFeatured} unpublishEvent={unpublishEvent}
           updateEventCategory={updateEventCategory}
+          CATEGORY_OPTIONS={CATEGORY_OPTIONS}
           setEditingEvent={setEditingEvent} setShowEventForm={setShowEventForm}
-          setBulkTimeModal={setBulkTimeModal}
+          setBulkTimeModal={setBulkTimeModal} setBulkTime={setBulkTime}
+          showQueueToast={showQueueToast}
         />
       )}
 
@@ -1351,6 +1385,10 @@ export default function AdminPage() {
       {activeTab === 'festivals' && !loading && (
         <AdminFestivalsTab
           events={events} submissions={submissions} password={password}
+          festivalData={festivalData} festivalSearch={festivalSearch}
+          setFestivalSearch={setFestivalSearch}
+          editingFestival={editingFestival} setEditingFestival={setEditingFestival}
+          fetchFestivalNames={fetchFestivalNames}
         />
       )}
 
@@ -1368,7 +1406,7 @@ export default function AdminPage() {
           newVenueAddress={newVenueAddress} setNewVenueAddress={setNewVenueAddress}
           newVenueLoading={newVenueLoading}
           isMobile={isMobile} mobileQueueDetail={mobileQueueDetail} setMobileQueueDetail={setMobileQueueDetail}
-          qBg={qBg} qSurface={qSurface} qBorder={qBorder}
+          qSurface={qSurface} qSurfaceAlt={qSurfaceAlt} qBorder={qBorder}
           qText={qText} qTextMuted={qTextMuted} qAccent={qAccent}
           fetchQueue={fetchQueue} handleAdminFlyerUpload={handleAdminFlyerUpload}
           selectQueueItem={selectQueueItem} updateQueueForm={updateQueueForm}

@@ -1,13 +1,14 @@
 'use client';
 
 export default function AdminDashboardTab({
-  events, artists, reports, venues,
+  events, artists, reports, venues, scraperHealth,
   eventsTotal, newEvents24h,
   dashDateRange, setDashDateRange, analyticsData, analyticsLoading,
   analyticsEnv, setAnalyticsEnv, fetchAnalytics,
-  fetchEvents, fetchArtists, fetchScraperHealth,
-  eventsSortField, eventsSortOrder, eventsStatusFilter,
-  setActiveTab,
+  fetchEvents, fetchArtists, fetchScraperHealth, fetchReports,
+  eventsSortField, eventsSortOrder, eventsStatusFilter, setEventsStatusFilter,
+  setActiveTab, setVenuesFilter, setEventsRecentlyAdded,
+  setEvents, setFlagsViewFilter, setEventsMissingTime, setArtistMissingFilters,
 }) {
         // Compute Data Health metrics from existing state
         const eventsWithoutImage = events.filter(e => !e.image_url && !e.artists?.image_url).length;

@@ -2,6 +2,8 @@
 
 export default function AdminFestivalsTab({
   events, submissions, password,
+  festivalData, festivalSearch, setFestivalSearch,
+  editingFestival, setEditingFestival, fetchFestivalNames,
 }) {
   const headers = { Authorization: 'Bearer ' + password };
         const filteredFestivals = festivalSearch.trim()

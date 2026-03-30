@@ -10,7 +10,7 @@ export default function AdminSubmissionsTab({
   newVenueOpen, setNewVenueOpen, newVenueName, setNewVenueName,
   newVenueAddress, setNewVenueAddress, newVenueLoading,
   isMobile, mobileQueueDetail, setMobileQueueDetail,
-  qBg, qSurface, qBorder, qText, qTextMuted, qAccent,
+  qSurface, qSurfaceAlt, qBorder, qText, qTextMuted, qAccent,
   fetchQueue, handleAdminFlyerUpload, selectQueueItem, updateQueueForm,
   handleQueueApprove, handleQueueReject, handleQueueArchive,
   handleCreateVenue, resolveVenueId, applyBatchToFlyer,
