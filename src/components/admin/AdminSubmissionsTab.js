@@ -16,6 +16,11 @@ export default function AdminSubmissionsTab({
   handleCreateVenue, resolveVenueId, applyBatchToFlyer,
   setQueueLightboxUrl,
   adminFlyerRef,
+  queueSelected,
+  festivalNames,
+  batchApplyPrompt, setBatchApplyPrompt,
+  qLabelStyle, qInputStyle,
+  qGreen, qRed,
 }) {
   return (
         <div>

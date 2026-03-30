@@ -1416,6 +1416,11 @@ export default function AdminPage() {
           applyBatchToFlyer={applyBatchToFlyer}
           setQueueLightboxUrl={setQueueLightboxUrl}
           adminFlyerRef={adminFlyerRef}
+          queueSelected={queueSelected}
+          festivalNames={festivalNames}
+          batchApplyPrompt={batchApplyPrompt} setBatchApplyPrompt={setBatchApplyPrompt}
+          qLabelStyle={qLabelStyle} qInputStyle={qInputStyle}
+          qGreen={qGreen} qRed={qRed}
         />
       )}
 
