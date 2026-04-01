@@ -3262,6 +3262,87 @@ Pushed to `admin-refactor` branch. Tony verified: "The local dashboard is now a 
 
 ---
 
+## ADMIN ARCHITECTURE OVERHAUL (APRIL 2026)
+
+### The Great Purge
+
+`src/app/admin/page.js` was systematically refactored from **1,699 lines** down to **728 lines** — a **57% reduction**. All domain-specific state and controller logic was extracted into dedicated custom hooks using a strict set of rules:
+
+- **Zero Feature Changes** — every extraction was a strict 1:1 lift with no new behavior.
+- **No Logic Refactoring** — code was moved verbatim; no optimizations, no consolidation.
+- **One-Step Isolation** — each hook was extracted, wired, and verified before moving to the next.
+- **No new `console.log` statements** — only pre-existing error logging was preserved in the hooks.
+
+### Hook Directory
+
+Eight custom hooks were created in `src/hooks/`, each owning a single domain's state and controller logic:
+
+| Hook | Prefix | Lines | Responsibility |
+|---|---|---|---|
+| `useAdminQueue` | `q.` | 410 | Queue state, flyer uploads, approve/reject/archive actions |
+| `useAdminArtists` | `ar.` | 216 | Artist state, bios, duplicate detection, bulk enrichment |
+| `useAdminSpotlight` | `sp.` | 121 | Homepage spotlight pins, save/clear/toggle |
+| `useAdminEvents` | `ev.` | 106 | Event state, paginated fetch, featured toggles, category updates |
+| `useAdminTriage` | `tr.` | 75 | Uncategorized event triage, categorization, deletion |
+| `useAdminVenues` | `ve.` | 61 | Venue list, scraper health dashboard, force-sync actions |
+| `useAdminFestivals` | `fe.` | 44 | Festival name autocomplete, grouped data, search/edit |
+| `useAdminReports` | `re.` | 23 | User-submitted flags, submissions list, filter state |
+
+### The "Glue" Rule
+
+After the overhaul, `page.js` contains **only infrastructure glue**:
+
+- **Auth/Login** — password state, session persistence via `sessionStorage`, `handleLogin` validation.
+- **Global `fetchAll`** — parallel fetch orchestrator (`Promise.all`) that calls into domain hooks (`ev.fetchEvents`, `re.setSubmissions`, `re.setReports`).
+- **Analytics** — PostHog analytics fetch (`fetchAnalytics`) and date range/env state.
+- **Event CRUD** — `deleteEvent`, `saveEvent`, `unpublishEvent` (remain in page.js because they call `fetchAll`).
+- **Tab Routing** — `activeTab` state, tab badge counts, and per-tab onClick data refresh triggers.
+- **UI Modals** — Spotlight image warning, bulk time editor, event form, queue lightbox.
+- **Toast System** — `showQueueToast` with auto-dismiss timers.
+
+**No domain logic is permitted in the main page file.** Any new domain feature must be added to the appropriate hook or a new one.
+
+### The Prefix Pattern
+
+All hook instances in `page.js` use a **2-letter prefix convention** for namespacing:
+
+```javascript
+const ev = useAdminEvents({ password, showQueueToast, setAuthenticated });
+const ve = useAdminVenues({ password, showQueueToast });
+const q  = useAdminQueue({ password, venues: ve.venues, setVenues: ve.setVenues, fetchAll, supabase, toTitleCase, showQueueToast, authenticated });
+const tr = useAdminTriage({ password, showQueueToast });
+const ar = useAdminArtists({ password });
+const sp = useAdminSpotlight({ password, fetchAll });
+const fe = useAdminFestivals();
+const re = useAdminReports({ password });
+```
+
+In JSX, all references use the prefix: `ev.events`, `ar.artists`, `ve.scraperHealth`, `q.fetchQueue`, `sp.toggleSpotlightPin`, etc. This eliminates naming collisions and makes it immediately clear which domain owns each piece of state.
+
+**Hook ordering matters.** `ev` must be declared before `fetchAll` (which calls `ev.fetchEvents`), and `ve` must be declared before `q` (which receives `ve.venues` / `ve.setVenues`).
+
+### UI Parity Rule — EventCardV2
+
+`src/components/EventCardV2.js` (the staging/V2 feed card) must mirror the production logic in `src/app/event/[id]/EventPageClient.js`:
+
+- **Venue button** renders only when `sourceLink` is a valid URL (`event.source` matching `/^https?:\/\//i`). No fallback to `ticket_link` or unconditional rendering — if there's no valid source URL, the button is hidden. This prevents dead links.
+- **Cover Charge badge** is currently hidden (commented out) until the feature is fully set up in the backend. The `Badge` component import remains for the CANCELED badge.
+
+### Line Count Journey
+
+```
+1,699  (original god file)
+1,175  (after AdminLoginScreen + AdminFestivalsTab component extraction)
+  986  (after useAdminArtists)
+  881  (after useAdminSpotlight)
+  805  (after useAdminEvents)
+  762  (after useAdminVenues)
+  735  (after useAdminFestivals)
+  728  (after useAdminReports) ← current
+```
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.

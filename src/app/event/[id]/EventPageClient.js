@@ -23,37 +23,19 @@ function fmtDate(dateStr) {
 }
 
 export default function EventPageClient({ event }) {
-  const [authChecked, setAuthChecked] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
 
-  // Check auth — if logged in, redirect to the main app with scroll-to-event
+  // Check auth in background — only redirect genuinely logged-in users.
+  // Uses getUser() to validate the token server-side (getSession() just reads
+  // cached localStorage which can contain stale/expired tokens).
+  // The event content renders immediately; no spinner gate.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        // Logged-in user: redirect to home page and scroll to the event card
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
         window.location.href = `/?event=${event.id}`;
-      } else {
-        setAuthChecked(true);
       }
     });
   }, [event.id]);
-
-  // Show nothing while checking auth (prevents flash of public view for logged-in users)
-  if (!authChecked) {
-    return (
-      <div style={{
-        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: '#0D0D12',
-      }}>
-        <div style={{
-          width: '32px', height: '32px', border: '3px solid #2A2A3A',
-          borderTopColor: '#E8722A', borderRadius: '50%',
-          animation: 'spin 0.8s linear infinite',
-        }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
-  }
 
   // ── Public (unauthenticated) event view ────────────────────────────────────
 
