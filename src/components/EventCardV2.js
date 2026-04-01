@@ -107,8 +107,6 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
   const expandedBg  = darkMode ? '#14141E' : '#F9FAFB';
   const flagIconCol = darkMode ? '#6A6A8A' : '#9CA3AF';
   const flagIconHov = '#E8722A';
-  const coverPillBg = darkMode ? '#2A2A3A' : '#E5E7EB';
-  const coverPillTx = darkMode ? '#CCCCDD' : '#4B5563';
   const sheetBg     = darkMode ? '#1A1A24' : '#FFFFFF';
   const sheetBorder = darkMode ? '#2A2A3A' : '#E5E7EB';
   const overlayBg   = 'rgba(0,0,0,0.5)';
@@ -326,13 +324,7 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
               </div>
             )}
 
-            {/* Cover Charge pill */}
-            {event.cover != null && event.cover !== 'TBA' && !isCanceled && (
-              <Badge bg={coverPillBg} color={coverPillTx} size="sm" uppercase={false}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '999px', margin: '6px 0 4px', fontSize: '11px', fontWeight: 700 }}>
-                {event.cover === '0' || event.cover?.toLowerCase() === 'free' ? '🎵 Free Admission' : `💵 ${event.cover?.startsWith?.('$') ? '' : '$'}${event.cover} Cover`}
-              </Badge>
-            )}
+            {/* Cover Charge pill — hidden until feature is set up */}
 
             {/* Bio / Description — 3-line clamp with Read More */}
             {desc && (
