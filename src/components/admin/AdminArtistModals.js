@@ -1,5 +1,8 @@
 'use client';
 
+import ModalWrapper from '@/components/ui/ModalWrapper';
+import Badge from '@/components/ui/Badge';
+
 export default function AdminArtistModals({
   activeTab,
   artists, password,
@@ -121,21 +124,8 @@ export default function AdminArtistModals({
 
       {/* AI Enrichment Confirmation Modal */}
       {enrichConfirm && (
-        <div
-          onClick={() => setEnrichConfirm(null)}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 600,
-            background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: 'var(--bg-card)', borderRadius: '16px', padding: '24px', maxWidth: '480px', width: '90%',
-              border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-              fontFamily: "'DM Sans', sans-serif", maxHeight: '80vh', display: 'flex', flexDirection: 'column',
-            }}
-          >
+        <ModalWrapper onClose={() => setEnrichConfirm(null)}>
+          <>
             <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 8px' }}>
               Run AI Enrichment on {enrichConfirm.length} artist{enrichConfirm.length !== 1 ? 's' : ''}?
             </h3>
@@ -207,27 +197,14 @@ export default function AdminArtistModals({
                 Confirm &amp; Run
               </button>
             </div>
-          </div>
-        </div>
+          </>
+        </ModalWrapper>
       )}
 
       {/* Bulk Delete Confirmation Modal */}
       {bulkDeleteConfirm && (
-        <div
-          onClick={() => { if (!bulkDeleteLoading) setBulkDeleteConfirm(null); }}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 600,
-            background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: 'var(--bg-card)', borderRadius: '16px', padding: '24px', maxWidth: '480px', width: '90%',
-              border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-              fontFamily: "'DM Sans', sans-serif", maxHeight: '80vh', display: 'flex', flexDirection: 'column',
-            }}
-          >
+        <ModalWrapper onClose={() => { if (!bulkDeleteLoading) setBulkDeleteConfirm(null); }}>
+          <>
             <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 8px' }}>
               Delete {bulkDeleteConfirm.artists.length} selected artist{bulkDeleteConfirm.artists.length !== 1 ? 's' : ''}?
             </h3>
@@ -342,27 +319,14 @@ export default function AdminArtistModals({
                 </button>
               </div>
             )}
-          </div>
-        </div>
+          </>
+        </ModalWrapper>
       )}
 
       {/* Merge Duplicates Modal */}
       {mergeConfirm && (
-        <div
-          onClick={() => { if (!mergeLoading) { setMergeConfirm(null); setMergeMasterId(null); } }}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 600,
-            background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: 'var(--bg-card)', borderRadius: '16px', padding: '24px', maxWidth: '480px', width: '90%',
-              border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-              fontFamily: "'DM Sans', sans-serif", maxHeight: '80vh', display: 'flex', flexDirection: 'column',
-            }}
-          >
+        <ModalWrapper onClose={() => { if (!mergeLoading) { setMergeConfirm(null); setMergeMasterId(null); } }}>
+          <>
             <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 8px' }}>
               Which profile is the correct Master Profile?
             </h3>
@@ -412,7 +376,7 @@ export default function AdminArtistModals({
                     </div>
                   </div>
                   {mergeMasterId === a.id && (
-                    <span style={{ fontSize: '10px', fontWeight: 800, color: '#60A5FA', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Master</span>
+                    <Badge label="Master" size="sm" color="#60A5FA" bg="transparent" style={{ fontWeight: 800 }} />
                   )}
                 </label>
               ))}
@@ -475,27 +439,14 @@ export default function AdminArtistModals({
                 </button>
               </div>
             )}
-          </div>
-        </div>
+          </>
+        </ModalWrapper>
       )}
 
       {/* Smart Delete Confirmation Modal */}
       {deleteConfirm && (
-        <div
-          onClick={() => setDeleteConfirm(null)}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 600,
-            background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: 'var(--bg-card)', borderRadius: '16px', padding: '24px', maxWidth: '440px', width: '90%',
-              border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-              fontFamily: "'DM Sans', sans-serif",
-            }}
-          >
+        <ModalWrapper onClose={() => setDeleteConfirm(null)} maxWidth="440px">
+          <>
             <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 4px' }}>
               Delete &ldquo;{deleteConfirm.artist.name}&rdquo;?
             </h3>
@@ -576,8 +527,8 @@ export default function AdminArtistModals({
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+          </>
+        </ModalWrapper>
       )}
     </>
   );

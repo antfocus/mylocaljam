@@ -1,6 +1,7 @@
 'use client';
 
 import { formatDate } from '@/lib/utils';
+import Badge from '@/components/ui/Badge';
 
 export default function AdminReportsTab({
   reports, setReports, events, artists, venues, password,
@@ -72,13 +73,7 @@ export default function AdminReportsTab({
                       <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>
                         {rep.events?.artist_name || 'Unknown Event'}
                       </span>
-                      <span style={{
-                        fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '999px',
-                        background: fc.bg, color: fc.color, border: `1px solid ${fc.border}`,
-                        fontFamily: "'DM Sans', sans-serif",
-                      }}>
-                        {fc.label}
-                      </span>
+                      <Badge label={fc.label} size="sm" bg={fc.bg} color={fc.color} style={{ borderRadius: '999px', border: `1px solid ${fc.border}` }} />
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif", marginBottom: '2px' }}>
                       {rep.events?.venue_name || '—'} · {rep.events?.event_date ? formatDate(rep.events.event_date) : '—'}
@@ -180,15 +175,17 @@ export default function AdminReportsTab({
                           <option value="reviewed">Reviewed</option>
                         </select>
                       ) : sc && (
-                        <span style={{
-                          fontSize: '11px', fontWeight: 800, padding: '6px 16px', borderRadius: '8px',
-                          background: sc.bg, color: sc.color,
-                          fontFamily: "'DM Sans', sans-serif",
-                          letterSpacing: '0.8px', textTransform: 'uppercase',
-                          cursor: 'default', userSelect: 'none',
-                        }}>
-                          {sc.label}
-                        </span>
+                        <Badge
+                          label={sc.label}
+                          size="md"
+                          bg={sc.bg}
+                          color={sc.color}
+                          style={{
+                            padding: '6px 16px', borderRadius: '8px',
+                            fontSize: '11px', fontWeight: 800, letterSpacing: '0.8px',
+                            cursor: 'default', userSelect: 'none',
+                          }}
+                        />
                       )}
                     </div>
                   </div>

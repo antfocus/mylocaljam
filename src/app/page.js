@@ -13,13 +13,11 @@ import MapView           from '@/components/MapView';
 import SubmitEventModal  from '@/components/SubmitEventModal';
 import AuthModal         from '@/components/AuthModal';
 import WelcomeModal      from '@/components/WelcomeModal';
-// ReportIssueModal replaced by inline flag bottom-sheet in EventCardV2
 import Toast             from '@/components/Toast';
-// FollowSnackbar removed — follow upsell now handled inline in EventCardV2
 import FollowingTab      from '@/components/FollowingTab';
 import ArtistProfileScreen from '@/components/ArtistProfileScreen';
 import SupportModal      from '@/components/SupportModal';
-// FilterBar removed — filters now live in the omnibar panel
+import ModalWrapper      from '@/components/ui/ModalWrapper';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 // Clean HTML entities that may have leaked through scrapers (e.g. &amp; → &)
@@ -78,8 +76,6 @@ const DATE_OPTIONS = [
   { key: 'pick',     label: 'Date'          },
 ];
 
-// ── Shortcut pills — each defines venue-name matches and/or text search terms ──
-// Material icon SVG paths for each pill (24x24 viewBox)
 // Material icon name → SVG path lookup (24x24 viewBox)
 const MATERIAL_ICON_PATHS = {
   local_fire_department: 'M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z',
@@ -91,15 +87,10 @@ const MATERIAL_ICON_PATHS = {
   label: 'M17.63 5.84C17.27 5.33 16.67 5 16 5L5 5.01C3.9 5.01 3 5.9 3 7v10c0 1.1.9 1.99 2 1.99L16 19c.67 0 1.27-.33 1.63-.84L22 12l-4.37-6.16z',
   search: 'M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
   schedule: 'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z',
-  // Material: mic (karaoke)
   karaoke_mic: 'M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z',
-  // Material: quiz (trivia)
   quiz: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z',
-  // Material: local_offer (specials/deals)
   local_offer: 'M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z',
-  // Material: location_on (venue pin)
   location_on: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
-  // Profile tab icons
   dark_mode: 'M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z',
   mail: 'M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z',
   notifications_active: 'M7.58 4.08L6.15 2.65C3.75 4.48 2.17 7.3 2.03 10.5h2c.15-2.65 1.51-4.97 3.55-6.42zm12.39 6.42h2c-.15-3.2-1.73-6.02-4.12-7.85l-1.42 1.43c2.02 1.45 3.39 3.77 3.54 6.42zM18 11c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2v-5zm-6 11c.14 0 .27-.01.4-.04.65-.14 1.18-.58 1.44-1.18.1-.24.15-.5.15-.78h-4c.01 1.1.9 2 2.01 2z',
@@ -289,7 +280,6 @@ export default function HomePage() {
   const profileRadiusRef = useRef(null); // saved profile default (null for guests)
   const [showSubmit,     setShowSubmit]     = useState(false);
   const [showSupport,    setShowSupport]    = useState(false);
-  // reportEvent state removed — flagging now handled inline in EventCardV2
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [activeFilterCard, setActiveFilterCard] = useState(null); // 'distance' | 'when' | 'artist' | 'venue'
   const [venueSearch, setVenueSearch] = useState('');
@@ -305,7 +295,6 @@ export default function HomePage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authTrigger, setAuthTrigger] = useState(null);            // 'save' | 'submit' | 'profile' | null
-  // guestBannerDismissed removed — hard gate handles auth, no banner needed
   const [showWelcome, setShowWelcome] = useState(false);
   // ── Edit Profile modal state ─────────────────────────────────────────────
   const [showEditProfile, setShowEditProfile] = useState(false);
@@ -489,8 +478,6 @@ export default function HomePage() {
     }
     return results;
   }, [debouncedSearch, events]);
-
-  // (Auto-focus is now triggered synchronously in the omnibar onClick handler)
 
   // ── Notifications preference ─────────────────────────────────────────────────
   const [notifEnabled, setNotifEnabled] = useState(() => {
@@ -859,7 +846,7 @@ export default function HomePage() {
     setLoading(false);
   }, []);
 
-  const [spotlightIds, setSpotlightIds] = useState([]);
+  const [spotlightData, setSpotlightData] = useState([]);
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
   useEffect(() => { rehydrateReminders(); }, []);
@@ -1150,7 +1137,7 @@ export default function HomePage() {
     }
   }, [activeTab, filtersExpanded]);
 
-  // Fetch spotlight pins for today
+  // Fetch spotlight events for today (hydrated with venue + artist data)
   useEffect(() => {
     const now = new Date();
     const pad = n => String(n).padStart(2, '0');
@@ -1158,9 +1145,59 @@ export default function HomePage() {
     fetch(`/api/spotlight?date=${today}`)
       .then(r => r.json())
       .then(data => {
-        if (Array.isArray(data)) setSpotlightIds(data.map(d => d.event_id));
+        if (!Array.isArray(data) || data.length === 0) { setSpotlightData([]); return; }
+        // Normalize spotlight events using the same mapping as fetchEvents
+        const mapped = data.map(e => {
+          let extractedStartTime = e.start_time || (() => {
+            if (e.event_date && e.event_date.includes('T')) {
+              const d = new Date(e.event_date);
+              const parts = d.toLocaleTimeString('en-US', {
+                hour: 'numeric', minute: '2-digit', hour12: false,
+                timeZone: 'America/New_York',
+              }).split(':');
+              const h = String(parseInt(parts[0])).padStart(2, '0');
+              const m = parts[1];
+              return `${h}:${m}`;
+            }
+            return null;
+          })();
+          if (extractedStartTime === '00:00' || extractedStartTime === '24:00') {
+            extractedStartTime = null;
+          }
+          return {
+            ...e,
+            id:            e.id || e.event_id,
+            name:          decodeEntities(e.artists?.name || e.artist_name || ''),
+            event_title:   e.event_title || null,
+            venue:         e.venues?.name || e.venue_name || '',
+            date: (() => {
+              const raw = e.event_date || '';
+              if (!raw) return '';
+              if (raw.includes('T')) {
+                const d = new Date(raw);
+                return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+              }
+              return raw.substring(0, 10);
+            })(),
+            start_time:    extractedStartTime,
+            description:   e.artist_bio || e.artists?.bio || '',
+            artist_genres: e.genre ? [e.genre] : (e.artists?.genres || []),
+            artist_vibes:  e.vibe ? [e.vibe] : (e.artists?.vibes || []),
+            is_tribute:    e.artists?.is_tribute || false,
+            event_image:   e.event_image_url || null,
+            artist_image:  e.artists?.image_url || null,
+            venue_type:    e.venues?.venue_type || null,
+            venue_tags:    e.venues?.tags || [],
+            venue_name:    e.venues?.name    || e.venue_name    || '',
+            venue_address: e.venues?.address || '',
+            venue_color:   e.venues?.color   || getVenueColor(e.venues?.name || e.venue_name),
+            venue_lat:     e.venues?.latitude  || null,
+            venue_lng:     e.venues?.longitude || null,
+          };
+        });
+        setSpotlightData(mapped);
       })
-      .catch(() => setSpotlightIds([]));
+      .catch(() => setSpotlightData([]));
   }, []);
 
   // ── Date boundaries (local time) ─────────────────────────────────────────────
@@ -1315,13 +1352,8 @@ export default function HomePage() {
   const groupedEvents = useMemo(() => groupEventsByDate(filteredEvents), [filteredEvents]);
 
   const heroEvents = useMemo(() => {
-    // Priority 1: Manual spotlight pins from admin
-    if (spotlightIds.length > 0) {
-      const pinned = spotlightIds
-        .map(id => events.find(e => e.id === id))
-        .filter(Boolean);
-      if (pinned.length > 0) return pinned;
-    }
+    // Priority 1: Hydrated spotlight data from /api/spotlight
+    if (spotlightData.length > 0) return spotlightData;
 
     // Priority 2: Algorithmic fallback — today's events sorted by time
     const todayEvents = events
@@ -1348,16 +1380,11 @@ export default function HomePage() {
         return (a.start_time ?? '').localeCompare(b.start_time ?? '');
       })
       .slice(0, 6);
-  }, [events, todayStr, spotlightIds]);
+  }, [events, todayStr, spotlightData]);
 
   const heroIsToday = heroEvents.length > 0 && heroEvents[0]?.date === todayStr;
 
-  // Spotlight carousel events — manually flagged by admin
-  const spotlightCarouselEvents = useMemo(() => {
-    return events.filter(e => e.is_spotlight === true);
-  }, [events]);
-
-  // Venue list with event counts (for FilterBar)
+  // Venue list with event counts (for venue filter)
   const venueListWithCounts = useMemo(() => {
     const map = {};
     events.forEach(e => {
@@ -2225,8 +2252,6 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* Artist & Venue dropdowns removed — Omnibar search covers both */}
-
                 {/* Action bar — Show events CTA */}
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2263,11 +2288,8 @@ export default function HomePage() {
 
         {/* ── Hero (home tab only) — hidden when searching or filtering ── */}
         {activeTab === 'home' && !hasActiveFilters && (
-          <HeroSection events={heroEvents} spotlightEvents={spotlightCarouselEvents} isToday={heroIsToday} />
+          <HeroSection events={heroEvents} isToday={heroIsToday} />
         )}
-
-        {/* FilterBar removed — filters now live in the omnibar panel */}
-
 
         {/* ── Saved view (Phase 2: Segmented — Saved Events | Following) ── */}
         {activeTab === 'saved' && (
@@ -2322,8 +2344,6 @@ export default function HomePage() {
                 ))}
               </div>
             </div>
-
-            {/* Yellow guest banner removed — hard gate handles auth */}
 
             {/* Swipeable content area */}
             <div
@@ -2912,7 +2932,6 @@ export default function HomePage() {
       {showSupport && (
         <SupportModal darkMode={darkMode} onClose={() => setShowSupport(false)} userEmail={user?.email || null} />
       )}
-      {/* ReportIssueModal removed — flagging now handled inline in EventCardV2 */}
 
       {/* ── Welcome Modal (first-time visitors) ─────────────────────────── */}
       {showWelcome && (
@@ -3035,24 +3054,19 @@ export default function HomePage() {
 
       {/* ── Edit Profile Modal ──────────────────────────────────────────── */}
       {showEditProfile && (
-        <div
-          onClick={() => { if (!editProfileSaving && !showDeleteConfirm) setShowEditProfile(false); }}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 200,
-            background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '24px',
+        <ModalWrapper
+          onClose={() => { if (!editProfileSaving && !showDeleteConfirm) setShowEditProfile(false); }}
+          zIndex={200}
+          overlayBg="rgba(0,0,0,0.55)"
+          maxWidth="380px"
+          maxHeight="90vh"
+          cardStyle={{
+            background: t.surface, borderRadius: '20px',
+            border: `1px solid ${t.border}`,
+            boxShadow: darkMode ? '0 24px 80px rgba(0,0,0,0.6)' : '0 16px 48px rgba(0,0,0,0.15)',
+            fontFamily: "'DM Sans', sans-serif",
           }}
         >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              width: '100%', maxWidth: '380px', maxHeight: '90vh', overflowY: 'auto',
-              background: t.surface, borderRadius: '20px',
-              border: `1px solid ${t.border}`,
-              boxShadow: darkMode ? '0 24px 80px rgba(0,0,0,0.6)' : '0 16px 48px rgba(0,0,0,0.15)',
-              fontFamily: "'DM Sans', sans-serif",
-            }}
-          >
             {/* Close button */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '16px 16px 0' }}>
               <button
@@ -3240,30 +3254,23 @@ export default function HomePage() {
                 {' '}and jump back in anytime.
               </p>
             </div>
-          </div>
-        </div>
+        </ModalWrapper>
       )}
 
       {/* ── Delete Account Confirmation ─────────────────────────────────── */}
       {showDeleteConfirm && (
-        <div
-          onClick={() => { if (!deleteLoading) setShowDeleteConfirm(false); }}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 210,
-            background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '24px',
+        <ModalWrapper
+          onClose={() => { if (!deleteLoading) setShowDeleteConfirm(false); }}
+          zIndex={210}
+          maxWidth="340px"
+          padding="28px 24px"
+          cardStyle={{
+            background: t.surface, borderRadius: '18px',
+            border: `1px solid ${t.border}`,
+            boxShadow: darkMode ? '0 20px 60px rgba(0,0,0,0.7)' : '0 12px 40px rgba(0,0,0,0.2)',
+            fontFamily: "'DM Sans', sans-serif", textAlign: 'center',
           }}
         >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              width: '100%', maxWidth: '340px', padding: '28px 24px',
-              background: t.surface, borderRadius: '18px',
-              border: `1px solid ${t.border}`,
-              boxShadow: darkMode ? '0 20px 60px rgba(0,0,0,0.7)' : '0 12px 40px rgba(0,0,0,0.2)',
-              fontFamily: "'DM Sans', sans-serif", textAlign: 'center',
-            }}
-          >
             <h3 style={{ fontSize: '16px', fontWeight: 700, color: t.text, margin: '0 0 12px' }}>
               Leaving the Jam?
             </h3>
@@ -3320,8 +3327,7 @@ export default function HomePage() {
                 {deleteLoading ? 'Deleting...' : 'Delete Account'}
               </button>
             </div>
-          </div>
-        </div>
+        </ModalWrapper>
       )}
 
       {toast && <Toast message={toast} variant={toastVariant} onAction={toastAction} actionLabel={toastActionLabel} onDismiss={() => { setToast(null); setToastVariant(null); setToastAction(null); setToastActionLabel(null); }} />}

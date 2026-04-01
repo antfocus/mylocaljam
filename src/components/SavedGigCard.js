@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { formatTimeRange } from '@/lib/utils';
+import Badge from '@/components/ui/Badge';
 
 // ── Brand palette ───────────────────────────────────────────────────────────
 const BRAND_ORANGE = '#E8722A';
@@ -381,15 +382,8 @@ export default function SavedGigCard({
           {/* CANCELED badge (no image) */}
           {isCanceled && !imageUrl && (
             <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0 8px' }}>
-              <span style={{
-                fontFamily: MONO,
-                background: '#DC2626', color: '#FFFFFF',
-                fontSize: '12px', fontWeight: 900, letterSpacing: '2px',
-                padding: '5px 14px', borderRadius: '2px',
-                textTransform: 'uppercase',
-              }}>
-                CANCELED
-              </span>
+              <Badge label="CANCELED" size="md" bg="#DC2626" color="#FFFFFF"
+                style={{ fontFamily: MONO, fontWeight: 900, letterSpacing: '2px', padding: '5px 14px', borderRadius: '2px', fontSize: '12px' }} />
             </div>
           )}
 
@@ -438,29 +432,22 @@ export default function SavedGigCard({
           {(genres.length > 0 || isTribute) && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', margin: '4px 0 6px' }}>
               {isTribute && (
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '3px',
-                  fontFamily: MONO, fontSize: '9px', fontWeight: 700, padding: '3px 8px',
-                  borderRadius: '2px',
-                  border: `1px solid ${darkMode ? 'rgba(232,114,42,0.3)' : 'rgba(232,114,42,0.25)'}`,
-                  background: darkMode ? 'rgba(232,114,42,0.08)' : 'rgba(232,114,42,0.06)',
-                  color: BRAND_ORANGE,
-                  letterSpacing: '1px', textTransform: 'uppercase',
-                }}>
-                  TRIBUTE
-                </span>
+                <Badge label="TRIBUTE" size="xs" color={BRAND_ORANGE}
+                  bg={darkMode ? 'rgba(232,114,42,0.08)' : 'rgba(232,114,42,0.06)'}
+                  style={{
+                    fontFamily: MONO, fontSize: '9px', fontWeight: 700, letterSpacing: '1px',
+                    borderRadius: '2px', padding: '3px 8px',
+                    border: `1px solid ${darkMode ? 'rgba(232,114,42,0.3)' : 'rgba(232,114,42,0.25)'}`,
+                  }} />
               )}
               {genres.map(g => (
-                <span key={g} style={{
-                  fontFamily: MONO, fontSize: '9px', fontWeight: 600, padding: '3px 8px',
-                  borderRadius: '2px',
-                  border: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-                  background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-                  color: textMuted,
-                  letterSpacing: '0.5px', textTransform: 'uppercase',
-                }}>
-                  {g}
-                </span>
+                <Badge key={g} label={g} size="xs" color={textMuted}
+                  bg={darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)'}
+                  style={{
+                    fontFamily: MONO, fontSize: '9px', fontWeight: 600, letterSpacing: '0.5px',
+                    borderRadius: '2px', padding: '3px 8px',
+                    border: `1px solid ${darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                  }} />
               ))}
             </div>
           )}

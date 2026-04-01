@@ -1,6 +1,7 @@
 'use client';
 
 import { formatDate } from '@/lib/utils';
+import Badge from '@/components/ui/Badge';
 
 export default function AdminArtistsTab({
   artists, events, venues, password, isMobile,
@@ -533,22 +534,20 @@ export default function AdminArtistsTab({
             const LockBadge = ({ field }) => {
               const locked = isArtistLocked;
               return (
-                <span
-                  title={locked ? 'Locked via Master Lock' : 'Unlocked \u2014 editable'}
+                <Badge
+                  label={locked ? 'LOCKED' : 'OPEN'}
+                  size="xs"
+                  color={locked ? '#22c55e' : 'rgba(136,136,136,0.45)'}
+                  bg={locked ? 'rgba(34,197,94,0.1)' : 'rgba(136,136,136,0.06)'}
                   style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '2px',
-                    background: locked ? 'rgba(34,197,94,0.1)' : 'rgba(136,136,136,0.06)',
                     border: locked ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(136,136,136,0.12)',
-                    borderRadius: '4px', padding: '1px 5px',
-                    fontSize: '9px', fontWeight: 600,
-                    color: locked ? '#22c55e' : 'rgba(136,136,136,0.45)',
-                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '9px', fontWeight: 600, gap: '2px',
                     transition: 'all 0.15s ease',
                   }}
                 >
                   {locked && <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" /></svg>}
                   {locked ? 'LOCKED' : 'OPEN'}
-                </span>
+                </Badge>
               );
             };
             const RegenBtn = ({ field }) => (
@@ -1148,19 +1147,10 @@ export default function AdminArtistsTab({
                       };
                       const imgSrc = detectSource(artist.image_source, artist.image_url, artist.metadata_source) || (artist.image_url ? 'Scraped' : null);
                       const bioSrc = detectSource(artist.bio_source, null, artist.metadata_source) || (artist.bio ? 'Scraped' : null);
-                      const badgeStyle = (cfg) => ({
-                        display: 'inline-flex', alignItems: 'center',
-                        padding: '1px 5px', borderRadius: '4px',
-                        fontSize: '8px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
-                        textTransform: 'uppercase', letterSpacing: '0.3px',
-                        background: cfg?.bg || 'rgba(136,136,136,0.08)',
-                        color: cfg?.color || '#888',
-                        flexShrink: 0, whiteSpace: 'nowrap',
-                      });
                       return (
                         <span style={{ display: 'inline-flex', gap: '3px', flexShrink: 0 }}>
-                          {imgSrc && <span style={badgeStyle(sourceColors[imgSrc])}>Img: {imgSrc}</span>}
-                          {bioSrc && <span style={badgeStyle(sourceColors[bioSrc])}>Bio: {bioSrc}</span>}
+                          {imgSrc && <Badge label={`Img: ${imgSrc}`} size="xs" color={sourceColors[imgSrc]?.color} bg={sourceColors[imgSrc]?.bg} />}
+                          {bioSrc && <Badge label={`Bio: ${bioSrc}`} size="xs" color={sourceColors[bioSrc]?.color} bg={sourceColors[bioSrc]?.bg} />}
                         </span>
                       );
                     })()}

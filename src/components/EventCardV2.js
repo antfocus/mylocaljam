@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { formatTimeRange } from '@/lib/utils';
 import { posthog } from '@/lib/posthog';
+import Badge from '@/components/ui/Badge';
 
 const CATEGORY_CONFIG = {
   'Live Music':      { color: '#E8722A', bg: '#E8722A', emoji: '🎵' },
@@ -319,33 +320,18 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
 
             {/* CANCELED badge (shown even without image) */}
             {isCanceled && !imageUrl && (
-              <div style={{
-                display: 'flex', justifyContent: 'center', margin: '10px 0 8px',
-              }}>
-                <span style={{
-                  background: '#DC2626', color: '#FFFFFF',
-                  fontSize: '13px', fontWeight: 900, letterSpacing: '1.5px',
-                  padding: '6px 16px', borderRadius: '8px',
-                  textTransform: 'uppercase',
-                  fontFamily: "'DM Sans', sans-serif",
-                }}>
-                  CANCELED
-                </span>
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0 8px' }}>
+                <Badge label="CANCELED" size="md" bg="#DC2626" color="#FFFFFF"
+                  style={{ fontWeight: 900, letterSpacing: '1.5px', padding: '6px 16px', borderRadius: '8px', fontSize: '13px' }} />
               </div>
             )}
 
             {/* Cover Charge pill */}
             {event.cover != null && event.cover !== 'TBA' && !isCanceled && (
-              <div style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                background: coverPillBg, color: coverPillTx,
-                fontSize: '11px', fontWeight: 700,
-                padding: '4px 10px', borderRadius: '999px',
-                margin: '6px 0 4px',
-                fontFamily: "'DM Sans', sans-serif",
-              }}>
+              <Badge bg={coverPillBg} color={coverPillTx} size="sm" uppercase={false}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '999px', margin: '6px 0 4px', fontSize: '11px', fontWeight: 700 }}>
                 {event.cover === '0' || event.cover?.toLowerCase() === 'free' ? '🎵 Free Admission' : `💵 ${event.cover?.startsWith?.('$') ? '' : '$'}${event.cover} Cover`}
-              </div>
+              </Badge>
             )}
 
             {/* Bio / Description — 3-line clamp with Read More */}

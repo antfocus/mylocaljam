@@ -3173,6 +3173,95 @@ npx vercel --prod
 
 ---
 
+## Session: March 30, 2026 — Admin Dashboard Modular Refactor (UAT & Bug Fixes)
+
+Branch: `admin-refactor` (NOT merged to main yet)
+
+### Summary
+
+Continued the admin page modular refactor that began in the prior session (breaking the monolithic `src/app/admin/page.js` into standalone tab components). This session focused on UAT — testing each tab, catching runtime crashes from missing imports/props, and restoring strict 1:1 production UI parity.
+
+### Bug Fixes
+
+**1. `formatTime` missing import — AdminEventsTab.js**
+- **Error:** `ReferenceError: formatTime is not defined` at line 278
+- **Cause:** Only `formatDate` was imported; `formatTime` was used but never added during extraction
+- **Fix:** Changed import to `import { formatDate, formatTime } from '@/lib/utils'`
+- Audited all 10 extracted components — this was the only missing utility import
+
+**2. `artistMissingFilters` type mismatch — AdminArtistsTab.js**
+- **Error:** `TypeError: artistMissingFilters.includes is not a function`
+- **Cause:** Parent `page.js` initializes `artistMissingFilters` as an object `{ bio: false, image_url: false, genres: false, vibes: false }` but the component was treating it as an array (calling `.includes()`, `.indexOf()`, `.filter()`)
+- **Fix:** Rewrote all filter logic in AdminArtistsTab.js to use object-based approach (`Object.values().some(Boolean)`, individual property checks), matching production exactly
+
+**3. Dashboard "New Events (24H)" card not working — AdminDashboardTab.js**
+- **Error:** Click handler referenced `setEventsStatusFilter` which wasn't in props
+- **Fix:** Added `setEventsStatusFilter` to both the parent's JSX props and the component's destructuring. Also added missing props: `setVenuesFilter`, `setEventsRecentlyAdded`, `setEvents`, `setFlagsViewFilter`, `setEventsMissingTime`, `setArtistMissingFilters`, `fetchReports`
+
+**4. `queueSelected` and 7 other missing props — AdminSubmissionsTab.js**
+- **Error:** `ReferenceError: queueSelected is not defined` at line 159
+- **Cause:** 8 variables used in the component were never passed as props during extraction
+- **Fix:** Added all 8 to both parent JSX and component destructuring:
+  - `queueSelected` (derived value: `queue[queueSelectedIdx] || null`)
+  - `festivalNames` (state: festival name list for datalist)
+  - `batchApplyPrompt` / `setBatchApplyPrompt` (state: batch apply UI)
+  - `qLabelStyle` / `qInputStyle` (style objects for form fields)
+  - `qGreen` / `qRed` (color constants for approve/reject buttons)
+
+### UI Parity Restorations
+
+**5. Artists tab sub-navigation toggle**
+- The Directory / Metadata Triage pill toggle was lost during extraction
+- Restored with `#E8722A` active background, `#1C1917` active text, matching production styling
+
+**6. Directory view — gallery grid replaced with sortable table**
+- Production uses a table layout with columns: Artist (avatar + name), Next Event, Date Added, Genres
+- Replaced the gallery grid with production's sortable table including `SortChevron`, `toggleSort`, and `approvedArtists` filtering (requires both bio and image_url)
+- Fixed `directorySort` from string-based to object-based `{ col, dir }`
+
+**7. Triage view — unified Missing dropdown + TrafficDot pills**
+- Replaced individual square filter buttons with production's unified "Missing: All / Bio / Image / Genres / Vibes" dropdown (object-based state)
+- Replaced green/yellow checkmark boxes with TrafficDot pill badges showing locked/live/missing/pending states with lock icons
+
+**8. Triage inline edit panel restored (~470 lines)**
+- The pencil edit button was wired but the entire inline editor panel was missing from the extracted component
+- Restored full production edit panel: AI Auto-Fill, LockBadge, RegenBtn, name/bio/vibes/genres/image fields, image carousel, associated events, Save Draft / Approve & Publish buttons
+
+### Files Modified
+
+| File | Size | Changes |
+|------|------|---------|
+| `src/app/admin/page.js` | 82KB | Added `setEventsStatusFilter` prop to Dashboard, added 8 missing props to Submissions JSX, reverted `artistMissingFilters` to object-based useState |
+| `src/components/admin/AdminArtistsTab.js` | 71KB | Complete rewrite (380→1,281 lines): sub-tab toggle, sortable directory table, unified Missing dropdown, TrafficDot pills, full inline edit panel, object-based filter logic |
+| `src/components/admin/AdminDashboardTab.js` | 13KB | Added `setEventsStatusFilter` + other missing props to destructuring, reverted `setArtistMissingFilters` calls to object form |
+| `src/components/admin/AdminEventsTab.js` | 22KB | Fixed import: added `formatTime` alongside `formatDate` |
+| `src/components/admin/AdminFestivalsTab.js` | 7KB | Added missing props from prior session: `festivalData`, `festivalSearch`, `setFestivalSearch`, `editingFestival`, `setEditingFestival`, `fetchFestivalNames` |
+| `src/components/admin/AdminSubmissionsTab.js` | 32KB | Added 8 missing props: `queueSelected`, `festivalNames`, `batchApplyPrompt`, `setBatchApplyPrompt`, `qLabelStyle`, `qInputStyle`, `qGreen`, `qRed`; fixed `qBg`→`qSurfaceAlt` |
+
+### Key Technical Decisions
+
+- **`artistMissingFilters` is object-based** (NOT array): `{ bio: false, image_url: false, genres: false, vibes: false }`. This went through three states during debugging (object → array → back to object) because production's unified dropdown depends on the object form.
+- **`directorySort` is object-based**: `{ col: 'date_added', dir: 'desc' }`, not a string.
+- **`queueSelected` is a derived value** computed in `page.js` as `queue[queueSelectedIdx] || null`, not a state variable. It must be passed as a prop since the component can't derive it without access to `queue`.
+
+### Commit
+
+```
+Complete admin dashboard modular refactor, restore production UI parity, and fix Submissions tab props.
+```
+
+Pushed to `admin-refactor` branch. Tony verified: "The local dashboard is now a perfect 1:1 match with production."
+
+### Pending / Next Steps
+
+- **Phase 4: Move tab-specific state into components** — will further thin out page.js by co-locating state with the components that use it
+- **Merge `admin-refactor` → `main`** — only after full UAT sign-off on all tabs
+- **Backburner: Events Reel Image Edit Crash** — debug when reproducible
+- **Backburner: Incognito Login Issue** — likely cookie/storage partitioning
+- **From prior sessions:** Create Supabase `artists` storage bucket, run base64 migration, various SQL/config tasks
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.

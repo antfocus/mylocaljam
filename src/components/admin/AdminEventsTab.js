@@ -2,6 +2,7 @@
 
 import { formatDate, formatTime } from '@/lib/utils';
 import { Icons } from '@/components/Icons';
+import Badge from '@/components/ui/Badge';
 
 export default function AdminEventsTab({
   events, artists, venues,
@@ -317,7 +318,7 @@ export default function AdminEventsTab({
                   </select>
                   {ev.status === 'published' ? (
                     <>
-                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-500/20 text-green-500">Published</span>
+                      <Badge label="Published" size="sm" bg="rgba(34,197,94,0.2)" color="#22c55e" style={{ borderRadius: '999px' }} />
                       <button
                         className="px-2 py-1 rounded-lg text-xs font-medium"
                         style={{ border: '1px solid #F59E0B33', color: '#F59E0B', background: 'transparent' }}
@@ -329,7 +330,7 @@ export default function AdminEventsTab({
                     </>
                   ) : (
                     <>
-                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-500/20 text-gray-400">{ev.status === 'draft' ? 'Draft' : 'Hidden'}</span>
+                      <Badge label={ev.status === 'draft' ? 'Draft' : 'Hidden'} size="sm" bg="rgba(107,114,128,0.2)" color="#9CA3AF" style={{ borderRadius: '999px' }} />
                       <button
                         className="px-2 py-1 rounded-lg text-xs font-medium"
                         style={{ border: '1px solid #23CE6B33', color: '#23CE6B', background: 'transparent' }}
