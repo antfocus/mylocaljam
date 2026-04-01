@@ -42,6 +42,7 @@ const EVENT_SELECT = [
   'id', 'artist_name', 'event_title', 'venue_name', 'event_date',
   'genre', 'vibe', 'cover', 'ticket_link', 'artist_bio',
   'source', 'status', 'category', 'artist_id', 'event_image_url',
+  'custom_bio', 'custom_genres', 'custom_vibes', 'custom_image_url', 'is_custom_metadata',
   'venues(name, address, color, photo_url, venue_type)',
   'artists(name, bio, image_url, genres, vibes, is_tribute)',
 ].join(', ');
@@ -80,11 +81,11 @@ function flattenEvent(e) {
     status:         e.status,
     ticket_link:    e.ticket_link || null,
     category:       e.category || 'Live Music',
-    // Event-level description overrides global artist bio
-    description:    e.artist_bio || e.artists?.bio || '',
-    event_image:    e.event_image_url || null,
+    // Waterfall: custom event override → event-level field → global artist field
+    description:    e.custom_bio || e.artist_bio || e.artists?.bio || '',
+    event_image:    e.custom_image_url || e.event_image_url || null,
     artist_image:   e.artists?.image_url || null,
-    artist_genres:  e.genre ? [e.genre] : (e.artists?.genres || []),
+    artist_genres:  e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
     is_tribute:     e.artists?.is_tribute || false,
     // Flattened from venues join
     venue_photo:    e.venues?.photo_url || null,

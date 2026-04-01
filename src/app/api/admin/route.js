@@ -117,6 +117,9 @@ export async function POST(request) {
   const supabase = getAdminClient();
   const body = await request.json();
 
+  // Auto-compute is_custom_metadata for new events
+  const newHasCustom = !!(body.custom_bio || body.custom_genres?.length || body.custom_vibes?.length || body.custom_image_url);
+
   const { data, error } = await supabase
     .from('events')
     .insert({
@@ -138,6 +141,12 @@ export async function POST(request) {
       source: body.source || 'Admin',
       event_image_url: body.event_image_url || null,
       verified_at: new Date().toISOString(),
+      // ── Custom metadata fields (Phase 3: Unified Visual CMS) ──────────────
+      custom_bio: body.custom_bio || null,
+      custom_genres: body.custom_genres || null,
+      custom_vibes: body.custom_vibes || null,
+      custom_image_url: body.custom_image_url || null,
+      is_custom_metadata: newHasCustom,
     })
     .select();
 
@@ -212,10 +221,31 @@ export async function PUT(request) {
     ...(body.category !== undefined && { category: body.category }),
     ...(body.triage_status !== undefined && { triage_status: body.triage_status }),
     ...(body.artist_id !== undefined && { artist_id: body.artist_id }),
+    // ── Custom metadata fields (Phase 3: Unified Visual CMS) ──────────────
+    ...(body.custom_bio !== undefined && { custom_bio: body.custom_bio || null }),
+    ...(body.custom_genres !== undefined && { custom_genres: body.custom_genres || null }),
+    ...(body.custom_vibes !== undefined && { custom_vibes: body.custom_vibes || null }),
+    ...(body.custom_image_url !== undefined && { custom_image_url: body.custom_image_url || null }),
     // Always mark as human-edited on any admin save — protects from scraper overwrites
     is_human_edited: true,
     verified_at: new Date().toISOString(),
   };
+
+  // Auto-compute is_custom_metadata flag: true if ANY custom_* field is populated
+  const hasAnyCustom = !!(
+    (body.custom_bio !== undefined ? body.custom_bio : null) ||
+    (body.custom_genres !== undefined ? body.custom_genres?.length : null) ||
+    (body.custom_vibes !== undefined ? body.custom_vibes?.length : null) ||
+    (body.custom_image_url !== undefined ? body.custom_image_url : null)
+  );
+  // Only set the flag when the client sends at least one custom_* field
+  const clientSendsCustom = body.custom_bio !== undefined ||
+    body.custom_genres !== undefined ||
+    body.custom_vibes !== undefined ||
+    body.custom_image_url !== undefined;
+  if (clientSendsCustom) {
+    updates.is_custom_metadata = hasAnyCustom;
+  }
 
   const { data, error } = await supabase
     .from('events')

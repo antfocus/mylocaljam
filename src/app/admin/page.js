@@ -11,7 +11,7 @@ import AdminEventsTab from '@/components/admin/AdminEventsTab';
 import AdminArtistsTab from '@/components/admin/AdminArtistsTab';
 import AdminSpotlightTab from '@/components/admin/AdminSpotlightTab';
 import AdminVenuesTab from '@/components/admin/AdminVenuesTab';
-import AdminFestivalsTab from '@/components/admin/AdminFestivalsTab';
+// AdminFestivalsTab consolidated into AdminEventsTab (Phase 4 nav refactor)
 import AdminSubmissionsTab from '@/components/admin/AdminSubmissionsTab';
 import AdminReportsTab from '@/components/admin/AdminReportsTab';
 import AdminArtistModals from '@/components/admin/AdminArtistModals';
@@ -267,7 +267,6 @@ export default function AdminPage() {
           { key: 'artists', label: 'Artists', count: ar.artists.length },
           { key: 'spotlight', label: 'Spotlight', count: sp.spotlightPins.length },
           { key: 'venues', label: 'Venues', count: ve.scraperHealth.filter(s => s.status === 'fail').length },
-          { key: 'festivals', label: 'Festivals', count: fe.festivalData.length },
           { key: 'submissions', label: 'Submissions', count: q.queue.length },
           { key: 'reports', label: 'User Flags', count: re.reports.filter((r) => r.status === 'pending').length },
         ].map((tab) => (
@@ -282,7 +281,7 @@ export default function AdminPage() {
                 ? { background: 'var(--bg-card)', borderBottom: '2px solid #E8722A', color: '#FFFFFF' }
                 : { opacity: 0.6 }),
             }}
-            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); re.fetchReports(); ve.fetchScraperHealth(); } if (tab.key === 'events') ev.fetchEvents(); if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'venues') ve.fetchScraperHealth(); if (tab.key === 'reports') { re.setFlagsViewFilter('pending'); re.fetchReports(); } if (tab.key === 'festivals') fe.fetchFestivalNames(); }}
+            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); re.fetchReports(); ve.fetchScraperHealth(); } if (tab.key === 'events') { ev.fetchEvents(); fe.fetchFestivalNames(); } if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'venues') ve.fetchScraperHealth(); if (tab.key === 'reports') { re.setFlagsViewFilter('pending'); re.fetchReports(); } }}
           >
             {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? '#1C1917' : 'var(--text-secondary)' }}>{tab.count}</span>}
           </button>
@@ -349,6 +348,10 @@ export default function AdminPage() {
           setEditingEvent={ev.setEditingEvent} setShowEventForm={ev.setShowEventForm}
           setBulkTimeModal={ev.setBulkTimeModal} setBulkTime={ev.setBulkTime}
           showQueueToast={showQueueToast}
+          festivalData={fe.festivalData} festivalSearch={fe.festivalSearch}
+          setFestivalSearch={fe.setFestivalSearch}
+          editingFestival={fe.editingFestival} setEditingFestival={fe.setEditingFestival}
+          fetchFestivalNames={fe.fetchFestivalNames}
         />
       )}
 
@@ -410,17 +413,6 @@ export default function AdminPage() {
           scraperHealth={ve.scraperHealth} venuesFilter={ve.venuesFilter}
           setVenuesFilter={ve.setVenuesFilter}
           forceSyncing={ve.forceSyncing} handleForceSync={ve.handleForceSync}
-        />
-      )}
-
-      {/* Festivals Tab */}
-      {activeTab === 'festivals' && !loading && (
-        <AdminFestivalsTab
-          events={ev.events} submissions={re.submissions} password={password}
-          festivalData={fe.festivalData} festivalSearch={fe.festivalSearch}
-          setFestivalSearch={fe.setFestivalSearch}
-          editingFestival={fe.editingFestival} setEditingFestival={fe.setEditingFestival}
-          fetchFestivalNames={fe.fetchFestivalNames}
         />
       )}
 
@@ -649,6 +641,29 @@ export default function AdminPage() {
           onClose={() => { ev.setShowEventForm(false); ev.setEditingEvent(null); }}
           onSave={saveEvent}
           adminPassword={password}
+          onNavigateToArtist={(artist) => {
+            // Close Event Modal first
+            ev.setShowEventForm(false);
+            ev.setEditingEvent(null);
+            // Remember where we came from so Artists tab can return here
+            setReturnToTab(activeTab);
+            // Switch to Artists tab → triage sub-tab
+            setActiveTab('artists');
+            ar.setArtistSubTab('triage');
+            // Load the artist into the edit panel
+            if (artist) {
+              ar.setEditingArtist(artist);
+              ar.setImageCandidates(artist.image_url ? [artist.image_url] : []);
+              ar.setImageCarouselIdx(0);
+              ar.setArtistForm({
+                name: artist.name || '',
+                bio: artist.bio || '',
+                genres: artist.genres ? (Array.isArray(artist.genres) ? artist.genres.join(', ') : artist.genres) : '',
+                vibes: artist.vibes ? (Array.isArray(artist.vibes) ? artist.vibes.join(', ') : artist.vibes) : '',
+                image_url: artist.image_url || '',
+              });
+            }
+          }}
         />
       )}
 
