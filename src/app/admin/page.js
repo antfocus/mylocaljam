@@ -23,6 +23,8 @@ import useAdminArtists from '@/hooks/useAdminArtists';
 import useAdminSpotlight from '@/hooks/useAdminSpotlight';
 import useAdminEvents from '@/hooks/useAdminEvents';
 import useAdminVenues from '@/hooks/useAdminVenues';
+import useAdminFestivals from '@/hooks/useAdminFestivals';
+import useAdminReports from '@/hooks/useAdminReports';
 
 const TITLE_CASE_MINOR = new Set(['a','an','the','and','but','or','nor','for','yet','so','in','on','at','to','by','of','up','as','is']);
 function toTitleCase(str) {
@@ -74,11 +76,8 @@ export default function AdminPage() {
     } catch { /* SSR or sessionStorage blocked */ }
   }, []);
 
-  const [submissions, setSubmissions] = useState([]);
-  const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(false);
   const [queueToast, setQueueToast] = useState(null);
-  const [flagsViewFilter, setFlagsViewFilter] = useState('pending');
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` };
 
@@ -108,12 +107,7 @@ export default function AdminPage() {
     }
   }, [password, dashDateRange, analyticsEnv]);
 
-  const fetchReports = useCallback(async () => {
-    try {
-      const res = await fetch('/api/reports', { headers: { Authorization: `Bearer ${password}` } });
-      if (res.ok) setReports(await res.json());
-    } catch (err) { console.error('Failed to fetch reports:', err); }
-  }, [password]);
+  const re = useAdminReports({ password });
 
   const ev = useAdminEvents({ password, showQueueToast, setAuthenticated });
 
@@ -128,11 +122,11 @@ export default function AdminPage() {
 
       if (subRes.ok) {
         const subData = await subRes.json();
-        if (Array.isArray(subData)) setSubmissions(subData);
+        if (Array.isArray(subData)) re.setSubmissions(subData);
       }
       if (repRes.ok) {
         const repData = await repRes.json();
-        if (Array.isArray(repData)) setReports(repData);
+        if (Array.isArray(repData)) re.setReports(repData);
       }
     } catch (err) {
       console.error(err);
@@ -145,6 +139,7 @@ export default function AdminPage() {
   const tr = useAdminTriage({ password, showQueueToast });
   const ar = useAdminArtists({ password });
   const sp = useAdminSpotlight({ password, fetchAll });
+  const fe = useAdminFestivals();
 
   // ── Auto-fetch when session is restored from sessionStorage ──
   useEffect(() => {
@@ -156,7 +151,7 @@ export default function AdminPage() {
       ar.fetchArtists();
       ve.fetchScraperHealth();
       ve.fetchVenues();
-      fetchFestivalNames();
+      fe.fetchFestivalNames();
     }
   }, [authenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -188,7 +183,7 @@ export default function AdminPage() {
     ve.fetchScraperHealth();
     fetchAnalytics(); // PostHog analytics for dashboard
     ve.fetchVenues(); // populate venue datalist for queue triage
-    fetchFestivalNames(); // populate festival name autocomplete
+    fe.fetchFestivalNames(); // populate festival name autocomplete
   };
 
   const deleteEvent = async (id) => {
@@ -212,35 +207,6 @@ export default function AdminPage() {
     fetchAll();
   };
 
-  // ── Festival name autocomplete (distinct event_titles from events) ──────────
-  const [festivalNames, setFestivalNames] = useState([]);
-  const [festivalData, setFestivalData] = useState([]); // { name, count, events[] }
-  const [festivalSearch, setFestivalSearch] = useState('');
-  const [editingFestival, setEditingFestival] = useState(null); // { name, newName }
-  const fetchFestivalNames = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('events')
-        .select('id, event_title, artist_name, event_date, venue_name')
-        .not('event_title', 'is', null)
-        .not('event_title', 'eq', '')
-        .order('event_title')
-        .limit(1000);
-      if (!error && data) {
-        const unique = [...new Set(data.map(e => e.event_title).filter(Boolean))].sort();
-        setFestivalNames(unique);
-        // Group by festival name with counts
-        const grouped = {};
-        for (const e of data) {
-          const key = e.event_title;
-          if (!grouped[key]) grouped[key] = { name: key, count: 0, events: [] };
-          grouped[key].count++;
-          grouped[key].events.push(e);
-        }
-        setFestivalData(Object.values(grouped).sort((a, b) => a.name.localeCompare(b.name)));
-      }
-    } catch (err) { console.error('Failed to load festival names:', err); }
-  }, []);
 
   const unpublishEvent = async (evt) => {
     const prev = ev.events;
@@ -301,9 +267,9 @@ export default function AdminPage() {
           { key: 'artists', label: 'Artists', count: ar.artists.length },
           { key: 'spotlight', label: 'Spotlight', count: sp.spotlightPins.length },
           { key: 'venues', label: 'Venues', count: ve.scraperHealth.filter(s => s.status === 'fail').length },
-          { key: 'festivals', label: 'Festivals', count: festivalData.length },
+          { key: 'festivals', label: 'Festivals', count: fe.festivalData.length },
           { key: 'submissions', label: 'Submissions', count: q.queue.length },
-          { key: 'reports', label: 'User Flags', count: reports.filter((r) => r.status === 'pending').length },
+          { key: 'reports', label: 'User Flags', count: re.reports.filter((r) => r.status === 'pending').length },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -316,7 +282,7 @@ export default function AdminPage() {
                 ? { background: 'var(--bg-card)', borderBottom: '2px solid #E8722A', color: '#FFFFFF' }
                 : { opacity: 0.6 }),
             }}
-            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); fetchReports(); ve.fetchScraperHealth(); } if (tab.key === 'events') ev.fetchEvents(); if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'venues') ve.fetchScraperHealth(); if (tab.key === 'reports') { setFlagsViewFilter('pending'); fetchReports(); } if (tab.key === 'festivals') fetchFestivalNames(); }}
+            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); re.fetchReports(); ve.fetchScraperHealth(); } if (tab.key === 'events') ev.fetchEvents(); if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'venues') ve.fetchScraperHealth(); if (tab.key === 'reports') { re.setFlagsViewFilter('pending'); re.fetchReports(); } if (tab.key === 'festivals') fe.fetchFestivalNames(); }}
           >
             {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? '#1C1917' : 'var(--text-secondary)' }}>{tab.count}</span>}
           </button>
@@ -331,7 +297,7 @@ export default function AdminPage() {
       {/* ── Dashboard Tab — Platform Analytics ───────────────────────────── */}
       {activeTab === 'dashboard' && !loading && (
         <AdminDashboardTab
-          events={ev.events} artists={ar.artists} reports={reports} venues={ve.venues}
+          events={ev.events} artists={ar.artists} reports={re.reports} venues={ve.venues}
           scraperHealth={ve.scraperHealth}
           eventsTotal={ev.eventsTotal} newEvents24h={ev.newEvents24h}
           dashDateRange={dashDateRange} setDashDateRange={setDashDateRange}
@@ -339,11 +305,11 @@ export default function AdminPage() {
           analyticsEnv={analyticsEnv} setAnalyticsEnv={setAnalyticsEnv}
           fetchAnalytics={fetchAnalytics} fetchEvents={ev.fetchEvents}
           fetchArtists={ar.fetchArtists} fetchScraperHealth={ve.fetchScraperHealth}
-          fetchReports={fetchReports}
+          fetchReports={re.fetchReports}
           eventsSortField={ev.eventsSortField} eventsSortOrder={ev.eventsSortOrder}
           eventsStatusFilter={ev.eventsStatusFilter} setEventsStatusFilter={ev.setEventsStatusFilter} setActiveTab={setActiveTab}
           setVenuesFilter={ve.setVenuesFilter} setEventsRecentlyAdded={ev.setEventsRecentlyAdded}
-          setEvents={ev.setEvents} setFlagsViewFilter={setFlagsViewFilter}
+          setEvents={ev.setEvents} setFlagsViewFilter={re.setFlagsViewFilter}
           setEventsMissingTime={ev.setEventsMissingTime} setArtistMissingFilters={ar.setArtistMissingFilters}
         />
       )}
@@ -450,11 +416,11 @@ export default function AdminPage() {
       {/* Festivals Tab */}
       {activeTab === 'festivals' && !loading && (
         <AdminFestivalsTab
-          events={ev.events} submissions={submissions} password={password}
-          festivalData={festivalData} festivalSearch={festivalSearch}
-          setFestivalSearch={setFestivalSearch}
-          editingFestival={editingFestival} setEditingFestival={setEditingFestival}
-          fetchFestivalNames={fetchFestivalNames}
+          events={ev.events} submissions={re.submissions} password={password}
+          festivalData={fe.festivalData} festivalSearch={fe.festivalSearch}
+          setFestivalSearch={fe.setFestivalSearch}
+          editingFestival={fe.editingFestival} setEditingFestival={fe.setEditingFestival}
+          fetchFestivalNames={fe.fetchFestivalNames}
         />
       )}
 
@@ -462,7 +428,7 @@ export default function AdminPage() {
       {activeTab === 'submissions' && !loading && (
         <AdminSubmissionsTab
           artists={ar.artists} venues={ve.venues} queue={q.queue}
-          submissions={submissions} reports={reports}
+          submissions={re.submissions} reports={re.reports}
           queueSelectedIdx={q.queueSelectedIdx} queueActionLoading={q.queueActionLoading}
           queueForm={q.queueForm} queueDuplicates={q.queueDuplicates} queueDupLoading={q.queueDupLoading}
           adminFlyerUploading={q.adminFlyerUploading}
@@ -483,7 +449,7 @@ export default function AdminPage() {
           setQueueLightboxUrl={q.setQueueLightboxUrl}
           adminFlyerRef={q.adminFlyerRef}
           queueSelected={q.queueSelected}
-          festivalNames={festivalNames}
+          festivalNames={fe.festivalNames}
           batchApplyPrompt={q.batchApplyPrompt} setBatchApplyPrompt={q.setBatchApplyPrompt}
           qLabelStyle={q.qLabelStyle} qInputStyle={q.qInputStyle}
           qGreen={q.qGreen} qRed={q.qRed}
@@ -493,9 +459,9 @@ export default function AdminPage() {
       {/* Reports Tab */}
       {activeTab === 'reports' && !loading && (
         <AdminReportsTab
-          reports={reports} setReports={setReports} events={ev.events}
+          reports={re.reports} setReports={re.setReports} events={ev.events}
           artists={ar.artists} venues={ve.venues} password={password}
-          flagsViewFilter={flagsViewFilter} setFlagsViewFilter={setFlagsViewFilter}
+          flagsViewFilter={re.flagsViewFilter} setFlagsViewFilter={re.setFlagsViewFilter}
           setEditingEvent={ev.setEditingEvent} setShowEventForm={ev.setShowEventForm}
           setEditingArtist={ar.setEditingArtist} setArtistForm={ar.setArtistForm}
           setArtistsSearch={ar.setArtistsSearch} setArtistSubTab={ar.setArtistSubTab}
