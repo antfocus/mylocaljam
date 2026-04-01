@@ -101,6 +101,8 @@ const MATERIAL_ICON_PATHS = {
   chat_bubble: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z',
   help_outline: 'M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z',
   policy: 'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z',
+  park: 'M17 12h2L12 2 5 12h2l-4 6h7v4h4v-4h7l-4-6z',
+  celebration: 'M2 22l14-5-9-9-5 14zm12.53-9.47l5.59-5.59c.49-.49 1.28-.49 1.77 0l.59.59 1.06-1.06-.59-.59c-1.07-1.07-2.82-1.07-3.89 0l-5.59 5.59 1.06 1.06zm-4.47-5.65l-.59.59 1.06 1.06.59-.59c1.07-1.07 1.07-2.82 0-3.89l-.59-.59-1.06 1.06.59.59c.48.49.48 1.28 0 1.77z',
 };
 
 // ── Haversine distance (miles) between two lat/lng points ──────────────────
@@ -820,13 +822,12 @@ export default function HomePage() {
             return raw.substring(0, 10);
           })(),
           start_time:    extractedStartTime,
-          // Event-level description (artist_bio on events table) overrides global artist bio
-          description:   e.artist_bio || e.artists?.bio || '',
-          // Event-level genre/vibe override artist-level (admin can set per-gig overrides)
-          artist_genres: e.genre ? [e.genre] : (e.artists?.genres || []),
-          artist_vibes:  e.vibe ? [e.vibe] : (e.artists?.vibes || []),
+          // Waterfall: custom event override → event-level field → global artist field
+          description:   e.custom_bio || e.artist_bio || e.artists?.bio || '',
+          artist_genres: e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
+          artist_vibes:  e.custom_vibes?.length ? e.custom_vibes : (e.vibe ? [e.vibe] : (e.artists?.vibes || [])),
           is_tribute:    e.artists?.is_tribute || false,
-          event_image:   e.event_image_url || null,
+          event_image:   e.custom_image_url || e.event_image_url || null,
           artist_image:  e.artists?.image_url || null,
           venue_type:    e.venues?.venue_type || null,
           venue_tags:    e.venues?.tags || [],
@@ -1180,11 +1181,12 @@ export default function HomePage() {
               return raw.substring(0, 10);
             })(),
             start_time:    extractedStartTime,
-            description:   e.artist_bio || e.artists?.bio || '',
-            artist_genres: e.genre ? [e.genre] : (e.artists?.genres || []),
-            artist_vibes:  e.vibe ? [e.vibe] : (e.artists?.vibes || []),
+            // Waterfall: custom event override → event-level field → global artist field
+            description:   e.custom_bio || e.artist_bio || e.artists?.bio || '',
+            artist_genres: e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
+            artist_vibes:  e.custom_vibes?.length ? e.custom_vibes : (e.vibe ? [e.vibe] : (e.artists?.vibes || [])),
             is_tribute:    e.artists?.is_tribute || false,
-            event_image:   e.event_image_url || null,
+            event_image:   e.custom_image_url || e.event_image_url || null,
             artist_image:  e.artists?.image_url || null,
             venue_type:    e.venues?.venue_type || null,
             venue_tags:    e.venues?.tags || [],
@@ -1326,6 +1328,25 @@ export default function HomePage() {
                 return hr < cfg.before_hour;
               });
             }
+            break;
+          }
+          case 'vibes': {
+            const vibes = (cfg.vibes || []).map(v => v.toLowerCase());
+            list = list.filter(e => {
+              const ev = (e.artist_vibes || []).map(v => v.toLowerCase());
+              return vibes.some(v => ev.includes(v));
+            });
+            break;
+          }
+          case 'keyword': {
+            const terms = (cfg.terms || []).map(s => s.toLowerCase());
+            list = list.filter(e => {
+              const title = (e.event_title || '').toLowerCase();
+              const name = (e.name || '').toLowerCase();
+              const desc = (e.description || '').toLowerCase();
+              const category = (e.category || '').toLowerCase();
+              return terms.some(s => title.includes(s) || name.includes(s) || desc.includes(s) || category.includes(s));
+            });
             break;
           }
           default:

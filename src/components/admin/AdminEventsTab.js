@@ -16,6 +16,9 @@ export default function AdminEventsTab({
   setEditingEvent, setShowEventForm, setBulkTimeModal, setBulkTime,
   isMobile, showQueueToast, CATEGORY_OPTIONS,
   password,
+  // Festival props (consolidated from sidebar)
+  festivalData = [], festivalSearch = '', setFestivalSearch,
+  editingFestival, setEditingFestival, fetchFestivalNames,
 }) {
   const headers = { Authorization: 'Bearer ' + password };
         // Server-side filtering handles status/date — client filters by search text + missing time
@@ -38,10 +41,21 @@ export default function AdminEventsTab({
                 { key: 'upcoming', label: 'Upcoming' },
                 { key: 'past', label: 'Past' },
                 { key: 'hidden', label: 'Hidden' },
+                { key: 'festivals', label: 'Festivals', count: festivalData.length },
               ].map(seg => (
                 <button
                   key={seg.key}
-                  onClick={() => { setEventsStatusFilter(seg.key); setSelectedEvents(new Set()); setEventsRecentlyAdded(false); setEvents([]); fetchEvents(1, eventsSortField, eventsSortOrder, seg.key, eventsMissingTime, false); }}
+                  onClick={() => {
+                    setEventsStatusFilter(seg.key);
+                    setSelectedEvents(new Set());
+                    setEventsRecentlyAdded(false);
+                    if (seg.key === 'festivals') {
+                      if (fetchFestivalNames) fetchFestivalNames();
+                    } else {
+                      setEvents([]);
+                      fetchEvents(1, eventsSortField, eventsSortOrder, seg.key, eventsMissingTime, false);
+                    }
+                  }}
                   style={{
                     padding: '8px 16px', fontSize: '13px', fontWeight: 600,
                     fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
@@ -53,9 +67,15 @@ export default function AdminEventsTab({
                   }}
                 >
                   {seg.label}
+                  {seg.count > 0 && (
+                    <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(245,158,11,0.15)', color: '#F59E0B', fontSize: '10px' }}>
+                      {seg.count}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
+            {eventsStatusFilter !== 'festivals' && (
             <button
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white"
               style={{ background: 'var(--accent)', fontFamily: "'DM Sans', sans-serif" }}
@@ -63,8 +83,163 @@ export default function AdminEventsTab({
             >
               {Icons.plus} Add Event
             </button>
+            )}
           </div>
 
+          {/* ── Festivals Sub-View ──────────────────────────────────────────── */}
+          {eventsStatusFilter === 'festivals' && (() => {
+            const filteredFestivals = festivalSearch?.trim()
+              ? festivalData.filter(f => f.name.toLowerCase().includes(festivalSearch.toLowerCase()))
+              : festivalData;
+            return (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                  <h3 style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)', margin: 0 }}>
+                    Festivals &amp; Event Titles ({festivalData.length})
+                  </h3>
+                  <input
+                    placeholder="Search festivals..."
+                    value={festivalSearch}
+                    onChange={e => setFestivalSearch(e.target.value)}
+                    style={{
+                      padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
+                      background: 'var(--bg-card)', border: '1px solid var(--border)',
+                      color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif",
+                      width: '220px', outline: 'none',
+                    }}
+                  />
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px', fontFamily: "'DM Sans', sans-serif" }}>
+                  Festival names come from the <code style={{ background: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px' }}>event_title</code> field on events. Renaming updates all linked events. Deleting clears the event_title (events are preserved).
+                </p>
+                {filteredFestivals.length === 0 && (
+                  <p style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                    {festivalSearch ? 'No matching festivals.' : 'No festivals found.'}
+                  </p>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {filteredFestivals.map(f => (
+                    <div key={f.name} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {editingFestival?.name === f.name ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <input
+                                value={editingFestival.newName}
+                                onChange={e => setEditingFestival(prev => ({ ...prev, newName: e.target.value }))}
+                                style={{
+                                  flex: 1, padding: '6px 10px', borderRadius: '8px', fontSize: '13px',
+                                  background: 'var(--bg-secondary)', border: '1px solid var(--accent)',
+                                  color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif", outline: 'none',
+                                }}
+                                autoFocus
+                                onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                              />
+                              <button
+                                style={{
+                                  padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                                  background: '#E8722A', color: '#1C1917', border: 'none', cursor: 'pointer',
+                                  fontFamily: "'DM Sans', sans-serif",
+                                }}
+                                onClick={async () => {
+                                  const newName = editingFestival.newName.trim();
+                                  if (!newName || newName === f.name) { setEditingFestival(null); return; }
+                                  try {
+                                    const res = await fetch('/api/admin', {
+                                      method: 'PUT',
+                                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+                                      body: JSON.stringify({ bulk_rename_festival: true, old_name: f.name, new_name: newName }),
+                                    });
+                                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                                    setEditingFestival(null);
+                                    fetchFestivalNames();
+                                  } catch (err) { alert(`Rename failed: ${err.message}`); }
+                                }}
+                              >Save</button>
+                              <button
+                                style={{
+                                  padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                                  background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+                                  fontFamily: "'DM Sans', sans-serif",
+                                }}
+                                onClick={() => setEditingFestival(null)}
+                              >Cancel</button>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)' }}>{f.name}</span>
+                              <span style={{
+                                fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '999px',
+                                background: 'rgba(245,158,11,0.15)', color: '#F59E0B',
+                                fontFamily: "'DM Sans', sans-serif",
+                              }}>
+                                {f.count} event{f.count !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        {editingFestival?.name !== f.name && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <button
+                              style={{
+                                padding: '5px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                                background: 'none', border: '1px solid var(--border)', color: 'var(--text-secondary)',
+                                cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                              }}
+                              onClick={() => setEditingFestival({ name: f.name, newName: f.name })}
+                              title="Rename this festival across all events"
+                            >Rename</button>
+                            <button
+                              style={{
+                                padding: '5px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                                background: 'none', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444',
+                                cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                              }}
+                              onClick={async () => {
+                                if (!window.confirm(`Remove festival name "${f.name}" from ${f.count} event(s)? The events will remain but lose their festival tag.`)) return;
+                                try {
+                                  const res = await fetch('/api/admin', {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+                                    body: JSON.stringify({ bulk_clear_festival: true, festival_name: f.name }),
+                                  });
+                                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                                  fetchFestivalNames();
+                                } catch (err) { alert(`Delete failed: ${err.message}`); }
+                              }}
+                              title="Remove festival name from all events (events stay)"
+                            >Delete</button>
+                          </div>
+                        )}
+                      </div>
+                      {/* Linked events preview */}
+                      <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {f.events.slice(0, 5).map(ev => (
+                          <span key={ev.id} style={{
+                            fontSize: '11px', padding: '3px 8px', borderRadius: '999px',
+                            background: 'var(--bg-secondary)', color: 'var(--text-muted)',
+                            fontFamily: "'DM Sans', sans-serif",
+                          }}>
+                            {ev.artist_name} {ev.event_date ? `· ${new Date(ev.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })}` : ''}
+                          </span>
+                        ))}
+                        {f.events.length > 5 && (
+                          <span style={{
+                            fontSize: '11px', padding: '3px 8px', borderRadius: '999px',
+                            background: 'var(--bg-secondary)', color: 'var(--text-muted)',
+                            fontFamily: "'DM Sans', sans-serif",
+                          }}>+{f.events.length - 5} more</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Events List (hidden when Festivals sub-tab is active) ───── */}
+          {eventsStatusFilter !== 'festivals' && (<>
           {/* Search + Sort row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px', marginBottom: '12px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
             <div style={{ flex: '1 1 200px', position: 'relative' }}>
@@ -395,7 +570,8 @@ export default function AdminEventsTab({
               </button>
             </div>
           )}
+          </>)}
         </div>
-        
+
   );
 }

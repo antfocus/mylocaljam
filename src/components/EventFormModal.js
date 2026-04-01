@@ -1,115 +1,87 @@
 'use client';
 
 import { useState } from 'react';
-import Badge from '@/components/ui/Badge';
+import { MetadataField, StyleMoodSelector, ImagePreviewSection, GENRES, VIBES } from '@/components/admin/shared';
 
-/* ── Genre / Vibe constants (must match admin page) ─────────────────────── */
-const GENRES = ['Rock','Alternative','Indie','Pop','R&B / Soul','Hip-Hop','Jazz','Blues','Country','Folk','Acoustic','Reggae','Latin','Electronic','Punk','Metal','Classical','Funk','Jam Band','Singer-Songwriter','Americana','World','Covers / Variety','DJ Set','Karaoke','Open Mic','Other'];
-const VIBES = ['Chill','Energetic','Intimate','Party','Upbeat','Mellow','Romantic','Wild','Laid-back','Rowdy','Sophisticated','Family-Friendly','Late Night','Happy Hour','Brunch','Other'];
+/* ═══════════════════════════════════════════════════════════════════════════
+   EventFormModal — Unified Visual Metadata CMS (Phase 2)
+   Two-column layout: Left = Identity, Right = Visuals & Logistics
+   Supports artist inheritance via custom_* fields + sync toggles
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Source badge sub-component ──────────────────────────────────────────── */
-function SourceBadge({ isCustom, inheritedLabel }) {
-  return (
-    <Badge
-      label={isCustom ? 'Source: Custom Event Data' : `Source: ${inheritedLabel}`}
-      size="sm"
-      bg={isCustom ? 'rgba(232,114,42,0.12)' : 'rgba(59,130,246,0.10)'}
-      color={isCustom ? '#E8722A' : '#60A5FA'}
-      uppercase={false}
-      style={{
-        borderRadius: '999px',
-        border: `1px solid ${isCustom ? 'rgba(232,114,42,0.25)' : 'rgba(59,130,246,0.20)'}`,
-      }}
-    />
-  );
-}
+export default function EventFormModal({ event, artists = [], venues = [], onClose, onSave, adminPassword, onNavigateToArtist }) {
 
-/* ── Revert button sub-component ─────────────────────────────────────────── */
-function RevertButton({ onClick, label }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '6px',
-        background: 'rgba(239,68,68,0.08)', color: '#F87171',
-        border: '1px solid rgba(239,68,68,0.20)', cursor: 'pointer',
-        fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
-        transition: 'all 0.15s',
-      }}
-      title={label || 'Clear custom value and revert to artist default'}
-    >
-      ✕ Revert
-    </button>
-  );
-}
-
-/* ── Inherited preview (greyed-out read-only display) ────────────────────── */
-function InheritedPreview({ text, type }) {
-  if (!text) return null;
-  if (type === 'image') {
-    return (
-      <div style={{ marginTop: '6px', borderRadius: '8px', overflow: 'hidden', aspectRatio: '16/9', maxHeight: '100px', position: 'relative', opacity: 0.5 }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={text} alt="Inherited artist image" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.currentTarget.parentElement.style.display = 'none'; }} />
-        <div style={{
-          position: 'absolute', bottom: '4px', left: '4px',
-          fontSize: '9px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px',
-          background: 'rgba(0,0,0,0.7)', color: '#94A3B8',
-          fontFamily: "'DM Sans', sans-serif",
-        }}>
-          Artist default image
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div style={{
-      marginTop: '4px', padding: '8px 12px', borderRadius: '8px',
-      background: 'var(--bg-elevated)', border: '1px dashed var(--border)',
-      fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic',
-      maxHeight: '60px', overflow: 'hidden',
-      fontFamily: "'DM Sans', sans-serif",
-    }}>
-      <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '2px', fontStyle: 'normal' }}>
-        Inherited from artist:
-      </span>
-      {text.substring(0, 200)}{text.length > 200 ? '…' : ''}
-    </div>
-  );
-}
-
-/* ── Main EventFormModal ─────────────────────────────────────────────────── */
-export default function EventFormModal({ event, artists = [], venues = [], onClose, onSave, adminPassword }) {
+  // ── Form state ────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
-    event_title: event?.event_title || '',
-    artist_name: event?.artist_name || '',
-    artist_bio: event?.artist_bio || '',
-    venue_name: event?.venue_name || event?.venues?.name || '',
-    event_date: event?.event_date ? new Date(event.event_date).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : '',
-    event_time: event?.event_date ? new Date(event.event_date).toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }) : '',
-    genre: event?.genre || '',
-    vibe: event?.vibe || '',
-    cover: event?.cover || '',
-    ticket_link: event?.ticket_link || '',
-    event_image_url: event?.event_image_url || '',
-    status: event?.status || 'published',
-    source: event?.source || 'Admin',
+    event_title:      event?.event_title || '',
+    artist_name:      event?.artist_name || '',
+    venue_name:       event?.venue_name || event?.venues?.name || '',
+    event_date:       event?.event_date ? new Date(event.event_date).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : '',
+    event_time:       event?.event_date ? new Date(event.event_date).toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }) : '',
+    cover:            event?.cover || '',
+    ticket_link:      event?.ticket_link || '',
+    status:           event?.status || 'published',
+    source:           event?.source || 'Admin',
+    // Legacy field — still sent for backward compat
+    artist_bio:       event?.artist_bio || '',
+    // Custom override fields (Phase 0 columns)
+    custom_bio:       event?.custom_bio || '',
+    custom_genres:    event?.custom_genres || [],
+    custom_vibes:     event?.custom_vibes || [],
+    custom_image_url: event?.custom_image_url || '',
+    // Legacy single-select fields (kept for backward compat)
+    genre:            event?.genre || '',
+    vibe:             event?.vibe || '',
+    event_image_url:  event?.event_image_url || '',
   });
   const [aiLoading, setAiLoading] = useState(false);
 
-  // Look up linked artist for inheritance
+  // ── Sync lock state per field ─────────────────────────────────────────────
+  // Locked = inheriting from artist (custom_* is empty)
+  // Unlocked = event has custom override
+  const [locks, setLocks] = useState({
+    bio:    !form.custom_bio,
+    genres: !form.custom_genres?.length,
+    vibes:  !form.custom_vibes?.length,
+    image:  !form.custom_image_url,
+  });
+
+  const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // ── Linked artist lookup ──────────────────────────────────────────────────
   const linkedArtist = event?.artist_id
     ? artists.find(a => a.id === event.artist_id)
     : artists.find(a => a.name?.toLowerCase() === form.artist_name?.toLowerCase());
+  const hasArtist = !!linkedArtist;
+  const artistName = linkedArtist?.name || form.artist_name || '';
+  const inheritedBio = linkedArtist?.bio || '';
   const inheritedGenres = linkedArtist?.genres || [];
   const inheritedVibes = linkedArtist?.vibes || [];
-  const inheritedBio = linkedArtist?.bio || '';
   const inheritedImage = linkedArtist?.image_url || '';
-  const inheritedName = linkedArtist?.name || form.artist_name || '';
 
-  const update = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  // ── Sync toggle handlers ──────────────────────────────────────────────────
+  // When unlocking: copy artist data into custom field so it's not blank
+  // When locking: clear custom field to revert to inheritance
+  const toggleLock = (field) => {
+    const newLocked = !locks[field];
+    setLocks(l => ({ ...l, [field]: newLocked }));
 
+    if (newLocked) {
+      // Re-locking → clear custom data (revert to artist)
+      if (field === 'bio')    update('custom_bio', '');
+      if (field === 'genres') update('custom_genres', []);
+      if (field === 'vibes')  update('custom_vibes', []);
+      if (field === 'image')  { update('custom_image_url', ''); update('event_image_url', ''); }
+    } else {
+      // Unlocking → seed custom field with current artist data
+      if (field === 'bio')    update('custom_bio', inheritedBio);
+      if (field === 'genres') update('custom_genres', [...inheritedGenres]);
+      if (field === 'vibes')  update('custom_vibes', [...inheritedVibes]);
+      if (field === 'image')  update('custom_image_url', inheritedImage);
+    }
+  };
+
+  // ── Save handler ──────────────────────────────────────────────────────────
   const handleSave = () => {
     if (!form.artist_name || !form.venue_name || !form.event_date || !form.event_time) {
       alert('Please fill in Artist, Venue, Date, and Time.');
@@ -118,26 +90,40 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     const probe = new Date(`${form.event_date}T12:00:00`);
     const etOffset = probe.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? '-04:00' : '-05:00';
     const eventDate = new Date(`${form.event_date}T${form.event_time}:00${etOffset}`).toISOString();
-    onSave({ ...form, event_date: eventDate });
+
+    // Compute is_custom_metadata flag
+    const isCustom = !!(form.custom_bio || form.custom_genres?.length || form.custom_vibes?.length || form.custom_image_url);
+
+    // Backward compat: sync custom_bio → artist_bio, custom_image_url → event_image_url
+    const payload = {
+      ...form,
+      event_date: eventDate,
+      artist_bio: form.custom_bio || form.artist_bio,
+      event_image_url: form.custom_image_url || form.event_image_url,
+      is_custom_metadata: isCustom,
+    };
+    onSave(payload);
   };
 
+  // ── AI Enhance ────────────────────────────────────────────────────────────
   const handleAiEnhance = async () => {
     setAiLoading(true);
     try {
       const res = await fetch('/api/admin/ai-enhance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminPassword}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminPassword}` },
         body: JSON.stringify({
           artist_name: form.artist_name,
           venue_name: form.venue_name,
           event_date: form.event_date,
-          genre: form.genre,
-          current_description: form.artist_bio,
+          genre: form.genre || (inheritedGenres[0] || ''),
+          current_description: form.custom_bio || inheritedBio,
         }),
       });
       const data = await res.json();
       if (data.enhanced) {
-        update('artist_bio', data.enhanced);
+        update('custom_bio', data.enhanced);
+        setLocks(l => ({ ...l, bio: false }));
       } else {
         alert(data.error || 'AI enhance failed');
       }
@@ -147,233 +133,417 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     setAiLoading(false);
   };
 
+  // ── Shared styles ─────────────────────────────────────────────────────────
   const inputStyle = {
-    width: '100%',
-    padding: '10px 14px',
-    background: 'var(--bg-card)',
-    border: '1px solid var(--border)',
-    borderRadius: '8px',
-    color: 'var(--text-primary)',
-    fontFamily: "'DM Sans', sans-serif",
-    fontSize: '14px',
-    outline: 'none',
+    width: '100%', padding: '10px 14px',
+    background: 'var(--bg-card)', border: '1px solid var(--border)',
+    borderRadius: '8px', color: 'var(--text-primary)',
+    fontFamily: "'DM Sans', sans-serif", fontSize: '14px', outline: 'none',
   };
 
-  const readOnlyInputStyle = {
-    ...inputStyle,
-    opacity: 0.45,
-    cursor: 'default',
-    background: 'var(--bg-elevated)',
-    borderStyle: 'dashed',
+  const labelStyle = {
+    display: 'block', fontSize: '11px', fontWeight: 700,
+    color: 'var(--text-secondary)', fontFamily: "'DM Sans', sans-serif",
+    textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '5px',
   };
 
-  // Build venue options
+  // ── Venue options ─────────────────────────────────────────────────────────
   const venueNames = venues.map(v => v.name).filter(Boolean);
   const currentVenue = (form.venue_name || '').trim();
   const VENUE_OPTIONS = currentVenue && !venueNames.includes(currentVenue)
     ? [currentVenue, ...venueNames]
     : venueNames;
 
-  /* ── Field label row helper (label + badge + revert) ───────────────────── */
-  const FieldHeader = ({ label, required, isCustom, inheritedLabel, onRevert, children }) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '6px', flexWrap: 'wrap' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-        <label className="font-display font-semibold text-[13px] text-brand-text-secondary" style={{ margin: 0 }}>
-          {label}{required ? ' *' : ''}
-        </label>
-        <SourceBadge isCustom={isCustom} inheritedLabel={inheritedLabel} />
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        {isCustom && onRevert && <RevertButton onClick={onRevert} />}
-        {children}
-      </div>
-    </div>
-  );
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════════════════
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
-      <div className="w-full max-w-[540px] max-h-[85vh] overflow-y-auto rounded-2xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', boxShadow: '0 24px 80px rgba(0,0,0,0.5)' }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: 'var(--border)' }}>
-          <h2 className="font-display font-bold text-lg">{event ? 'Edit Event' : 'Add Event'}</h2>
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-h-[90vh] overflow-y-auto rounded-2xl border"
+        style={{
+          maxWidth: '820px',
+          background: 'var(--bg-secondary)',
+          borderColor: 'var(--border)',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <div
+          className="flex items-center justify-between px-6 py-5 border-b"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h2 className="font-display font-bold text-lg">
+              {event ? 'Edit Event' : 'Add Event'}
+            </h2>
+            {hasArtist && (
+              <span style={{
+                fontSize: '10px', fontWeight: 600, padding: '2px 8px',
+                borderRadius: '999px', background: 'rgba(59,130,246,0.08)',
+                color: '#60A5FA', border: '1px solid rgba(59,130,246,0.20)',
+                fontFamily: "'DM Sans', sans-serif",
+              }}>
+                Linked: {artistName}
+              </span>
+            )}
+            {!hasArtist && form.artist_name && (
+              <span style={{
+                fontSize: '10px', fontWeight: 600, padding: '2px 8px',
+                borderRadius: '999px', background: 'rgba(136,136,136,0.08)',
+                color: 'var(--text-muted)', border: '1px solid var(--border)',
+                fontFamily: "'DM Sans', sans-serif",
+              }}>
+                Standalone Event
+              </span>
+            )}
+          </div>
           <button className="p-1 rounded-md text-brand-text-muted hover:text-brand-text" onClick={onClose}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
-        <div className="p-6 space-y-4">
 
-          {/* ── Event Title (overrides artist name as headline) ──────────── */}
-          <div>
-            <FieldHeader
-              label="Event Title"
-              isCustom={!!form.event_title.trim()}
-              inheritedLabel={`Artist Name: ${inheritedName || '—'}`}
-              onRevert={form.event_title.trim() ? () => update('event_title', '') : null}
-            />
-            <input
-              style={form.event_title.trim() ? inputStyle : readOnlyInputStyle}
-              placeholder={inheritedName ? `Default headline: "${inheritedName}"` : 'e.g. Annual Mushfest (optional)'}
-              value={form.event_title}
-              onChange={(e) => update('event_title', e.target.value)}
-              onFocus={(e) => { if (!form.event_title.trim()) e.target.style.opacity = '1'; e.target.style.borderStyle = 'solid'; e.target.style.cursor = 'text'; }}
-              onBlur={(e) => { if (!form.event_title.trim()) { e.target.style.opacity = '0.45'; e.target.style.borderStyle = 'dashed'; e.target.style.cursor = 'default'; } }}
-            />
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>If set, this shows as the primary headline. Leave blank to use the artist name.</p>
-          </div>
+        {/* ── Two-Column Body ────────────────────────────────────────────── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+          gap: '0',
+        }}>
 
-          {/* ── Artist / Band Name (always required, not an override) ─────── */}
-          <div>
-            <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Artist / Band Name *</label>
-            <input style={inputStyle} placeholder="Links this event to the artist profile" value={form.artist_name} onChange={(e) => update('artist_name', e.target.value)} />
-          </div>
+          {/* ═══════════ LEFT COLUMN — Identity ══════════════════════════ */}
+          <div style={{
+            padding: '20px 24px',
+            borderRight: '1px solid var(--border)',
+          }}>
 
-          {/* ── Event Description (overrides artist bio) ─────────────────── */}
-          <div>
-            <FieldHeader
-              label="Event Description"
-              isCustom={!!form.artist_bio.trim()}
-              inheritedLabel="Default Artist Bio"
-              onRevert={form.artist_bio.trim() ? () => update('artist_bio', '') : null}
+            {/* Artist / Band Name */}
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Artist / Band Name *</label>
+              <input
+                style={inputStyle}
+                placeholder="Links this event to the artist profile"
+                value={form.artist_name}
+                onChange={e => update('artist_name', e.target.value)}
+              />
+            </div>
+
+            {/* Event Title (headline override) */}
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Event Title</label>
+              <input
+                style={inputStyle}
+                placeholder={artistName ? `Default: "${artistName}"` : 'Optional headline override'}
+                value={form.event_title}
+                onChange={e => update('event_title', e.target.value)}
+              />
+              <p style={{ fontSize: '11px', marginTop: '4px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                If set, shows as the primary headline instead of artist name.
+              </p>
+            </div>
+
+            {/* Description / Bio — with sync toggle */}
+            <MetadataField
+              label="Description"
+              isCustom={!locks.bio}
+              artistName={artistName}
+              isLocked={locks.bio}
+              onToggleLock={() => toggleLock('bio')}
+              onRevert={!locks.bio ? () => toggleLock('bio') : null}
+              hasArtist={hasArtist}
+              inheritedValue={locks.bio ? inheritedBio : null}
+              inheritedType="text"
             >
+              {locks.bio && hasArtist ? (
+                /* Locked — show read-only placeholder */
+                <textarea
+                  style={{
+                    ...inputStyle, resize: 'vertical', minHeight: '70px',
+                    opacity: 0.45, cursor: 'default',
+                    background: 'var(--bg-elevated)', borderStyle: 'dashed',
+                  }}
+                  placeholder="Inheriting artist bio — unlock to customize"
+                  readOnly
+                  onClick={() => toggleLock('bio')}
+                />
+              ) : (
+                /* Unlocked or no artist — editable */
+                <textarea
+                  style={{ ...inputStyle, resize: 'vertical', minHeight: '70px' }}
+                  placeholder="Custom event-specific description..."
+                  value={form.custom_bio}
+                  onChange={e => update('custom_bio', e.target.value)}
+                />
+              )}
+            </MetadataField>
+
+            {/* AI Enhance button */}
+            <div style={{ marginBottom: '18px' }}>
               <button
                 type="button"
                 onClick={handleAiEnhance}
                 disabled={aiLoading || !form.artist_name}
                 style={{
-                  padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700,
+                  padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
                   background: aiLoading ? 'var(--border)' : 'linear-gradient(135deg, #7C3AED, #6D28D9)',
-                  color: '#FFFFFF', border: 'none', cursor: aiLoading ? 'wait' : 'pointer',
+                  color: '#FFFFFF', border: 'none',
+                  cursor: aiLoading ? 'wait' : 'pointer',
                   opacity: !form.artist_name ? 0.4 : 1,
                   fontFamily: "'DM Sans', sans-serif",
                   transition: 'all 0.15s ease',
+                  width: '100%',
                 }}
               >
-                {aiLoading ? 'Enhancing...' : 'AI Enhance'}
+                {aiLoading ? 'Enhancing...' : '✨ AI Enhance Description'}
               </button>
-            </FieldHeader>
-            {form.artist_bio.trim() ? (
-              <textarea style={{ ...inputStyle, resize: 'vertical', minHeight: '60px' }} placeholder="Custom event-specific description" value={form.artist_bio} onChange={(e) => update('artist_bio', e.target.value)} />
-            ) : (
-              <>
-                <textarea
-                  style={{ ...readOnlyInputStyle, resize: 'vertical', minHeight: '60px' }}
-                  placeholder="Click to add a custom description for this event..."
-                  value={form.artist_bio}
-                  onChange={(e) => update('artist_bio', e.target.value)}
-                  onFocus={(e) => { e.target.style.opacity = '1'; e.target.style.borderStyle = 'solid'; e.target.style.cursor = 'text'; }}
-                  onBlur={(e) => { if (!form.artist_bio.trim()) { e.target.style.opacity = '0.45'; e.target.style.borderStyle = 'dashed'; e.target.style.cursor = 'default'; } }}
-                />
-                {inheritedBio && <InheritedPreview text={inheritedBio} />}
-              </>
-            )}
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>If set, this shows instead of the global artist bio. Leave blank to use the artist&apos;s default bio.</p>
-          </div>
-
-          {/* ── Venue (always required, not an override) ──────────────────── */}
-          <div>
-            <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Venue *</label>
-            <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.venue_name} onChange={(e) => update('venue_name', e.target.value)}>
-              <option value="">Select venue...</option>
-              {VENUE_OPTIONS.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </div>
-
-          {/* ── Date + Time ──────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Date *</label>
-              <input type="date" style={inputStyle} value={form.event_date} onChange={(e) => update('event_date', e.target.value)} />
             </div>
-            <div>
-              <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Time *</label>
-              <input type="time" style={inputStyle} value={form.event_time} onChange={(e) => update('event_time', e.target.value)} />
-            </div>
-          </div>
 
-          {/* ── Genre + Vibe Overrides ────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <FieldHeader
-                label="Genre"
-                isCustom={!!form.genre}
-                inheritedLabel={inheritedGenres.length > 0 ? `Artist: ${inheritedGenres[0]}${inheritedGenres.length > 1 ? '…' : ''}` : 'No Artist Default'}
-                onRevert={form.genre ? () => update('genre', '') : null}
-              />
-              <select style={{ ...(form.genre ? inputStyle : readOnlyInputStyle), cursor: 'pointer' }} value={form.genre} onChange={(e) => update('genre', e.target.value)}>
-                <option value="">{inheritedGenres.length > 0 ? `Inheriting: ${inheritedGenres.join(', ')}` : 'Select...'}</option>
-                {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
-              </select>
-            </div>
-            <div>
-              <FieldHeader
-                label="Vibe"
-                isCustom={!!form.vibe}
-                inheritedLabel={inheritedVibes.length > 0 ? `Artist: ${inheritedVibes[0]}${inheritedVibes.length > 1 ? '…' : ''}` : 'No Artist Default'}
-                onRevert={form.vibe ? () => update('vibe', '') : null}
-              />
-              <select style={{ ...(form.vibe ? inputStyle : readOnlyInputStyle), cursor: 'pointer' }} value={form.vibe} onChange={(e) => update('vibe', e.target.value)}>
-                <option value="">{inheritedVibes.length > 0 ? `Inheriting: ${inheritedVibes.join(', ')}` : 'Select...'}</option>
-                {VIBES.map((v) => <option key={v} value={v}>{v}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* ── Cover + Status ────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Cover Charge</label>
-              <input style={inputStyle} placeholder="Free, $10, etc." value={form.cover} onChange={(e) => update('cover', e.target.value)} />
-            </div>
-            <div>
-              <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Status</label>
-              <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.status} onChange={(e) => update('status', e.target.value)}>
-                <option value="published">Published</option>
-                <option value="draft">Draft</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-            </div>
-          </div>
-
-          {/* ── Ticket Link ──────────────────────────────────────────────── */}
-          <div>
-            <label className="block font-display font-semibold text-[13px] text-brand-text-secondary mb-1.5">Ticket Link</label>
-            <input style={inputStyle} placeholder="https://..." value={form.ticket_link} onChange={(e) => update('ticket_link', e.target.value)} />
-          </div>
-
-          {/* ── Event Image URL (overrides artist/venue image) ────────────── */}
-          <div>
-            <FieldHeader
-              label="Event Image URL"
-              isCustom={!!form.event_image_url.trim()}
-              inheritedLabel="Default Artist Image"
-              onRevert={form.event_image_url.trim() ? () => update('event_image_url', '') : null}
-            />
-            <input
-              style={form.event_image_url.trim() ? inputStyle : readOnlyInputStyle}
-              placeholder={inheritedImage ? 'Click to override with a custom flyer URL...' : 'https://... — overrides artist/venue image on cards'}
-              value={form.event_image_url}
-              onChange={(e) => update('event_image_url', e.target.value)}
-              onFocus={(e) => { e.target.style.opacity = '1'; e.target.style.borderStyle = 'solid'; e.target.style.cursor = 'text'; }}
-              onBlur={(e) => { if (!form.event_image_url.trim()) { e.target.style.opacity = '0.45'; e.target.style.borderStyle = 'dashed'; e.target.style.cursor = 'default'; } }}
-            />
-            {form.event_image_url.trim() ? (
-              <div style={{ marginTop: '8px', borderRadius: '8px', overflow: 'hidden', aspectRatio: '16/9', maxHeight: '120px' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={form.event_image_url} alt="Event preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { e.currentTarget.style.display = 'none'; }} />
+            {/* ── Style & Mood section ────────────────────────────────────── */}
+            <div style={{
+              padding: '14px', borderRadius: '10px',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+            }}>
+              <div style={{
+                fontSize: '12px', fontWeight: 800, color: 'var(--text-primary)',
+                fontFamily: "'DM Sans', sans-serif",
+                marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px',
+              }}>
+                Style & Mood
               </div>
-            ) : (
-              inheritedImage && <InheritedPreview text={inheritedImage} type="image" />
-            )}
-            <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>If set, this image takes priority over the artist and venue photos.</p>
+
+              {/* Genres */}
+              <MetadataField
+                label="Genres"
+                isCustom={!locks.genres}
+                artistName={artistName}
+                isLocked={locks.genres}
+                onToggleLock={() => toggleLock('genres')}
+                onRevert={!locks.genres ? () => toggleLock('genres') : null}
+                hasArtist={hasArtist}
+                style={{ marginBottom: '12px' }}
+              >
+                {locks.genres && hasArtist ? (
+                  /* Locked — show inherited as read-only pills */
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {inheritedGenres.length > 0 ? inheritedGenres.map(g => (
+                      <span key={g} style={{
+                        padding: '3px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 600,
+                        background: 'rgba(59,130,246,0.08)', color: '#60A5FA',
+                        border: '1px solid rgba(59,130,246,0.20)',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}>{g}</span>
+                    )) : (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', fontFamily: "'DM Sans', sans-serif" }}>
+                        No artist genres — unlock to set
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <StyleMoodSelector
+                    options={GENRES}
+                    selected={form.custom_genres}
+                    onChange={v => update('custom_genres', v)}
+                  />
+                )}
+              </MetadataField>
+
+              {/* Vibes */}
+              <MetadataField
+                label="Vibes"
+                isCustom={!locks.vibes}
+                artistName={artistName}
+                isLocked={locks.vibes}
+                onToggleLock={() => toggleLock('vibes')}
+                onRevert={!locks.vibes ? () => toggleLock('vibes') : null}
+                hasArtist={hasArtist}
+              >
+                {locks.vibes && hasArtist ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                    {inheritedVibes.length > 0 ? inheritedVibes.map(v => (
+                      <span key={v} style={{
+                        padding: '3px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 600,
+                        background: 'rgba(59,130,246,0.08)', color: '#60A5FA',
+                        border: '1px solid rgba(59,130,246,0.20)',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}>{v}</span>
+                    )) : (
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', fontFamily: "'DM Sans', sans-serif" }}>
+                        No artist vibes — unlock to set
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <StyleMoodSelector
+                    options={VIBES}
+                    selected={form.custom_vibes}
+                    onChange={v => update('custom_vibes', v)}
+                    accentColor="#3AADA0"
+                  />
+                )}
+              </MetadataField>
+            </div>
+
           </div>
 
-          {/* ── Save Button ──────────────────────────────────────────────── */}
-          <button
-            className="w-full py-3 rounded-xl font-display font-semibold text-[15px] text-white"
-            style={{ background: 'var(--accent)' }}
-            onClick={handleSave}
-          >
-            {event ? 'Update Event' : 'Create Event'}
-          </button>
+          {/* ═══════════ RIGHT COLUMN — Visuals & Logistics ══════════════ */}
+          <div style={{ padding: '20px 24px' }}>
+
+            {/* Event Image — with sync toggle */}
+            <MetadataField
+              label="Event Image"
+              isCustom={!locks.image}
+              artistName={artistName}
+              isLocked={locks.image}
+              onToggleLock={() => toggleLock('image')}
+              onRevert={!locks.image ? () => toggleLock('image') : null}
+              hasArtist={hasArtist}
+              hint="If set, this image takes priority over artist and venue photos."
+            >
+              <ImagePreviewSection
+                imageUrl={locks.image ? '' : form.custom_image_url}
+                inheritedUrl={inheritedImage}
+                isInherited={locks.image}
+                onUrlChange={v => update('custom_image_url', v)}
+                disabled={locks.image && hasArtist}
+                placeholder={inheritedImage ? 'Unlock to set a custom event image...' : 'https://...'}
+              />
+            </MetadataField>
+
+            {/* ── Logistics Rail ──────────────────────────────────────────── */}
+            <div style={{
+              marginTop: '6px', padding: '14px', borderRadius: '10px',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+            }}>
+              <div style={{
+                fontSize: '12px', fontWeight: 800, color: 'var(--text-primary)',
+                fontFamily: "'DM Sans', sans-serif",
+                marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px',
+              }}>
+                Logistics
+              </div>
+
+              {/* Date + Time */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                <div>
+                  <label style={labelStyle}>Date *</label>
+                  <input type="date" style={inputStyle} value={form.event_date} onChange={e => update('event_date', e.target.value)} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Time *</label>
+                  <input type="time" style={inputStyle} value={form.event_time} onChange={e => update('event_time', e.target.value)} />
+                </div>
+              </div>
+
+              {/* Venue */}
+              <div style={{ marginBottom: '10px' }}>
+                <label style={labelStyle}>Venue *</label>
+                <select
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                  value={form.venue_name}
+                  onChange={e => update('venue_name', e.target.value)}
+                >
+                  <option value="">Select venue...</option>
+                  {VENUE_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+
+              {/* Cover + Status */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                <div>
+                  <label style={labelStyle}>Cover Charge</label>
+                  <input style={inputStyle} placeholder="Free, $10, etc." value={form.cover} onChange={e => update('cover', e.target.value)} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Status</label>
+                  <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.status} onChange={e => update('status', e.target.value)}>
+                    <option value="published">Published</option>
+                    <option value="draft">Draft</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Ticket Link */}
+              <div>
+                <label style={labelStyle}>Ticket Link</label>
+                <input style={inputStyle} placeholder="https://..." value={form.ticket_link} onChange={e => update('ticket_link', e.target.value)} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Footer ─────────────────────────────────────────────────────── */}
+        <div
+          className="px-6 py-4 border-t"
+          style={{
+            borderColor: 'var(--border)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          {/* Cross-link to artist profile (only when linked + callback available) */}
+          <div>
+            {hasArtist && onNavigateToArtist ? (
+              <button
+                type="button"
+                onClick={() => onNavigateToArtist(linkedArtist)}
+                style={{
+                  fontSize: '11px', color: '#60A5FA', fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif",
+                  cursor: 'pointer', background: 'none', border: 'none',
+                  padding: 0, textDecoration: 'none',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline'; }}
+                onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none'; }}
+              >
+                Edit Global Artist Profile: {artistName} →
+              </button>
+            ) : hasArtist ? (
+              <span style={{
+                fontSize: '11px', color: '#60A5FA', fontWeight: 600,
+                fontFamily: "'DM Sans', sans-serif",
+                cursor: 'default',
+              }}>
+                Linked to artist: {artistName}
+              </span>
+            ) : null}
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: '10px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
+                background: 'transparent', color: 'var(--text-muted)',
+                border: '1px solid var(--border)', cursor: 'pointer',
+                fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              style={{
+                padding: '10px 28px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
+                background: '#E8722A', color: '#1C1917',
+                border: 'none', cursor: 'pointer',
+                fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              {event ? 'Update Event' : 'Create Event'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

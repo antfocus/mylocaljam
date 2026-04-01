@@ -2,6 +2,7 @@
 
 import { formatDate } from '@/lib/utils';
 import Badge from '@/components/ui/Badge';
+import { MetadataField, StyleMoodSelector, ImagePreviewSection } from '@/components/admin/shared';
 
 export default function AdminArtistsTab({
   artists, events, venues, password, isMobile,
@@ -516,40 +517,35 @@ export default function AdminArtistsTab({
               >{'\u2715'}</button>
             </div>
           </div>
+          {/* ── Two-Column Layout (Master Record — no inheritance UI) ────────── */}
           {(() => {
-            const labelStyle = { fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', fontFamily: "'DM Sans', sans-serif" };
+            const isArtistLocked = !!editingArtist.is_locked;
             const inputStyle = {
               width: '100%', padding: '8px 12px', background: 'var(--bg-card)',
               border: '1px solid var(--border)', borderRadius: '8px',
               color: 'var(--text-primary)', fontSize: '13px', fontFamily: "'DM Sans', sans-serif", outline: 'none',
             };
-            const lockedStyle = {
+            const lockedInputStyle = {
               ...inputStyle,
               background: 'var(--bg-elevated)', opacity: 0.6, cursor: 'not-allowed',
               border: '1px solid var(--border)',
             };
-            const isArtistLocked = !!editingArtist.is_locked;
-            const isFieldLocked = () => isArtistLocked;
-            const fieldInputStyle = (field) => isFieldLocked(field) ? lockedStyle : inputStyle;
-            const LockBadge = ({ field }) => {
-              const locked = isArtistLocked;
-              return (
-                <Badge
-                  label={locked ? 'LOCKED' : 'OPEN'}
-                  size="xs"
-                  color={locked ? '#22c55e' : 'rgba(136,136,136,0.45)'}
-                  bg={locked ? 'rgba(34,197,94,0.1)' : 'rgba(136,136,136,0.06)'}
-                  style={{
-                    border: locked ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(136,136,136,0.12)',
-                    fontSize: '9px', fontWeight: 600, gap: '2px',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  {locked && <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" /></svg>}
-                  {locked ? 'LOCKED' : 'OPEN'}
-                </Badge>
-              );
-            };
+            const lockBadge = (
+              <Badge
+                label={isArtistLocked ? 'LOCKED' : 'OPEN'}
+                size="xs"
+                color={isArtistLocked ? '#22c55e' : 'rgba(136,136,136,0.45)'}
+                bg={isArtistLocked ? 'rgba(34,197,94,0.1)' : 'rgba(136,136,136,0.06)'}
+                style={{
+                  border: isArtistLocked ? '1px solid rgba(34,197,94,0.35)' : '1px solid rgba(136,136,136,0.12)',
+                  fontSize: '9px', fontWeight: 600, gap: '2px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {isArtistLocked && <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" /></svg>}
+                {isArtistLocked ? 'LOCKED' : 'OPEN'}
+              </Badge>
+            );
             const RegenBtn = ({ field }) => (
               <button
                 title={`Regenerate ${field} with AI`}
@@ -566,19 +562,18 @@ export default function AdminArtistsTab({
               </button>
             );
             return (<>
-              {/* Artist Name */}
-              <div style={{ marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={labelStyle}>Artist Name</span>
-                  <LockBadge field="name" />
+              {/* ── Artist Name (full width, above two-column grid) ──────────── */}
+              <MetadataField label="Artist Name" hasArtist={false} style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                  {lockBadge}
                 </div>
                 <input
                   type="text"
                   value={artistForm.name}
-                  onChange={e => !isFieldLocked('name') && setArtistForm(p => ({ ...p, name: e.target.value }))}
-                  readOnly={isFieldLocked('name')}
+                  onChange={e => !isArtistLocked && setArtistForm(p => ({ ...p, name: e.target.value }))}
+                  readOnly={isArtistLocked}
                   placeholder="Clean display name"
-                  style={{ ...(isFieldLocked('name') ? lockedStyle : inputStyle), marginTop: '4px', fontWeight: 700, fontSize: '15px' }}
+                  style={{ ...(isArtistLocked ? lockedInputStyle : inputStyle), fontWeight: 700, fontSize: '15px' }}
                 />
                 {duplicateNameWarning && (
                   <div style={{ fontSize: '11px', color: '#facc15', marginTop: '4px', fontFamily: "'DM Sans', sans-serif", background: 'rgba(250,204,21,0.08)', padding: '6px 8px', borderRadius: '6px', border: '1px solid rgba(250,204,21,0.2)' }}>
@@ -590,136 +585,65 @@ export default function AdminArtistsTab({
                     Renaming from &ldquo;{editingArtist.name}&rdquo; — old name will be saved as an alias
                   </div>
                 )}
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              </MetadataField>
+
+              {/* ── Two-column grid ──────────────────────────────────────────── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                {/* ── LEFT COLUMN: Identity & Creative ──────────────────────── */}
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
-                    <span style={labelStyle}>Bio</span>
-                    <LockBadge field="bio" />
-                    {!isFieldLocked('bio') && <RegenBtn field="bio" />}
-                  </div>
-                  <textarea
-                    value={artistForm.bio}
-                    onChange={e => !isFieldLocked('bio') && setArtistForm(p => ({ ...p, bio: e.target.value }))}
-                    readOnly={isFieldLocked('bio')}
-                    rows={3}
-                    style={{ ...fieldInputStyle('bio'), resize: isFieldLocked('bio') ? 'none' : 'vertical' }}
-                  />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px', marginTop: '12px' }}>
-                    <span style={labelStyle}>Vibes</span>
-                    <LockBadge field="vibes" />
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', opacity: isFieldLocked('vibes') ? 0.5 : 1 }}>
-                    {VIBES.map(v => {
-                      const selected = artistForm.vibes.split(',').map(s => s.trim()).filter(Boolean).includes(v);
-                      return (
-                        <button key={v} type="button" disabled={isFieldLocked('vibes')} onClick={() => {
-                          if (isFieldLocked('vibes')) return;
-                          const current = artistForm.vibes.split(',').map(s => s.trim()).filter(Boolean);
-                          const next = selected ? current.filter(x => x !== v) : [...current, v];
-                          setArtistForm(p => ({ ...p, vibes: next.join(', ') }));
-                        }} style={{
-                          padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
-                          fontFamily: "'DM Sans', sans-serif", cursor: isFieldLocked('vibes') ? 'not-allowed' : 'pointer', border: 'none',
-                          background: selected ? 'rgba(232,114,42,0.15)' : 'var(--bg-card)',
-                          color: selected ? '#E8722A' : 'var(--text-muted)',
-                          outline: selected ? '1.5px solid #E8722A' : '1px solid var(--border)',
-                          transition: 'all 0.12s ease',
-                        }}>{v}</button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
-                    <span style={labelStyle}>Genres</span>
-                    <LockBadge field="genres" />
-                    {!isFieldLocked('genres') && <RegenBtn field="genres" />}
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', opacity: isFieldLocked('genres') ? 0.5 : 1 }}>
-                    {GENRES.map(g => {
-                      const selected = artistForm.genres.split(',').map(s => s.trim()).filter(Boolean).includes(g);
-                      return (
-                        <button key={g} type="button" disabled={isFieldLocked('genres')} onClick={() => {
-                          if (isFieldLocked('genres')) return;
-                          const current = artistForm.genres.split(',').map(s => s.trim()).filter(Boolean);
-                          const next = selected ? current.filter(x => x !== g) : [...current, g];
-                          setArtistForm(p => ({ ...p, genres: next.join(', ') }));
-                        }} style={{
-                          padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: 600,
-                          fontFamily: "'DM Sans', sans-serif", cursor: isFieldLocked('genres') ? 'not-allowed' : 'pointer', border: 'none',
-                          background: selected ? 'rgba(232,114,42,0.15)' : 'var(--bg-card)',
-                          color: selected ? '#E8722A' : 'var(--text-muted)',
-                          outline: selected ? '1.5px solid #E8722A' : '1px solid var(--border)',
-                          transition: 'all 0.12s ease',
-                        }}>{g}</button>
-                      );
-                    })}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px', marginTop: '12px' }}>
-                    <span style={labelStyle}>Image URL</span>
-                    <LockBadge field="image_url" />
-                    {!isFieldLocked('image_url') && <RegenBtn field="image_url" />}
-                    {imageCandidates.length > 1 && (
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', marginLeft: '4px' }}>
-                        {imageCarouselIdx + 1}/{imageCandidates.length}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                    {imageCandidates.length > 1 && !isFieldLocked('image_url') && (
-                      <button
-                        onClick={() => {
-                          const prev = (imageCarouselIdx - 1 + imageCandidates.length) % imageCandidates.length;
-                          setImageCarouselIdx(prev);
-                          setArtistForm(p => ({ ...p, image_url: imageCandidates[prev] }));
-                        }}
-                        style={{
-                          background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                          borderRadius: '6px', width: '28px', height: '34px', cursor: 'pointer',
-                          color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 700,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                        }}
-                        title="Previous image"
-                      >&lt;</button>
-                    )}
-                    <input
-                      type="text"
-                      value={artistForm.image_url}
-                      onChange={e => !isFieldLocked('image_url') && setArtistForm(p => ({ ...p, image_url: e.target.value }))}
-                      readOnly={isFieldLocked('image_url')}
-                      placeholder="https://..."
-                      style={{ ...(isFieldLocked('image_url') ? lockedStyle : inputStyle), flex: 1 }}
+                  {/* Bio */}
+                  <MetadataField label="Bio" hasArtist={false}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                      {lockBadge}
+                      {!isArtistLocked && <RegenBtn field="bio" />}
+                    </div>
+                    <textarea
+                      value={artistForm.bio}
+                      onChange={e => !isArtistLocked && setArtistForm(p => ({ ...p, bio: e.target.value }))}
+                      readOnly={isArtistLocked}
+                      rows={3}
+                      style={{ ...(isArtistLocked ? lockedInputStyle : inputStyle), resize: isArtistLocked ? 'none' : 'vertical' }}
                     />
-                    {imageCandidates.length > 1 && !isFieldLocked('image_url') && (
-                      <button
-                        onClick={() => {
-                          const next = (imageCarouselIdx + 1) % imageCandidates.length;
-                          setImageCarouselIdx(next);
-                          setArtistForm(p => ({ ...p, image_url: imageCandidates[next] }));
-                        }}
-                        style={{
-                          background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-                          borderRadius: '6px', width: '28px', height: '34px', cursor: 'pointer',
-                          color: 'var(--text-secondary)', fontSize: '14px', fontWeight: 700,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                        }}
-                        title="Next image"
-                      >&gt;</button>
-                    )}
-                  </div>
-                  {/* Live Mobile Preview */}
-                  <div style={{ marginTop: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                        Mobile Preview
-                      </span>
-                      {imageCandidates.length > 1 && (
-                        <span style={{ fontSize: '10px', color: '#E8722A', fontWeight: 600, fontFamily: "'DM Sans', sans-serif" }}>
-                          {imageCarouselIdx + 1} of {imageCandidates.length}
-                        </span>
-                      )}
-                      {imageCandidates.length <= 1 && !regeneratingField && !isFieldLocked('image_url') && (
+                  </MetadataField>
+
+                  {/* Vibes */}
+                  <MetadataField label="Vibes" hasArtist={false}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                      {lockBadge}
+                    </div>
+                    <StyleMoodSelector
+                      label="Vibes"
+                      options={VIBES}
+                      selected={artistForm.vibes}
+                      onChange={(next) => setArtistForm(p => ({ ...p, vibes: next }))}
+                      disabled={isArtistLocked}
+                    />
+                  </MetadataField>
+                </div>
+
+                {/* ── RIGHT COLUMN: Visuals & Genres ───────────────────────── */}
+                <div>
+                  {/* Genres */}
+                  <MetadataField label="Genres" hasArtist={false}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                      {lockBadge}
+                      {!isArtistLocked && <RegenBtn field="genres" />}
+                    </div>
+                    <StyleMoodSelector
+                      label="Genres"
+                      options={GENRES}
+                      selected={artistForm.genres}
+                      onChange={(next) => setArtistForm(p => ({ ...p, genres: next }))}
+                      disabled={isArtistLocked}
+                    />
+                  </MetadataField>
+
+                  {/* Image */}
+                  <MetadataField label="Artist Image" hasArtist={false}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                      {lockBadge}
+                      {!isArtistLocked && <RegenBtn field="image_url" />}
+                      {imageCandidates.length <= 1 && !regeneratingField && !isArtistLocked && (
                         <button
                           onClick={() => regenerateField('image_url')}
                           style={{
@@ -732,54 +656,21 @@ export default function AdminArtistsTab({
                         </button>
                       )}
                     </div>
-                    <div style={{
-                      position: 'relative', width: '100%', maxWidth: '180px',
-                      aspectRatio: '1 / 1', borderRadius: '12px',
-                      overflow: 'hidden', background: '#1A1A24',
-                      border: '1px solid var(--border)',
-                    }}>
-                      {artistForm.image_url ? (
-                        <img
-                          src={artistForm.image_url}
-                          alt="Preview"
-                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                          onError={e => { e.target.src = ''; e.target.alt = 'Failed to load'; }}
-                        />
-                      ) : (
-                        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '24px' }}>🎤</div>
-                      )}
-                      {imageCandidates.length > 1 && !isFieldLocked('image_url') && (<>
-                        <button
-                          onClick={() => {
-                            const prev = (imageCarouselIdx - 1 + imageCandidates.length) % imageCandidates.length;
-                            setImageCarouselIdx(prev);
-                            setArtistForm(p => ({ ...p, image_url: imageCandidates[prev] }));
-                          }}
-                          style={{
-                            position: 'absolute', left: '4px', top: '50%', transform: 'translateY(-50%)',
-                            width: '28px', height: '28px', borderRadius: '50%',
-                            background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer',
-                            color: '#fff', fontSize: '14px', fontWeight: 700,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}
-                        >&lt;</button>
-                        <button
-                          onClick={() => {
-                            const next = (imageCarouselIdx + 1) % imageCandidates.length;
-                            setImageCarouselIdx(next);
-                            setArtistForm(p => ({ ...p, image_url: imageCandidates[next] }));
-                          }}
-                          style={{
-                            position: 'absolute', right: '4px', top: '50%', transform: 'translateY(-50%)',
-                            width: '28px', height: '28px', borderRadius: '50%',
-                            background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer',
-                            color: '#fff', fontSize: '14px', fontWeight: 700,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}
-                        >&gt;</button>
-                      </>)}
-                    </div>
-                  </div>
+                    <ImagePreviewSection
+                      imageUrl={artistForm.image_url}
+                      isInherited={false}
+                      onUrlChange={(url) => !isArtistLocked && setArtistForm(p => ({ ...p, image_url: url }))}
+                      disabled={isArtistLocked}
+                      candidates={imageCandidates}
+                      candidateIdx={imageCarouselIdx}
+                      onCandidateNav={(newIdx) => {
+                        setImageCarouselIdx(newIdx);
+                        setArtistForm(p => ({ ...p, image_url: imageCandidates[newIdx] }));
+                      }}
+                      label="Mobile Preview"
+                      maxPreviewHeight="180px"
+                    />
+                  </MetadataField>
                 </div>
               </div>
             </>);
