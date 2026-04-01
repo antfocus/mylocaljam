@@ -1,15 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useState } from 'react';
 import { formatTimeRange } from '@/lib/utils';
 import { posthog } from '@/lib/posthog';
 import ModalWrapper from '@/components/ui/ModalWrapper';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
 
 /** Format date for display */
 function fmtDate(dateStr) {
@@ -25,19 +19,8 @@ function fmtDate(dateStr) {
 export default function EventPageClient({ event }) {
   const [showAuth, setShowAuth] = useState(false);
 
-  // Check auth in background — only redirect genuinely logged-in users.
-  // Uses getUser() to validate the token server-side (getSession() just reads
-  // cached localStorage which can contain stale/expired tokens).
-  // The event content renders immediately; no spinner gate.
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        window.location.href = `/?event=${event.id}`;
-      }
-    });
-  }, [event.id]);
-
-  // ── Public (unauthenticated) event view ────────────────────────────────────
+  // ── Standalone event view — no auth redirect ──────────────────────────────
+  // All users (guest & logged-in) stay on this page when visiting /event/[id].
 
   const eventTitle = (event.event_title || '').trim();
   const artistName = event.artist_name || '';
