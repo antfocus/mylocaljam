@@ -20,6 +20,7 @@ import ModalWrapper from '@/components/ui/ModalWrapper';
 import useAdminQueue from '@/hooks/useAdminQueue';
 import useAdminTriage from '@/hooks/useAdminTriage';
 import useAdminArtists from '@/hooks/useAdminArtists';
+import useAdminSpotlight from '@/hooks/useAdminSpotlight';
 
 const TITLE_CASE_MINOR = new Set(['a','an','the','and','but','or','nor','for','yet','so','in','on','at','to','by','of','up','as','is']);
 function toTitleCase(str) {
@@ -92,16 +93,6 @@ export default function AdminPage() {
   const [eventsTotal, setEventsTotal] = useState(0);
   const [newEvents24h, setNewEvents24h] = useState(0);
   const [eventsRecentlyAdded, setEventsRecentlyAdded] = useState(false);
-  const [spotlightDate, setSpotlightDate] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  });
-  const [spotlightPins, setSpotlightPins] = useState([]);
-  const [spotlightEvents, setSpotlightEvents] = useState([]);
-  const [spotlightLoading, setSpotlightLoading] = useState(false);
-  const [spotlightImageWarning, setSpotlightImageWarning] = useState(null); // event object needing image
-  const [spotlightSearch, setSpotlightSearch] = useState('');
-
   const [queueToast, setQueueToast] = useState(null);
   const [flagsViewFilter, setFlagsViewFilter] = useState('pending');
   const [scraperHealth, setScraperHealth] = useState([]);
@@ -222,103 +213,7 @@ export default function AdminPage() {
   const q = useAdminQueue({ password, venues, setVenues, fetchAll, supabase, toTitleCase, showQueueToast, authenticated });
   const tr = useAdminTriage({ password, showQueueToast });
   const ar = useAdminArtists({ password });
-
-  const fetchSpotlightEvents = useCallback(async (date) => {
-    try {
-      const params = new URLSearchParams({ page: '1', limit: '500', sort: 'event_date', order: 'asc', status: 'upcoming' });
-      const res = await fetch(`/api/admin?${params}`, { headers: { Authorization: `Bearer ${password}` } });
-      if (!res.ok) return [];
-      const data = await res.json();
-      const all = data.events || (Array.isArray(data) ? data : []);
-      // Compare dates in Eastern timezone to handle UTC midnight crossover
-      const filtered = all.filter(ev => {
-        if (ev.status !== 'published') return false;
-        try {
-          const evDateET = new Date(ev.event_date).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-          return evDateET === date;
-        } catch {
-          return (ev.event_date || '').slice(0, 10) === date;
-        }
-      });
-      setSpotlightEvents(filtered);
-      return filtered;
-    } catch (err) {
-      console.error('Failed to load spotlight events:', err);
-      return [];
-    }
-  }, [password]);
-
-  const fetchSpotlight = useCallback(async (date) => {
-    setSpotlightLoading(true);
-    let pinIds = [];
-    try {
-      const res = await fetch(`/api/spotlight?date=${date}`);
-      const data = await res.json();
-      pinIds = Array.isArray(data) ? data.map(d => d.event_id) : [];
-    } catch (err) {
-      console.error('Failed to load spotlight:', err);
-    }
-    // Load events FIRST, then filter pins to only valid event IDs
-    const todayEvents = await fetchSpotlightEvents(date);
-    const validEventIds = new Set(todayEvents.map(e => e.id));
-    const cleanPins = pinIds.filter(id => validEventIds.has(id));
-    setSpotlightPins(cleanPins);
-    setSpotlightLoading(false);
-  }, [fetchSpotlightEvents]);
-
-  const saveSpotlight = async () => {
-    // Clean stale pins before saving — only include IDs that exist in today's events
-    const validPins = spotlightPins.filter(id => spotlightEvents.some(e => e.id === id));
-    setSpotlightPins(validPins);
-
-    // 1. Save to spotlight_events table
-    await fetch('/api/spotlight', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ date: spotlightDate, event_ids: validPins }),
-    });
-
-    // 2. Persist spotlight_order on each pinned event
-    for (let i = 0; i < validPins.length; i++) {
-      await fetch('/api/admin', {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ id: validPins[i], spotlight_order: i, is_featured: true }),
-      });
-    }
-
-    // 3. Clear spotlight_order on events that were un-pinned today
-    const todayEvents = spotlightEvents;
-    for (const ev of todayEvents) {
-      if (!validPins.includes(ev.id) && ev.spotlight_order != null) {
-        await fetch('/api/admin', {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ id: ev.id, spotlight_order: null, is_featured: false }),
-        });
-      }
-    }
-
-    alert(`Spotlight saved for ${spotlightDate} (${validPins.length} event${validPins.length !== 1 ? 's' : ''})`);
-    fetchAll();
-    fetchSpotlightEvents(spotlightDate);
-  };
-
-  const clearSpotlight = async () => {
-    if (!confirm(`Clear all spotlight pins for ${spotlightDate}? The carousel will use the automatic fallback.`)) return;
-    await fetch(`/api/spotlight?date=${spotlightDate}`, { method: 'DELETE', headers });
-    setSpotlightPins([]);
-  };
-
-  const toggleSpotlightPin = (eventId) => {
-    setSpotlightPins(prev => {
-      // Clean out stale IDs that no longer exist in today's events
-      const clean = prev.filter(id => id === eventId || spotlightEvents.some(e => e.id === id));
-      if (clean.includes(eventId)) return clean.filter(id => id !== eventId);
-      if (clean.length >= 5) { alert('Maximum 5 spotlight events per day'); return clean; }
-      return [...clean, eventId];
-    });
-  };
+  const sp = useAdminSpotlight({ password, fetchAll });
 
   // ── Auto-fetch when session is restored from sessionStorage ──
   useEffect(() => {
@@ -522,7 +417,7 @@ export default function AdminPage() {
           { key: 'triage', label: 'Triage', count: tr.triageEvents.length },
           { key: 'events', label: 'Event Feed', count: eventsTotal || events.length },
           { key: 'artists', label: 'Artists', count: ar.artists.length },
-          { key: 'spotlight', label: 'Spotlight', count: spotlightPins.length },
+          { key: 'spotlight', label: 'Spotlight', count: sp.spotlightPins.length },
           { key: 'venues', label: 'Venues', count: scraperHealth.filter(s => s.status === 'fail').length },
           { key: 'festivals', label: 'Festivals', count: festivalData.length },
           { key: 'submissions', label: 'Submissions', count: q.queue.length },
@@ -539,7 +434,7 @@ export default function AdminPage() {
                 ? { background: 'var(--bg-card)', borderBottom: '2px solid #E8722A', color: '#FFFFFF' }
                 : { opacity: 0.6 }),
             }}
-            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (ar.artists.length === 0) ar.fetchArtists(); fetchReports(); fetchScraperHealth(); } if (tab.key === 'events') fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { setSpotlightSearch(''); fetchSpotlight(spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'venues') fetchScraperHealth(); if (tab.key === 'reports') { setFlagsViewFilter('pending'); fetchReports(); } if (tab.key === 'festivals') fetchFestivalNames(); }}
+            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (ar.artists.length === 0) ar.fetchArtists(); fetchReports(); fetchScraperHealth(); } if (tab.key === 'events') fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'venues') fetchScraperHealth(); if (tab.key === 'reports') { setFlagsViewFilter('pending'); fetchReports(); } if (tab.key === 'festivals') fetchFestivalNames(); }}
           >
             {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? '#1C1917' : 'var(--text-secondary)' }}>{tab.count}</span>}
           </button>
@@ -649,14 +544,14 @@ export default function AdminPage() {
       {activeTab === 'spotlight' && !loading && (
         <AdminSpotlightTab
           artists={ar.artists} events={events}
-          spotlightDate={spotlightDate} setSpotlightDate={setSpotlightDate}
-          spotlightPins={spotlightPins} setSpotlightPins={setSpotlightPins}
-          spotlightEvents={spotlightEvents} spotlightLoading={spotlightLoading}
-          spotlightSearch={spotlightSearch} setSpotlightSearch={setSpotlightSearch}
-          setSpotlightImageWarning={setSpotlightImageWarning}
-          fetchSpotlight={fetchSpotlight} fetchSpotlightEvents={fetchSpotlightEvents}
-          saveSpotlight={saveSpotlight} clearSpotlight={clearSpotlight}
-          toggleSpotlightPin={toggleSpotlightPin}
+          spotlightDate={sp.spotlightDate} setSpotlightDate={sp.setSpotlightDate}
+          spotlightPins={sp.spotlightPins} setSpotlightPins={sp.setSpotlightPins}
+          spotlightEvents={sp.spotlightEvents} spotlightLoading={sp.spotlightLoading}
+          spotlightSearch={sp.spotlightSearch} setSpotlightSearch={sp.setSpotlightSearch}
+          setSpotlightImageWarning={sp.setSpotlightImageWarning}
+          fetchSpotlight={sp.fetchSpotlight} fetchSpotlightEvents={sp.fetchSpotlightEvents}
+          saveSpotlight={sp.saveSpotlight} clearSpotlight={sp.clearSpotlight}
+          toggleSpotlightPin={sp.toggleSpotlightPin}
         />
       )}
 
@@ -729,21 +624,21 @@ export default function AdminPage() {
       )}
 
       {/* Spotlight Missing Image Warning Modal */}
-      {spotlightImageWarning && (
-        <ModalWrapper onClose={() => setSpotlightImageWarning(null)} maxWidth="420px">
+      {sp.spotlightImageWarning && (
+        <ModalWrapper onClose={() => sp.setSpotlightImageWarning(null)} maxWidth="420px">
           <>
             <div style={{ fontSize: '32px', textAlign: 'center', marginBottom: '12px' }}>⚠️</div>
             <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 8px', textAlign: 'center' }}>
               Missing Artist Image
             </h3>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 20px', textAlign: 'center', lineHeight: 1.5 }}>
-              <strong style={{ color: 'var(--text-primary)' }}>{spotlightImageWarning.artist_name}</strong> is missing a profile image. Spotlight features require an image to render correctly on mobile.
+              <strong style={{ color: 'var(--text-primary)' }}>{sp.spotlightImageWarning.artist_name}</strong> is missing a profile image. Spotlight features require an image to render correctly on mobile.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button
                 onClick={async () => {
-                  const ev = spotlightImageWarning;
-                  setSpotlightImageWarning(null);
+                  const ev = sp.spotlightImageWarning;
+                  sp.setSpotlightImageWarning(null);
 
                   // Ensure artists are loaded (they may not be if user went straight to Spotlight)
                   let pool = ar.artists;
@@ -794,8 +689,8 @@ export default function AdminPage() {
               </button>
               <button
                 onClick={() => {
-                  toggleSpotlightPin(spotlightImageWarning.id);
-                  setSpotlightImageWarning(null);
+                  sp.toggleSpotlightPin(sp.spotlightImageWarning.id);
+                  sp.setSpotlightImageWarning(null);
                 }}
                 style={{
                   padding: '12px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
@@ -806,7 +701,7 @@ export default function AdminPage() {
                 Spotlight with Default Graphic
               </button>
               <button
-                onClick={() => setSpotlightImageWarning(null)}
+                onClick={() => sp.setSpotlightImageWarning(null)}
                 style={{
                   padding: '10px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
                   background: 'transparent', color: 'var(--text-muted)',
