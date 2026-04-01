@@ -21,6 +21,7 @@ import useAdminQueue from '@/hooks/useAdminQueue';
 import useAdminTriage from '@/hooks/useAdminTriage';
 import useAdminArtists from '@/hooks/useAdminArtists';
 import useAdminSpotlight from '@/hooks/useAdminSpotlight';
+import useAdminEvents from '@/hooks/useAdminEvents';
 
 const TITLE_CASE_MINOR = new Set(['a','an','the','and','but','or','nor','for','yet','so','in','on','at','to','by','of','up','as','is']);
 function toTitleCase(str) {
@@ -72,27 +73,10 @@ export default function AdminPage() {
     } catch { /* SSR or sessionStorage blocked */ }
   }, []);
 
-  const [events, setEvents] = useState([]);
   const [venues, setVenues] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [showEventForm, setShowEventForm] = useState(false);
-  const [editingEvent, setEditingEvent] = useState(null);
-  const [selectedEvents, setSelectedEvents] = useState(new Set());
-  const [bulkTimeModal, setBulkTimeModal] = useState(false);
-  const [bulkTime, setBulkTime] = useState('');
-  const [bulkTimeLoading, setBulkTimeLoading] = useState(false);
-  const [eventsStatusFilter, setEventsStatusFilter] = useState('upcoming');
-  const [eventsSearch, setEventsSearch] = useState('');
-  const [eventsMissingTime, setEventsMissingTime] = useState(false);
-  const [eventsSortField, setEventsSortField] = useState('event_date');
-  const [eventsSortOrder, setEventsSortOrder] = useState('asc');
-  const [eventsPage, setEventsPage] = useState(1);
-  const [eventsTotalPages, setEventsTotalPages] = useState(1);
-  const [eventsTotal, setEventsTotal] = useState(0);
-  const [newEvents24h, setNewEvents24h] = useState(0);
-  const [eventsRecentlyAdded, setEventsRecentlyAdded] = useState(false);
   const [queueToast, setQueueToast] = useState(null);
   const [flagsViewFilter, setFlagsViewFilter] = useState('pending');
   const [scraperHealth, setScraperHealth] = useState([]);
@@ -109,28 +93,6 @@ export default function AdminPage() {
     const duration = toast.type === 'error' ? 8000 : toast.type === 'success' ? 4000 : (undoFn ? 5000 : 3000);
     toastTimerRef.current = setTimeout(() => { setQueueToast(null); toastTimerRef.current = null; }, duration);
   };
-
-  const fetchEvents = useCallback(async (page = 1, sort = eventsSortField, order = eventsSortOrder, status = eventsStatusFilter, missingTime = eventsMissingTime, recentlyAdded = eventsRecentlyAdded) => {
-    try {
-      const params = new URLSearchParams({ page: String(page), limit: '100', sort, order });
-      if (status) params.set('status', status);
-      if (missingTime) params.set('missingTime', 'true');
-      if (recentlyAdded) params.set('recentlyAdded', 'true');
-      const res = await fetch(`/api/admin?${params}`, { headers: { Authorization: `Bearer ${password}` } });
-      if (res.status === 401) { setAuthenticated(false); try { sessionStorage.removeItem('mlj_admin_pw'); } catch {} alert('Invalid password'); return; }
-      const data = await res.json();
-      if (data.events) {
-        setEvents(prev => page === 1 ? data.events : [...prev, ...data.events]);
-        setEventsPage(data.pagination.page);
-        setEventsTotalPages(data.pagination.totalPages);
-        setEventsTotal(data.pagination.total);
-      } else {
-        // Fallback for old API shape
-        setEvents(Array.isArray(data) ? data : []);
-      }
-      if (data.newEvents24h !== undefined) setNewEvents24h(data.newEvents24h);
-    } catch (err) { console.error(err); }
-  }, [password, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime, eventsRecentlyAdded]);
 
   const fetchAnalytics = useCallback(async (range, env) => {
     setAnalyticsLoading(true);
@@ -186,16 +148,17 @@ export default function AdminPage() {
     } catch (err) { console.error('Failed to fetch reports:', err); }
   }, [password]);
 
+  const ev = useAdminEvents({ password, showQueueToast, setAuthenticated });
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
       const [, subRes, repRes] = await Promise.all([
-        fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter),
+        ev.fetchEvents(),
         fetch('/api/submissions', { headers: { Authorization: `Bearer ${password}` } }),
         fetch('/api/reports', { headers: { Authorization: `Bearer ${password}` } }),
       ]);
 
-      // Guard against 401/error responses — only set state if we got valid arrays
       if (subRes.ok) {
         const subData = await subRes.json();
         if (Array.isArray(subData)) setSubmissions(subData);
@@ -208,7 +171,7 @@ export default function AdminPage() {
       console.error(err);
     }
     setLoading(false);
-  }, [password, fetchEvents, eventsSortField, eventsSortOrder, eventsStatusFilter]);
+  }, [password, ev.fetchEvents]);
 
   const q = useAdminQueue({ password, venues, setVenues, fetchAll, supabase, toTitleCase, showQueueToast, authenticated });
   const tr = useAdminTriage({ password, showQueueToast });
@@ -267,8 +230,8 @@ export default function AdminPage() {
   };
 
   const saveEvent = async (formData) => {
-    const method = editingEvent ? 'PUT' : 'POST';
-    const body = editingEvent ? { ...formData, id: editingEvent.id } : formData;
+    const method = ev.editingEvent ? 'PUT' : 'POST';
+    const body = ev.editingEvent ? { ...formData, id: ev.editingEvent.id } : formData;
 
     await fetch('/api/admin', {
       method,
@@ -276,47 +239,9 @@ export default function AdminPage() {
       body: JSON.stringify(body),
     });
 
-    setShowEventForm(false);
-    setEditingEvent(null);
+    ev.setShowEventForm(false);
+    ev.setEditingEvent(null);
     fetchAll();
-  };
-
-  const toggleFeatured = async (ev) => {
-    const newVal = !ev.is_featured;
-    // Optimistic update
-    setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, is_featured: newVal } : e));
-    await fetch('/api/admin', {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ id: ev.id, is_featured: newVal }),
-    });
-  };
-
-  // ── Category update (error correction in History tab) ─────────────────────
-  const CATEGORY_OPTIONS = [
-    { key: 'Live Music', label: 'Live Music', color: '#23CE6B' },
-    { key: 'Food & Drink Special', label: 'Food & Drink', color: '#F59E0B' },
-    { key: 'Trivia', label: 'Trivia', color: '#8B5CF6' },
-    { key: 'Sports / Watch Party', label: 'Sports', color: '#3B82F6' },
-    { key: 'Other / Special Event', label: 'Other', color: '#EC4899' },
-  ];
-
-  const updateEventCategory = async (ev, newCategory) => {
-    const prev = events;
-    setEvents(p => p.map(e => e.id === ev.id ? { ...e, category: newCategory, triage_status: 'reviewed' } : e));
-    try {
-      const body = { id: ev.id, category: newCategory, triage_status: 'reviewed' };
-      if (newCategory !== 'Live Music') {
-        body.artist_bio = null;
-        body.artist_id = null;
-      }
-      const res = await fetch('/api/admin', { method: 'PUT', headers, body: JSON.stringify(body) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      showQueueToast(`Re-categorized → ${newCategory}`);
-    } catch (err) {
-      console.error('Category update failed:', err);
-      setEvents(prev);
-    }
   };
 
   // ── Venue loader (populates datalist for queue triage) ──────────────────────
@@ -360,23 +285,23 @@ export default function AdminPage() {
     } catch (err) { console.error('Failed to load festival names:', err); }
   }, []);
 
-  const unpublishEvent = async (ev) => {
-    const prev = events;
-    setEvents(p => p.map(e => e.id === ev.id ? { ...e, status: 'archived', is_featured: false } : e));
+  const unpublishEvent = async (evt) => {
+    const prev = ev.events;
+    ev.setEvents(p => p.map(e => e.id === evt.id ? { ...e, status: 'archived', is_featured: false } : e));
     try {
       const res = await fetch('/api/admin', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-        body: JSON.stringify({ id: ev.id, status: 'archived', is_featured: false }),
+        body: JSON.stringify({ id: evt.id, status: 'archived', is_featured: false }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${res.status}`);
       }
-      showQueueToast(`📴 Unpublished: ${ev.artist_name}`);
+      showQueueToast(`📴 Unpublished: ${evt.artist_name}`);
     } catch (err) {
       console.error('Unpublish failed:', err);
-      setEvents(prev); // revert optimistic update
+      ev.setEvents(prev);
       alert(`Unpublish failed: ${err.message}`);
     }
   };
@@ -415,7 +340,7 @@ export default function AdminPage() {
         {[
           { key: 'dashboard', label: 'Dashboard', count: 0 },
           { key: 'triage', label: 'Triage', count: tr.triageEvents.length },
-          { key: 'events', label: 'Event Feed', count: eventsTotal || events.length },
+          { key: 'events', label: 'Event Feed', count: ev.eventsTotal || ev.events.length },
           { key: 'artists', label: 'Artists', count: ar.artists.length },
           { key: 'spotlight', label: 'Spotlight', count: sp.spotlightPins.length },
           { key: 'venues', label: 'Venues', count: scraperHealth.filter(s => s.status === 'fail').length },
@@ -434,7 +359,7 @@ export default function AdminPage() {
                 ? { background: 'var(--bg-card)', borderBottom: '2px solid #E8722A', color: '#FFFFFF' }
                 : { opacity: 0.6 }),
             }}
-            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (ar.artists.length === 0) ar.fetchArtists(); fetchReports(); fetchScraperHealth(); } if (tab.key === 'events') fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter); if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'venues') fetchScraperHealth(); if (tab.key === 'reports') { setFlagsViewFilter('pending'); fetchReports(); } if (tab.key === 'festivals') fetchFestivalNames(); }}
+            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); fetchReports(); fetchScraperHealth(); } if (tab.key === 'events') ev.fetchEvents(); if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'venues') fetchScraperHealth(); if (tab.key === 'reports') { setFlagsViewFilter('pending'); fetchReports(); } if (tab.key === 'festivals') fetchFestivalNames(); }}
           >
             {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? '#1C1917' : 'var(--text-secondary)' }}>{tab.count}</span>}
           </button>
@@ -449,57 +374,57 @@ export default function AdminPage() {
       {/* ── Dashboard Tab — Platform Analytics ───────────────────────────── */}
       {activeTab === 'dashboard' && !loading && (
         <AdminDashboardTab
-          events={events} artists={ar.artists} reports={reports} venues={venues}
+          events={ev.events} artists={ar.artists} reports={reports} venues={venues}
           scraperHealth={scraperHealth}
-          eventsTotal={eventsTotal} newEvents24h={newEvents24h}
+          eventsTotal={ev.eventsTotal} newEvents24h={ev.newEvents24h}
           dashDateRange={dashDateRange} setDashDateRange={setDashDateRange}
           analyticsData={analyticsData} analyticsLoading={analyticsLoading}
           analyticsEnv={analyticsEnv} setAnalyticsEnv={setAnalyticsEnv}
-          fetchAnalytics={fetchAnalytics} fetchEvents={fetchEvents}
+          fetchAnalytics={fetchAnalytics} fetchEvents={ev.fetchEvents}
           fetchArtists={ar.fetchArtists} fetchScraperHealth={fetchScraperHealth}
           fetchReports={fetchReports}
-          eventsSortField={eventsSortField} eventsSortOrder={eventsSortOrder}
-          eventsStatusFilter={eventsStatusFilter} setEventsStatusFilter={setEventsStatusFilter} setActiveTab={setActiveTab}
-          setVenuesFilter={setVenuesFilter} setEventsRecentlyAdded={setEventsRecentlyAdded}
-          setEvents={setEvents} setFlagsViewFilter={setFlagsViewFilter}
-          setEventsMissingTime={setEventsMissingTime} setArtistMissingFilters={ar.setArtistMissingFilters}
+          eventsSortField={ev.eventsSortField} eventsSortOrder={ev.eventsSortOrder}
+          eventsStatusFilter={ev.eventsStatusFilter} setEventsStatusFilter={ev.setEventsStatusFilter} setActiveTab={setActiveTab}
+          setVenuesFilter={setVenuesFilter} setEventsRecentlyAdded={ev.setEventsRecentlyAdded}
+          setEvents={ev.setEvents} setFlagsViewFilter={setFlagsViewFilter}
+          setEventsMissingTime={ev.setEventsMissingTime} setArtistMissingFilters={ar.setArtistMissingFilters}
         />
       )}
 
       {/* ── Triage Tab ── */}
       {activeTab === 'triage' && (
         <AdminTriageTab
-          events={events} venues={venues}
+          events={ev.events} venues={venues}
           triageEvents={tr.triageEvents} triageLoading={tr.triageLoading}
           triageActionId={tr.triageActionId}
           triageCategorize={tr.triageCategorize} triageDelete={tr.triageDelete}
           fetchTriage={tr.fetchTriage}
-          setEditingEvent={setEditingEvent} setShowEventForm={setShowEventForm}
+          setEditingEvent={ev.setEditingEvent} setShowEventForm={ev.setShowEventForm}
         />
       )}
 
       {/* Events Tab */}
       {activeTab === 'events' && !loading && (
         <AdminEventsTab
-          events={events} artists={ar.artists} venues={venues} password={password}
+          events={ev.events} artists={ar.artists} venues={venues} password={password}
           isMobile={isMobile}
-          eventsSearch={eventsSearch} setEventsSearch={setEventsSearch}
-          eventsStatusFilter={eventsStatusFilter} setEventsStatusFilter={setEventsStatusFilter}
-          eventsMissingTime={eventsMissingTime} setEventsMissingTime={setEventsMissingTime}
-          eventsSortField={eventsSortField} setEventsSortField={setEventsSortField}
-          eventsSortOrder={eventsSortOrder} setEventsSortOrder={setEventsSortOrder}
-          eventsPage={eventsPage} setEventsPage={setEventsPage}
-          eventsTotalPages={eventsTotalPages} eventsTotal={eventsTotal}
-          newEvents24h={newEvents24h} eventsRecentlyAdded={eventsRecentlyAdded}
-          setEventsRecentlyAdded={setEventsRecentlyAdded}
-          selectedEvents={selectedEvents} setSelectedEvents={setSelectedEvents}
-          setEvents={setEvents}
-          fetchEvents={fetchEvents} deleteEvent={deleteEvent}
-          toggleFeatured={toggleFeatured} unpublishEvent={unpublishEvent}
-          updateEventCategory={updateEventCategory}
-          CATEGORY_OPTIONS={CATEGORY_OPTIONS}
-          setEditingEvent={setEditingEvent} setShowEventForm={setShowEventForm}
-          setBulkTimeModal={setBulkTimeModal} setBulkTime={setBulkTime}
+          eventsSearch={ev.eventsSearch} setEventsSearch={ev.setEventsSearch}
+          eventsStatusFilter={ev.eventsStatusFilter} setEventsStatusFilter={ev.setEventsStatusFilter}
+          eventsMissingTime={ev.eventsMissingTime} setEventsMissingTime={ev.setEventsMissingTime}
+          eventsSortField={ev.eventsSortField} setEventsSortField={ev.setEventsSortField}
+          eventsSortOrder={ev.eventsSortOrder} setEventsSortOrder={ev.setEventsSortOrder}
+          eventsPage={ev.eventsPage} setEventsPage={ev.setEventsPage}
+          eventsTotalPages={ev.eventsTotalPages} eventsTotal={ev.eventsTotal}
+          newEvents24h={ev.newEvents24h} eventsRecentlyAdded={ev.eventsRecentlyAdded}
+          setEventsRecentlyAdded={ev.setEventsRecentlyAdded}
+          selectedEvents={ev.selectedEvents} setSelectedEvents={ev.setSelectedEvents}
+          setEvents={ev.setEvents}
+          fetchEvents={ev.fetchEvents} deleteEvent={deleteEvent}
+          toggleFeatured={ev.toggleFeatured} unpublishEvent={unpublishEvent}
+          updateEventCategory={ev.updateEventCategory}
+          CATEGORY_OPTIONS={ev.CATEGORY_OPTIONS}
+          setEditingEvent={ev.setEditingEvent} setShowEventForm={ev.setShowEventForm}
+          setBulkTimeModal={ev.setBulkTimeModal} setBulkTime={ev.setBulkTime}
           showQueueToast={showQueueToast}
         />
       )}
@@ -507,7 +432,7 @@ export default function AdminPage() {
       {/* Artists Tab */}
       {activeTab === 'artists' && !loading && (
         <AdminArtistsTab
-          artists={ar.artists} events={events} venues={venues} password={password} isMobile={isMobile}
+          artists={ar.artists} events={ev.events} venues={venues} password={password} isMobile={isMobile}
           artistsSearch={ar.artistsSearch} setArtistsSearch={ar.setArtistsSearch}
           artistsNeedsInfo={ar.artistsNeedsInfo} setArtistsNeedsInfo={ar.setArtistsNeedsInfo}
           artistMissingFilters={ar.artistMissingFilters} setArtistMissingFilters={ar.setArtistMissingFilters}
@@ -543,7 +468,7 @@ export default function AdminPage() {
       {/* Spotlight Tab */}
       {activeTab === 'spotlight' && !loading && (
         <AdminSpotlightTab
-          artists={ar.artists} events={events}
+          artists={ar.artists} events={ev.events}
           spotlightDate={sp.spotlightDate} setSpotlightDate={sp.setSpotlightDate}
           spotlightPins={sp.spotlightPins} setSpotlightPins={sp.setSpotlightPins}
           spotlightEvents={sp.spotlightEvents} spotlightLoading={sp.spotlightLoading}
@@ -558,7 +483,7 @@ export default function AdminPage() {
       {/* Venues Tab */}
       {activeTab === 'venues' && !loading && (
         <AdminVenuesTab
-          events={events} venues={venues}
+          events={ev.events} venues={venues}
           scraperHealth={scraperHealth} venuesFilter={venuesFilter}
           setVenuesFilter={setVenuesFilter}
           forceSyncing={forceSyncing} handleForceSync={handleForceSync}
@@ -568,7 +493,7 @@ export default function AdminPage() {
       {/* Festivals Tab */}
       {activeTab === 'festivals' && !loading && (
         <AdminFestivalsTab
-          events={events} submissions={submissions} password={password}
+          events={ev.events} submissions={submissions} password={password}
           festivalData={festivalData} festivalSearch={festivalSearch}
           setFestivalSearch={setFestivalSearch}
           editingFestival={editingFestival} setEditingFestival={setEditingFestival}
@@ -611,10 +536,10 @@ export default function AdminPage() {
       {/* Reports Tab */}
       {activeTab === 'reports' && !loading && (
         <AdminReportsTab
-          reports={reports} setReports={setReports} events={events}
+          reports={reports} setReports={setReports} events={ev.events}
           artists={ar.artists} venues={venues} password={password}
           flagsViewFilter={flagsViewFilter} setFlagsViewFilter={setFlagsViewFilter}
-          setEditingEvent={setEditingEvent} setShowEventForm={setShowEventForm}
+          setEditingEvent={ev.setEditingEvent} setShowEventForm={ev.setShowEventForm}
           setEditingArtist={ar.setEditingArtist} setArtistForm={ar.setArtistForm}
           setArtistsSearch={ar.setArtistsSearch} setArtistSubTab={ar.setArtistSubTab}
           setImageCandidates={ar.setImageCandidates} setImageCarouselIdx={ar.setImageCarouselIdx}
@@ -716,19 +641,19 @@ export default function AdminPage() {
       )}
 
       {/* Bulk Edit Time Modal */}
-      {bulkTimeModal && (
-        <ModalWrapper onClose={() => { if (!bulkTimeLoading) setBulkTimeModal(false); }} maxWidth="360px">
+      {ev.bulkTimeModal && (
+        <ModalWrapper onClose={() => { if (!ev.bulkTimeLoading) ev.setBulkTimeModal(false); }} maxWidth="360px">
           <>
             <h3 style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 8px' }}>
-              Set Time for {selectedEvents.size} Event{selectedEvents.size !== 1 ? 's' : ''}
+              Set Time for {ev.selectedEvents.size} Event{ev.selectedEvents.size !== 1 ? 's' : ''}
             </h3>
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: '0 0 16px' }}>
               This will update the start time on all selected events.
             </p>
             <input
               type="time"
-              value={bulkTime}
-              onChange={e => setBulkTime(e.target.value)}
+              value={ev.bulkTime}
+              onChange={e => ev.setBulkTime(e.target.value)}
               autoFocus
               style={{
                 width: '100%', padding: '10px 14px', background: 'var(--bg-elevated)',
@@ -737,14 +662,14 @@ export default function AdminPage() {
                 fontFamily: "'DM Sans', sans-serif", outline: 'none', marginBottom: '16px',
               }}
             />
-            {bulkTimeLoading ? (
+            {ev.bulkTimeLoading ? (
               <div style={{ textAlign: 'center', padding: '12px', fontSize: '13px', color: '#E8722A', fontWeight: 600 }}>
                 Updating...
               </div>
             ) : (
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
-                  onClick={() => setBulkTimeModal(false)}
+                  onClick={() => ev.setBulkTimeModal(false)}
                   style={{
                     flex: 1, padding: '10px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
                     background: 'transparent', color: 'var(--text-muted)',
@@ -752,39 +677,38 @@ export default function AdminPage() {
                   }}
                 >Cancel</button>
                 <button
-                  disabled={!bulkTime}
+                  disabled={!ev.bulkTime}
                   onClick={async () => {
-                    if (!bulkTime) return;
-                    setBulkTimeLoading(true);
+                    if (!ev.bulkTime) return;
+                    ev.setBulkTimeLoading(true);
                     try {
-                      const ids = [...selectedEvents];
+                      const ids = [...ev.selectedEvents];
                       for (const id of ids) {
-                        // Get existing event to preserve its date
-                        const ev = events.find(e => e.id === id);
-                        if (!ev) continue;
-                        const existingDate = ev.event_date ? new Date(ev.event_date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
-                        const newDateTime = new Date(`${existingDate}T${bulkTime}:00`).toISOString();
+                        const evt = ev.events.find(e => e.id === id);
+                        if (!evt) continue;
+                        const existingDate = evt.event_date ? new Date(evt.event_date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+                        const newDateTime = new Date(`${existingDate}T${ev.bulkTime}:00`).toISOString();
                         await fetch('/api/admin', {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
                           body: JSON.stringify({ id, event_date: newDateTime, is_time_tbd: false }),
                         });
                       }
-                      setBulkTimeModal(false);
-                      setSelectedEvents(new Set());
-                      fetchEvents(1, eventsSortField, eventsSortOrder);
-                      showQueueToast(`Updated time to ${bulkTime} on ${ids.length} event(s)`);
+                      ev.setBulkTimeModal(false);
+                      ev.setSelectedEvents(new Set());
+                      ev.fetchEvents();
+                      showQueueToast(`Updated time to ${ev.bulkTime} on ${ids.length} event(s)`);
                     } catch (err) {
                       console.error('Bulk time update error:', err);
                       showQueueToast('Bulk time update failed');
                     }
-                    setBulkTimeLoading(false);
+                    ev.setBulkTimeLoading(false);
                   }}
                   style={{
                     flex: 1, padding: '10px', borderRadius: '10px', fontSize: '13px', fontWeight: 700,
-                    background: bulkTime ? '#E8722A' : 'rgba(232,114,42,0.2)',
-                    color: bulkTime ? '#1C1917' : '#666',
-                    border: 'none', cursor: bulkTime ? 'pointer' : 'not-allowed',
+                    background: ev.bulkTime ? '#E8722A' : 'rgba(232,114,42,0.2)',
+                    color: ev.bulkTime ? '#1C1917' : '#666',
+                    border: 'none', cursor: ev.bulkTime ? 'pointer' : 'not-allowed',
                   }}
                 >Save Time</button>
               </div>
@@ -794,12 +718,12 @@ export default function AdminPage() {
       )}
 
       {/* Event Form Modal */}
-      {showEventForm && (
+      {ev.showEventForm && (
         <EventFormModal
-          event={editingEvent}
+          event={ev.editingEvent}
           artists={ar.artists}
           venues={venues}
-          onClose={() => { setShowEventForm(false); setEditingEvent(null); }}
+          onClose={() => { ev.setShowEventForm(false); ev.setEditingEvent(null); }}
           onSave={saveEvent}
           adminPassword={password}
         />
