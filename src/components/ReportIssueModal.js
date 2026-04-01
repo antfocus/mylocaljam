@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { formatDate } from '@/lib/utils';
 import { Icons } from './Icons';
+import ModalWrapper from '@/components/ui/ModalWrapper';
 
 export default function ReportIssueModal({ event, onClose, onSubmit }) {
   const [issue, setIssue] = useState('');
@@ -50,12 +51,20 @@ export default function ReportIssueModal({ event, onClose, onSubmit }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
-      <div
-        className="w-full max-w-[540px] max-h-[85vh] overflow-y-auto rounded-2xl border"
-        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', boxShadow: '0 24px 80px rgba(0,0,0,0.5)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ModalWrapper
+      onClose={onClose}
+      zIndex={200}
+      overlayBg="rgba(0,0,0,0.7)"
+      maxWidth="540px"
+      maxHeight="85vh"
+      padding="0"
+      cardStyle={{
+        background: 'var(--bg-secondary)',
+        border: '1px solid var(--border)',
+        borderRadius: '16px',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
+      }}
+    >
         <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: 'var(--border)' }}>
           <h2 className="font-display font-bold text-lg">Report an Issue</h2>
           <button className="p-1 rounded-md text-brand-text-muted hover:text-brand-text transition-colors" onClick={onClose}>{Icons.x}</button>
@@ -93,7 +102,6 @@ export default function ReportIssueModal({ event, onClose, onSubmit }) {
             {submitting ? 'Submitting...' : 'Submit Report'}
           </button>
         </div>
-      </div>
-    </div>
+    </ModalWrapper>
   );
 }

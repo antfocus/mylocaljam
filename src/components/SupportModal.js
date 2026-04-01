@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
+import ModalWrapper from '@/components/ui/ModalWrapper';
 
 const DARK = {
   bg:       '#0D0D12',
@@ -93,25 +94,21 @@ export default function SupportModal({ onClose, darkMode = true, userEmail = nul
   };
 
   return (
-    <div
-      onClick={handleClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 200,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)',
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%', maxWidth: '420px',
-          margin: '0 16px',
-          background: t.surface,
-          borderRadius: '20px',
-          boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
-          overflow: 'hidden',
-          maxHeight: '90vh',
-          overflowY: 'auto',
+    <ModalWrapper
+      onClose={handleClose}
+      zIndex={200}
+      overlayBg="rgba(0,0,0,0.65)"
+      maxWidth="420px"
+      cardStyle={{
+        background: t.surface,
+        borderRadius: '20px',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.4)',
+        overflow: 'hidden',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        padding: 0,
+        margin: '0 16px',
+        border: 'none',
         }}
       >
         {/* Success State */}
@@ -300,7 +297,6 @@ export default function SupportModal({ onClose, darkMode = true, userEmail = nul
             </div>
           </>
         )}
-      </div>
-    </div>
+    </ModalWrapper>
   );
 }

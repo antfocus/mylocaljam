@@ -1,0 +1,401 @@
+'use client';
+
+import { formatDate, formatTime } from '@/lib/utils';
+import { Icons } from '@/components/Icons';
+import Badge from '@/components/ui/Badge';
+
+export default function AdminEventsTab({
+  events, artists, venues,
+  eventsSearch, setEventsSearch, eventsStatusFilter, setEventsStatusFilter,
+  eventsMissingTime, setEventsMissingTime,
+  eventsSortField, setEventsSortField, eventsSortOrder, setEventsSortOrder,
+  eventsPage, setEventsPage, eventsTotalPages, eventsTotal,
+  newEvents24h, eventsRecentlyAdded, setEventsRecentlyAdded,
+  selectedEvents, setSelectedEvents, setEvents,
+  fetchEvents, deleteEvent, toggleFeatured, unpublishEvent, updateEventCategory,
+  setEditingEvent, setShowEventForm, setBulkTimeModal, setBulkTime,
+  isMobile, showQueueToast, CATEGORY_OPTIONS,
+  password,
+}) {
+  const headers = { Authorization: 'Bearer ' + password };
+        // Server-side filtering handles status/date — client filters by search text + missing time
+        const searchLower = eventsSearch.trim().toLowerCase();
+        let filtered = events;
+        if (searchLower) {
+          filtered = filtered.filter(ev => {
+            const artist = (ev.artist_name || '').toLowerCase();
+            const venue = (ev.venue_name || ev.venues?.name || '').toLowerCase();
+            return artist.includes(searchLower) || venue.includes(searchLower);
+          });
+        }
+        // Missing time filter is now server-side via ?missingTime=true
+  return (
+        <div>
+          {/* View tabs + Add Event */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid var(--border)' }}>
+              {[
+                { key: 'upcoming', label: 'Upcoming' },
+                { key: 'past', label: 'Past' },
+                { key: 'hidden', label: 'Hidden' },
+              ].map(seg => (
+                <button
+                  key={seg.key}
+                  onClick={() => { setEventsStatusFilter(seg.key); setSelectedEvents(new Set()); setEventsRecentlyAdded(false); setEvents([]); fetchEvents(1, eventsSortField, eventsSortOrder, seg.key, eventsMissingTime, false); }}
+                  style={{
+                    padding: '8px 16px', fontSize: '13px', fontWeight: 600,
+                    fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                    background: 'none', border: 'none',
+                    color: eventsStatusFilter === seg.key ? '#F0F0F5' : 'var(--text-muted)',
+                    borderBottom: eventsStatusFilter === seg.key ? '2px solid #F0F0F5' : '2px solid transparent',
+                    marginBottom: '-1px',
+                    transition: 'color 0.15s, border-color 0.15s',
+                  }}
+                >
+                  {seg.label}
+                </button>
+              ))}
+            </div>
+            <button
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white"
+              style={{ background: 'var(--accent)', fontFamily: "'DM Sans', sans-serif" }}
+              onClick={() => { setEditingEvent(null); setShowEventForm(true); }}
+            >
+              {Icons.plus} Add Event
+            </button>
+          </div>
+
+          {/* Search + Sort row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px', marginBottom: '12px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+            <div style={{ flex: '1 1 200px', position: 'relative' }}>
+              <input
+                type="text"
+                placeholder="Search artist or venue..."
+                value={eventsSearch}
+                onChange={e => { setEventsSearch(e.target.value); setSelectedEvents(new Set()); }}
+                style={{
+                  width: '100%', padding: '9px 14px', paddingRight: eventsSearch ? '36px' : '14px',
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  borderRadius: '8px', color: 'var(--text-primary)',
+                  fontFamily: "'DM Sans', sans-serif", fontSize: '14px', outline: 'none',
+                }}
+              />
+              {eventsSearch && (
+                <button
+                  onClick={() => { setEventsSearch(''); setSelectedEvents(new Set()); }}
+                  style={{
+                    position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                    color: 'var(--text-muted)', fontSize: '16px', lineHeight: 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                  title="Clear search"
+                >✕</button>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                onClick={() => {
+                  const next = !eventsRecentlyAdded;
+                  setEventsRecentlyAdded(next);
+                  if (next) setEventsMissingTime(false);
+                  setEvents([]);
+                  setSelectedEvents(new Set());
+                  fetchEvents(1, next ? 'created_at' : eventsSortField, next ? 'desc' : eventsSortOrder, eventsStatusFilter, false, next);
+                }}
+                style={{
+                  padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: 'none',
+                  whiteSpace: 'nowrap',
+                  background: eventsRecentlyAdded ? 'rgba(59,130,246,0.15)' : 'var(--bg-card)',
+                  color: eventsRecentlyAdded ? '#3B82F6' : 'var(--text-muted)',
+                  outline: eventsRecentlyAdded ? '1.5px solid rgba(59,130,246,0.4)' : '1px solid var(--border)',
+                }}
+              >
+                New (24h)
+              </button>
+              <button
+                onClick={() => {
+                  const next = !eventsMissingTime;
+                  setEventsMissingTime(next);
+                  if (next) setEventsRecentlyAdded(false);
+                  setEvents([]);
+                  setSelectedEvents(new Set());
+                  fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, next, false);
+                }}
+                style={{
+                  padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: 'none',
+                  whiteSpace: 'nowrap',
+                  background: eventsMissingTime ? 'rgba(234,179,8,0.15)' : 'var(--bg-card)',
+                  color: eventsMissingTime ? '#EAB308' : 'var(--text-muted)',
+                  outline: eventsMissingTime ? '1.5px solid rgba(234,179,8,0.4)' : '1px solid var(--border)',
+                }}
+              >
+                Missing Time
+              </button>
+              <button
+                onClick={() => {
+                  const csvRows = [
+                    ['Event ID', 'Artist Name', 'Event Title', 'Venue', 'Event Date', 'Start Time', 'Genre', 'Category', 'Cover', 'Status', 'Source URL', 'Created At'].join(','),
+                    ...filtered.map(ev => {
+                      const d = ev.event_date ? new Date(ev.event_date) : null;
+                      const dateStr = d ? d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : '';
+                      const timeStr = d ? d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }) : '';
+                      const esc = (s) => `"${(s || '').replace(/"/g, '""')}"`;
+                      return [
+                        ev.id, esc(ev.artist_name), esc(ev.event_title), esc(ev.venue_name || ev.venues?.name),
+                        dateStr, timeStr, esc(ev.genre), esc(ev.category), esc(ev.cover), ev.status,
+                        esc(ev.source), ev.created_at ? new Date(ev.created_at).toISOString().slice(0, 10) : '',
+                      ].join(',');
+                    }),
+                  ].join('\n');
+                  const blob = new Blob([csvRows], { type: 'text/csv' });
+                  const link = document.createElement('a');
+                  link.href = URL.createObjectURL(blob);
+                  link.download = `events-export-${new Date().toISOString().slice(0, 10)}.csv`;
+                  link.click();
+                }}
+                style={{
+                  padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: 'none',
+                  whiteSpace: 'nowrap',
+                  background: 'var(--bg-card)', color: 'var(--text-muted)',
+                  outline: '1px solid var(--border)',
+                }}
+                title="Export filtered events to CSV"
+              >
+                ↓ CSV
+              </button>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap' }}>
+                {filtered.length} events
+              </span>
+              <select
+                value={`${eventsSortField}:${eventsSortOrder}`}
+                onChange={e => {
+                  const [field, order] = e.target.value.split(':');
+                  setEventsSortField(field);
+                  setEventsSortOrder(order);
+                  setEvents([]);
+                  fetchEvents(1, field, order, eventsStatusFilter, eventsMissingTime);
+                }}
+                style={{
+                  padding: '7px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                  color: 'var(--text-secondary)', cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif", outline: 'none',
+                }}
+              >
+                <option value="event_date:asc">Event Date (soonest)</option>
+                <option value="event_date:desc">Event Date (latest)</option>
+                <option value="updated_at:desc">Last Updated (newest)</option>
+                <option value="updated_at:asc">Last Updated (oldest)</option>
+                <option value="created_at:desc">Date Added (newest)</option>
+                <option value="created_at:asc">Date Added (oldest)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Select-All + Bulk Actions */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 14px',
+            borderRadius: '8px', background: 'var(--bg-elevated)', marginBottom: '6px',
+          }}>
+            <input
+              type="checkbox"
+              checked={filtered.length > 0 && selectedEvents.size === filtered.length}
+              onChange={e => {
+                if (e.target.checked) setSelectedEvents(new Set(filtered.map(ev => ev.id)));
+                else setSelectedEvents(new Set());
+              }}
+              style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#E8722A' }}
+            />
+            {selectedEvents.size > 0 ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#E8722A', fontFamily: "'DM Sans', sans-serif" }}>
+                  {selectedEvents.size} selected
+                </span>
+                <button
+                  onClick={() => setSelectedEvents(new Set())}
+                  style={{
+                    background: 'none', border: '1px solid var(--border)', borderRadius: '6px',
+                    color: 'var(--text-muted)', fontSize: '11px', fontWeight: 600, padding: '3px 8px', cursor: 'pointer',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}
+                >Deselect All</button>
+                <div style={{ flex: 1 }} />
+                <button
+                  onClick={() => { setBulkTime(''); setBulkTimeModal(true); }}
+                  style={{
+                    padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
+                    background: 'rgba(232,114,42,0.12)', color: '#E8722A',
+                    border: '1px solid rgba(232,114,42,0.3)', cursor: 'pointer',
+                    fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: '5px',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" fill="currentColor" /></svg>
+                  Edit Time ({selectedEvents.size})
+                </button>
+              </div>
+            ) : (
+              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                Select events for bulk actions
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            {filtered.map((ev) => {
+              const isEvSelected = selectedEvents.has(ev.id);
+              const catColor = CATEGORY_OPTIONS.find(c => c.key === (ev.category || 'Live Music'))?.color || '#666';
+              return (
+              <div key={ev.id} className="rounded-xl border" style={{
+                background: isEvSelected ? 'rgba(232,114,42,0.04)' : 'var(--bg-card)',
+                borderColor: isEvSelected ? '#E8722A44' : 'var(--border)',
+                padding: '12px 14px',
+                display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '8px' : '0',
+              }}>
+                {/* Top section: checkbox + event info */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '10px' : '14px', flex: 1, minWidth: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={isEvSelected}
+                    onChange={e => {
+                      setSelectedEvents(prev => {
+                        const next = new Set(prev);
+                        if (e.target.checked) next.add(ev.id);
+                        else next.delete(ev.id);
+                        return next;
+                      });
+                    }}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#E8722A', flexShrink: 0 }}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="font-display font-bold" style={{ fontSize: isMobile ? '15px' : '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {ev.artist_name}
+                    </div>
+                    <div className="text-xs text-brand-text-secondary" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {ev.venue_name || ev.venues?.name} · {formatDate(ev.event_date)} · {formatTime(ev.event_date)}
+                      </span>
+                      {isMobile && ev.source && /^https?:\/\//i.test(ev.source) && (
+                        <a href={ev.source} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ color: 'var(--text-muted)', flexShrink: 0, textDecoration: 'none', display: 'inline-flex' }} title="Open source"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>
+                      )}
+                    </div>
+                    {/* Timestamps — hidden on mobile */}
+                    {!isMobile && (
+                      <div className="text-[10px] mt-0.5 flex gap-3" style={{ color: 'var(--text-muted)' }}>
+                        {ev.created_at && (
+                          <span>Added {new Date(ev.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        )}
+                        {ev.updated_at && ev.updated_at !== ev.created_at && (
+                          <span>Updated {new Date(ev.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action bar: badges + buttons */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', flexShrink: 0,
+                  ...(isMobile ? { paddingLeft: '26px' } : {}),
+                }}>
+                  <select
+                    value={ev.category || 'Live Music'}
+                    onChange={(e) => updateEventCategory(ev, e.target.value)}
+                    className="text-[11px] font-display font-semibold rounded-lg px-2 py-1"
+                    style={{
+                      background: 'var(--bg-elevated)',
+                      border: `1px solid ${catColor}44`,
+                      color: catColor,
+                      cursor: 'pointer', flexShrink: 0, outline: 'none',
+                    }}
+                  >
+                    {CATEGORY_OPTIONS.map(c => (
+                      <option key={c.key} value={c.key}>{c.label}</option>
+                    ))}
+                  </select>
+                  {ev.status === 'published' ? (
+                    <>
+                      <Badge label="Published" size="sm" bg="rgba(34,197,94,0.2)" color="#22c55e" style={{ borderRadius: '999px' }} />
+                      <button
+                        className="px-2 py-1 rounded-lg text-xs font-medium"
+                        style={{ border: '1px solid #F59E0B33', color: '#F59E0B', background: 'transparent' }}
+                        onClick={() => unpublishEvent(ev)}
+                        title="Pull from live feed"
+                      >
+                        Unpublish
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <Badge label={ev.status === 'draft' ? 'Draft' : 'Hidden'} size="sm" bg="rgba(107,114,128,0.2)" color="#9CA3AF" style={{ borderRadius: '999px' }} />
+                      <button
+                        className="px-2 py-1 rounded-lg text-xs font-medium"
+                        style={{ border: '1px solid #23CE6B33', color: '#23CE6B', background: 'transparent' }}
+                        onClick={async () => {
+                          const prev = events;
+                          setEvents(p => p.map(e => e.id === ev.id ? { ...e, status: 'published' } : e));
+                          try {
+                            const res = await fetch('/api/admin', {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+                              body: JSON.stringify({ id: ev.id, status: 'published' }),
+                            });
+                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                            showQueueToast(`✅ Republished: ${ev.artist_name}`);
+                          } catch (err) {
+                            console.error('Republish failed:', err);
+                            setEvents(prev);
+                            alert(`Republish failed: ${err.message}`);
+                          }
+                        }}
+                        title="Publish to live feed"
+                      >
+                        Publish
+                      </button>
+                    </>
+                  )}
+                  {!isMobile && ev.source && /^https?:\/\//i.test(ev.source) && (
+                    <a
+                      href={ev.source}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent"
+                      title={`Source: ${(() => { try { return new URL(ev.source).hostname; } catch { return 'link'; } })()}`}
+                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+                    </a>
+                  )}
+                  <button className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent" onClick={() => { setEditingEvent(ev); setShowEventForm(true); }}>
+                    {Icons.edit}
+                  </button>
+                  <button className="p-1.5 rounded text-brand-text-muted hover:text-red-400" onClick={() => deleteEvent(ev.id)} title="Permanently delete">
+                    {Icons.trash}
+                  </button>
+                </div>
+              </div>
+              );
+            })}
+            {filtered.length === 0 && <p className="text-center py-8 text-brand-text-muted">{eventsSearch ? 'No matching events.' : 'No events in this view.'}</p>}
+          </div>
+
+          {/* Load More */}
+          {eventsPage < eventsTotalPages && (
+            <div className="text-center mt-4">
+              <button
+                className="px-6 py-2.5 rounded-lg text-sm font-display font-semibold"
+                style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                onClick={() => fetchEvents(eventsPage + 1, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime)}
+              >
+                Load More ({events.length} of {eventsTotal})
+              </button>
+            </div>
+          )}
+        </div>
+        
+  );
+}

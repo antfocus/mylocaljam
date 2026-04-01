@@ -50,11 +50,6 @@ export async function GET(request) {
       .order('sort_order', { ascending: true });
     if (pins && pins.length > 0) {
       addIds(pins.map(p => p.event_id));
-      // If we have manual pins, return them immediately (admin override)
-      if (collected.length > 0) {
-        const result = collected.map((id, i) => ({ event_id: id, sort_order: i }));
-        return NextResponse.json(result);
-      }
     }
   } catch { /* spotlight_events table may not exist */ }
 
@@ -167,9 +162,27 @@ export async function GET(request) {
     } catch {}
   }
 
-  // Return as array of { event_id, sort_order } to match existing format
-  const result = collected.map((id, i) => ({ event_id: id, sort_order: i }));
-  return NextResponse.json(result);
+  if (collected.length === 0) return NextResponse.json([]);
+
+  const fallback = collected.map((id, i) => ({ event_id: id, sort_order: i }));
+
+  try {
+    const { data: hydrated, error } = await supabase
+      .from('events')
+      .select('*, venues(name, address, color, latitude, longitude, venue_type, tags), artists(name, bio, image_url, genres, vibes, is_tribute)')
+      .in('id', collected);
+
+    if (error || !hydrated || hydrated.length === 0) return NextResponse.json(fallback);
+
+    const byId = Object.fromEntries(hydrated.map(e => [e.id, e]));
+    const result = collected
+      .map((id, i) => byId[id] ? { event_id: id, ...byId[id], sort_order: i } : null)
+      .filter(Boolean);
+
+    return NextResponse.json(result);
+  } catch {
+    return NextResponse.json(fallback);
+  }
 }
 
 /**

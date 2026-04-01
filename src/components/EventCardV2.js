@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { formatTimeRange } from '@/lib/utils';
 import { posthog } from '@/lib/posthog';
+import Badge from '@/components/ui/Badge';
 
 const CATEGORY_CONFIG = {
   'Live Music':      { color: '#E8722A', bg: '#E8722A', emoji: '🎵' },
@@ -106,8 +107,6 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
   const expandedBg  = darkMode ? '#14141E' : '#F9FAFB';
   const flagIconCol = darkMode ? '#6A6A8A' : '#9CA3AF';
   const flagIconHov = '#E8722A';
-  const coverPillBg = darkMode ? '#2A2A3A' : '#E5E7EB';
-  const coverPillTx = darkMode ? '#CCCCDD' : '#4B5563';
   const sheetBg     = darkMode ? '#1A1A24' : '#FFFFFF';
   const sheetBorder = darkMode ? '#2A2A3A' : '#E5E7EB';
   const overlayBg   = 'rgba(0,0,0,0.5)';
@@ -319,34 +318,13 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
 
             {/* CANCELED badge (shown even without image) */}
             {isCanceled && !imageUrl && (
-              <div style={{
-                display: 'flex', justifyContent: 'center', margin: '10px 0 8px',
-              }}>
-                <span style={{
-                  background: '#DC2626', color: '#FFFFFF',
-                  fontSize: '13px', fontWeight: 900, letterSpacing: '1.5px',
-                  padding: '6px 16px', borderRadius: '8px',
-                  textTransform: 'uppercase',
-                  fontFamily: "'DM Sans', sans-serif",
-                }}>
-                  CANCELED
-                </span>
+              <div style={{ display: 'flex', justifyContent: 'center', margin: '10px 0 8px' }}>
+                <Badge label="CANCELED" size="md" bg="#DC2626" color="#FFFFFF"
+                  style={{ fontWeight: 900, letterSpacing: '1.5px', padding: '6px 16px', borderRadius: '8px', fontSize: '13px' }} />
               </div>
             )}
 
-            {/* Cover Charge pill */}
-            {event.cover != null && event.cover !== 'TBA' && !isCanceled && (
-              <div style={{
-                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                background: coverPillBg, color: coverPillTx,
-                fontSize: '11px', fontWeight: 700,
-                padding: '4px 10px', borderRadius: '999px',
-                margin: '6px 0 4px',
-                fontFamily: "'DM Sans', sans-serif",
-              }}>
-                {event.cover === '0' || event.cover?.toLowerCase() === 'free' ? '🎵 Free Admission' : `💵 ${event.cover?.startsWith?.('$') ? '' : '$'}${event.cover} Cover`}
-              </div>
-            )}
+            {/* Cover Charge pill — hidden until feature is set up */}
 
             {/* Bio / Description — 3-line clamp with Read More */}
             {desc && (

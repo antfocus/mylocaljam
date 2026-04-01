@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Badge from '@/components/ui/Badge';
 
 /* ── Genre / Vibe constants (must match admin page) ─────────────────────── */
 const GENRES = ['Rock','Alternative','Indie','Pop','R&B / Soul','Hip-Hop','Jazz','Blues','Country','Folk','Acoustic','Reggae','Latin','Electronic','Punk','Metal','Classical','Funk','Jam Band','Singer-Songwriter','Americana','World','Covers / Variety','DJ Set','Karaoke','Open Mic','Other'];
@@ -9,18 +10,17 @@ const VIBES = ['Chill','Energetic','Intimate','Party','Upbeat','Mellow','Romanti
 /* ── Source badge sub-component ──────────────────────────────────────────── */
 function SourceBadge({ isCustom, inheritedLabel }) {
   return (
-    <span
+    <Badge
+      label={isCustom ? 'Source: Custom Event Data' : `Source: ${inheritedLabel}`}
+      size="sm"
+      bg={isCustom ? 'rgba(232,114,42,0.12)' : 'rgba(59,130,246,0.10)'}
+      color={isCustom ? '#E8722A' : '#60A5FA'}
+      uppercase={false}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: '4px',
-        fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '999px',
-        fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
-        background: isCustom ? 'rgba(232,114,42,0.12)' : 'rgba(59,130,246,0.10)',
-        color: isCustom ? '#E8722A' : '#60A5FA',
+        borderRadius: '999px',
         border: `1px solid ${isCustom ? 'rgba(232,114,42,0.25)' : 'rgba(59,130,246,0.20)'}`,
       }}
-    >
-      {isCustom ? 'Source: Custom Event Data' : `Source: ${inheritedLabel}`}
-    </span>
+    />
   );
 }
 

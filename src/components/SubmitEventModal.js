@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import Badge from '@/components/ui/Badge';
 
 const DARK = {
   bg:       '#0D0D12',
@@ -194,22 +195,10 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
   };
 
   // ── Status badge helper ───────────────────────────────────────────────
-  const StatusBadge = ({ status }) => {
-    const configs = {
-      pending:  { label: 'Pending',  bg: 'rgba(234,179,8,0.12)',  color: '#EAB308' },
-      approved: { label: 'Approved', bg: 'rgba(34,197,94,0.12)',  color: '#22c55e' },
-      rejected: { label: 'Rejected', bg: 'rgba(239,68,68,0.12)',  color: '#ef4444' },
-    };
-    const c = configs[status] || configs.pending;
-    return (
-      <span style={{
-        padding: '2px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 700,
-        fontFamily: "'DM Sans', sans-serif", textTransform: 'uppercase', letterSpacing: '0.3px',
-        background: c.bg, color: c.color,
-      }}>
-        {c.label}
-      </span>
-    );
+  const STATUS_CONFIGS = {
+    pending:  { label: 'Pending',  bg: 'rgba(234,179,8,0.12)',  color: '#EAB308' },
+    approved: { label: 'Approved', bg: 'rgba(34,197,94,0.12)',  color: '#22c55e' },
+    rejected: { label: 'Rejected', bg: 'rgba(239,68,68,0.12)',  color: '#ef4444' },
   };
 
   return (
@@ -420,7 +409,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                               {sub.venue_name ? ` \u00b7 ${sub.venue_name}` : ''}
                             </span>
                           </div>
-                          <StatusBadge status={sub.status} />
+                          {(() => { const c = STATUS_CONFIGS[sub.status] || STATUS_CONFIGS.pending; return <Badge label={c.label} size="sm" bg={c.bg} color={c.color} />; })()}
                         </div>
                       ))}
                     </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import ModalWrapper from '@/components/ui/ModalWrapper';
 
 const TAG_OPTIONS = ['LIVE MUSIC', 'FREE', '21+', 'ALL AGES', 'OUTDOOR', 'HAPPY HOUR', 'DJ', 'OPEN MIC'];
 
@@ -70,35 +71,20 @@ export default function AddToJarModal({ onClose, onSubmit }) {
   };
 
   return (
-    <div
-      className="modal-overlay"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 2000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-        background: 'rgba(0, 0, 0, 0.6)',
-        backdropFilter: 'blur(8px)',
+    <ModalWrapper
+      onClose={onClose}
+      zIndex={2000}
+      blur={8}
+      maxWidth="540px"
+      maxHeight="85vh"
+      padding="0"
+      cardStyle={{
+        background: 'var(--bg-secondary)',
+        borderRadius: 'var(--radius-xl)',
+        border: '1px solid var(--border)',
+        boxShadow: '0 24px 80px rgba(0, 0, 0, 0.5)',
       }}
     >
-      <div
-        className="modal-content"
-        onClick={e => e.stopPropagation()}
-        style={{
-          width: '100%',
-          maxWidth: '540px',
-          maxHeight: '85vh',
-          overflowY: 'auto',
-          background: 'var(--bg-secondary)',
-          borderRadius: 'var(--radius-xl)',
-          border: '1px solid var(--border)',
-          boxShadow: '0 24px 80px rgba(0, 0, 0, 0.5)',
-        }}
-      >
         {/* Header */}
         <div style={{
           display: 'flex',
@@ -289,7 +275,6 @@ export default function AddToJarModal({ onClose, onSubmit }) {
             Submissions are reviewed before going live. Thank you for helping the community!
           </p>
         </div>
-      </div>
-    </div>
+    </ModalWrapper>
   );
 }

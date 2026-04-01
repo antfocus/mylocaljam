@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { formatTimeRange } from '@/lib/utils';
 import { posthog } from '@/lib/posthog';
+import ModalWrapper from '@/components/ui/ModalWrapper';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -350,20 +351,20 @@ export default function EventPageClient({ event }) {
 
       {/* ── Auth modal overlay ─────────────────────────────────────────────── */}
       {showAuth && (
-        <>
-          <div onClick={() => setShowAuth(false)} style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            zIndex: 200, background: 'rgba(0,0,0,0.6)',
-          }} />
-          <div style={{
-            position: 'fixed', top: '50%', left: '50%',
-            transform: 'translate(-50%, -50%)',
-            zIndex: 201, width: '90%', maxWidth: '400px',
-            background: '#1E1E2C', borderRadius: '16px',
-            border: '1px solid #2A2A3A', padding: '32px 24px',
+        <ModalWrapper
+          onClose={() => setShowAuth(false)}
+          zIndex={200}
+          blur={0}
+          maxWidth="400px"
+          padding="32px 24px"
+          cardStyle={{
+            background: '#1E1E2C',
+            border: '1px solid #2A2A3A',
+            borderRadius: '16px',
             textAlign: 'center',
             boxShadow: '0 16px 48px rgba(0,0,0,0.7)',
-          }}>
+          }}
+        >
             <span style={{ fontSize: '36px', display: 'block', marginBottom: '12px' }}>🎵</span>
             <h2 style={{
               fontSize: '20px', fontWeight: 800, color: '#F0F0F5',
@@ -394,8 +395,7 @@ export default function EventPageClient({ event }) {
                 Sign In
               </a>
             </p>
-          </div>
-        </>
+        </ModalWrapper>
       )}
     </div>
   );
