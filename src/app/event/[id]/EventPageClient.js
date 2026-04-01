@@ -25,11 +25,13 @@ function fmtDate(dateStr) {
 export default function EventPageClient({ event }) {
   const [showAuth, setShowAuth] = useState(false);
 
-  // Check auth in background — if logged in, redirect to the main app with scroll-to-event.
+  // Check auth in background — only redirect genuinely logged-in users.
+  // Uses getUser() to validate the token server-side (getSession() just reads
+  // cached localStorage which can contain stale/expired tokens).
   // The event content renders immediately; no spinner gate.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
         window.location.href = `/?event=${event.id}`;
       }
     });
