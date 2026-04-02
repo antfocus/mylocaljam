@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { formatTimeRange } from '@/lib/utils';
+import { supabase } from '@/lib/supabase';
 import { posthog } from '@/lib/posthog';
-import ModalWrapper from '@/components/ui/ModalWrapper';
 
 /** Format date for display */
 function fmtDate(dateStr) {
@@ -17,7 +17,39 @@ function fmtDate(dateStr) {
 }
 
 export default function EventPageClient({ event }) {
-  const [showAuth, setShowAuth] = useState(false);
+  const [showSignupHint, setShowSignupHint] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  // ── Check auth session once on mount ──────────────────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setIsLoggedIn(!!session?.user);
+      setAuthReady(true);
+    });
+  }, []);
+
+  // ── Guard: if event is null/undefined, show loading (never a premature 404) ──
+  if (!event) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: '#0D0D12',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: "'DM Sans', sans-serif",
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '40px', height: '40px', border: '3px solid #2A2A3A',
+            borderTopColor: '#E8722A', borderRadius: '50%',
+            margin: '0 auto 16px',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          <p style={{ color: '#7878A0', fontSize: '14px' }}>Loading event...</p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
 
   // ── Standalone event view — no auth redirect ──────────────────────────────
   // All users (guest & logged-in) stay on this page when visiting /event/[id].
@@ -36,7 +68,7 @@ export default function EventPageClient({ event }) {
   const isCanceled = event.status === 'cancelled' || event.status === 'canceled';
   const sourceLink = event.source && /^https?:\/\//i.test(event.source) ? event.source : null;
 
-  const handleAuthAction = () => setShowAuth(true);
+  const handleSoftCTA = () => { if (!isLoggedIn) setShowSignupHint(true); };
 
   return (
     <div style={{
@@ -212,7 +244,7 @@ export default function EventPageClient({ event }) {
         {!isCanceled && (
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
             <button
-              onClick={handleAuthAction}
+              onClick={handleSoftCTA}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '6px',
                 fontSize: '13px', fontWeight: 700,
@@ -228,7 +260,7 @@ export default function EventPageClient({ event }) {
             </button>
 
             <button
-              onClick={handleAuthAction}
+              onClick={handleSoftCTA}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '6px',
                 fontSize: '13px', fontWeight: 700,
@@ -269,98 +301,94 @@ export default function EventPageClient({ event }) {
             )}
           </div>
         )}
-      </main>
 
-      {/* ── Sticky upsell banner (bottom) ──────────────────────────────────── */}
-      <div style={{
-        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
-        background: 'linear-gradient(180deg, transparent 0%, #0D0D12 20%)',
-        padding: '32px 16px 24px',
-      }}>
-        <div style={{
-          maxWidth: '560px', margin: '0 auto',
-          background: '#1E1E2C', borderRadius: '16px',
-          border: '1px solid #2A2A3A',
-          padding: '16px 20px',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: '16px',
-          boxShadow: '0 -8px 32px rgba(0,0,0,0.6)',
-        }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Soft inline signup hint (replaces blocking modal) */}
+        {showSignupHint && (
+          <div style={{
+            padding: '16px', borderRadius: '12px',
+            background: '#1E1E2C', border: '1px solid #2A2A3A',
+            marginBottom: '20px',
+          }}>
             <p style={{
               fontSize: '14px', fontWeight: 700, color: '#F0F0F5',
-              margin: '0 0 2px',
+              margin: '0 0 4px',
             }}>
-              Never miss a local jam.
+              Create a free account to save shows and follow artists.
             </p>
             <p style={{
-              fontSize: '12px', color: '#7878A0', margin: 0,
+              fontSize: '12px', color: '#7878A0', margin: '0 0 12px',
             }}>
-              Sign up to track bands and save shows.
+              It takes 10 seconds with Google — no spam, ever.
             </p>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <a
+                href="/?signup=true"
+                style={{
+                  padding: '10px 24px', borderRadius: '999px',
+                  background: '#E8722A', color: '#1C1917',
+                  textDecoration: 'none', fontWeight: 700, fontSize: '13px',
+                }}
+              >
+                Sign Up Free
+              </a>
+              <button
+                onClick={() => setShowSignupHint(false)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: '#7878A0', fontSize: '12px', fontWeight: 500,
+                  textDecoration: 'underline', textUnderlineOffset: '3px',
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
-          <a
-            href="/?signup=true"
-            style={{
-              padding: '10px 20px', borderRadius: '999px',
-              background: '#E8722A', color: '#1C1917',
-              textDecoration: 'none', fontWeight: 700, fontSize: '13px',
-              whiteSpace: 'nowrap', flexShrink: 0,
-              boxShadow: '0 2px 12px rgba(232,114,42,0.3)',
-            }}
-          >
-            Create Free Account
-          </a>
-        </div>
-      </div>
+        )}
+      </main>
 
-      {/* ── Auth modal overlay ─────────────────────────────────────────────── */}
-      {showAuth && (
-        <ModalWrapper
-          onClose={() => setShowAuth(false)}
-          zIndex={200}
-          blur={0}
-          maxWidth="400px"
-          padding="32px 24px"
-          cardStyle={{
-            background: '#1E1E2C',
+      {/* ── Sticky upsell banner (bottom) — hidden until auth resolves, hidden if logged in ── */}
+      {authReady && !isLoggedIn && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
+          background: 'linear-gradient(180deg, transparent 0%, #0D0D12 20%)',
+          padding: '32px 16px 24px',
+        }}>
+          <div style={{
+            maxWidth: '560px', margin: '0 auto',
+            background: '#1E1E2C', borderRadius: '16px',
             border: '1px solid #2A2A3A',
-            borderRadius: '16px',
-            textAlign: 'center',
-            boxShadow: '0 16px 48px rgba(0,0,0,0.7)',
-          }}
-        >
-            <span style={{ fontSize: '36px', display: 'block', marginBottom: '12px' }}>🎵</span>
-            <h2 style={{
-              fontSize: '20px', fontWeight: 800, color: '#F0F0F5',
-              margin: '0 0 8px',
-            }}>
-              Join MyLocalJam
-            </h2>
-            <p style={{
-              fontSize: '14px', color: '#7878A0', margin: '0 0 24px', lineHeight: 1.5,
-            }}>
-              Create a free account to save shows, follow artists, and get notified about new events.
-            </p>
+            padding: '16px 20px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: '16px',
+            boxShadow: '0 -8px 32px rgba(0,0,0,0.6)',
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{
+                fontSize: '14px', fontWeight: 700, color: '#F0F0F5',
+                margin: '0 0 2px',
+              }}>
+                Never miss a local jam.
+              </p>
+              <p style={{
+                fontSize: '12px', color: '#7878A0', margin: 0,
+              }}>
+                Sign up to track bands and save shows.
+              </p>
+            </div>
             <a
               href="/?signup=true"
               style={{
-                display: 'inline-block',
-                padding: '13px 40px', borderRadius: '999px',
+                padding: '10px 20px', borderRadius: '999px',
                 background: '#E8722A', color: '#1C1917',
-                textDecoration: 'none', fontWeight: 700, fontSize: '15px',
+                textDecoration: 'none', fontWeight: 700, fontSize: '13px',
+                whiteSpace: 'nowrap', flexShrink: 0,
                 boxShadow: '0 2px 12px rgba(232,114,42,0.3)',
               }}
             >
-              Sign Up Free
+              Create Free Account
             </a>
-            <p style={{ fontSize: '13px', color: '#7878A0', margin: '16px 0 0' }}>
-              Already have an account?{' '}
-              <a href="/?login=true" style={{ color: '#E8722A', textDecoration: 'none', fontWeight: 600 }}>
-                Sign In
-              </a>
-            </p>
-        </ModalWrapper>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -36,6 +36,7 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     is_featured:      event?.is_featured || false,
   });
   const [aiLoading, setAiLoading] = useState(false);
+  const [toast, setToast] = useState(null); // { message, type: 'error' | 'success' }
 
   // ── Sync lock state per field ─────────────────────────────────────────────
   // Locked = inheriting from artist (custom_* is empty)
@@ -104,7 +105,8 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
       is_custom_metadata: isCustom,
       is_featured: form.is_featured,
     };
-    onSave(payload);
+    setToast({ message: event ? 'Event updated successfully.' : 'Event created successfully.', type: 'success' });
+    setTimeout(() => onSave(payload), 600);
   };
 
   // ── AI Enhance ────────────────────────────────────────────────────────────
@@ -212,6 +214,22 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
             </svg>
           </button>
         </div>
+
+        {/* ── Toast notification ──────────────────────────────────────────── */}
+        {toast && (
+          <div style={{
+            margin: '0 24px', padding: '10px 16px', borderRadius: '8px',
+            fontSize: '13px', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+            display: 'flex', alignItems: 'center', gap: '8px',
+            background: toast.type === 'error' ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.12)',
+            color: toast.type === 'error' ? '#EF4444' : '#22C55E',
+            border: `1px solid ${toast.type === 'error' ? 'rgba(239,68,68,0.25)' : 'rgba(34,197,94,0.25)'}`,
+            transition: 'opacity 0.2s ease',
+          }}>
+            <span>{toast.type === 'error' ? '⚠' : '✓'}</span>
+            {toast.message}
+          </div>
+        )}
 
         {/* ── Two-Column Body ────────────────────────────────────────────── */}
         <div style={{
@@ -321,7 +339,7 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 Style & Mood
               </div>
 
-              {/* Genres */}
+              {/* Genres — always show full grid, disabled when locked */}
               <MetadataField
                 label="Genres"
                 isCustom={!locks.genres}
@@ -332,32 +350,15 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 hasArtist={hasArtist}
                 style={{ marginBottom: '12px' }}
               >
-                {locks.genres && hasArtist ? (
-                  /* Locked — show inherited as read-only pills */
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                    {inheritedGenres.length > 0 ? inheritedGenres.map(g => (
-                      <span key={g} style={{
-                        padding: '3px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 600,
-                        background: 'rgba(59,130,246,0.08)', color: '#60A5FA',
-                        border: '1px solid rgba(59,130,246,0.20)',
-                        fontFamily: "'DM Sans', sans-serif",
-                      }}>{g}</span>
-                    )) : (
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', fontFamily: "'DM Sans', sans-serif" }}>
-                        No artist genres — unlock to set
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <StyleMoodSelector
-                    options={GENRES}
-                    selected={form.custom_genres}
-                    onChange={v => update('custom_genres', v)}
-                  />
-                )}
+                <StyleMoodSelector
+                  options={GENRES}
+                  selected={locks.genres && hasArtist ? inheritedGenres : form.custom_genres}
+                  onChange={v => update('custom_genres', v)}
+                  disabled={locks.genres && hasArtist}
+                />
               </MetadataField>
 
-              {/* Vibes */}
+              {/* Vibes — always show full grid, disabled when locked */}
               <MetadataField
                 label="Vibes"
                 isCustom={!locks.vibes}
@@ -367,29 +368,13 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 onRevert={!locks.vibes ? () => toggleLock('vibes') : null}
                 hasArtist={hasArtist}
               >
-                {locks.vibes && hasArtist ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                    {inheritedVibes.length > 0 ? inheritedVibes.map(v => (
-                      <span key={v} style={{
-                        padding: '3px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: 600,
-                        background: 'rgba(59,130,246,0.08)', color: '#60A5FA',
-                        border: '1px solid rgba(59,130,246,0.20)',
-                        fontFamily: "'DM Sans', sans-serif",
-                      }}>{v}</span>
-                    )) : (
-                      <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic', fontFamily: "'DM Sans', sans-serif" }}>
-                        No artist vibes — unlock to set
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <StyleMoodSelector
-                    options={VIBES}
-                    selected={form.custom_vibes}
-                    onChange={v => update('custom_vibes', v)}
-                    accentColor="#3AADA0"
-                  />
-                )}
+                <StyleMoodSelector
+                  options={VIBES}
+                  selected={locks.vibes && hasArtist ? inheritedVibes : form.custom_vibes}
+                  onChange={v => update('custom_vibes', v)}
+                  accentColor="#3AADA0"
+                  disabled={locks.vibes && hasArtist}
+                />
               </MetadataField>
             </div>
 
@@ -509,7 +494,22 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 </div>
                 <button
                   type="button"
-                  onClick={() => update('is_featured', !form.is_featured)}
+                  onClick={() => {
+                    if (!form.is_featured) {
+                      // Validate: must have image AND bio/description
+                      const hasImage = !!(form.custom_image_url || form.event_image_url || (hasArtist && inheritedImage));
+                      const hasBio = !!(form.custom_bio || (hasArtist && inheritedBio));
+                      if (!hasImage || !hasBio) {
+                        const missing = [];
+                        if (!hasImage) missing.push('image');
+                        if (!hasBio) missing.push('description');
+                        setToast({ message: `Cannot feature: ${missing.join(' and ')} required.`, type: 'error' });
+                        setTimeout(() => setToast(null), 4000);
+                        return;
+                      }
+                    }
+                    update('is_featured', !form.is_featured);
+                  }}
                   style={{
                     width: '44px', height: '24px', borderRadius: '12px', border: 'none',
                     background: form.is_featured ? '#FBBF24' : 'var(--border)',

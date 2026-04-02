@@ -3,10 +3,9 @@
 /**
  * StyleMoodSelector — Shared multi-select pill grid for genres and vibes.
  *
- * Used by both Event and Artist modals for visual parity.
- * Supports two modes:
- *   - Array mode: selected = ['Rock', 'Jazz'], onChange receives updated array
- *   - String mode: selected = 'Rock, Jazz', onChange receives updated comma string
+ * Displays ALL options in a permanent grid layout.
+ * Unselected tags are muted/outline; selected tags are highlighted.
+ * No 'Other' or custom text input allowed.
  *
  * Props:
  *   label       (string)   — Section label (e.g., "Genres", "Vibes")
@@ -14,7 +13,6 @@
  *   selected    (string[]|string) — Currently selected values (array or comma string)
  *   onChange    (func)     — Called with updated selection (same type as input)
  *   disabled    (bool)     — Disables all pills (e.g., field is locked)
- *   columns     (number)   — CSS grid column count hint (default: auto-flow)
  *   accentColor (string)   — Active pill color (default: '#E8722A')
  */
 
@@ -58,6 +56,9 @@ export default function StyleMoodSelector({
     onChange(isStringMode ? next.join(', ') : next);
   };
 
+  // Determine grid columns: 3 for genres (15 items), 2 for vibes (6 items)
+  const cols = options.length > 6 ? 3 : 2;
+
   return (
     <div>
       {label && (
@@ -72,7 +73,9 @@ export default function StyleMoodSelector({
         </span>
       )}
       <div style={{
-        display: 'flex', flexWrap: 'wrap', gap: '6px',
+        display: 'grid',
+        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gap: '5px',
       }}>
         {options.map(option => {
           const active = selectedArr.includes(option);
@@ -83,18 +86,19 @@ export default function StyleMoodSelector({
               disabled={disabled}
               onClick={() => handleToggle(option)}
               style={{
-                padding: '4px 10px',
-                borderRadius: '999px',
+                padding: '6px 6px',
+                borderRadius: '8px',
                 fontSize: '11px',
-                fontWeight: 600,
+                fontWeight: active ? 700 : 500,
                 fontFamily: "'DM Sans', sans-serif",
                 cursor: disabled ? 'not-allowed' : 'pointer',
-                border: 'none',
-                background: active ? `${accentColor}22` : 'var(--bg-card)',
+                border: active ? `1.5px solid ${accentColor}` : '1px solid var(--border)',
+                background: active ? `${accentColor}18` : 'transparent',
                 color: active ? accentColor : 'var(--text-muted)',
-                outline: active ? `1.5px solid ${accentColor}` : '1px solid var(--border)',
                 opacity: disabled ? 0.5 : 1,
                 transition: 'all 0.12s ease',
+                textAlign: 'center',
+                lineHeight: 1.3,
               }}
             >
               {option}

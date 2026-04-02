@@ -295,6 +295,7 @@ export default function HomePage() {
   // ── Auth state ────────────────────────────────────────────────────────────
   const [user, setUser] = useState(null);                          // Supabase user object
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authReady, setAuthReady] = useState(false);             // true once getSession resolves
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authTrigger, setAuthTrigger] = useState(null);            // 'save' | 'submit' | 'profile' | null
   const [showWelcome, setShowWelcome] = useState(false);
@@ -882,6 +883,7 @@ export default function HomePage() {
       const u = session?.user ?? null;
       setUser(u);
       setIsLoggedIn(!!u);
+      setAuthReady(true);
       if (u) {
         posthog.identify?.(u.id, { email: u.email });
       }
@@ -910,29 +912,12 @@ export default function HomePage() {
     return () => subscription.unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Handle URL query params from /event/[id] redirect ─────────────────────
-  // Read params once on mount, store in state, then clean URL.
+  // ── Handle URL query params — split into auth-dependent and data-only ──────
+
+  // Data deep-links: ?event=<id> — fire immediately, no auth dependency
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-
-    // ?signup=true → open auth modal in signup mode
-    if (params.get('signup') === 'true') {
-      setShowAuthModal(true);
-      setAuthTrigger('save');
-      window.history.replaceState({}, '', '/');
-      return;
-    }
-
-    // ?login=true → open auth modal in login mode
-    if (params.get('login') === 'true') {
-      setShowAuthModal(true);
-      setAuthTrigger(null);
-      window.history.replaceState({}, '', '/');
-      return;
-    }
-
-    // ?event=<id> → store for deep-link expand (handled below once events load)
     const eventParam = params.get('event');
     if (eventParam) {
       setDeepLinkEventId(eventParam);
@@ -940,6 +925,21 @@ export default function HomePage() {
       window.history.replaceState({}, '', '/');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auth redirects: ?signup=true / ?login=true — deferred until session is known
+  useEffect(() => {
+    if (!authReady) return;
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('signup') === 'true' || params.get('login') === 'true') {
+      const wantsSignup = params.get('signup') === 'true';
+      window.history.replaceState({}, '', '/');
+      if (!isLoggedIn) {
+        setShowAuthModal(true);
+        setAuthTrigger(wantsSignup ? 'save' : null);
+      }
+    }
+  }, [authReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Once events finish loading and we have a deep-link target, scroll + auto-expand
   useEffect(() => {

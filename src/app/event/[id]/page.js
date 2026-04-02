@@ -20,20 +20,32 @@ export const revalidate = 0;
 /**
  * Build a Supabase client for server-side fetching.
  * Prefers the service-role key (bypasses RLS) but falls back to the
- * anon key so shared links still work even if the service-role key
- * hasn't been added to Vercel yet.
+ * anon key so shared links still work for unauthenticated visitors.
+ * Requires public SELECT RLS policies on events/artists/venues when
+ * using the anon key fallback.
  */
 function getServerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || '';
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || '';
 
-  if (!url || (!serviceKey && !anonKey)) {
-    console.error('[event/page] Missing Supabase env vars — URL:', !!url, 'SERVICE_KEY:', !!serviceKey, 'ANON_KEY:', !!anonKey);
+  if (!url) {
+    console.error('[event/page] Missing NEXT_PUBLIC_SUPABASE_URL');
     return null;
   }
 
-  return createClient(url, serviceKey || anonKey);
+  // Prefer service-role (bypasses RLS); fall back to anon (requires public RLS policies)
+  const key = serviceKey || anonKey;
+  if (!key) {
+    console.error('[event/page] No Supabase key available — set SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+    return null;
+  }
+
+  if (!serviceKey) {
+    console.warn('[event/page] Using anon key — public SELECT RLS policies must be enabled on events/artists/venues');
+  }
+
+  return createClient(url, key);
 }
 
 // ── Shared select string — columns that exist on the events table + joins ───
@@ -153,12 +165,15 @@ export async function generateMetadata({ params }) {
   }
 
   const event = flattenEvent(raw);
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://mylocaljam.com';
   const artistName = event.artist_name || 'Live Music';
   const venueName = event.venue_name || 'a local venue';
   const dateStr = formatOGDate(event.event_date);
   const timeStr = formatOGTime(event.start_time);
-  // Waterfall: event flyer → master artist photo → venue photo → site logo
-  const imageUrl = event.event_image || event.artist_image || event.venue_photo || '/myLocaljam_Logo_v5.png';
+  const eventBio = event.description || '';
+  // Waterfall: event flyer → artist photo → venue photo → branded fallback (absolute URL)
+  const rawImage = event.event_image || event.artist_image || event.venue_photo || null;
+  const imageUrl = rawImage || `${baseUrl}/myLocaljam_Logo_v5.png`;
 
   // Build the date/time slug that appears in the OG title — e.g. "Friday, Mar 27 at 8 PM"
   const when = timeStr
@@ -173,12 +188,12 @@ export async function generateMetadata({ params }) {
   // Page <title> keeps the brand suffix
   const title = `${ogTitle} — MyLocalJam`;
 
-  // OG description: lead with the date/time, then a CTA
-  const description = when
-    ? `Live music ${when}. Tap to see details and save this show on myLocalJam.`
-    : `Live music at ${venueName}. Tap to see details and save this show on myLocalJam.`;
-
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://mylocaljam.com';
+  // OG description: prefer event bio, then date-based, then generic
+  const description = eventBio
+    ? eventBio.slice(0, 160) + (eventBio.length > 160 ? '...' : '')
+    : when
+      ? `Live music ${when}. Tap to see details and save this show on myLocalJam.`
+      : `Live music at ${venueName}. Tap to see details and save this show on myLocalJam.`;
 
   return {
     title,
