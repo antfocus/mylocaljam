@@ -321,7 +321,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
               );
             }
 
-            const name = ev.name || ev.artist_name || '';
+            const name = ev.event_title || ev.name || ev.artist_name || '';
             const venue = ev.venue || ev.venue_name || '';
             const timeStr = formatTimeFull(ev.start_time);
             const realImage = ev.event_image || ev.artist_image || ev.image_url || ev.venues?.photo_url || null;
@@ -590,7 +590,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
                     fontFamily: "'DM Sans', sans-serif",
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
-                    {bioSheet.name || bioSheet.artist_name || ''}
+                    {bioSheet.event_title || bioSheet.name || bioSheet.artist_name || ''}
                   </h3>
                   <div style={{
                     color: 'rgba(255,255,255,0.55)', fontSize: '12px', fontWeight: 500,

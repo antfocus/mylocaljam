@@ -19,17 +19,16 @@
  */
 
 const GENRES = [
-  'Rock', 'Alternative', 'Indie', 'Pop', 'R&B / Soul', 'Hip-Hop',
-  'Jazz', 'Blues', 'Country', 'Folk', 'Acoustic', 'Reggae',
-  'Latin', 'Electronic', 'Punk', 'Metal', 'Classical', 'Funk',
-  'Jam Band', 'Singer-Songwriter', 'Americana', 'World',
-  'Covers / Variety', 'DJ Set', 'Karaoke', 'Open Mic', 'Other',
+  'Rock / Alternative', 'Yacht Rock / Surf', 'R&B / Soul / Funk',
+  'Country / Americana', 'Pop / Top 40', 'Acoustic / Singer-Songwriter',
+  'Jazz / Blues', 'Reggae / Island', 'Jam / Psych',
+  'Metal / Hardcore', 'Punk / Ska', 'Hip-Hop / Rap',
+  'Electronic / DJ', 'Latin / World', 'Tributes / Covers',
 ];
 
 const VIBES = [
-  'Chill', 'Energetic', 'Intimate', 'Party', 'Upbeat', 'Mellow',
-  'Romantic', 'Wild', 'Laid-back', 'Rowdy', 'Sophisticated',
-  'Family-Friendly', 'Late Night', 'Happy Hour', 'Brunch', 'Other',
+  'Acoustic / Intimate', 'Outdoor / Patio', 'Family-Friendly',
+  'High-Energy / Dance', 'Chill / Low-Key', 'Late Night / Party',
 ];
 
 export { GENRES, VIBES };

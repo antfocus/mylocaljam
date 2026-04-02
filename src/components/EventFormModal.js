@@ -33,6 +33,7 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     genre:            event?.genre || '',
     vibe:             event?.vibe || '',
     event_image_url:  event?.event_image_url || '',
+    is_featured:      event?.is_featured || false,
   });
   const [aiLoading, setAiLoading] = useState(false);
 
@@ -101,6 +102,7 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
       artist_bio: form.custom_bio || form.artist_bio,
       event_image_url: form.custom_image_url || form.event_image_url,
       is_custom_metadata: isCustom,
+      is_featured: form.is_featured,
     };
     onSave(payload);
   };
@@ -473,9 +475,56 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
               </div>
 
               {/* Ticket Link */}
-              <div>
+              <div style={{ marginBottom: '10px' }}>
                 <label style={labelStyle}>Ticket Link</label>
                 <input style={inputStyle} placeholder="https://..." value={form.ticket_link} onChange={e => update('ticket_link', e.target.value)} />
+              </div>
+
+              {/* Event Image URL — standalone direct input */}
+              {!hasArtist && (
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={labelStyle}>Event Image URL</label>
+                  <input
+                    style={inputStyle}
+                    placeholder="https://... (image for this event)"
+                    value={form.event_image_url}
+                    onChange={e => update('event_image_url', e.target.value)}
+                  />
+                  <p style={{ fontSize: '11px', marginTop: '4px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                    Standalone events use this as the primary display image.
+                  </p>
+                </div>
+              )}
+
+              {/* Feature in Spotlight toggle */}
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '10px 0', borderTop: '1px solid var(--border)',
+              }}>
+                <div>
+                  <span style={{ ...labelStyle, marginBottom: 0 }}>Feature in Spotlight</span>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", margin: '2px 0 0' }}>
+                    Highlighted in the homepage carousel
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => update('is_featured', !form.is_featured)}
+                  style={{
+                    width: '44px', height: '24px', borderRadius: '12px', border: 'none',
+                    background: form.is_featured ? '#FBBF24' : 'var(--border)',
+                    cursor: 'pointer', position: 'relative', transition: 'background 0.15s ease',
+                    flexShrink: 0,
+                  }}
+                >
+                  <span style={{
+                    position: 'absolute', top: '2px',
+                    left: form.is_featured ? '22px' : '2px',
+                    width: '20px', height: '20px', borderRadius: '50%',
+                    background: '#FFFFFF', transition: 'left 0.15s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }} />
+                </button>
               </div>
             </div>
           </div>

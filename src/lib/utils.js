@@ -117,15 +117,16 @@ export function getVenueColor(venueName) {
 // Canonical allowed tags — these MUST match the AI system prompts in ai-lookup/route.js
 // Controlled vocabulary: admin tag-pickers and AI output both constrained to these exact strings
 export const GENRES = [
-  'Rock', 'Pop', 'Country', 'Reggae', 'Jazz/Blues', 'R&B/Soul',
-  'Hip-Hop', 'EDM/DJ', 'Tribute/Cover', 'Alternative', 'Jam Band',
-  'Folk/Americana', 'Funk', 'Latin', 'Metal/Punk',
+  'Rock / Alternative', 'Yacht Rock / Surf', 'R&B / Soul / Funk',
+  'Country / Americana', 'Pop / Top 40', 'Acoustic / Singer-Songwriter',
+  'Jazz / Blues', 'Reggae / Island', 'Jam / Psych',
+  'Metal / Hardcore', 'Punk / Ska', 'Hip-Hop / Rap',
+  'Electronic / DJ', 'Latin / World', 'Tributes / Covers',
 ];
 
 export const VIBES = [
-  'High-Energy', 'Chill/Acoustic', 'Dance Heavy', 'Sing-Along',
-  'Background Music', 'Family Friendly', 'Late Night',
-  'Outdoors', 'Festival', 'All Ages', 'Brunch/Day Party',
+  'Acoustic / Intimate', 'Outdoor / Patio', 'Family-Friendly',
+  'High-Energy / Dance', 'Chill / Low-Key', 'Late Night / Party',
 ];
 
 // ── New: clean time range formatting ─────────────────────────────────────────
