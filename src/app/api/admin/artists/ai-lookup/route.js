@@ -5,10 +5,9 @@ function checkAuth(request) {
   return authHeader === `Bearer ${process.env.ADMIN_PASSWORD}`;
 }
 
-// Allowed tags — the AI is restricted to ONLY these values
-// Must stay in sync with GENRES/VIBES in src/lib/utils.js
-const ALLOWED_GENRES = ['Rock', 'Pop', 'Country', 'Reggae', 'Jazz/Blues', 'R&B/Soul', 'Hip-Hop', 'EDM/DJ', 'Tribute/Cover', 'Alternative', 'Jam Band'];
-const ALLOWED_VIBES = ['High-Energy', 'Chill/Acoustic', 'Dance Heavy', 'Sing-Along', 'Background Music', 'Family Friendly', 'Late Night'];
+// Allowed tags — canonical lists imported from lib/utils.js.
+// The AI is restricted to ONLY these exact strings.
+import { GENRES as ALLOWED_GENRES, VIBES as ALLOWED_VIBES } from '@/lib/utils';
 
 // Premium placeholder fallback images — abstract music visuals
 // Used when image search returns zero results
@@ -146,12 +145,15 @@ No markdown, no commentary, no code fences.`;
     const bioText = bioResult?.bio || '';
     const tagSystemPrompt = `You are a music categorization engine. Review the provided artist bio and assign them exactly 1 Primary Genre, up to 2 Secondary Genres, and up to 2 Vibes.
 
-CRITICAL RULE: You may ONLY select from the following allowed lists. Do not invent tags.
+CRITICAL RULE: You may ONLY select values that are CHARACTER-FOR-CHARACTER EXACT MATCHES from the lists below. Do not abbreviate, rephrase, or invent tags. If unsure, pick the closest match from the list.
 
-Allowed Genres: ${JSON.stringify(ALLOWED_GENRES)}
-Allowed Vibes: ${JSON.stringify(ALLOWED_VIBES)}
+Allowed Genres (copy exactly, including slashes and spaces):
+${ALLOWED_GENRES.map(g => `- "${g}"`).join('\n')}
 
-Output Format: You must respond in strict JSON format:
+Allowed Vibes (copy exactly, including slashes and spaces):
+${ALLOWED_VIBES.map(v => `- "${v}"`).join('\n')}
+
+Output Format — strict JSON only:
 { "primary_genre": "string", "secondary_genres": ["string", "string"], "vibes": ["string", "string"] }
 No markdown, no commentary, no code fences.`;
 
@@ -164,16 +166,24 @@ No markdown, no commentary, no code fences.`;
       ? bioResult.bio
       : null;
 
-    // Validate genres against allowed list
+    // Validate genres against allowed list (exact match first, case-insensitive fallback)
+    const matchAllowed = (val, allowed) => {
+      if (!val || typeof val !== 'string') return null;
+      const exact = allowed.find(a => a === val);
+      if (exact) return exact;
+      const lower = val.toLowerCase().trim();
+      return allowed.find(a => a.toLowerCase() === lower) || null;
+    };
+
     const rawGenres = [
       tagResult?.primary_genre,
       ...(tagResult?.secondary_genres || []),
     ].filter(Boolean);
-    const genres = rawGenres.filter(g => ALLOWED_GENRES.includes(g)).slice(0, 3);
+    const genres = rawGenres.map(g => matchAllowed(g, ALLOWED_GENRES)).filter(Boolean).slice(0, 3);
 
     // Validate vibes against allowed list
     const rawVibes = tagResult?.vibes || [];
-    const vibes = rawVibes.filter(v => ALLOWED_VIBES.includes(v)).slice(0, 2);
+    const vibes = rawVibes.map(v => matchAllowed(v, ALLOWED_VIBES)).filter(Boolean).slice(0, 2);
 
     // ── Pass 3: Image Search via Serper.dev ──────────────────────────────────
     let image_candidates = [];

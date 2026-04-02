@@ -112,7 +112,7 @@ export default function useAdminArtists({ password }) {
         const prevStatus = artist.field_status || {};
         const newStatus = { ...prevStatus };
 
-        if (ai.bio && !artist.bio) { update.bio = ai.bio; newStatus.bio = 'pending'; }
+        if (ai.bio && ai.bio.trim() !== 'UNKNOWN' && (!artist.bio || artist.bio.trim() === '' || artist.bio.trim() === 'UNKNOWN')) { update.bio = ai.bio; newStatus.bio = 'pending'; }
         if (ai.genres?.length && (!artist.genres || artist.genres.length === 0)) { update.genres = ai.genres; newStatus.genres = 'pending'; }
         if (ai.vibes?.length && (!artist.vibes || artist.vibes.length === 0)) { update.vibes = ai.vibes; newStatus.vibes = 'pending'; }
         if (ai.image_url && !artist.image_url) { update.image_url = ai.image_url; newStatus.image_url = 'pending'; }
