@@ -150,8 +150,13 @@ CRITICAL RULE: You may ONLY select values that are CHARACTER-FOR-CHARACTER EXACT
 Allowed Genres (copy exactly, including slashes and spaces):
 ${ALLOWED_GENRES.map(g => `- "${g}"`).join('\n')}
 
-Allowed Vibes (copy exactly, including slashes and spaces):
+Allowed Vibes — we use a 4-vibe system (copy exactly, including slashes and spaces):
 ${ALLOWED_VIBES.map(v => `- "${v}"`).join('\n')}
+
+IMPORTANT VIBE MAPPING RULES:
+- If the act is "Acoustic" or "Intimate," you MUST tag it as "Chill / Low-Key."
+- If the act is "Late Night" or "Party-heavy," you MUST tag it as "High-Energy / Dance."
+- Do NOT use "Acoustic / Intimate" or "Late Night / Party" — those are retired vibes.
 
 Output Format — strict JSON only:
 { "primary_genre": "string", "secondary_genres": ["string", "string"], "vibes": ["string", "string"] }
@@ -167,11 +172,18 @@ No markdown, no commentary, no code fences.`;
       : null;
 
     // Validate genres against allowed list (exact match first, case-insensitive fallback)
+    // Legacy vibe mappings: retired 6-vibe values → canonical 4-vibe values
+    const LEGACY_VIBE_MAP = {
+      'acoustic / intimate': 'Chill / Low-Key',
+      'late night / party': 'High-Energy / Dance',
+    };
     const matchAllowed = (val, allowed) => {
       if (!val || typeof val !== 'string') return null;
       const exact = allowed.find(a => a === val);
       if (exact) return exact;
       const lower = val.toLowerCase().trim();
+      // Check legacy vibe mappings before general case-insensitive match
+      if (LEGACY_VIBE_MAP[lower]) return LEGACY_VIBE_MAP[lower];
       return allowed.find(a => a.toLowerCase() === lower) || null;
     };
 

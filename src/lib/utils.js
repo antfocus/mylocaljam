@@ -125,8 +125,8 @@ export const GENRES = [
 ];
 
 export const VIBES = [
-  'Acoustic / Intimate', 'Outdoor / Patio', 'Family-Friendly',
-  'High-Energy / Dance', 'Chill / Low-Key', 'Late Night / Party',
+  'Outdoor / Patio', 'Family-Friendly',
+  'High-Energy / Dance', 'Chill / Low-Key',
 ];
 
 // ── New: clean time range formatting ─────────────────────────────────────────
@@ -190,7 +190,7 @@ export function groupEventsByDate(events) {
     } catch { dateFull = d; }
 
     const label = baseLabel
-      ? `${baseLabel.toUpperCase()} · ${dateFull}`
+      ? `${baseLabel.toUpperCase()} \u00b7 ${dateFull}`
       : dateFull;
 
     return { label, date: d, events: groups[d] };
