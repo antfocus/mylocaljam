@@ -25,6 +25,8 @@ export default function SavedGigCard({
   const [bioExpanded, setBioExpanded] = useState(false);
   const [flagSheet, setFlagSheet] = useState(false);
   const [flagSubmitting, setFlagSubmitting] = useState(false);
+  const [flagOtherOpen, setFlagOtherOpen] = useState(false);
+  const [flagOtherText, setFlagOtherText] = useState('');
 
   if (!event) return null;
 
@@ -33,8 +35,8 @@ export default function SavedGigCard({
   const name       = eventTitle || artistName;
   const venue      = event.venue       || event.venue_name  || '';
   const desc       = event.description || event.artist_bio  || '';
-  // Waterfall: event image → artist image → venue photo
-  const imageUrl   = event.event_image || event.image_url || event.artist_image || event.venue_photo || null;
+  // Waterfall: event-specific image → artist image → venue photo
+  const imageUrl   = event.event_image || event.artist_image || event.venue_photo || null;
   const genres     = event.artist_genres || [];
   const isTribute  = event.is_tribute || false;
   const rawSource  = event.source       || null;
@@ -95,6 +97,11 @@ export default function SavedGigCard({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_id: event.id, flag_type: flagType }),
+      });
+      await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: event.id, issue_type: flagType, description: null }),
       });
       onFlag?.('Flag submitted — thanks for the heads up!');
     } catch {
@@ -604,7 +611,83 @@ export default function SavedGigCard({
                 COVER CHARGE ADDED
               </button>
               <button
-                onClick={() => setFlagSheet(false)}
+                onClick={() => setFlagOtherOpen(prev => !prev)}
+                disabled={flagSubmitting}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  width: '100%', padding: '14px 16px', borderRadius: '4px',
+                  border: `1px solid ${darkMode ? '#1A2A2A' : '#E0F2FE'}`,
+                  background: darkMode ? '#101A1E' : '#F0F9FF',
+                  color: darkMode ? '#7DD3FC' : '#0369A1',
+                  fontFamily: MONO, fontSize: '12px', fontWeight: 700,
+                  cursor: 'pointer', letterSpacing: '1px', textTransform: 'uppercase',
+                }}
+              >
+                OTHER / INCORRECT INFO
+              </button>
+              {flagOtherOpen && (
+                <div style={{
+                  padding: '12px', borderRadius: '4px',
+                  background: darkMode ? '#14141E' : '#F9FAFB',
+                  border: `1px solid ${sheetBorder}`,
+                }}>
+                  <textarea
+                    value={flagOtherText}
+                    onChange={e => { if (e.target.value.length <= 200) setFlagOtherText(e.target.value); }}
+                    placeholder="What's wrong? (e.g. wrong time, wrong band name, venue changed...)"
+                    maxLength={200}
+                    rows={3}
+                    style={{
+                      width: '100%', padding: '10px 12px', borderRadius: '4px',
+                      background: darkMode ? '#1C1C28' : '#FFFFFF',
+                      border: `1px solid ${sheetBorder}`,
+                      color: textPrimary, fontSize: '12px',
+                      fontFamily: MONO, outline: 'none', resize: 'none',
+                    }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                    <span style={{ fontSize: '10px', color: textMuted, fontFamily: MONO }}>
+                      {flagOtherText.length}/200
+                    </span>
+                    <button
+                      disabled={flagSubmitting || !flagOtherText.trim()}
+                      onClick={async () => {
+                        setFlagSubmitting(true);
+                        try {
+                          await fetch('/api/reports', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              event_id: event.id,
+                              issue_type: 'other',
+                              description: flagOtherText.trim(),
+                            }),
+                          });
+                          onFlag?.('Report submitted — thanks for the heads up!');
+                        } catch {
+                          onFlag?.('Something went wrong. Please try again.');
+                        }
+                        setFlagSubmitting(false);
+                        setFlagSheet(false);
+                        setFlagOtherOpen(false);
+                        setFlagOtherText('');
+                      }}
+                      style={{
+                        padding: '8px 16px', borderRadius: '4px',
+                        background: flagOtherText.trim() ? BRAND_ORANGE : (darkMode ? '#2A2A3A' : '#D1D5DB'),
+                        color: flagOtherText.trim() ? '#1C1917' : textMuted,
+                        fontSize: '11px', fontWeight: 700, border: 'none',
+                        cursor: flagOtherText.trim() ? 'pointer' : 'not-allowed',
+                        fontFamily: MONO, letterSpacing: '0.5px', textTransform: 'uppercase',
+                      }}
+                    >
+                      SUBMIT REPORT
+                    </button>
+                  </div>
+                </div>
+              )}
+              <button
+                onClick={() => { setFlagSheet(false); setFlagOtherOpen(false); setFlagOtherText(''); }}
                 style={{
                   width: '100%', padding: '12px', borderRadius: '4px',
                   border: `1px solid ${sheetBorder}`,
