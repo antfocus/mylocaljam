@@ -747,6 +747,16 @@ export default function HomePage() {
     return following.some(f => f.entity_type === entityType && f.entity_name === entityName);
   }, [following]);
 
+  // ── Stable callback refs for memoized child cards ────────────────────────
+  const handleFollowArtist = useCallback((artistName) => {
+    if (isFollowing('artist', artistName)) unfollowEntity('artist', artistName);
+    else followEntity('artist', artistName);
+  }, [isFollowing, followEntity, unfollowEntity]);
+
+  const handleFlag = useCallback((msg) => {
+    setToast(msg);
+  }, []);
+
   // ── Bottom sheet state ────────────────────────────────────────────────────
   const [bottomSheet, setBottomSheet] = useState(null); // { type: 'venue'|'artist', name, entityId? }
   const [artistProfile, setArtistProfile] = useState(null); // artist name string or null
@@ -2518,12 +2528,9 @@ export default function HomePage() {
                                 isFavorited={true}
                                 onToggleFavorite={toggleFavorite}
                                 darkMode={darkMode}
-                                onFollowArtist={(artistName) => {
-                                  if (isFollowing('artist', artistName)) unfollowEntity('artist', artistName);
-                                  else followEntity('artist', artistName);
-                                }}
+                                onFollowArtist={handleFollowArtist}
                                 isArtistFollowed={isFollowing('artist', event.name || event.artist_name || '')}
-                                onFlag={(msg) => setToast(msg)}
+                                onFlag={handleFlag}
                               />
                             ))}
                           </div>
@@ -2826,12 +2833,9 @@ export default function HomePage() {
                           isFavorited={favorites.has(event.id)}
                           onToggleFavorite={toggleFavorite}
                           darkMode={darkMode}
-                          onFollowArtist={(artistName) => {
-                            if (isFollowing('artist', artistName)) unfollowEntity('artist', artistName);
-                            else followEntity('artist', artistName);
-                          }}
+                          onFollowArtist={handleFollowArtist}
                           isArtistFollowed={isFollowing('artist', event.name || event.artist_name || '')}
-                          onFlag={(msg) => setToast(msg)}
+                          onFlag={handleFlag}
                           autoExpand={deepLinkEventId === event.id}
                         />
                       ))}
