@@ -134,6 +134,8 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
     setFlagSheet(false);
   };
 
+  console.log('--- CARD RENDERED ---', event?.artist_name || 'Unknown');
+
   return (
     <div id={event?.id ? `event-${event.id}` : undefined} style={{
       background: cardBg,
