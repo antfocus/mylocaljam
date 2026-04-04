@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { formatTimeRange } from '@/lib/utils';
 import { posthog } from '@/lib/posthog';
@@ -19,7 +19,7 @@ const CATEGORY_CONFIG = {
 
 const DEFAULT_CONFIG = { color: '#E8722A', bg: '#E8722A', emoji: '🎵' };
 
-export default function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = true, onFollowArtist, isArtistFollowed, onFlag, autoExpand = false }) {
+function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = true, onFollowArtist, isArtistFollowed, onFlag, autoExpand = false }) {
   const [expanded, setExpanded] = useState(autoExpand);
   const [bioExpanded, setBioExpanded] = useState(false);
   const [flagSheet, setFlagSheet] = useState(false);
@@ -820,3 +820,5 @@ export default function EventCardV2({ event, isFavorited = false, onToggleFavori
     </div>
   );
 }
+
+export default memo(EventCardV2);
