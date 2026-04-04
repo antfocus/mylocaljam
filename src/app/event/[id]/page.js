@@ -171,8 +171,26 @@ export async function generateMetadata({ params }) {
   const dateStr = formatOGDate(event.event_date);
   const timeStr = formatOGTime(event.start_time);
   const eventBio = event.description || '';
-  // Waterfall: event flyer → artist photo → venue photo → branded fallback (absolute URL)
-  const rawImage = event.event_image || event.artist_image || event.venue_photo || null;
+
+  // Waterfall: event flyer → artist photo (join) → artist photo (name match) → venue photo → logo
+  let rawImage = event.event_image || event.artist_image || null;
+
+  // If artist join returned no image (e.g. artist_id is null), try matching by artist_name
+  if (!rawImage && event.artist_name) {
+    try {
+      const { data: matchedArtist } = await supabase
+        .from('artists')
+        .select('image_url')
+        .ilike('name', event.artist_name)
+        .not('image_url', 'is', null)
+        .limit(1)
+        .single();
+      if (matchedArtist?.image_url) rawImage = matchedArtist.image_url;
+    } catch { /* name lookup failed — fall through to venue/logo */ }
+  }
+
+  // Continue waterfall: venue photo → branded fallback
+  if (!rawImage) rawImage = event.venue_photo || null;
   const imageUrl = rawImage || `${baseUrl}/myLocaljam_Logo_v5.png`;
 
   // Build the date/time slug that appears in the OG title — e.g. "Friday, Mar 27 at 8 PM"
