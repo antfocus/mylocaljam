@@ -8,7 +8,7 @@ function checkAuth(request) {
 // Allowed tags — the AI is restricted to ONLY these values
 // Must stay in sync with GENRES/VIBES in src/lib/utils.js
 const ALLOWED_GENRES = ['Rock', 'Pop', 'Country', 'Reggae', 'Jazz/Blues', 'R&B/Soul', 'Hip-Hop', 'EDM/DJ', 'Tribute/Cover', 'Alternative', 'Jam Band'];
-const ALLOWED_VIBES = ['High-Energy', 'Chill/Acoustic', 'Dance Heavy', 'Sing-Along', 'Background Music', 'Family Friendly', 'Late Night'];
+const ALLOWED_VIBES = ['Chill / Low Key', 'Energetic / Party', 'Outdoor / Patio', 'Family-Friendly'];
 
 // Premium placeholder fallback images — abstract music visuals
 // Used when image search returns zero results

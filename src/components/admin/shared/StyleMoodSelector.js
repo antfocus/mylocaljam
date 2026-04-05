@@ -25,8 +25,8 @@ const GENRES = [
 ];
 
 const VIBES = [
-  'Acoustic / Intimate', 'Outdoor / Patio', 'Family-Friendly',
-  'High-Energy / Dance', 'Chill / Low-Key', 'Late Night / Party',
+  'Chill / Low Key', 'Energetic / Party',
+  'Outdoor / Patio', 'Family-Friendly',
 ];
 
 export { GENRES, VIBES };
@@ -56,7 +56,7 @@ export default function StyleMoodSelector({
     onChange(isStringMode ? next.join(', ') : next);
   };
 
-  // Determine grid columns: 3 for genres (15 items), 2 for vibes (6 items)
+  // Determine grid columns: 3 for genres (15 items), 2 for vibes (4 items)
   const cols = options.length > 6 ? 3 : 2;
 
   return (

@@ -125,8 +125,8 @@ export const GENRES = [
 ];
 
 export const VIBES = [
-  'Acoustic / Intimate', 'Outdoor / Patio', 'Family-Friendly',
-  'High-Energy / Dance', 'Chill / Low-Key', 'Late Night / Party',
+  'Chill / Low Key', 'Energetic / Party',
+  'Outdoor / Patio', 'Family-Friendly',
 ];
 
 // ── New: clean time range formatting ─────────────────────────────────────────

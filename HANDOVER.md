@@ -3422,6 +3422,44 @@ Note: `isFollowing` is NOT removed — it's still used by the bottom sheet compo
 
 ---
 
+## Architecture: Event Vibes vs. Artist Genres (April 5, 2026)
+
+### The Philosophy
+
+**Genres** describe the artist's identity — permanent attributes like "Rock / Alternative", "Jazz / Blues", or "Electronic / DJ". These don't change between performances.
+
+**Vibes** describe the venue experience — situational attributes like the energy level, crowd atmosphere, and setting. The same jazz trio might be "Chill / Low Key" at a wine bar and "Energetic / Party" at a street festival. Vibes are about the room, not the act.
+
+### The "Final 4" Vibes
+
+Consolidated from the original 6 vibes on April 5, 2026:
+
+| New Vibe | Merged From | What It Describes |
+|---|---|---|
+| **Chill / Low Key** | "Acoustic / Intimate" + "Chill / Low-Key" | Low volume, relaxed crowd, conversational atmosphere. Any genre can fit — an acoustic singer-songwriter and a jazz quartet both qualify if the setting is mellow. |
+| **Energetic / Party** | "High-Energy / Dance" + "Late Night / Party" | High volume, dancing, crowd energy. A rock band and a DJ both qualify if the room is loud and moving. |
+| **Outdoor / Patio** | (kept as-is) | Outdoor setting — beer gardens, rooftop bars, boardwalk stages. Describes the physical environment. |
+| **Family-Friendly** | (kept as-is) | All-ages, daytime events, kid-appropriate. Community events, festivals, fundraisers. |
+
+### Why This Matters for AI Auto-Categorization
+
+When the AI (Perplexity via `ai-lookup/route.js`) categorizes an event's vibe, it should look for venue/crowd descriptors, NOT instrument or genre keywords. A "Chill / Low Key" tag means "this is a quiet, relaxed atmosphere" regardless of whether the act plays acoustic guitar, piano jazz, or lo-fi electronic. The `ALLOWED_VIBES` in the AI lookup route has been updated to match the Final 4.
+
+### Files Changed
+
+- `src/lib/utils.js` — canonical `VIBES` array (4 items)
+- `src/components/admin/shared/StyleMoodSelector.js` — local `VIBES` array + grid comment
+- `src/app/api/admin/artists/ai-lookup/route.js` — `ALLOWED_VIBES` for AI classification
+- `src/app/admin/queue/page.js` — consumes `VIBES` from utils.js (auto-updated via import)
+- `EventFormModal.js` — consumes `VIBES` from StyleMoodSelector (auto-updated via import)
+- `AdminArtistsTab.js` — consumes `VIBES` from StyleMoodSelector (auto-updated via import)
+
+### Data Migration Note
+
+Existing events/artists in the database may still have the old vibe values ("Acoustic / Intimate", "High-Energy / Dance", "Chill / Low-Key", "Late Night / Party"). The `page.js` filter logic compares vibes case-insensitively via `.toLowerCase()`, so old values will still match if shortcut pills reference them. However, for full consistency, a one-time Supabase query should remap old values to the new names in the `artists.vibes` array column and the `events.vibe` / `events.custom_vibes` columns.
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.
