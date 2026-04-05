@@ -3460,6 +3460,63 @@ Existing events/artists in the database may still have the old vibe values ("Aco
 
 ---
 
+## Metadata Waterfall Architecture (April 5, 2026)
+
+### The Hierarchy: Artist = Source of Truth, Event = Situational Override
+
+All display metadata follows a "Smart Waterfall" where the artist provides the permanent identity and the event provides situational overrides. The merge happens at two layers:
+
+**Layer 1 — Data Mapping (`page.js` lines 834–864, 1195–1222):**
+
+| Field | Waterfall Priority |
+|---|---|
+| `event_image` | `custom_image_url` → `event_image_url` → null |
+| `artist_image` | `artists.image_url` → null |
+| `description` | `custom_bio` → `artist_bio` (event column) → `artists.bio` (joined) → '' |
+| `artist_genres` | `custom_genres[]` → `[event.genre]` → `artists.genres[]` → [] |
+| `artist_vibes` | `custom_vibes[]` → `[event.vibe]` → `artists.vibes[]` → [] |
+
+**Layer 2 — Display (`EventCardV2.js` lines 89–95):**
+
+| Display Field | Waterfall Priority |
+|---|---|
+| Image | `event.event_image` → `event.artist_image` → `event.venue_photo` → null |
+| Category Tag | `artist_vibes[0]` → `artist_genres[0]` → `event.genre` → `event.vibe` → 'Live Music' |
+| Genres Array | `event.artist_genres` → [] |
+
+The category tag intentionally prefers vibes over genres because vibes describe the experience (what the user cares about when deciding to attend) while genres describe the artist identity (useful for filtering but less useful as a visual label).
+
+### Unified Image Field (EventFormModal)
+
+The admin event editor previously had two separate image inputs that caused confusion: `custom_image_url` (shown in `ImagePreviewSection` when artist is linked) and `event_image_url` (standalone input, shown only when no artist linked). This was consolidated on April 5, 2026:
+
+- Single `ImagePreviewSection` renders for ALL events (with or without linked artist)
+- When an artist is linked: lock/unlock toggle controls inheritance. Locked = shows artist image at 50% opacity. Unlocked = editable input for custom URL
+- When no artist: input is always editable, no lock toggle shown
+- `onUrlChange` writes to BOTH `custom_image_url` and `event_image_url` for backward compatibility
+- On mount, `custom_image_url` seeds from `event_image_url` if the custom field is empty (migrates old data)
+
+### AI Enhance — Structured JSON Response
+
+The `ai-enhance` route (`src/app/api/admin/ai-enhance/route.js`) was upgraded from plain-text bio output to structured JSON:
+
+```json
+{
+  "bio": "2-3 sentence event description",
+  "genre": "One of the 15 GENRES options",
+  "vibe": "One of the Final 4 VIBES",
+  "image_search_query": "Google Image search query for the artist"
+}
+```
+
+The EventFormModal handler auto-populates `custom_bio`, `custom_genres`, and `custom_vibes` from the response (only if no custom override already exists). The `image_search_query` is displayed as a hint below the AI Enhance button.
+
+The vibe field is validated against `ALLOWED_VIBES` server-side. If the AI returns a vibe not in the list, a case-insensitive match is attempted; if no match, the field is set to null.
+
+Backward compat: if JSON parsing fails, the raw text is returned as `enhanced` (the old format) so older versions of EventFormModal still work.
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.

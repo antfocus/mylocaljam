@@ -91,7 +91,8 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const isTribute  = event.is_tribute || false;
   const rawSource  = event.source       || null;
   const sourceLink = rawSource && /^https?:\/\//i.test(rawSource) ? rawSource : null;
-  const category   = event.genre       || event.vibe        || 'Live Music';
+  // Smart waterfall: merged arrays (artist-enriched) → legacy event columns → fallback
+  const category   = event.artist_vibes?.[0] || event.artist_genres?.[0] || event.genre || event.vibe || 'Live Music';
   const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
   const timeStr    = formatTimeRange(event.start_time);
   const isCanceled = event.status === 'cancelled' || event.status === 'canceled';

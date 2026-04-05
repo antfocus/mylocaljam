@@ -28,7 +28,7 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     custom_bio:       event?.custom_bio || '',
     custom_genres:    event?.custom_genres || [],
     custom_vibes:     event?.custom_vibes || [],
-    custom_image_url: event?.custom_image_url || '',
+    custom_image_url: event?.custom_image_url || event?.event_image_url || '',
     // Legacy single-select fields (kept for backward compat)
     genre:            event?.genre || '',
     vibe:             event?.vibe || '',
@@ -109,9 +109,11 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     setTimeout(() => onSave(payload), 600);
   };
 
-  // ── AI Enhance ────────────────────────────────────────────────────────────
+  // ── AI Enhance (returns structured JSON: bio, genre, vibe, image_search_query) ──
+  const [aiResult, setAiResult] = useState(null); // stores last AI response for image_search_query display
   const handleAiEnhance = async () => {
     setAiLoading(true);
+    setAiResult(null);
     try {
       const res = await fetch('/api/admin/ai-enhance', {
         method: 'POST',
@@ -125,9 +127,22 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
         }),
       });
       const data = await res.json();
-      if (data.enhanced) {
-        update('custom_bio', data.enhanced);
+      if (data.enhanced || data.bio) {
+        // Always apply bio
+        update('custom_bio', data.bio || data.enhanced);
         setLocks(l => ({ ...l, bio: false }));
+        // Apply genre if returned and no custom override exists
+        if (data.genre && !form.custom_genres?.length) {
+          update('custom_genres', [data.genre]);
+          setLocks(l => ({ ...l, genres: false }));
+        }
+        // Apply vibe if returned and no custom override exists
+        if (data.vibe && !form.custom_vibes?.length) {
+          update('custom_vibes', [data.vibe]);
+          setLocks(l => ({ ...l, vibes: false }));
+        }
+        // Store full result for image_search_query display
+        setAiResult(data);
       } else {
         alert(data.error || 'AI enhance failed');
       }
@@ -321,8 +336,17 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                   width: '100%',
                 }}
               >
-                {aiLoading ? 'Enhancing...' : '✨ AI Enhance Description'}
+                {aiLoading ? 'Enhancing...' : '✨ AI Enhance (Bio + Genre + Vibe)'}
               </button>
+              {/* Show image search query hint after AI runs */}
+              {aiResult?.image_search_query && (
+                <p style={{
+                  fontSize: '11px', marginTop: '6px', color: '#7C3AED',
+                  fontFamily: "'DM Sans', sans-serif", fontWeight: 500,
+                }}>
+                  Image search tip: <strong>{aiResult.image_search_query}</strong>
+                </p>
+              )}
             </div>
 
             {/* ── Style & Mood section ────────────────────────────────────── */}
@@ -383,24 +407,27 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
           {/* ═══════════ RIGHT COLUMN — Visuals & Logistics ══════════════ */}
           <div style={{ padding: '20px 24px' }}>
 
-            {/* Event Image — with sync toggle */}
+            {/* Event Image — unified single field for all events */}
             <MetadataField
               label="Event Image"
               isCustom={!locks.image}
               artistName={artistName}
               isLocked={locks.image}
-              onToggleLock={() => toggleLock('image')}
-              onRevert={!locks.image ? () => toggleLock('image') : null}
+              onToggleLock={hasArtist ? () => toggleLock('image') : undefined}
+              onRevert={!locks.image && hasArtist ? () => toggleLock('image') : null}
               hasArtist={hasArtist}
               hint="If set, this image takes priority over artist and venue photos."
             >
               <ImagePreviewSection
-                imageUrl={locks.image ? '' : form.custom_image_url}
+                imageUrl={locks.image && hasArtist ? '' : form.custom_image_url}
                 inheritedUrl={inheritedImage}
-                isInherited={locks.image}
-                onUrlChange={v => update('custom_image_url', v)}
+                isInherited={locks.image && hasArtist}
+                onUrlChange={v => {
+                  update('custom_image_url', v);
+                  update('event_image_url', v); // keep legacy field in sync
+                }}
                 disabled={locks.image && hasArtist}
-                placeholder={inheritedImage ? 'Unlock to set a custom event image...' : 'https://...'}
+                placeholder={hasArtist && inheritedImage ? 'Unlock to set a custom event image...' : 'https://... (paste image URL)'}
               />
             </MetadataField>
 
@@ -465,21 +492,7 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 <input style={inputStyle} placeholder="https://..." value={form.ticket_link} onChange={e => update('ticket_link', e.target.value)} />
               </div>
 
-              {/* Event Image URL — standalone direct input */}
-              {!hasArtist && (
-                <div style={{ marginBottom: '10px' }}>
-                  <label style={labelStyle}>Event Image URL</label>
-                  <input
-                    style={inputStyle}
-                    placeholder="https://... (image for this event)"
-                    value={form.event_image_url}
-                    onChange={e => update('event_image_url', e.target.value)}
-                  />
-                  <p style={{ fontSize: '11px', marginTop: '4px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                    Standalone events use this as the primary display image.
-                  </p>
-                </div>
-              )}
+              {/* Standalone event_image_url input removed — unified into ImagePreviewSection above */}
 
               {/* Feature in Spotlight toggle */}
               <div style={{
