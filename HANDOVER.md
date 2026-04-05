@@ -3343,6 +3343,85 @@ In JSX, all references use the prefix: `ev.events`, `ar.artists`, `ve.scraperHea
 
 ---
 
+## React Performance Optimization — `page.js` Card Render Cascade (April 4, 2026)
+
+### 1. The "Waterfall" Problem
+
+Clicking "Save/Bookmark" on a single `EventCardV2` triggered a re-render of every card on the page (12+ `console.log` fires per interaction). Root cause: `page.js` passed unstable function references and inline-evaluated props to memoized children, defeating `React.memo` entirely.
+
+The cascade path: `favorites` state change → `toggleFavorite` recreated (had `favorites` in its deps) → new prop reference on every card → all `EventCardV2` instances re-render → 60fps destroyed on scroll/search/save.
+
+### 2. The "Stability Chain" Fix
+
+**2a. `React.memo` on `EventCardV2`** (`src/components/EventCardV2.js`)
+
+Wrapped the default export in `memo()`. The function declaration changed from `export default function EventCardV2(...)` to a bare `function EventCardV2(...)` with `export default memo(EventCardV2)` at EOF. Import: `memo` added to the existing `react` import on line 3.
+
+**2b. Stable Refs for State Reads** (`page.js` lines 564–566)
+
+Created `isLoggedInRef` and `favoritesRef` (alongside the pre-existing `followingRef`). Each is synced via a one-liner `useEffect`. This lets callbacks read current state values without listing them as `useCallback` dependencies, so the callback references never change:
+
+```js
+const isLoggedInRef = useRef(false);
+const favoritesRef = useRef(new Set());
+useEffect(() => { isLoggedInRef.current = isLoggedIn; }, [isLoggedIn]);
+useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
+```
+
+**2c. Empty/Minimal Dependency Arrays**
+
+| Callback | Deps Before | Deps After | Technique |
+|---|---|---|---|
+| `toggleFavorite` | `[favorites, isLoggedIn, openAuth, unsaveEventFromDb, saveEventToDb]` | `[openAuth, unsaveEventFromDb, saveEventToDb]` | Reads `favoritesRef.current.has()` and `isLoggedInRef.current` |
+| `followEntity` | `[isLoggedIn, openAuth]` | `[openAuth]` | Reads `isLoggedInRef.current` |
+| `handleFollowArtist` | `[isFollowing, followEntity, unfollowEntity]` | `[followEntity, unfollowEntity]` | Reads `followingRef.current.some()` |
+| `unfollowEntity` | `[]` | `[]` | Already stable (functional `setFollowing`) |
+| `handleFlag` | `[]` | `[]` | Already stable (just calls `setToast`) |
+
+`openAuth` has deps `[]`, `unsaveEventFromDb` has deps `[]`, `unfollowEntity` has deps `[]` — the entire chain is referentially stable until `saveEventToDb` changes (deps: `[events, notifEnabled]`, both infrequent — page load / manual refresh only).
+
+**2d. The Follow Set — `followedArtistNames`** (`page.js` line ~757)
+
+Replaced inline `isFollowing('artist', name)` calls in the card JSX with a `useMemo` Set:
+
+```js
+const followedArtistNames = useMemo(() => {
+  return new Set(following.filter(f => f.entity_type === 'artist').map(f => f.entity_name));
+}, [following]);
+```
+
+JSX changed from `isArtistFollowed={isFollowing('artist', event.name || event.artist_name || '')}` to `isArtistFollowed={followedArtistNames.has(event.name || event.artist_name || '')}`. This is O(1) per card vs the old O(n) `.some()` scan, and the Set reference is stable between renders when `following` hasn't changed.
+
+Note: `isFollowing` is NOT removed — it's still used by the bottom sheet components (artist profile sheet, venue sheet) which aren't memoized cards.
+
+### 3. The "Nested Button" Hydration Fix (`page.js` line ~1524)
+
+**Problem:** Console warning `In HTML, <button> cannot be a descendant of <button>`. The "Clear Filters" `<button>` (with `clearAllFilters()` onClick) was nested inside the Omnibar Pill's outer `<button>`. This caused React hydration mismatches on every page load.
+
+**Fix:** Changed the outer Omnibar Pill wrapper from `<button>` to `<div>` with accessibility attributes:
+- Added `role="button"` and `tabIndex={0}` for screen readers and keyboard focus
+- Added `onKeyDown` handler supporting Enter and Space keys to match native button behavior
+- All existing `onClick`, `style`, and `stopPropagation()` logic unchanged
+- The inner "Clear Filters" `<button>` (line ~1635) remains a real `<button>` — now legal HTML since its parent is a `<div>`
+
+**Result:** Console is clean of all hydration warnings.
+
+### 4. Verification
+
+- Re-renders confirmed at 4 total logs (Strict Mode minimum: 2 mount + 2 StrictMode double-invoke) for targeted cards only
+- PostHog analytics verified: `$autocapture` and `event_bookmarked` events fire correctly after the refactor
+- Hydration console is clean — no warnings on page load
+
+### 5. Diagnostic Log (TEMPORARY — remove before deploy)
+
+`EventCardV2.js` line ~137 has `console.log('--- CARD RENDERED ---', event?.artist_name || 'Unknown')` for testing. **Remove this line before production push.**
+
+### 6. Remaining Technical Debt
+
+**`saveEventToDb` cascade:** `toggleFavorite` still depends on `saveEventToDb` which has `[events, notifEnabled]` in its deps. When the full event list refreshes, `toggleFavorite` recreates — but this is infrequent (page load / manual refresh only). To fully eliminate: add `eventsRef` and `notifEnabledRef`. Low priority since the current fix already handles the high-frequency triggers (save/unsave/follow clicks, search typing, filter toggling).
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.

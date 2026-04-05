@@ -561,6 +561,9 @@ export default function HomePage() {
   // Refs for the follow upsell — lets toggleFavorite call follow logic defined later without TDZ issues
   const followingRef = useRef([]);
   const followEntityRef = useRef(null);
+  // Refs for stable callbacks — avoids recreating useCallbacks on every state change
+  const isLoggedInRef = useRef(false);
+  const favoritesRef = useRef(new Set());
 
   // Save an event to Supabase (extracted so the Follow Action Sheet can call it)
   const saveEventToDb = useCallback(async (id) => {
@@ -604,11 +607,11 @@ export default function HomePage() {
   const toggleFavorite = useCallback(async (id) => {
     if (!id) return;
     // Hard gate: require auth
-    if (!isLoggedIn) {
+    if (!isLoggedInRef.current) {
       openAuth('save');
       return;
     }
-    const isSaved = favorites.has(id);
+    const isSaved = favoritesRef.current.has(id);
 
     if (isSaved) {
       unsaveEventFromDb(id);
@@ -617,7 +620,7 @@ export default function HomePage() {
 
     // Not saved yet — save immediately (popover upsell is handled inside EventCardV2)
     saveEventToDb(id);
-  }, [favorites, isLoggedIn, openAuth, unsaveEventFromDb, saveEventToDb]);
+  }, [openAuth, unsaveEventFromDb, saveEventToDb]);
 
   // ── Saved tab segment toggle (persisted per-session) ──────────────────────
   const [savedSegment, setSavedSegment] = useState(() => {
@@ -638,6 +641,9 @@ export default function HomePage() {
   const [following, setFollowing] = useState([]);
   // Sync followingRef (declared before toggleFavorite) so it always has current state
   useEffect(() => { followingRef.current = following; }, [following]);
+  // Sync stable-callback refs so useCallbacks with [] deps always read current values
+  useEffect(() => { isLoggedInRef.current = isLoggedIn; }, [isLoggedIn]);
+  useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
 
   // Fetch follows from API when user logs in
   useEffect(() => {
@@ -659,7 +665,7 @@ export default function HomePage() {
 
   const followEntity = useCallback(async (entityType, entityName) => {
     // Hard gate: require auth
-    if (!isLoggedIn) {
+    if (!isLoggedInRef.current) {
       openAuth('save');
       return;
     }
@@ -695,7 +701,7 @@ export default function HomePage() {
         body: JSON.stringify({ artist_name: entityName }),
       });
     } catch {}
-  }, [isLoggedIn, openAuth]);
+  }, [openAuth]);
 
   // Sync ref so toggleFavorite's toast action can call followEntity without TDZ
   useEffect(() => { followEntityRef.current = followEntity; }, [followEntity]);
@@ -747,11 +753,18 @@ export default function HomePage() {
     return following.some(f => f.entity_type === entityType && f.entity_name === entityName);
   }, [following]);
 
+  // ── Stable Set for memoized card props ───────────────────────────────────
+  const followedArtistNames = useMemo(() => {
+    return new Set(following.filter(f => f.entity_type === 'artist').map(f => f.entity_name));
+  }, [following]);
+
   // ── Stable callback refs for memoized child cards ────────────────────────
   const handleFollowArtist = useCallback((artistName) => {
-    if (isFollowing('artist', artistName)) unfollowEntity('artist', artistName);
+    const currentFollowing = followingRef.current;
+    const alreadyFollowed = currentFollowing.some(f => f.entity_type === 'artist' && f.entity_name === artistName);
+    if (alreadyFollowed) unfollowEntity('artist', artistName);
     else followEntity('artist', artistName);
-  }, [isFollowing, followEntity, unfollowEntity]);
+  }, [followEntity, unfollowEntity]);
 
   const handleFlag = useCallback((msg) => {
     setToast(msg);
@@ -1507,8 +1520,8 @@ export default function HomePage() {
           {activeTab !== 'saved' && activeTab !== 'profile' && <>
           <div style={{ width: '6px', flexShrink: 0 }} />
 
-          {/* Omnibar pill — Fake search bar (button only, never a text input) */}
-          <button onClick={(e) => {
+          {/* Omnibar pill — Fake search bar (div wrapper to avoid button-in-button hydration error) */}
+          <div role="button" tabIndex={0} onClick={(e) => {
             e.stopPropagation();
             if (filtersExpanded) {
               setFiltersExpanded(false);
@@ -1516,7 +1529,7 @@ export default function HomePage() {
             } else {
               openSearch();
             }
-          }} style={{
+          }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.currentTarget.click(); } }} style={{
             display: 'flex', alignItems: 'center', gap: '6px', flex: 1,
             padding: filtersExpanded ? '0 10px' : '7px 10px',
             background: darkMode ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.95)',
@@ -1635,7 +1648,7 @@ export default function HomePage() {
                 <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill={darkMode ? 'rgba(255,255,255,0.5)' : '#6B7280'} />
               </svg>
             )}
-          </button>
+          </div>
           </>}
 
           {/* Spacer — pushes bell to far right on tabs without omnibar */}
@@ -2529,7 +2542,7 @@ export default function HomePage() {
                                 onToggleFavorite={toggleFavorite}
                                 darkMode={darkMode}
                                 onFollowArtist={handleFollowArtist}
-                                isArtistFollowed={isFollowing('artist', event.name || event.artist_name || '')}
+                                isArtistFollowed={followedArtistNames.has(event.name || event.artist_name || '')}
                                 onFlag={handleFlag}
                               />
                             ))}
@@ -2834,7 +2847,7 @@ export default function HomePage() {
                           onToggleFavorite={toggleFavorite}
                           darkMode={darkMode}
                           onFollowArtist={handleFollowArtist}
-                          isArtistFollowed={isFollowing('artist', event.name || event.artist_name || '')}
+                          isArtistFollowed={followedArtistNames.has(event.name || event.artist_name || '')}
                           onFlag={handleFlag}
                           autoExpand={deepLinkEventId === event.id}
                         />
