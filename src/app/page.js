@@ -407,22 +407,7 @@ export default function HomePage() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showAutoComplete, setShowAutoComplete] = useState(false);
 
-  useEffect(() => {
-    const threshold = 10; // minimum scroll delta to trigger
-    const handleScroll = () => {
-      const currentY = window.scrollY;
-      if (currentY - lastScrollY.current > threshold) {
-        // Scrolling down → hide
-        setNavHidden(true);
-      } else if (lastScrollY.current - currentY > threshold) {
-        // Scrolling up → show
-        setNavHidden(false);
-      }
-      lastScrollY.current = currentY;
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  // Bottom nav is permanently visible — scroll hide/show removed.
 
   // ── Debounce searchQuery → debouncedSearch (300ms) ─────────────────────────
   useEffect(() => {
@@ -2904,8 +2889,7 @@ export default function HomePage() {
       {/* ── Bottom Nav ──────────────────────────────────────────────────── */}
       <nav style={{
         position: 'fixed', bottom: 0, left: '50%',
-        transform: navHidden ? 'translate(-50%, 100%)' : 'translateX(-50%)',
-        transition: 'transform 0.3s ease',
+        transform: 'translateX(-50%)',
         width: '100%', maxWidth: '480px', zIndex: 100,
         background: t.navBg, borderTop: `1px solid ${t.border}`,
         display: 'flex', alignItems: 'center', justifyContent: 'space-around',
