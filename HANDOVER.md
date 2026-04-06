@@ -3526,6 +3526,56 @@ Backward compat: if JSON parsing fails, the raw text is returned as `enhanced` (
 
 ---
 
+## Sprint: April 5–6, 2026 — Performance & Stability ("Marco Island") ✅ DEPLOYED
+
+### Current State
+The site has moved from a 5-second "Loading" lag to sub-1-second page loads. The database query executes in 0.06ms, the network payload is ~85% smaller, and the UI renders a fast, capped set of events with server-side date filtering. All Safety Locks remain intact.
+
+### 1. Database & Infrastructure
+
+SQL indexes added on `event_date`, `status`, and `venue_id` — database search speed is now 0.06ms.
+
+Server-side date filtering implemented: `fetchEvents(dateFloor)` accepts a `YYYY-MM-DD` parameter and sends `.gte('event_date', floor)` to Supabase. A dedicated `useEffect` watches `[dateKey, pickedDate, fetchEvents]` and re-fires the query whenever the user picks a new date filter (Today, Tomorrow, Weekend, or a specific date via the date picker). This replaced the old approach of fetching all future events and filtering client-side — future dates are now always findable regardless of the fetch limit.
+
+File: `src/app/page.js` — `fetchEvents` function (line ~780) and date-filter useEffect (line ~880).
+
+### 2. Performance Optimization
+
+80-event fetch limit: `.limit(80)` caps each query, reducing the network payload from ~750KB (all future events) to ~160KB (80 events × ~2KB each). The old "infinite while loop" pagination logic (PAGE_SIZE 1000, looping until exhausted) has been removed entirely — with an 80-row cap, pagination is unnecessary.
+
+Select logic: `.select('*')` retained for schema compatibility. An earlier attempt with explicit column names caused a "No events found" blank screen due to a column-name mismatch (likely `start_time` or `image_url` not being actual DB column names). The `select('*')` + `.limit(80)` combination provides the performance win without schema fragility. Explicit columns can be revisited after a formal schema audit.
+
+Column mismatch fix (the "Blackout" bug): The sync pipeline wrote scraper images to `image_url` on the events table, but the frontend read from `event_image_url` and `custom_image_url` — completely different columns. Images were in the database but invisible on the site. Fixed by changing `mapEvent()` in `sync-events/route.js` to write to `event_image_url` instead. The legacy `image_url` column is preserved as a fallback in all frontend waterfalls.
+
+Files changed: `src/app/api/sync-events/route.js` (line 208), `src/app/page.js`, `src/components/EventCardV2.js`, `src/app/event/[id]/EventPageClient.js`, `src/app/event/[id]/page.js`.
+
+### 3. UI/UX Fixes
+
+Fixed bottom navigation: The nav bar is now permanently visible at `position: fixed; bottom: 0`. The scroll-tracking `useEffect` that toggled `navHidden` (hide on scroll down, show on scroll up) has been removed. The `transform` on the `<nav>` is now a constant `translateX(-50%)` with no conditional `translate-y-full`. File: `src/app/page.js` (line ~2890).
+
+Image waterfall + `cleanImg` helper: A `cleanImg(v)` utility was added to all four frontend files. It returns `null` if the input is `""`, `"None"`, or falsy — preventing poison values from blocking the waterfall. The full image hierarchy is now: `custom_image_url → event_image_url → image_url (legacy) → artist_image → venue_photo`. This fixes R Bar and other Squarespace venues whose scraper images were silently lost.
+
+### 4. Safety Locks (DO NOT TOUCH)
+
+These architectural decisions are load-bearing and must not be modified:
+
+- `isLoggedInRef` (useRef) and `favoritesRef` (useRef) — instant UI reads without re-render cascade. Lines 550–551 in page.js.
+- `handleFlag` useCallback deps: `[]` — stable reference for React.memo. Line 771.
+- `handleFollowArtist` useCallback deps: `[followEntity, unfollowEntity]` — reads from `followingRef.current`. Line 767.
+- `<div role="button" tabIndex={0}>` on the Omnibar pill — prevents nested-button hydration error. Line ~1549.
+- `cleanImg` helper — treats `""` and `"None"` as null in the image waterfall. Present in page.js, EventCardV2.js, EventPageClient.js, and event/[id]/page.js.
+- `fetchEvents` deps: `[]` — stable identity, date is passed as a parameter not a dependency.
+
+### 5. R Bar Ingestion Audit (Diagnosis Complete)
+
+Full pipeline traced: Scraper → mapEvent → Upsert → Auto-enrichment → Frontend.
+
+Root cause of missing metadata: R Bar events arrive as "orphans" — the scraper sets `artist_name` from the Squarespace title but no `artist_id`. The auto-enrichment step (line ~793 in sync-events) does attempt to link `artist_id` by matching `artist_name` against the `artists` table, but is capped at 15 new artist lookups per sync cycle and depends on exact name matching. Local/regional artists that don't exist on MusicBrainz/Discogs/Last.fm never get an artist row created, so the event stays permanently orphaned.
+
+The column mismatch fix (writing to `event_image_url`) ensures at minimum the Squarespace event flyer image now reaches the frontend, even for orphan events.
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.

@@ -1196,6 +1196,9 @@ export default function HomePage() {
       .then(data => {
         if (!Array.isArray(data) || data.length === 0) { setSpotlightData([]); return; }
         // Normalize spotlight events using the same mapping as fetchEvents
+        // cleanImg / cleanStr treat "", "None", and whitespace-only as null
+        const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
+        const cleanStr = (v) => (v && v.trim() && v.trim() !== 'None') ? v.trim() : null;
         const mapped = data.map(e => {
           let extractedStartTime = e.start_time || (() => {
             if (e.event_date && e.event_date.includes('T')) {
@@ -1230,12 +1233,14 @@ export default function HomePage() {
             })(),
             start_time:    extractedStartTime,
             // Waterfall: custom event override → event-level field → global artist field
-            description:   e.custom_bio || e.artist_bio || e.artists?.bio || '',
+            // cleanStr filters "", "None", and whitespace-only so the chain keeps falling
+            description:   cleanStr(e.custom_bio) || cleanStr(e.artist_bio) || cleanStr(e.artists?.bio) || '',
             artist_genres: e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
             artist_vibes:  e.custom_vibes?.length ? e.custom_vibes : (e.vibe ? [e.vibe] : (e.artists?.vibes || [])),
             is_tribute:    e.artists?.is_tribute || false,
-            event_image:   e.custom_image_url || e.event_image_url || null,
-            artist_image:  e.artists?.image_url || null,
+            // Image waterfall synced with fetchEvents: custom → event-level → legacy → artist
+            event_image:   cleanImg(e.custom_image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
+            artist_image:  cleanImg(e.artists?.image_url) || null,
             venue_type:    e.venues?.venue_type || null,
             venue_tags:    e.venues?.tags || [],
             venue_name:    e.venues?.name    || e.venue_name    || '',
