@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { formatTimeRange } from '@/lib/utils';
 import { posthog } from '@/lib/posthog';
 import Badge from '@/components/ui/Badge';
-import ShortcutMenu from '@/components/ShortcutMenu';
+import ActionSheet from '@/components/ActionSheet';
 
 const CATEGORY_CONFIG = {
   'Live Music':      { color: '#E8722A', bg: '#E8722A', emoji: '🎵' },
@@ -36,7 +36,6 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const [mounted, setMounted] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
-  const [shortcutAnchor, setShortcutAnchor] = useState({ x: 0, y: 0 });
   const longPressTimer = useRef(null);
   const longPressFired = useRef(false);
   const pointerStart = useRef({ x: 0, y: 0 });
@@ -171,7 +170,6 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
               longPressFired.current = true;
               setPressed(false);
               try { navigator?.vibrate?.(20); } catch {}
-              setShortcutAnchor({ x: pointerStart.current.x, y: pointerStart.current.y });
               setShortcutOpen(true);
             }, 500);
           }}
@@ -561,13 +559,11 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
         </div>
       </div>
 
-      {/* Long-press shortcut menu */}
+      {/* Long-press bottom action sheet */}
       {mounted && (
-        <ShortcutMenu
+        <ActionSheet
           open={shortcutOpen}
           onClose={() => setShortcutOpen(false)}
-          anchorY={shortcutAnchor.y}
-          anchorX={shortcutAnchor.x}
           darkMode={darkMode}
           event={event}
           onFollowArtist={() => {
