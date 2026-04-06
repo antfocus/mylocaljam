@@ -781,12 +781,11 @@ export default function HomePage() {
       const pad = n => String(n).padStart(2, '0');
       const todayLocal = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
 
-      // Trim 1: Explicit columns — drops 15 unused admin fields (external_id,
-      // cancel_flag_count, is_locked, triage_status, etc.) that rode along with select('*').
       // Trim 4: .limit(40) caps the initial fetch for fast first paint.
+      // Using select('*') for broad compatibility; revisit with explicit columns after schema audit.
       const { data, error } = await supabase
         .from('events')
-        .select('id, artist_name, event_title, venue_name, event_date, start_time, genre, vibe, cover, ticket_link, source, status, category, artist_id, event_image_url, image_url, custom_image_url, custom_bio, artist_bio, custom_genres, custom_vibes, venue_id, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url)')
+        .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url)')
         .gte('event_date', todayLocal)
         .eq('status', 'published')
         .order('event_date', { ascending: true })
