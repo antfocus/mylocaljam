@@ -71,8 +71,10 @@ export default function EventPageClient({ event }) {
   const venue = event.venue_name || '';
   const venueAddress = event.venue_address || '';
   const desc = event.description || '';
+  // Treat "" and "None" as null so the waterfall keeps falling
+  const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
   // Waterfall: event-specific image → artist image → venue photo
-  const imageUrl = event.event_image || event.artist_image || event.venue_photo || null;
+  const imageUrl = cleanImg(event.event_image) || cleanImg(event.artist_image) || cleanImg(event.venue_photo) || null;
   const genres = event.artist_genres || [];
   const isTribute = event.is_tribute || false;
   const timeStr = fmtTime(event.start_time);

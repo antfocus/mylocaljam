@@ -85,8 +85,10 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const artistName = event.name || event.artist_name || '';
   const name       = eventTitle || artistName;
   const venue      = event.venue       || event.venue_name  || '';
+  // Treat "" and "None" as null so the waterfall keeps falling
+  const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
   // Waterfall: event-specific image → artist image → venue photo
-  const imageUrl   = event.event_image || event.artist_image || event.venue_photo || null;
+  const imageUrl   = cleanImg(event.event_image) || cleanImg(event.artist_image) || cleanImg(event.venue_photo) || null;
   const genres     = event.artist_genres || [];
   const isTribute  = event.is_tribute || false;
   const rawSource  = event.source       || null;

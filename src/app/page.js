@@ -800,6 +800,9 @@ export default function HomePage() {
       }
       const data = allData;
 
+      // Treat "" and "None" as null so the image waterfall keeps falling
+      const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
+
       const mapped = (data || []).map(e => {
         let extractedStartTime = e.start_time || (() => {
           if (e.event_date && e.event_date.includes('T')) {
@@ -851,8 +854,10 @@ export default function HomePage() {
           artist_genres: e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
           artist_vibes:  e.custom_vibes?.length ? e.custom_vibes : (e.vibe ? [e.vibe] : (e.artists?.vibes || [])),
           is_tribute:    e.artists?.is_tribute || false,
-          event_image:   e.custom_image_url || e.event_image_url || null,
-          artist_image:  e.artists?.image_url || null,
+          // Image waterfall: custom → event-level → legacy scraper column → artist → venue
+          // cleanImg treats "" and "None" as null so the waterfall keeps falling
+          event_image:   cleanImg(e.custom_image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
+          artist_image:  cleanImg(e.artists?.image_url) || null,
           venue_type:    e.venues?.venue_type || null,
           venue_tags:    e.venues?.tags || [],
           venue_name:    e.venues?.name    || e.venue_name    || '',

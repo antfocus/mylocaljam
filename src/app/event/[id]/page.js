@@ -53,7 +53,7 @@ function getServerClient() {
 const EVENT_SELECT = [
   'id', 'artist_name', 'event_title', 'venue_name', 'event_date',
   'genre', 'vibe', 'cover', 'ticket_link', 'artist_bio',
-  'source', 'status', 'category', 'artist_id', 'event_image_url',
+  'source', 'status', 'category', 'artist_id', 'event_image_url', 'image_url',
   'custom_bio', 'custom_genres', 'custom_vibes', 'custom_image_url', 'is_custom_metadata',
   'venues(name, address, color, photo_url, venue_type)',
   'artists(name, bio, image_url, genres, vibes, is_tribute)',
@@ -63,6 +63,9 @@ const EVENT_SELECT = [
  * Flatten joined Supabase row into the shape EventPageClient expects.
  * Same mapping as the `mapped` transform in page.js.
  */
+// Treat "" and "None" as null so the image waterfall keeps falling
+const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
+
 function flattenEvent(e) {
   // Extract start time from event_date timestamp
   let startTime = null;
@@ -95,8 +98,9 @@ function flattenEvent(e) {
     category:       e.category || 'Live Music',
     // Waterfall: custom event override → event-level field → global artist field
     description:    e.custom_bio || e.artist_bio || e.artists?.bio || '',
-    event_image:    e.custom_image_url || e.event_image_url || null,
-    artist_image:   e.artists?.image_url || null,
+    // Image waterfall: custom → event-level → legacy scraper column → artist
+    event_image:    cleanImg(e.custom_image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
+    artist_image:   cleanImg(e.artists?.image_url) || null,
     artist_genres:  e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
     is_tribute:     e.artists?.is_tribute || false,
     // Flattened from venues join
