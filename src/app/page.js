@@ -781,24 +781,17 @@ export default function HomePage() {
       const pad = n => String(n).padStart(2, '0');
       const todayLocal = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
 
-      // Supabase PostgREST caps at 1000 rows per request — paginate to get all
-      let allData = [];
-      const PAGE_SIZE = 1000;
-      let from = 0;
-      while (true) {
-        const { data: page, error } = await supabase
-          .from('events')
-          .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url)')
-          .gte('event_date', todayLocal)
-          .eq('status', 'published')
-          .order('event_date', { ascending: true })
-          .range(from, from + PAGE_SIZE - 1);
-        if (error) throw error;
-        allData = allData.concat(page || []);
-        if (!page || page.length < PAGE_SIZE) break;
-        from += PAGE_SIZE;
-      }
-      const data = allData;
+      // Trim 1: Explicit columns — drops 15 unused admin fields (external_id,
+      // cancel_flag_count, is_locked, triage_status, etc.) that rode along with select('*').
+      // Trim 4: .limit(40) caps the initial fetch for fast first paint.
+      const { data, error } = await supabase
+        .from('events')
+        .select('id, artist_name, event_title, venue_name, event_date, start_time, genre, vibe, cover, ticket_link, source, status, category, artist_id, event_image_url, image_url, custom_image_url, custom_bio, artist_bio, custom_genres, custom_vibes, venue_id, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url)')
+        .gte('event_date', todayLocal)
+        .eq('status', 'published')
+        .order('event_date', { ascending: true })
+        .limit(40);
+      if (error) throw error;
 
       // Treat "" and "None" as null so the image waterfall keeps falling
       const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
