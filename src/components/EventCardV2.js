@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { formatTimeRange } from '@/lib/utils';
 import { posthog } from '@/lib/posthog';
 import Badge from '@/components/ui/Badge';
-import ActionSheet from '@/components/ActionSheet';
+import QuickActions from '@/components/QuickActions';
 
 const CATEGORY_CONFIG = {
   'Live Music':      { color: '#E8722A', bg: '#E8722A', emoji: '🎵' },
@@ -36,6 +36,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const [mounted, setMounted] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [shortcutAnchor, setShortcutAnchor] = useState({ x: 0, y: 0 });
   const longPressTimer = useRef(null);
   const longPressFired = useRef(false);
   const pointerStart = useRef({ x: 0, y: 0 });
@@ -170,6 +171,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
               longPressFired.current = true;
               setPressed(false);
               try { navigator?.vibrate?.(20); } catch {}
+              setShortcutAnchor({ x: pointerStart.current.x, y: pointerStart.current.y });
               setShortcutOpen(true);
             }, 500);
           }}
@@ -559,11 +561,13 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
         </div>
       </div>
 
-      {/* Long-press bottom action sheet */}
+      {/* Long-press horizontal toolbelt — positioned above the finger */}
       {mounted && (
-        <ActionSheet
+        <QuickActions
           open={shortcutOpen}
           onClose={() => setShortcutOpen(false)}
+          anchorX={shortcutAnchor.x}
+          anchorY={shortcutAnchor.y}
           darkMode={darkMode}
           event={event}
           onFollowArtist={() => {
@@ -595,18 +599,6 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             } else {
               await copyFallback();
             }
-          }}
-          onLocation={() => {
-            const addr = event.venue_address || event.venue || '';
-            const lat = event.venue_lat;
-            const lng = event.venue_lng;
-            let mapsUrl;
-            if (lat && lng) {
-              mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-            } else if (addr) {
-              mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`;
-            }
-            if (mapsUrl) window.open(mapsUrl, '_blank', 'noopener');
           }}
           onFlag={() => setFlagSheet(true)}
         />
