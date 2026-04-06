@@ -152,6 +152,11 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
       display: 'flex',
       border: `1px solid ${borderColor}`,
       opacity: isCanceled ? 0.6 : 1,
+      /* Silence native long-press: text selection, iOS callout, tap highlight */
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      WebkitTouchCallout: 'none',
+      WebkitTapHighlightColor: 'transparent',
     }}>
       {/* Card body */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -163,6 +168,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             if (longPressFired.current) { longPressFired.current = false; return; }
             setExpanded(e => { if (e) setBioExpanded(false); return !e; });
           }}
+          onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
           onPointerDown={(e) => {
             setPressed(true);
             longPressFired.current = false;
