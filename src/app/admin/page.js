@@ -703,6 +703,9 @@ export default function AdminPage() {
         mergeLoading={ar.mergeLoading} setMergeLoading={ar.setMergeLoading}
         deleteConfirm={ar.deleteConfirm} setDeleteConfirm={ar.setDeleteConfirm}
         runBulkEnrich={ar.runBulkEnrich} fetchArtists={ar.fetchArtists}
+        artistActionLoading={ar.artistActionLoading} setArtistActionLoading={ar.setArtistActionLoading}
+        artistsSearch={ar.artistsSearch} artistsNeedsInfo={ar.artistsNeedsInfo}
+        editingArtist={ar.editingArtist} setEditingArtist={ar.setEditingArtist}
         showQueueToast={showQueueToast}
       />
 

@@ -15,6 +15,9 @@ export default function AdminArtistModals({
   mergeMasterId, setMergeMasterId, mergeLoading, setMergeLoading,
   deleteConfirm, setDeleteConfirm,
   runBulkEnrich, fetchArtists, showQueueToast,
+  artistActionLoading, setArtistActionLoading,
+  artistsSearch, artistsNeedsInfo,
+  editingArtist, setEditingArtist,
 }) {
   const headers = { Authorization: 'Bearer ' + password };
   return (
