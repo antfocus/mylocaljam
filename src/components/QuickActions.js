@@ -4,29 +4,22 @@ import { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
- * QuickActions — Horizontal toolbelt triggered by long-press on EventCard.
+ * QuickActions — Horizontal toolbelt anchored to the card's top-center.
  *
- * Positioning strategy (no ref measurement, no useEffect race):
- *   - `left` is set to anchorX,  `transform: translateX(-50%)` centers it.
- *   - `top`  is set to anchorY − 75px with `transform: translateY(-100%)`
- *     so the entire bar sits ABOVE the finger.
- *   - If anchorY − 75 < 100 (too close to top), flip BELOW the finger (+75px)
- *     and use `translateY(0)` instead.
- *   - A horizontal clamp keeps the bar within 12px of each viewport edge.
+ * Positioning:
+ *   - Receives `cardRect` ({ top, left, width, height }) from EventCardV2.
+ *   - `left` = rect.left + rect.width/2  →  `transform: translateX(-50%)` centers it.
+ *   - `top`  = rect.top − 12px           →  `transform: translateY(-100%)` sits above.
+ *   - Flip:  if rect.top < 80 (card near screen top), menu appears INSIDE the card
+ *            at rect.top + 8px with `translateY(0)`.
  *
- * Button styles are a 1:1 copy of EventCardV2's expanded-section buttons
- * (11px / 700 / 8px 14px / 8px radius / #2A2A3A dark bg).
- *
- * Actions: Follow Artist [+], Share, Report.
- * (Venue/Map intentionally excluded.)
- *
- * Dismissal: backdrop tap, scroll, or Escape key.
+ * Button styles: 1:1 copy of EventCardV2 expanded-section buttons.
+ * Dismissal: backdrop tap, scroll, or Escape.
  */
 export default function QuickActions({
   open,
   onClose,
-  anchorX = 0,
-  anchorY = 0,
+  cardRect,
   darkMode = true,
   event,
   onFollowArtist,
@@ -57,7 +50,7 @@ export default function QuickActions({
     return () => window.removeEventListener('keydown', h);
   }, [open, onClose]);
 
-  // ── Scroll on the main list dismisses the toolbelt ────────────────
+  // ── Scroll dismisses ─────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
     const dismiss = () => onClose?.();
@@ -71,35 +64,34 @@ export default function QuickActions({
     onClose?.();
   }, [onClose]);
 
-  if (typeof window === 'undefined' || !visible) return null;
+  if (typeof window === 'undefined' || !visible || !cardRect) return null;
 
-  // ── Position: pure prop math, no ref needed ───────────────────────
-  const GAP = 75;       // pixels between finger and bar edge
-  const FLIP_MIN = 100; // if touch is within 100px of screen top, flip below
-  const PAD = 12;       // viewport edge padding
+  // ── Card-anchored position ────────────────────────────────────────
+  const GAP = 12;       // px above the card
+  const FLIP_MIN = 80;  // if card top is within 80px of screen top, flip inside
+  const PAD = 8;        // viewport edge padding
   const vw = window.innerWidth;
 
-  const flipped = anchorY - GAP < FLIP_MIN;
-  // top: place the CSS anchor point at finger ± gap
-  const cssTop = flipped ? anchorY + GAP : anchorY - GAP;
-  // left: place at finger X, transform will center it
-  let cssLeft = anchorX;
-  // Rough clamp so the bar doesn't overflow horizontally.
-  // The bar is ~280px wide; half is ~140.  Clamp the center point.
+  const flipped = cardRect.top < FLIP_MIN;
+  const cssTop = flipped
+    ? cardRect.top + GAP                // inside the card, near top
+    : cardRect.top - GAP;              // above the card
+  let cssLeft = cardRect.left + cardRect.width / 2;
+
+  // Horizontal clamp (~280px bar; half ≈ 140)
   const halfBar = 140;
   if (cssLeft < PAD + halfBar) cssLeft = PAD + halfBar;
   if (cssLeft > vw - PAD - halfBar) cssLeft = vw - PAD - halfBar;
 
-  // transform: centerX; above-finger (or below if flipped)
   const baseTransform = flipped
-    ? 'translate(-50%, 0%)'       // bar hangs below the anchor point
-    : 'translate(-50%, -100%)';   // bar sits above the anchor point
+    ? 'translate(-50%, 0%)'
+    : 'translate(-50%, -100%)';
 
   const animTransform = animIn
     ? baseTransform
     : flipped
-      ? 'translate(-50%, 10px)'
-      : 'translate(-50%, calc(-100% + 10px))';
+      ? 'translate(-50%, 0%) scale(0.95)'
+      : 'translate(-50%, -100%) scale(0.95)';
 
   // ── 1:1 button style from EventCardV2 expanded section ────────────
   const btnStyle = {
@@ -122,20 +114,22 @@ export default function QuickActions({
 
   return createPortal(
     <>
-      {/* Backdrop — subtle dark scrim, no borders/highlights */}
+      {/* Backdrop — light scrim for focus without blackout */}
       <div
         onClick={onClose}
         style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           zIndex: 200,
-          background: animIn ? 'rgba(0,0,0,0.40)' : 'rgba(0,0,0,0)',
-          transition: 'background 0.2s ease',
+          background: animIn ? 'rgba(0,0,0,0.20)' : 'rgba(0,0,0,0)',
+          backdropFilter: animIn ? 'blur(1px)' : 'none',
+          WebkitBackdropFilter: animIn ? 'blur(1px)' : 'none',
+          transition: 'background 0.2s ease, backdrop-filter 0.2s ease',
           WebkitTapHighlightColor: 'transparent',
           border: 'none', outline: 'none',
         }}
       />
 
-      {/* Toolbelt bar — positioned via props, centered via transform */}
+      {/* Toolbelt bar — anchored to card top-center */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -153,7 +147,7 @@ export default function QuickActions({
             : '0 4px 20px rgba(0,0,0,0.12)',
           opacity: animIn ? 1 : 0,
           transform: animTransform,
-          transition: 'opacity 0.2s ease, transform 0.2s ease',
+          transition: 'opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
           fontFamily: "'DM Sans', sans-serif",
           pointerEvents: animIn ? 'auto' : 'none',
         }}

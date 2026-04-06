@@ -36,7 +36,8 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const [mounted, setMounted] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
-  const [shortcutAnchor, setShortcutAnchor] = useState({ x: 0, y: 0 });
+  const [cardRect, setCardRect] = useState(null);
+  const cardRef = useRef(null);
   const longPressTimer = useRef(null);
   const longPressFired = useRef(false);
   const pointerStart = useRef({ x: 0, y: 0 });
@@ -144,14 +145,18 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   };
 
   return (
-    <div id={event?.id ? `event-${event.id}` : undefined} style={{
+    <div ref={cardRef} id={event?.id ? `event-${event.id}` : undefined} style={{
       background: cardBg,
       borderRadius: '12px',
       overflow: 'hidden',
-      boxShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.35)' : '0 1px 6px rgba(0,0,0,0.07)',
+      boxShadow: shortcutOpen
+        ? (darkMode ? '0 2px 16px rgba(232,114,42,0.25)' : '0 2px 12px rgba(232,114,42,0.2)')
+        : (darkMode ? '0 2px 12px rgba(0,0,0,0.35)' : '0 1px 6px rgba(0,0,0,0.07)'),
       display: 'flex',
-      border: `1px solid ${borderColor}`,
+      border: shortcutOpen ? '1px solid #E8722A' : `1px solid ${borderColor}`,
       opacity: isCanceled ? 0.6 : 1,
+      transform: shortcutOpen ? 'scale(0.98)' : 'scale(1)',
+      transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
       /* Silence native long-press: text selection, iOS callout, tap highlight */
       userSelect: 'none',
       WebkitUserSelect: 'none',
@@ -177,7 +182,11 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
               longPressFired.current = true;
               setPressed(false);
               try { navigator?.vibrate?.(20); } catch {}
-              setShortcutAnchor({ x: pointerStart.current.x, y: pointerStart.current.y });
+              // Capture the card's bounding rect for anchoring the toolbelt
+              if (cardRef.current) {
+                const r = cardRef.current.getBoundingClientRect();
+                setCardRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+              }
               setShortcutOpen(true);
             }, 500);
           }}
@@ -567,13 +576,12 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
         </div>
       </div>
 
-      {/* Long-press horizontal toolbelt — positioned above the finger */}
+      {/* Long-press horizontal toolbelt — anchored to card top-center */}
       {mounted && (
         <QuickActions
           open={shortcutOpen}
           onClose={() => setShortcutOpen(false)}
-          anchorX={shortcutAnchor.x}
-          anchorY={shortcutAnchor.y}
+          cardRect={cardRect}
           darkMode={darkMode}
           event={event}
           onFollowArtist={() => {
