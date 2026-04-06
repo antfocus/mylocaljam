@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { formatTimeRange } from '@/lib/utils';
+// formatTimeRange no longer needed — using local fmtTime for full "7:00 PM" display
 import { supabase } from '@/lib/supabase';
 import { posthog } from '@/lib/posthog';
 
-/** Format date for display */
+/** Format date for display — e.g. "Sunday, April 6" */
 function fmtDate(dateStr) {
   if (!dateStr) return '';
   try {
@@ -14,6 +14,17 @@ function fmtDate(dateStr) {
       timeZone: 'America/New_York',
     });
   } catch { return ''; }
+}
+
+/** Format 24h time string to full display — e.g. "19:00" → "7:00 PM" */
+function fmtTime(startStr) {
+  if (!startStr) return '';
+  const [h, m] = startStr.split(':').map(Number);
+  if (h === 0 && m === 0) return ''; // midnight = no time
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  const mins = String(m).padStart(2, '0');
+  return `${h12}:${mins} ${period}`;
 }
 
 export default function EventPageClient({ event }) {
@@ -58,15 +69,19 @@ export default function EventPageClient({ event }) {
   const artistName = event.artist_name || '';
   const name = eventTitle || artistName;
   const venue = event.venue_name || '';
+  const venueAddress = event.venue_address || '';
   const desc = event.description || '';
   // Waterfall: event-specific image → artist image → venue photo
   const imageUrl = event.event_image || event.artist_image || event.venue_photo || null;
   const genres = event.artist_genres || [];
   const isTribute = event.is_tribute || false;
-  const timeStr = formatTimeRange(event.start_time);
+  const timeStr = fmtTime(event.start_time);
   const dateStr = fmtDate(event.event_date);
   const isCanceled = event.status === 'cancelled' || event.status === 'canceled';
   const sourceLink = event.source && /^https?:\/\//i.test(event.source) ? event.source : null;
+  // Google Maps link for venue
+  const mapsQuery = encodeURIComponent(`${venue}${venueAddress ? ' ' + venueAddress : ' NJ'}`);
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
 
   const handleSoftCTA = () => { if (!isLoggedIn) setShowSignupHint(true); };
 
@@ -103,26 +118,68 @@ export default function EventPageClient({ event }) {
         flex: 1, width: '100%', maxWidth: '560px',
         margin: '0 auto', padding: '20px 16px 120px',
       }}>
-        {/* Date & time banner */}
+        {/* ── 1. Title (dominant) ──────────────────────────────────────── */}
+        <h1 style={{
+          fontSize: '32px', fontWeight: 900, color: '#F0F0F5',
+          margin: '0 0 4px', lineHeight: 1.15, letterSpacing: '-0.5px',
+          textDecoration: isCanceled ? 'line-through' : 'none',
+        }}>
+          {name}
+        </h1>
+        {eventTitle && artistName && eventTitle !== artistName && (
+          <p style={{
+            fontSize: '17px', fontWeight: 600, color: '#A0A0B8',
+            margin: '0 0 2px',
+          }}>
+            {artistName}
+          </p>
+        )}
+
+        {/* ── 2. Venue (high-contrast, Maps link) ────────────────────── */}
+        {venue && (
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '5px',
+              fontSize: '17px', fontWeight: 700, color: '#E8722A',
+              textDecoration: 'none', margin: '0 0 16px',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill="#E8722A" />
+            </svg>
+            {venue}
+          </a>
+        )}
+
+        {/* ── 3. Date & Time (clean typography, icons) ────────────────── */}
         <div style={{
-          display: 'flex', alignItems: 'center', gap: '10px',
-          marginBottom: '16px', flexWrap: 'wrap',
+          display: 'flex', alignItems: 'center', gap: '16px',
+          marginBottom: '8px', flexWrap: 'wrap',
         }}>
           {dateStr && (
             <span style={{
-              fontSize: '13px', fontWeight: 600, color: '#E8722A',
-              background: 'rgba(232,114,42,0.1)', padding: '5px 12px',
-              borderRadius: '999px',
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              fontSize: '18px', fontWeight: 600, color: '#F0F0F5',
             }}>
+              {/* Calendar icon */}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z" fill="#7878A0" />
+              </svg>
               {dateStr}
             </span>
           )}
-          {timeStr && timeStr !== '—' && (
+          {timeStr && (
             <span style={{
-              fontSize: '13px', fontWeight: 600, color: '#AAAACC',
-              background: '#1E1E2C', padding: '5px 12px',
-              borderRadius: '999px', border: '1px solid #2A2A3A',
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              fontSize: '18px', fontWeight: 600, color: '#CCCCDD',
             }}>
+              {/* Clock icon */}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" fill="#7878A0" />
+              </svg>
               {timeStr}
             </span>
           )}
@@ -137,38 +194,14 @@ export default function EventPageClient({ event }) {
           )}
         </div>
 
-        {/* Title */}
-        <h1 style={{
-          fontSize: '28px', fontWeight: 800, color: '#F0F0F5',
-          margin: '0 0 6px', lineHeight: 1.2, letterSpacing: '-0.3px',
-          textDecoration: isCanceled ? 'line-through' : 'none',
-        }}>
-          {name}
-        </h1>
-        {eventTitle && artistName && eventTitle !== artistName && (
-          <p style={{
-            fontSize: '16px', fontWeight: 500, color: '#A0A0B8',
-            margin: '0 0 6px',
-          }}>
-            {artistName}
-          </p>
-        )}
+        {/* ── 4. Spacer before hero image ─────────────────────────────── */}
+        <div style={{ height: '24px' }} />
 
-        {/* Venue */}
-        {venue && (
-          <p style={{
-            fontSize: '16px', fontWeight: 500, color: '#4DB8B2',
-            margin: '0 0 20px',
-          }}>
-            {venue}
-          </p>
-        )}
-
-        {/* Hero image */}
+        {/* ── Hero image ──────────────────────────────────────────────── */}
         {imageUrl && (
           <div style={{
-            borderRadius: '12px', overflow: 'hidden',
-            marginBottom: '20px', aspectRatio: '16 / 9',
+            borderRadius: '14px', overflow: 'hidden',
+            marginBottom: '24px', aspectRatio: '16 / 9',
             position: 'relative',
           }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -3343,7 +3343,7 @@ In JSX, all references use the prefix: `ev.events`, `ar.artists`, `ve.scraperHea
 
 ---
 
-## React Performance Optimization — `page.js` Card Render Cascade (April 4, 2026)
+## React Performance Optimization — `page.js` Card Render Cascade (April 4, 2026) ✅ DEPLOYED
 
 ### 1. The "Waterfall" Problem
 
@@ -3422,7 +3422,7 @@ Note: `isFollowing` is NOT removed — it's still used by the bottom sheet compo
 
 ---
 
-## Architecture: Event Vibes vs. Artist Genres (April 5, 2026)
+## Architecture: Event Vibes vs. Artist Genres (April 5, 2026) ✅ DEPLOYED
 
 ### The Philosophy
 
@@ -3460,11 +3460,20 @@ Existing events/artists in the database may still have the old vibe values ("Aco
 
 ---
 
-## Metadata Waterfall Architecture (April 5, 2026)
+## Metadata Waterfall Architecture (April 5, 2026) ✅ DEPLOYED
 
 ### The Hierarchy: Artist = Source of Truth, Event = Situational Override
 
-All display metadata follows a "Smart Waterfall" where the artist provides the permanent identity and the event provides situational overrides. The merge happens at two layers:
+All display metadata follows a "Smart Waterfall" where the artist provides the permanent identity and the event provides situational overrides.
+
+**Source of Truth Rule (for all future AI prompts and code):**
+1. **Event custom fields** override everything — if `custom_bio`, `custom_genres`, `custom_vibes`, or `custom_image_url` is set, it wins.
+2. **Artist table** is the fallback — if the event has no custom override, inherit from the joined `artists` row (`bio`, `genres`, `vibes`, `image_url`).
+3. **Hardcoded defaults** are the last resort — `'Live Music'` for category, `null` for image (which triggers venue photo or branded logo fallback).
+
+This is a strict override chain, not a merge. If an event sets `custom_vibes: ['Energetic / Party']`, the artist's vibes are completely ignored for that event.
+
+The merge happens at two layers:
 
 **Layer 1 — Data Mapping (`page.js` lines 834–864, 1195–1222):**
 
