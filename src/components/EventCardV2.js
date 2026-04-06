@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { formatTimeRange } from '@/lib/utils';
 import { posthog } from '@/lib/posthog';
 import Badge from '@/components/ui/Badge';
+import ShortcutMenu from '@/components/ShortcutMenu';
 
 const CATEGORY_CONFIG = {
   'Live Music':      { color: '#E8722A', bg: '#E8722A', emoji: '🎵' },
@@ -34,6 +35,11 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const [isTextTruncated, setIsTextTruncated] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [shortcutAnchor, setShortcutAnchor] = useState({ x: 0, y: 0 });
+  const longPressTimer = useRef(null);
+  const longPressFired = useRef(false);
+  const pointerStart = useRef({ x: 0, y: 0 });
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -137,8 +143,6 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
     setFlagSheet(false);
   };
 
-  console.log('--- CARD RENDERED ---', event?.artist_name || 'Unknown');
-
   return (
     <div id={event?.id ? `event-${event.id}` : undefined} style={{
       background: cardBg,
@@ -152,12 +156,44 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
       {/* Card body */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 
-        {/* Compact row */}
+        {/* Compact row — long-press opens shortcut menu, tap toggles expand */}
         <div
-          onClick={() => { setExpanded(e => { if (e) setBioExpanded(false); return !e; }); }}
-          onPointerDown={() => setPressed(true)}
-          onPointerUp={() => setPressed(false)}
-          onPointerLeave={() => setPressed(false)}
+          onClick={() => {
+            // If long-press just fired, swallow the click
+            if (longPressFired.current) { longPressFired.current = false; return; }
+            setExpanded(e => { if (e) setBioExpanded(false); return !e; });
+          }}
+          onPointerDown={(e) => {
+            setPressed(true);
+            longPressFired.current = false;
+            pointerStart.current = { x: e.clientX, y: e.clientY };
+            longPressTimer.current = setTimeout(() => {
+              longPressFired.current = true;
+              setPressed(false);
+              try { navigator?.vibrate?.(20); } catch {}
+              setShortcutAnchor({ x: pointerStart.current.x, y: pointerStart.current.y });
+              setShortcutOpen(true);
+            }, 500);
+          }}
+          onPointerMove={(e) => {
+            // Cancel long-press if finger moves > 10px (scrolling)
+            if (longPressTimer.current) {
+              const dx = e.clientX - pointerStart.current.x;
+              const dy = e.clientY - pointerStart.current.y;
+              if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+                clearTimeout(longPressTimer.current);
+                longPressTimer.current = null;
+              }
+            }
+          }}
+          onPointerUp={() => {
+            setPressed(false);
+            if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+          }}
+          onPointerLeave={() => {
+            setPressed(false);
+            if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+          }}
           style={{
             display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px 11px 0', cursor: 'pointer',
             background: pressed ? (darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)') : 'transparent',
@@ -524,6 +560,61 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
           </div>
         </div>
       </div>
+
+      {/* Long-press shortcut menu */}
+      {mounted && (
+        <ShortcutMenu
+          open={shortcutOpen}
+          onClose={() => setShortcutOpen(false)}
+          anchorY={shortcutAnchor.y}
+          anchorX={shortcutAnchor.x}
+          darkMode={darkMode}
+          event={event}
+          onFollowArtist={() => {
+            if (event?.artist_name) {
+              try { navigator?.vibrate?.(10); } catch {}
+              onFollowArtist?.(event.artist_name);
+            }
+          }}
+          isArtistFollowed={isArtistFollowed}
+          onShare={async () => {
+            const shareText = `${name} at ${venue}`;
+            const shareUrl = event.id
+              ? `https://mylocaljam.com/event/${event.id}`
+              : (event.ticket_link || event.source || window.location.href);
+            const copyFallback = async () => {
+              try {
+                await navigator.clipboard.writeText(`${shareText} — ${shareUrl}`);
+                onFlag?.('Link copied to clipboard!');
+              } catch {
+                onFlag?.('Could not copy link — try again');
+              }
+            };
+            if (navigator.share) {
+              try {
+                await navigator.share({ title: shareText, text: shareText, url: shareUrl });
+              } catch (err) {
+                if (err.name !== 'AbortError') await copyFallback();
+              }
+            } else {
+              await copyFallback();
+            }
+          }}
+          onLocation={() => {
+            const addr = event.venue_address || event.venue || '';
+            const lat = event.venue_lat;
+            const lng = event.venue_lng;
+            let mapsUrl;
+            if (lat && lng) {
+              mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+            } else if (addr) {
+              mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`;
+            }
+            if (mapsUrl) window.open(mapsUrl, '_blank', 'noopener');
+          }}
+          onFlag={() => setFlagSheet(true)}
+        />
+      )}
 
       {/* Flag bottom-sheet modal */}
       {flagSheet && (

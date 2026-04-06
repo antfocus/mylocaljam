@@ -3576,6 +3576,64 @@ The column mismatch fix (writing to `event_image_url`) ensures at minimum the Sq
 
 ---
 
+## Sprint: April 6, 2026 — Scale, Automation & Admin Fixes ✅ DEPLOYED
+
+### Current State
+
+The platform is now in a high-performance, production-stable state. Sub-1-second page loads are sustained via the 80-event surgical limit and server-side date filtering. The admin panel's artist deletion flow is fully functional. The Spotlight bio inheritance is fixed. The architecture is ready for the next phase: a self-healing, automated enrichment system built on Event Templates.
+
+### 1. Recent Accomplishments (Completed & Verified)
+
+Performance: The 80-event limit (`.limit(80)`) and server-side date filtering (`fetchEvents(dateFloor)`) are deployed and stable. The main query hits Supabase with `.gte('event_date', floor)` based on the user's selected date filter, ensuring any future date is findable regardless of the limit cap. Load times are consistently under 1 second.
+
+Admin Fixes: Fixed a silent failure in the "Delete Artist, Keep Events" flow. The `AdminArtistModals` component was referencing five variables (`setArtistActionLoading`, `artistsSearch`, `artistsNeedsInfo`, `editingArtist`, `setEditingArtist`) that were never passed as props. The `setArtistActionLoading()` call at line 499 threw a `TypeError` outside the `try` block, causing the async handler to reject silently after the modal had already closed. Fixed by adding the five missing props in `admin/page.js` (lines 706-708) and destructuring them in `AdminArtistModals.js` (lines 18-20). Both "Delete & Hide Events" and "Delete Artist, Keep Events" now work for single and bulk operations.
+
+Files changed: `src/app/admin/page.js`, `src/components/admin/AdminArtistModals.js`.
+
+UX — Fixed Navigation: The bottom nav bar is permanently visible at `position: fixed; bottom: 0`. The scroll-tracking `useEffect` that toggled `navHidden` has been removed. The `transform` is now a constant `translateX(-50%)` with no conditional hide. This gives the app a native mobile feel.
+
+Spotlight Bio Sync: The Spotlight mapping in `page.js` (line ~1235) now uses `cleanStr()` to filter `""`, `"None"`, and whitespace-only values from the bio waterfall: `cleanStr(e.custom_bio) || cleanStr(e.artist_bio) || cleanStr(e.artists?.bio) || ''`. The image waterfall in the same mapping was also synced with the main feed — `cleanImg()` applied, legacy `e.image_url` fallback added. This fixes cases like Ocean Avenue Stompers where a "Green Locked" artist bio was invisible in the Spotlight because `artist_bio` on the events row contained a poison value that short-circuited the chain.
+
+### 2. Infrastructure Roadmap: Universal Metadata & Event Templates
+
+This section documents the V2 architecture for recurring event automation. Implementation is planned, not yet started.
+
+Table Schema — `event_templates`: A new Supabase table to store "Golden" metadata for recurring venue events that should never enter the artist-matching pipeline. Proposed columns: `id` (UUID), `template_name` (TEXT), `is_event_only` (BOOLEAN — true means "never try to match an artist"), `description` (TEXT), `image_url` (TEXT), `category` (TEXT — e.g., 'Trivia', 'Food & Drink Special'), `aliases` (TEXT[] — alternative title matches), `venue_id` (UUID, optional FK), `created_at`, `updated_at`.
+
+The "Twin" Editor: The current Artist edit panel in `AdminArtistsTab.js` (lines 454-700) will be extracted into a reusable `<MetadataEditor>` component. The three shared primitives (`MetadataField`, `StyleMoodSelector`, `ImagePreviewSection`) are already generic and entity-agnostic. The extraction work is the orchestration layer: form state, AI auto-fill handler, and save handler become props (`onSave`, `onAiAutoFill`, `entity`). Estimated effort: 2-3 hours. The Artist and Event Template admin pages will both consume `<MetadataEditor>`.
+
+Scraper Step 3.5 — Template Matching: A new pipeline step inserted after the event Upsert (current step 3) but before the Auto-Sorter (current step 4) in `sync-events/route.js`. Logic: (1) Fetch all templates into memory (one query, ~50 rows). (2) For each new/pending event, check `artist_name` against `template_name` and `aliases`. (3) If match found and `is_event_only = true`: apply template metadata, set `artist_id = null`, set `is_human_edited = true`, eject from the artist pipeline entirely. (4) If match found and `is_event_only = false`: apply template defaults but allow artist linking to continue. (5) If no match: proceed to Auto-Sorter and enrichment as normal.
+
+Constraint — Future-Only: Template matching will only apply to newly synced events (those in `pending` triage status). It will never retroactively overwrite existing event records. The existing `is_human_edited` and `is_locked` guards will be respected — if an admin has manually edited an event, the template will not override it.
+
+Priority Resolution: If an event title matches both a template (`is_event_only = true`) and a known artist in the `artists` table, the template wins. The `is_event_only` flag is an explicit admin decision that outweighs automated artist-matching. This prevents "Trivia Night with DJ Mike" from creating a fake "Trivia Night with DJ Mike" artist profile.
+
+Performance Impact: Negligible. One additional `SELECT` query (~5ms) to fetch templates, then in-memory Map lookups (O(1) per event). Total added time: <10ms per sync cycle.
+
+### 3. Database Health & Archive Strategy
+
+Past events remain in the main `events` table — no separate archive table. The 80-event limit and SQL indexes (`event_date`, `status`, `venue_id`) protect frontend performance regardless of archive size. The `.gte('event_date', floor)` filter ensures past events never enter the frontend payload.
+
+Admin pagination: As the archive grows, the Admin event list will need default "Upcoming Only" views and pagination (limit 50 per page) to prevent browser lag. This is not yet implemented but is a known requirement.
+
+Enrichment cap: The auto-enrichment pipeline processes 15 new artists per sync cycle. At the current rate of ~40 venues syncing twice daily, this is sufficient. If venue count doubles, the cap may need to increase to 25-30 to prevent a growing backlog of unenriched artists.
+
+### 4. Safety Locks — Cumulative (DO NOT TOUCH)
+
+All previous Safety Locks remain in force. Updated line references after this sprint's edits:
+
+- `isLoggedInRef` (useRef) and `favoritesRef` (useRef) — lines 550-551 in page.js.
+- `handleFlag` useCallback deps: `[]` — line 771.
+- `handleFollowArtist` useCallback deps: `[followEntity, unfollowEntity]` — line 767.
+- `<div role="button" tabIndex={0}>` on the Omnibar pill — line ~1554.
+- `cleanImg` helper — present in page.js (line ~785, ~800), EventCardV2.js, EventPageClient.js, event/[id]/page.js.
+- `cleanStr` helper — present in page.js Spotlight mapping (line ~1201).
+- `fetchEvents` deps: `[]` — stable identity, date passed as parameter.
+- `.limit(80)` on the main feed query — line ~781.
+- Server-side date filtering useEffect deps: `[dateKey, pickedDate, fetchEvents]` — line ~916.
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.
