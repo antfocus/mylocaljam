@@ -775,21 +775,25 @@ export default function HomePage() {
   const [artistProfile, setArtistProfile] = useState(null); // artist name string or null
 
   // ── Fetch from Supabase ──────────────────────────────────────────────────────
-  const fetchEvents = useCallback(async () => {
+  // Server-side date filtering: accepts an optional dateFloor (YYYY-MM-DD).
+  // When omitted, defaults to today so the initial mount load is fast.
+  const fetchEvents = useCallback(async (dateFloor) => {
     try {
       const now = new Date();
       const pad = n => String(n).padStart(2, '0');
       const todayLocal = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+      // Never fetch events before today, even if dateFloor is in the past
+      const floor = (dateFloor && dateFloor >= todayLocal) ? dateFloor : todayLocal;
 
-      // Trim 4: .limit(40) caps the initial fetch for fast first paint.
+      // Trim 4: .limit(40) caps the fetch for fast paint.
       // Using select('*') for broad compatibility; revisit with explicit columns after schema audit.
       const { data, error } = await supabase
         .from('events')
         .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url)')
-        .gte('event_date', todayLocal)
+        .gte('event_date', floor)
         .eq('status', 'published')
         .order('event_date', { ascending: true })
-        .limit(40);
+        .limit(80);
       if (error) throw error;
 
       // Treat "" and "None" as null so the image waterfall keeps falling
@@ -870,7 +874,46 @@ export default function HomePage() {
 
   const [spotlightData, setSpotlightData] = useState([]);
 
+  // Initial mount — fetch from today
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  // Server-side date filtering: re-fetch when user changes dateKey or pickedDate.
+  // Computes the correct date floor and asks Supabase for events starting there.
+  useEffect(() => {
+    // Skip the very first render — the mount effect above handles that
+    const pad = n => String(n).padStart(2, '0');
+    const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const today = new Date();
+    let floor = fmt(today); // default: today
+
+    switch (dateKey) {
+      case 'today':
+        floor = fmt(today);
+        break;
+      case 'tomorrow': {
+        const t = new Date(today); t.setDate(t.getDate() + 1);
+        floor = fmt(t);
+        break;
+      }
+      case 'weekend': {
+        const d = new Date(today); const day = d.getDay();
+        if (day === 5) { /* already friday */ }
+        else if (day === 6) { d.setDate(d.getDate() - 1); }
+        else if (day === 0) { d.setDate(d.getDate() - 2); }
+        else { d.setDate(d.getDate() + (5 - day)); }
+        floor = fmt(d);
+        break;
+      }
+      case 'pick':
+        if (pickedDate) floor = pickedDate;
+        break;
+      default: // 'all'
+        floor = fmt(today);
+        break;
+    }
+
+    fetchEvents(floor);
+  }, [dateKey, pickedDate, fetchEvents]);
   useEffect(() => { rehydrateReminders(); }, []);
 
   // ── Fetch dynamic shortcut pills from Supabase ────────────────────────────
