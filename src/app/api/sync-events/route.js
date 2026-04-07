@@ -356,12 +356,12 @@ export async function POST(request) {
     AnchorTavern: { venue: 'Anchor Tavern', url: 'https://www.anchortavernnj.com', source: 'Squarespace' },
     RBar: { venue: 'R Bar', url: 'https://www.itsrbar.com', source: 'Squarespace' },
     BrielleHouse: { venue: 'Brielle House', url: 'https://brielle-house.com', source: 'WordPress AJAX' },
-    TenthAveBurrito: { venue: '10th Ave Burrito', url: 'https://tenthaveburrito.com', source: 'WordPress' },
+    TenthAveBurrito: { venue: '10th Ave Burrito', url: 'https://tenthaveburrito.com', source: 'Vision OCR (Gemini)' },
     ReefAndBarrel: { venue: 'Reef & Barrel', url: 'https://www.reefandbarrel.com', source: 'Google Calendar' },
     Palmetto: { venue: 'Palmetto', url: 'https://www.palmettoasburypark.com', source: 'Vision OCR (Gemini)' },
     IdleHour: { venue: 'Idle Hour', url: 'https://www.ihpointpleasant.com', source: 'Google Calendar' },
     AsburyLanes: { venue: 'Asbury Lanes', url: 'https://www.asburylanes.com', source: 'HTML Scrape' },
-    BakesBrewing: { venue: 'Bakes Brewing', url: 'https://www.bakesbrewing.co', source: 'Squarespace' },
+    BakesBrewing: { venue: 'Bakes Brewing', url: 'https://www.bakesbrewing.co', source: 'Vision OCR (Gemini)' },
     RiverRock: { venue: 'River Rock', url: 'https://riverrockbricknj.com', source: 'WordPress AJAX' },
     WildAir: { venue: 'Wild Air Beerworks', url: 'https://www.wildairbeer.com', source: 'Squarespace' },
     AsburyParkBrewery: { venue: 'Asbury Park Brewery', url: 'https://www.asburyparkbrewery.com', source: 'Squarespace' },
@@ -405,6 +405,25 @@ export async function POST(request) {
         last_sync: new Date().toISOString(),
       };
     });
+
+    // Global summary row — reflects TOTAL events processed across all scrapers.
+    // If the sync reached this point (no fatal error), status is SUCCESS.
+    const totalScrapedCount = Object.values(scraperResults).reduce((sum, r) => sum + (r.count || 0), 0);
+    const failedScrapers = Object.values(scraperResults).filter(r => r.error).length;
+    healthRows.push({
+      scraper_key: '_global_sync',
+      venue_name: 'All Venues (Sync Summary)',
+      website_url: null,
+      platform: 'System',
+      events_found: totalUpserted,               // total events upserted, not just new
+      last_sync_count: totalUpserted,             // alias for admin UI compatibility
+      status: upsertErrors.length ? 'fail' : 'success',  // SUCCESS if no fatal upsert errors
+      error_message: upsertErrors.length
+        ? `${upsertErrors.length} upsert batch error(s); ${failedScrapers} scraper(s) errored`
+        : null,
+      last_sync: new Date().toISOString(),
+    });
+
     await supabase.from('scraper_health').upsert(healthRows, { onConflict: 'scraper_key' });
   } catch (healthErr) {
     console.error('Failed to write scraper health:', healthErr);

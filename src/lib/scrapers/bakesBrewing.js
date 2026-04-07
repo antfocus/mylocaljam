@@ -1,166 +1,191 @@
 /**
- * Bakes Brewing Co Scraper
+ * Bakes Brewing Co scraper (Vision OCR)
  * URL: https://www.bakesbrewing.co/events
  *
- * Webflow CMS site. Events are server-rendered in a dynamic list
- * (.w-dyn-items > .w-dyn-item). Each item has:
- *   .text-block-12  → date ("March 13, 2026")
- *   .start-time     → start time ("6:00pm")
- *   .heading-11     → title ("LIVE MUSIC: Quincy Mumford")
- *   .rich-text-block-3 → description
- *   .text-block-14  → price ("Free")
- *   img             → event image
- *   a.link-block    → detail page link (slug for external_id)
+ * Webflow CMS site — the live music schedule is posted as IMAGE POSTERS
+ * on the events page. The old Webflow dynamic-list approach returned 0
+ * events when the CMS structure changed or the dynamic list was emptied.
  *
- * Filters to LIVE MUSIC events only (title starts with "LIVE MUSIC").
- * Also includes COMEDY SHOW events for completeness.
+ * ── PREVIOUS APPROACH ──
+ * Parsed Webflow w-dyn-items / role="listitem" HTML blocks for
+ * headings, dates, and times. Broke when CMS was emptied or class
+ * names changed.
+ *
+ * ── CURRENT APPROACH (Vision OCR) ──
+ * Fetches the events page, locates the music poster/schedule image, and
+ * sends it to Gemini 2.5 Flash for OCR extraction — same pipeline as
+ * Eventide Grille, 10th Ave Burrito, Palmetto, MJ's, etc.
  *
  * If it breaks:
- *   1. Go to bakesbrewing.co/events
- *   2. Check if class names or structure have changed
- *   3. Update selectors below
+ *   1. Go to https://www.bakesbrewing.co/events
+ *   2. Right-click the music schedule poster → Copy Image Address
+ *   3. Check if the URL pattern is still uploads-ssl.webflow.com/...
+ *   4. If the poster location changed, update findFlyerUrl() below
+ *
+ * Address: Bakes Brewing, Belmar, NJ
  */
 
-const EVENTS_URL = 'https://www.bakesbrewing.co/events';
+import { extractEventsFromFlyer } from '@/lib/visionOCR';
+
 const VENUE = 'Bakes Brewing';
-const BASE_URL = 'https://www.bakesbrewing.co';
-
-const MONTHS = {
-  january: '01', february: '02', march: '03', april: '04',
-  may: '05', june: '06', july: '07', august: '08',
-  september: '09', october: '10', november: '11', december: '12',
-};
+const PAGE_URL = 'https://www.bakesbrewing.co/events';
 
 /**
- * Parse "March 13, 2026" → "2026-03-13"
+ * Month names for matching poster images by month context.
  */
-function parseDate(dateStr) {
-  if (!dateStr) return null;
-  const m = dateStr.match(/([A-Za-z]+)\s+(\d{1,2}),?\s*(\d{4})/);
-  if (!m) return null;
-  const month = MONTHS[m[1].toLowerCase()];
-  if (!month) return null;
-  const day = m[2].padStart(2, '0');
-  return `${m[3]}-${month}-${day}`;
-}
+const MONTH_NAMES = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+];
 
 /**
- * Normalize time strings like "6:00pm", "05:00 pm", "6:00 PM" → "6:00 PM"
+ * Find the music poster/schedule image URL from the Webflow events page.
+ *
+ * Webflow image hosting patterns:
+ *   - uploads-ssl.webflow.com/SITE_ID/HASH_filename.jpg
+ *   - assets-global.website-files.com/SITE_ID/HASH_filename.jpg
+ *   - cdn.prod.website-files.com/SITE_ID/HASH_filename.jpg
+ *   - Sometimes served via data-src for lazy loading
+ *
+ * Strategy 1: Image whose URL or surrounding context mentions "music",
+ *             "schedule", "events", "live", or the current month.
+ * Strategy 2: Any Webflow-hosted image that isn't a logo/icon.
+ * Strategy 3: Any non-logo content image on the page.
  */
-function normalizeTime(timeStr) {
-  if (!timeStr) return null;
-  const m = timeStr.match(/(\d{1,2}):(\d{2})\s*(am|pm)/i);
-  if (!m) return null;
-  const hour = parseInt(m[1]);
-  const min = m[2];
-  const period = m[3].toUpperCase();
-  return `${hour}:${min} ${period}`;
-}
+function findFlyerUrl(html) {
+  const now = new Date();
+  const currentMonth = MONTH_NAMES[now.getMonth()];
 
-/**
- * Check if a title indicates a live music or entertainment event
- */
-function isMusicEvent(title) {
-  if (!title) return false;
-  const t = title.toUpperCase();
-  return t.startsWith('LIVE MUSIC') || t.startsWith('COMEDY SHOW');
-}
+  // Collect all image URLs from src, data-src, srcset, and background-image
+  const allImageRefs = [
+    // Webflow CDN images
+    ...html.matchAll(/(?:src|data-src|srcset)="(https?:\/\/(?:uploads-ssl\.webflow\.com|assets-global\.website-files\.com|cdn\.prod\.website-files\.com)\/[^"\s]+\.(?:jpg|jpeg|png|webp))[^"\s]*/gi),
+    // Generic image src/data-src
+    ...html.matchAll(/(?:src|data-src)="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))[^"]*"/gi),
+    // Background images in inline styles
+    ...html.matchAll(/background-image:\s*url\(['"]?(https?:\/\/[^'")\s]+\.(?:jpg|jpeg|png|webp))[^'")\s]*/gi),
+  ];
 
-/**
- * Extract event data from the Webflow HTML
- */
-function parseEvents(html) {
-  const events = [];
-  const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-
-  // Webflow wraps each collection item in <div role="listitem" class="... w-dyn-item">
-  // Split on role="listitem" to isolate each event block
-  const parts = html.split(/role="listitem"/);
-
-  for (let i = 1; i < parts.length; i++) {
-    const block = parts[i];
-
-    // Title from heading-11
-    const titleMatch = block.match(/<h1[^>]*class="heading-11"[^>]*>([\s\S]*?)<\/h1>/i);
-    const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, '').trim() : null;
-
-    // Only live music / comedy events
-    if (!isMusicEvent(title)) continue;
-
-    // Date from text-block-12
-    const dateMatch = block.match(/class="text-block-12"[^>]*>([\s\S]*?)<\/div>/i);
-    const rawDate = dateMatch ? dateMatch[1].replace(/<[^>]+>/g, '').trim() : null;
-    const date = parseDate(rawDate);
-    if (!date || date < todayET) continue;
-
-    // Start time from start-time class
-    const timeMatch = block.match(/class="start-time"[^>]*>([\s\S]*?)<\/div>/i);
-    const rawTime = timeMatch ? timeMatch[1].replace(/<[^>]+>/g, '').trim() : null;
-    const time = normalizeTime(rawTime);
-
-    // Slug from link-block href for external_id
-    const slugMatch = block.match(/href="(\/events\/[^"]+)"/i);
-    const slug = slugMatch ? slugMatch[1].replace('/events/', '') : null;
-
-    // Image URL
-    const imgMatch = block.match(/<img[^>]*src="([^"]+)"[^>]*>/i);
-    const imageUrl = imgMatch ? imgMatch[1] : null;
-
-    // Description from rich-text-block-3
-    const descMatch = block.match(/class="rich-text-block-3[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-    const description = descMatch
-      ? descMatch[1].replace(/<[^>]+>/g, '').trim()
-      : null;
-
-    // Price from text-block-14 (inside price-container)
-    const priceMatch = block.match(/class="text-block-14"[^>]*>([\s\S]*?)<\/div>/i);
-    const price = priceMatch ? priceMatch[1].replace(/<[^>]+>/g, '').trim() : null;
-
-    // Clean the title: strip "LIVE MUSIC: " / "LIVE MUSIC - " prefix for artist name
-    let artistName = title;
-    artistName = artistName.replace(/^LIVE\s+MUSIC\s*[:\-–—]\s*/i, '').trim();
-    artistName = artistName.replace(/^COMEDY\s+SHOW\s*[:\-–—]\s*/i, '').trim();
-
-    const externalId = `bakesbrew-${slug || date + '-' + artistName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-
-    events.push({
-      title: artistName,
-      venue: VENUE,
-      date,
-      time,
-      description: description || null,
-      ticket_url: slug ? `${BASE_URL}/events/${slug}` : EVENTS_URL,
-      price: price || null,
-      source_url: EVENTS_URL,
-      image_url: imageUrl || null,
-      external_id: externalId,
-    });
+  // Deduplicate by base URL (before query params / srcset width descriptors)
+  const seen = new Set();
+  const urls = [];
+  for (const m of allImageRefs) {
+    const base = m[1].split('?')[0].split(' ')[0]; // strip ?params and srcset descriptors
+    if (!seen.has(base)) {
+      seen.add(base);
+      urls.push(m[1].split(' ')[0]); // keep the clean URL
+    }
   }
 
-  // Deduplicate by external_id
-  const seen = new Set();
-  return events.filter(ev => {
-    if (seen.has(ev.external_id)) return false;
-    seen.add(ev.external_id);
-    return true;
-  });
+  // Strategy 1: Image whose URL mentions music, schedule, events, live, or current month
+  for (const url of urls) {
+    const decoded = decodeURIComponent(url).toLowerCase();
+    if (
+      decoded.includes('music') || decoded.includes('schedule') ||
+      decoded.includes('live') || decoded.includes('calendar') ||
+      decoded.includes('lineup') || decoded.includes('flyer') ||
+      decoded.includes('poster') || decoded.includes(currentMonth)
+    ) {
+      console.log(`[BakesBrewing] URL-match flyer: ${url}`);
+      return url;
+    }
+  }
+
+  // Strategy 1b: Check surrounding HTML context for music-related terms
+  for (const url of urls) {
+    const lower = url.toLowerCase();
+    if (lower.includes('logo') || lower.includes('favicon') || lower.includes('icon') || lower.includes('social') || lower.includes('avatar') || lower.includes('brand')) continue;
+
+    const idx = html.indexOf(url);
+    if (idx !== -1) {
+      const context = html.slice(Math.max(0, idx - 400), idx + url.length + 400).toLowerCase();
+      if (
+        context.includes('music') || context.includes('live') ||
+        context.includes('entertainment') || context.includes('schedule') ||
+        context.includes('lineup') || context.includes(currentMonth)
+      ) {
+        console.log(`[BakesBrewing] Context-match flyer: ${url}`);
+        return url;
+      }
+    }
+  }
+
+  // Strategy 2: Any Webflow CDN image that isn't a logo/icon
+  for (const url of urls) {
+    const lower = url.toLowerCase();
+    if (lower.includes('logo') || lower.includes('favicon') || lower.includes('icon') || lower.includes('social') || lower.includes('avatar') || lower.includes('brand')) continue;
+    if (lower.includes('webflow.com') || lower.includes('website-files.com')) {
+      console.log(`[BakesBrewing] Webflow CDN fallback: ${url}`);
+      return url;
+    }
+  }
+
+  // Strategy 3: Any non-logo content image
+  for (const url of urls) {
+    const lower = url.toLowerCase();
+    if (lower.includes('logo') || lower.includes('favicon') || lower.includes('icon') || lower.includes('social') || lower.includes('avatar') || lower.includes('brand')) continue;
+    console.log(`[BakesBrewing] Generic fallback: ${url}`);
+    return url;
+  }
+
+  return null;
 }
 
 export async function scrapeBakesBrewing() {
   try {
-    const res = await fetch(EVENTS_URL, {
+    // Fetch the events page
+    const res = await fetch(PAGE_URL, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
+        'Accept': 'text/html,application/xhtml+xml',
       },
-      next: { revalidate: 0 },
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status} fetching Bakes Brewing events`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} fetching Bakes Brewing events page`);
+    }
 
     const html = await res.text();
-    const events = parseEvents(html);
+    const flyerUrl = findFlyerUrl(html);
 
-    console.log(`[BakesBrewing] Found ${events.length} upcoming live music events`);
+    if (!flyerUrl) {
+      console.warn('[BakesBrewing] No flyer image found on page');
+      return { events: [], error: 'No flyer image found — poster may have moved or site structure changed' };
+    }
+
+    console.log(`[BakesBrewing] Found flyer: ${flyerUrl}`);
+
+    // Send to Gemini 2.5 Flash for OCR extraction
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    const extracted = await extractEventsFromFlyer(flyerUrl, {
+      venueName: VENUE,
+      year,
+      month,
+    });
+
+    console.log(`[BakesBrewing] Gemini extracted ${extracted.length} events`);
+
+    // Convert to standard scraper output format
+    const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const events = extracted
+      .filter(e => e.date && e.date >= todayStr)
+      .map(e => ({
+        title: e.artist,
+        venue: VENUE,
+        date: e.date,
+        time: e.time || null,
+        description: null,
+        ticket_url: PAGE_URL,
+        price: null,
+        source_url: PAGE_URL,
+        external_id: `bakesbrew-${e.date}-${e.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
+        image_url: null,
+      }));
+
+    console.log(`[BakesBrewing] Found ${events.length} upcoming events`);
     return { events, error: null };
 
   } catch (err) {
