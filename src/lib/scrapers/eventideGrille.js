@@ -1,87 +1,178 @@
 /**
- * Eventide Grille scraper
+ * Eventide Grille scraper (Vision OCR)
  * Website: https://eventidegrille.com/
  *
  * Squarespace site — the live music schedule is posted as an IMAGE POSTER only.
  * There is no structured data, no calendar embed, no events feed.
  *
- * This scraper uses a hardcoded monthly schedule read from the poster image.
- * It must be updated manually each month when the venue posts a new poster.
+ * ── PREVIOUS APPROACH ──
+ * This scraper used a hardcoded MONTHLY_EVENTS array that required manual
+ * updates each month. When the schedule went stale (SCHEDULE_MONTH was in
+ * the past), ALL events were filtered out by the date check → 0 events.
  *
- * HOW TO UPDATE:
- *   1. Go to https://eventidegrille.com/ and scroll to the "Live Music" section
- *   2. Read the new monthly poster image
- *   3. Update the MONTHLY_EVENTS array below with the new events
- *   4. Update SCHEDULE_MONTH to the new month string (e.g. '2026-04')
+ * ── CURRENT APPROACH (Vision OCR) ──
+ * Fetches the Squarespace page, locates the music poster image, and sends
+ * it to Gemini 2.5 Flash for OCR extraction — same pipeline as MJ's,
+ * Pagano's, Captain's Inn, and Charley's Ocean Grill.
+ *
+ * If it breaks:
+ *   1. Go to https://eventidegrille.com/ and find the "Live Music" section
+ *   2. Right-click the poster image → Copy Image Address
+ *   3. Check if the URL still contains images.squarespace-cdn.com
+ *   4. If the poster structure changed, update findFlyerUrl() below
  *
  * Address: 1400 Ocean Avenue, Sea Bright, NJ 07760
  */
 
+import { extractEventsFromFlyer } from '@/lib/visionOCR';
+
 const VENUE = 'Eventide Grille';
-const VENUE_URL = 'https://eventidegrille.com/';
+const PAGE_URL = 'https://eventidegrille.com/';
 
-// ── Current schedule month ──────────────────────────────────────────────────
-const SCHEDULE_MONTH = '2026-03';
-
-// ── Hardcoded events from the March 2026 poster ─────────────────────────────
-// Each entry: { day (1-31), title, time (12h string) }
-const MONTHLY_EVENTS = [
-  { day: 17, title: 'John Rafferty',       time: '4:00 PM' },  // St. Patrick's Day
-  { day: 20, title: 'The Slackers',        time: '6:00 PM' },
-  { day: 21, title: 'The Soulstirs',       time: '6:00 PM' },
-  { day: 22, title: 'Aiden Villa Duo',     time: '2:00 PM' },
-  { day: 27, title: 'Liam Davis Trio',     time: '6:00 PM' },
-  { day: 28, title: 'Barefoot Jugglers',   time: '6:00 PM' },
-  { day: 29, title: 'Scott Elk',           time: '2:00 PM' },
+/**
+ * Month names for matching poster images by month context.
+ */
+const MONTH_NAMES = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
 ];
+
+/**
+ * Find the music poster image URL from the Squarespace page HTML.
+ *
+ * Squarespace image hosting patterns:
+ *   - images.squarespace-cdn.com/content/v1/SITE_ID/HASH/image.jpg
+ *   - Sometimes served via data-src for lazy loading
+ *   - Often include ?format=WxH query params
+ *
+ * Strategy 1: Look for an image whose alt text or surrounding context
+ *             mentions "live music", "music schedule", or the current month.
+ * Strategy 2: Find the largest Squarespace-hosted image that isn't a logo.
+ * Strategy 3: Look for any large content image on the page.
+ */
+function findFlyerUrl(html) {
+  const now = new Date();
+  const currentMonth = MONTH_NAMES[now.getMonth()];
+
+  // Collect all image URLs from src, data-src, and data-image attributes
+  const allImageRefs = [
+    ...html.matchAll(/(?:src|data-src|data-image)="(https?:\/\/images\.squarespace-cdn\.com\/content\/[^"]+\.(?:jpg|jpeg|png|webp))[^"]*"/gi),
+    ...html.matchAll(/data-src="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))[^"]*"/gi),
+    ...html.matchAll(/src="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))[^"]*"/gi),
+  ];
+
+  // Deduplicate by base URL (before query params)
+  const seen = new Set();
+  const urls = [];
+  for (const m of allImageRefs) {
+    const base = m[1].split('?')[0];
+    if (!seen.has(base)) {
+      seen.add(base);
+      urls.push(m[1]);
+    }
+  }
+
+  // Strategy 1: Image whose context mentions "music", "live", or the month name
+  for (const url of urls) {
+    const decoded = decodeURIComponent(url).toLowerCase();
+    if (decoded.includes('music') || decoded.includes('live') || decoded.includes('schedule') || decoded.includes(currentMonth)) {
+      console.log(`[EventideGrille] Context-match flyer: ${url}`);
+      return url;
+    }
+  }
+
+  // Also check surrounding HTML for context clues near images
+  for (const url of urls) {
+    const lower = url.toLowerCase();
+    if (lower.includes('logo') || lower.includes('favicon') || lower.includes('icon') || lower.includes('social')) continue;
+
+    // Look at surrounding ~500 chars for music-related terms
+    const idx = html.indexOf(url);
+    if (idx !== -1) {
+      const context = html.slice(Math.max(0, idx - 300), idx + url.length + 300).toLowerCase();
+      if (context.includes('music') || context.includes('live') || context.includes('entertainment') || context.includes(currentMonth)) {
+        console.log(`[EventideGrille] Nearby-context flyer: ${url}`);
+        return url;
+      }
+    }
+  }
+
+  // Strategy 2: Any Squarespace CDN image that isn't a logo
+  for (const url of urls) {
+    const lower = url.toLowerCase();
+    if (lower.includes('logo') || lower.includes('favicon') || lower.includes('icon') || lower.includes('social')) continue;
+    if (lower.includes('squarespace-cdn.com')) {
+      console.log(`[EventideGrille] Squarespace CDN fallback: ${url}`);
+      return url;
+    }
+  }
+
+  // Strategy 3: Any non-logo image
+  for (const url of urls) {
+    const lower = url.toLowerCase();
+    if (lower.includes('logo') || lower.includes('favicon') || lower.includes('icon') || lower.includes('social')) continue;
+    console.log(`[EventideGrille] Generic fallback: ${url}`);
+    return url;
+  }
+
+  return null;
+}
 
 export async function scrapeEventideGrille() {
   try {
+    // Fetch the homepage (poster is typically on the main page)
+    const res = await fetch(PAGE_URL, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} fetching Eventide Grille page`);
+    }
+
+    const html = await res.text();
+    const flyerUrl = findFlyerUrl(html);
+
+    if (!flyerUrl) {
+      console.warn('[EventideGrille] No flyer image found on page');
+      return { events: [], error: 'No flyer image found — poster may have moved or site structure changed' };
+    }
+
+    console.log(`[EventideGrille] Found flyer: ${flyerUrl}`);
+
+    // Send to Gemini 2.5 Flash for OCR extraction
     const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    const extracted = await extractEventsFromFlyer(flyerUrl, {
+      venueName: VENUE,
+      year,
+      month,
+    });
+
+    console.log(`[EventideGrille] Gemini extracted ${extracted.length} events`);
+
+    // Convert to standard scraper output format
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-
-    // Only return events if we're in the schedule month (or it's still current)
-    const [schedYear, schedMonth] = SCHEDULE_MONTH.split('-').map(Number);
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1; // 1-based
-
-    // If the schedule is more than 1 month old, skip
-    const schedDate = new Date(schedYear, schedMonth - 1, 1);
-    const nowDate = new Date(currentYear, currentMonth - 1, 1);
-    const monthDiff = (nowDate.getFullYear() - schedDate.getFullYear()) * 12
-      + (nowDate.getMonth() - schedDate.getMonth());
-
-    if (monthDiff > 1) {
-      console.log('[EventideGrille] Schedule is stale (more than 1 month old) — skipping.');
-      return { events: [], error: 'Schedule data is stale — needs manual update' };
-    }
-
-    const events = [];
-
-    for (const ev of MONTHLY_EVENTS) {
-      const day = String(ev.day).padStart(2, '0');
-      const dateStr = `${SCHEDULE_MONTH}-${day}`;
-
-      // Skip past events
-      if (dateStr < todayStr) continue;
-
-      const titleClean = ev.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 40);
-      const externalId = `eventidegrille-${dateStr}-${titleClean}`;
-
-      events.push({
-        title: ev.title,
+    const events = extracted
+      .filter(e => e.date && e.date >= todayStr)
+      .map(e => ({
+        title: e.artist,
         venue: VENUE,
-        date: dateStr,
-        time: ev.time,
+        date: e.date,
+        time: e.time || null,
         description: null,
-        ticket_url: VENUE_URL,
+        ticket_url: null,
         price: null,
-        source_url: VENUE_URL,
-        external_id: externalId,
-      });
-    }
+        source_url: PAGE_URL,
+        external_id: `eventidegrille-${e.date}-${e.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
+        image_url: null,
+      }));
 
-    console.log(`[EventideGrille] Found ${events.length} upcoming events (from hardcoded ${SCHEDULE_MONTH} schedule)`);
+    console.log(`[EventideGrille] Found ${events.length} upcoming events`);
     return { events, error: null };
 
   } catch (err) {

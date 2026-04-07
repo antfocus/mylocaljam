@@ -16,6 +16,16 @@
  *   2. Open DevTools → Network, click a month arrow
  *   3. Check the POST body params (settings[lisitng_id], post, etc.)
  *   4. Update the SETTINGS object below if IDs have changed
+ *   5. Check if the HTML structure of day cells has changed
+ *      (look for data-day="N" and jet-listing-dynamic-post- patterns)
+ *
+ * COMMON FAILURE MODES:
+ *   - Widget settings IDs change after a WordPress/Elementor update
+ *     → POST returns empty HTML or error → 0 events → WARN status
+ *   - HTML class names change (e.g. "jet-listing-dynamic-field__content")
+ *     → Parser finds 0 events from valid HTML → WARN status
+ *   - Site switches to a different calendar plugin (The Events Calendar, etc.)
+ *     → POST returns 404 or garbage → need full rewrite
  */
 
 const EVENTS_URL = 'https://tenthaveburrito.com/events/';
@@ -81,8 +91,25 @@ async function fetchMonth(monthName, year) {
     body: body.toString(),
   });
 
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.warn(`[10th Ave Burrito] HTTP ${res.status} for ${monthName} ${year}`);
+    return null;
+  }
+
   const text = await res.text();
+
+  // ── Diagnostic: detect empty/error responses ──
+  if (!text || text.trim().length < 50) {
+    console.warn(`[10th Ave Burrito] Empty or near-empty response for ${monthName} ${year} (${text.length} chars)`);
+    return null;
+  }
+
+  // Check if response contains calendar structure
+  if (!text.includes('data-day=') && !text.includes('jet-calendar')) {
+    console.warn(`[10th Ave Burrito] Response for ${monthName} ${year} has no calendar structure — possible widget ID mismatch. First 200 chars: ${text.slice(0, 200)}`);
+    // Still return the text so we can try parsing — might be a different format
+  }
+
   return text;
 }
 
@@ -107,8 +134,9 @@ function parseCalendarHTML(html, year, monthIndex) {
 
   const month = String(monthIndex + 1).padStart(2, '0');
 
-  // Match each day cell: data-day="N" ... content ... next day cell
-  const dayPattern = /data-day="(\d{1,2})"([\s\S]*?)(?=data-day="|<\/div>\s*<\/div>\s*<\/div>\s*$)/gi;
+  // Match each day cell: data-day="N" ... content ... next day cell or end
+  // Improved regex: more permissive end anchor to avoid missing the last day
+  const dayPattern = /data-day="(\d{1,2})"([\s\S]*?)(?=data-day="|$)/gi;
   let match;
 
   while ((match = dayPattern.exec(html)) !== null) {
@@ -128,7 +156,9 @@ function parseCalendarHTML(html, year, monthIndex) {
 
       // Extract event title — look for the dynamic-field content that's NOT a time
       const fieldContents = [];
-      const fieldPattern = /jet-listing-dynamic-field__content"?>([^<]+)</g;
+
+      // Pattern 1: jet-listing-dynamic-field__content (standard JetEngine)
+      const fieldPattern = /jet-listing-dynamic-field__content[^>]*>([^<]+)</g;
       let fm;
       while ((fm = fieldPattern.exec(block)) !== null) {
         const val = fm[1].replace(/&amp;/g, '&')
@@ -140,7 +170,7 @@ function parseCalendarHTML(html, year, monthIndex) {
         if (val) fieldContents.push(val);
       }
 
-      // Also try heading tags
+      // Pattern 2: heading tags (h1-h6)
       const headingPattern = /<(?:h[1-6])[^>]*>([^<]+)<\/(?:h[1-6])>/gi;
       while ((fm = headingPattern.exec(block)) !== null) {
         const val = fm[1].replace(/&amp;/g, '&')
@@ -150,6 +180,14 @@ function parseCalendarHTML(html, year, monthIndex) {
           .replace(/&nbsp;/g, ' ')
           .trim();
         if (val && !fieldContents.includes(val)) fieldContents.push(val);
+      }
+
+      // Pattern 3: Fallback — any text node inside a link or span with a class
+      // containing "title", "name", or "heading" (catches layout changes)
+      const titleFallback = /class="[^"]*(?:title|name|heading)[^"]*"[^>]*>([^<]+)</gi;
+      while ((fm = titleFallback.exec(block)) !== null) {
+        const val = fm[1].replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').trim();
+        if (val && val.length > 1 && !fieldContents.includes(val)) fieldContents.push(val);
       }
 
       if (fieldContents.length === 0) continue;
@@ -182,6 +220,48 @@ function parseCalendarHTML(html, year, monthIndex) {
   return events;
 }
 
+/**
+ * Fallback parser: Try to extract events from HTML that may not use
+ * the JetEngine calendar structure (in case they switched plugins).
+ * Looks for common WordPress event patterns:
+ *   - The Events Calendar (tribe-events)
+ *   - Simple list/grid layouts with dates and titles
+ */
+function parseFallbackHTML(html) {
+  const events = [];
+  if (!html) return events;
+
+  // The Events Calendar (Tribe) pattern
+  const tribePattern = /<article[^>]*class="[^"]*tribe_events[^"]*"[^>]*>[\s\S]*?<\/article>/gi;
+  let articleMatch;
+  while ((articleMatch = tribePattern.exec(html)) !== null) {
+    const article = articleMatch[0];
+    const titleMatch = article.match(/class="[^"]*tribe-events-list-event-title[^"]*"[^>]*>.*?<a[^>]*>([^<]+)/i)
+      || article.match(/<h[1-6][^>]*>.*?<a[^>]*>([^<]+)/i);
+    const dateMatch = article.match(/datetime="(\d{4}-\d{2}-\d{2})/);
+    const timeMatch = article.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+
+    if (titleMatch && dateMatch) {
+      events.push({
+        title: titleMatch[1].trim(),
+        dateStr: dateMatch[1],
+        timeStr: timeMatch ? timeMatch[1] : null,
+        postId: null,
+      });
+    }
+  }
+
+  // Generic event block pattern: look for date + title combos
+  if (events.length === 0) {
+    const dateBlocks = html.matchAll(/(\d{4}-\d{2}-\d{2})[\s\S]{0,200}?(?:title|name|heading)[^>]*>([^<]{2,80})</gi);
+    for (const m of dateBlocks) {
+      events.push({ title: m[2].trim(), dateStr: m[1], timeStr: null, postId: null });
+    }
+  }
+
+  return events;
+}
+
 export async function scrapeTenthAveBurrito() {
   try {
     const now = new Date();
@@ -189,6 +269,8 @@ export async function scrapeTenthAveBurrito() {
 
     const events = [];
     const seen = new Set();
+    let totalHtmlLength = 0;
+    let usedFallback = false;
 
     // Fetch current month + next 2 months
     for (let offset = 0; offset < 3; offset++) {
@@ -198,8 +280,17 @@ export async function scrapeTenthAveBurrito() {
 
       const html = await fetchMonth(monthName, year);
       if (!html) continue;
+      totalHtmlLength += html.length;
 
-      const monthEvents = parseCalendarHTML(html, year, d.getMonth());
+      // Try primary parser first
+      let monthEvents = parseCalendarHTML(html, year, d.getMonth());
+
+      // If primary parser returns 0 but we got HTML, try fallback
+      if (monthEvents.length === 0 && html.length > 200) {
+        console.warn(`[10th Ave Burrito] Primary parser found 0 events in ${monthName} ${year} (${html.length} chars HTML) — trying fallback parser`);
+        monthEvents = parseFallbackHTML(html);
+        if (monthEvents.length > 0) usedFallback = true;
+      }
 
       for (const ev of monthEvents) {
         if (ev.dateStr < todayStr) continue;
@@ -222,6 +313,17 @@ export async function scrapeTenthAveBurrito() {
           external_id: externalId,
         });
       }
+    }
+
+    // ── Diagnostic logging ──
+    if (events.length === 0) {
+      if (totalHtmlLength === 0) {
+        console.error('[10th Ave Burrito] All month fetches returned null — possible endpoint change or site down');
+      } else {
+        console.error(`[10th Ave Burrito] Got ${totalHtmlLength} chars of HTML but parsed 0 events — likely widget ID mismatch or HTML structure change`);
+      }
+    } else if (usedFallback) {
+      console.warn(`[10th Ave Burrito] Used fallback parser — site may have switched calendar plugins`);
     }
 
     console.log(`[10th Ave Burrito] Found ${events.length} upcoming events`);

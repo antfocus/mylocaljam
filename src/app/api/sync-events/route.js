@@ -358,7 +358,7 @@ export async function POST(request) {
     BrielleHouse: { venue: 'Brielle House', url: 'https://brielle-house.com', source: 'WordPress AJAX' },
     TenthAveBurrito: { venue: '10th Ave Burrito', url: 'https://tenthaveburrito.com', source: 'WordPress' },
     ReefAndBarrel: { venue: 'Reef & Barrel', url: 'https://www.reefandbarrel.com', source: 'Google Calendar' },
-    Palmetto: { venue: 'Palmetto', url: 'https://www.palmettoasburypark.com', source: 'Image Poster' },
+    Palmetto: { venue: 'Palmetto', url: 'https://www.palmettoasburypark.com', source: 'Vision OCR (Gemini)' },
     IdleHour: { venue: 'Idle Hour', url: 'https://www.ihpointpleasant.com', source: 'Google Calendar' },
     AsburyLanes: { venue: 'Asbury Lanes', url: 'https://www.asburylanes.com', source: 'HTML Scrape' },
     BakesBrewing: { venue: 'Bakes Brewing', url: 'https://www.bakesbrewing.co', source: 'Squarespace' },
@@ -378,7 +378,7 @@ export async function POST(request) {
     CrabsClaw: { venue: "The Crab's Claw Inn", url: 'https://thecrabsclaw.com', source: 'RestaurantPassion' },
     WaterStreet: { venue: 'Water Street Bar & Grill', url: 'https://www.waterstreetnj.com', source: 'Squarespace' },
     Crossroads: { venue: 'Crossroads', url: 'https://www.xxroads.com', source: 'Eventbrite API' },
-    EventideGrille: { venue: 'Eventide Grille', url: 'https://eventidegrille.com', source: 'Image Poster' },
+    EventideGrille: { venue: 'Eventide Grille', url: 'https://eventidegrille.com', source: 'Vision OCR (Gemini)' },
     TriumphBrewing: { venue: 'Triumph Brewing Red Bank', url: 'https://www.triumphbrewing.com', source: 'WordPress HTML (The Events Calendar)' },
     BlackSwan: { venue: 'The Black Swan', url: 'https://www.theblackswanap.com', source: 'Squarespace' },
     // Proxy-routed scrapers
