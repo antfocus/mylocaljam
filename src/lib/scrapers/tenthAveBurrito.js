@@ -1,320 +1,341 @@
 /**
- * 10th Ave Burrito scraper (Vision OCR — High-Aggression)
+ * 10th Ave Burrito scraper (Text-First Hybrid)
  * Events page: https://tenthaveburrito.com/events/
  *
- * WordPress + Elementor site — the live music schedule is posted as an
- * IMAGE POSTER on the events page. The old JetEngine calendar widget
- * approach broke repeatedly due to widget ID changes and HTML structure
- * shifts.
+ * WordPress + Elementor + JetEngine Listing Calendar.
  *
- * ── CURRENT APPROACH (Vision OCR) ──
- * 1. Fetch the events page HTML
- * 2. Scan for ALL candidate images: <img src>, data-src, data-lazy-src,
- *    AND background-image: url(...) in inline styles (the "background trap")
- * 3. Priority-sort: URLs containing "poster", "schedule", "calendar", the
- *    current month name, or "music" are tested first
- * 4. Try each candidate with a 10-second timeout + User-Agent header
- * 5. Skip images > 5MB (prevent Vercel function timeout)
- * 6. First successful download gets piped to Gemini 2.5 Flash via
- *    extractEventsFromFlyer()
+ * ── PRIMARY STRATEGY (Text Scrape) ──
+ * The events page renders an "Upcoming Events" list below the calendar
+ * widget. Each event is a JetEngine listing post block containing:
+ *   - Artist name in an <h4> with class "elementor-heading-title"
+ *   - Date in a ".jet-listing-dynamic-field__content" → "April 11, 2026 at"
+ *   - Time in another ".jet-listing-dynamic-field__content" → "7:00 PM"
  *
- * If it breaks:
+ * The list entries are distinguished from calendar-cell entries because
+ * they include a full date string ("Month Day, Year at").
+ *
+ * We parse these directly from the server-rendered HTML — no images,
+ * no Gemini, no timeouts.
+ *
+ * ── SECONDARY STRATEGY (Vision OCR Fallback) ──
+ * ONLY if the text scrape returns 0 events, we fall back to Vision OCR.
+ * Images over 2MB are skipped to prevent Vercel function timeouts.
+ *
+ * If the text scraper breaks:
  *   1. Go to https://tenthaveburrito.com/events/
- *   2. Right-click the music schedule poster → Copy Image Address
- *   3. Update PRIORITY_KEYWORDS or findAllCandidateUrls() below
+ *   2. View Page Source → search for "Upcoming Events"
+ *   3. Check the HTML structure of event blocks below that heading
+ *   4. Look for "jet-listing-dynamic-field__content" with date patterns
+ *   5. Update parseUpcomingEvents() below
  *
- * Address: 10th Avenue, Belmar, NJ
+ * Address: 801 Belmar Plaza, Belmar, NJ 07719
  */
 
-// NOTE: This scraper calls Gemini directly (with pre-downloaded base64)
-// instead of using extractEventsFromFlyer() to avoid double-downloading
-// images that may timeout on the CDN.
+import { extractEventsFromFlyer } from '@/lib/visionOCR';
 
 const VENUE = '10th Ave Burrito';
 const PAGE_URL = 'https://tenthaveburrito.com/events/';
-const IMAGE_TIMEOUT_MS = 10_000;  // 10s per image attempt
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB ceiling
 
-const MONTH_NAMES = [
+const MONTHS = {
+  january: '01', february: '02', march: '03', april: '04',
+  may: '05', june: '06', july: '07', august: '08',
+  september: '09', october: '10', november: '11', december: '12',
+};
+
+const MONTH_NAMES_LOWER = [
   'january', 'february', 'march', 'april', 'may', 'june',
   'july', 'august', 'september', 'october', 'november', 'december',
 ];
 
-/** Words that signal a non-content image */
-const SKIP_WORDS = ['logo', 'favicon', 'icon', 'social', 'avatar', 'emoji', 'spinner', 'loading', 'placeholder', 'pixel', 'spacer'];
-
-/** Priority keywords — images matching these sort to the top */
-const PRIORITY_KEYWORDS = ['poster', 'schedule', 'calendar', 'lineup', 'flyer', 'music', 'live', 'entertainment'];
-
 /**
- * Extract ALL candidate image URLs from the HTML.
- * Covers <img src/data-src/data-lazy-src>, srcset, AND
- * background-image: url(...) in inline styles.
+ * Parse "April 11, 2026" → "2026-04-11"
+ * Handles "April 11, 2026 at" (the "at" suffix from JetEngine)
  */
-function findAllCandidateUrls(html) {
-  const currentMonth = MONTH_NAMES[new Date().getMonth()];
-
-  const allRefs = [
-    // Standard img attributes
-    ...html.matchAll(/(?:src|data-src|data-lazy-src|data-bg|data-background-image)="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))[^"]*"/gi),
-    // Background images in inline styles (THE BACKGROUND TRAP)
-    ...html.matchAll(/background-image\s*:\s*url\(\s*['"]?(https?:\/\/[^'")\s]+\.(?:jpg|jpeg|png|webp))[^'")\s]*/gi),
-    // Elementor data-settings with background (JSON-encoded)
-    ...html.matchAll(/"background_image"\s*:\s*\{\s*"url"\s*:\s*"(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))[^"]*/gi),
-  ];
-
-  // Deduplicate by base URL (before query params)
-  const seen = new Set();
-  const urls = [];
-  for (const m of allRefs) {
-    const raw = m[1].split(' ')[0]; // strip srcset width descriptors
-    const base = raw.split('?')[0];
-    if (seen.has(base)) continue;
-    seen.add(base);
-
-    const lower = base.toLowerCase();
-
-    // Skip known non-content images
-    if (SKIP_WORDS.some(w => lower.includes(w))) continue;
-
-    // Skip tiny WordPress thumbnails (-NNxNN suffix)
-    if (/-\d{2,3}x\d{2,3}\./.test(lower)) continue;
-
-    urls.push(raw);
-  }
-
-  // ── Priority sort ──
-  // Score each URL: higher = more likely to be the schedule poster
-  const scored = urls.map(url => {
-    const decoded = decodeURIComponent(url).toLowerCase();
-    let score = 0;
-
-    // Priority keywords in the URL itself
-    for (const kw of PRIORITY_KEYWORDS) {
-      if (decoded.includes(kw)) score += 10;
-    }
-
-    // Current month name in URL
-    if (decoded.includes(currentMonth)) score += 15;
-
-    // WordPress uploads path (likely content, not theme)
-    if (decoded.includes('/wp-content/uploads/')) score += 5;
-
-    // Check surrounding HTML context for music-related terms
-    const idx = html.indexOf(url);
-    if (idx !== -1) {
-      const context = html.slice(Math.max(0, idx - 500), idx + url.length + 500).toLowerCase();
-      for (const kw of PRIORITY_KEYWORDS) {
-        if (context.includes(kw)) score += 3;
-      }
-      if (context.includes(currentMonth)) score += 8;
-    }
-
-    return { url, score };
-  });
-
-  // Sort descending by score
-  scored.sort((a, b) => b.score - a.score);
-
-  return scored.map(s => s.url);
+function parseDate(raw) {
+  if (!raw) return null;
+  const m = raw.match(/([A-Za-z]+)\s+(\d{1,2}),?\s*(\d{4})/);
+  if (!m) return null;
+  const month = MONTHS[m[1].toLowerCase()];
+  if (!month) return null;
+  return `${m[3]}-${month}-${m[2].padStart(2, '0')}`;
 }
 
 /**
- * Attempt to download an image with a timeout + User-Agent.
- * Returns { base64, mimeType, sizeBytes } or null on failure.
+ * Normalize "7:00 PM" → "7:00 PM" (passthrough, already clean)
  */
-async function tryDownloadImage(url) {
+function normalizeTime(raw) {
+  if (!raw) return null;
+  const m = raw.match(/(\d{1,2}:\d{2})\s*(AM|PM)/i);
+  if (!m) return null;
+  return `${m[1]} ${m[2].toUpperCase()}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  PRIMARY STRATEGY: Parse the "Upcoming Events" text list from HTML
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Strategy 1A — Structured HTML parse.
+ *
+ * Splits on jet-listing-dynamic-post- blocks. For each block, checks
+ * if it contains a full date string ("Month Day, Year"). If so, it's
+ * an "Upcoming Events" list entry (not a calendar cell). Extracts
+ * artist from heading, date and time from dynamic-field content.
+ */
+function parseUpcomingEventsStructured(html) {
+  const events = [];
+
+  // Split into JetEngine listing post blocks
+  const blocks = html.split(/jet-listing-dynamic-post-\d+/);
+
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i];
+
+    // Only process blocks that contain a full date — these are the
+    // "Upcoming Events" list entries, NOT calendar day cells.
+    const datePattern = /([A-Za-z]+)\s+(\d{1,2}),?\s*(\d{4})\s*at/;
+    if (!datePattern.test(block)) continue;
+
+    // Extract artist name from heading
+    const artistMatch = block.match(
+      /elementor-heading-title[^>]*>([^<]+)</i
+    );
+    if (!artistMatch) continue;
+    const artist = artistMatch[1]
+      .replace(/&amp;/g, '&')
+      .replace(/&#8217;/g, '\u2019')
+      .replace(/&#8216;/g, '\u2018')
+      .replace(/&#038;/g, '&')
+      .replace(/&nbsp;/g, ' ')
+      .trim();
+    if (!artist) continue;
+
+    // Extract date from dynamic field content
+    const dateFieldMatch = block.match(
+      /jet-listing-dynamic-field__content[^>]*>([^<]*\d{4}[^<]*)</i
+    );
+    const date = parseDate(dateFieldMatch ? dateFieldMatch[1] : null);
+    if (!date) continue;
+
+    // Extract time from dynamic field content (look for HH:MM AM/PM)
+    const timeMatches = [...block.matchAll(
+      /jet-listing-dynamic-field__content[^>]*>([^<]*\d{1,2}:\d{2}\s*(?:AM|PM)[^<]*)</gi
+    )];
+    let time = null;
+    for (const tm of timeMatches) {
+      const parsed = normalizeTime(tm[1]);
+      if (parsed) { time = parsed; break; }
+    }
+
+    events.push({ artist, date, time });
+  }
+
+  return events;
+}
+
+/**
+ * Strategy 1B — Plain-text regex fallback.
+ *
+ * If the structured HTML parse fails (e.g., class names changed),
+ * fall back to scanning the raw HTML text for the pattern:
+ *   [Artist Name] [Month] [Day], [Year] at [Time]
+ *
+ * This catches the "Upcoming Events" entries as rendered text even
+ * if the Elementor/JetEngine markup changes.
+ */
+function parseUpcomingEventsRegex(html) {
+  const events = [];
+
+  // Strip HTML tags to get plain text
+  const text = html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&#8217;/g, '\u2019')
+    .replace(/&#8216;/g, '\u2018')
+    .replace(/&#038;/g, '&')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ');
+
+  // Find the "Upcoming Events" section
+  const upcomingIdx = text.indexOf('Upcoming Events');
+  if (upcomingIdx === -1) return events;
+
+  const section = text.slice(upcomingIdx);
+
+  // Match: [Artist Name] [Month] [Day], [Year] at [Time]
+  // The artist name is whatever text appears between entries.
+  // Pattern: "Artist Name April 11, 2026 at 7:00 PM"
+  const entryPattern = /([A-Z][A-Za-z\s&''\-\.]+?)\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})\s+at\s+(\d{1,2}:\d{2}\s*(?:AM|PM))/gi;
+
+  let match;
+  while ((match = entryPattern.exec(section)) !== null) {
+    const artist = match[1].trim();
+    const monthStr = match[2];
+    const day = match[3].padStart(2, '0');
+    const year = match[4];
+    const time = normalizeTime(match[5]);
+
+    const month = MONTHS[monthStr.toLowerCase()];
+    if (!month || !artist || artist.length < 2) continue;
+
+    const date = `${year}-${month}-${day}`;
+    events.push({ artist, date, time });
+  }
+
+  return events;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  SECONDARY STRATEGY: Vision OCR fallback (only if text returns 0)
+// ═══════════════════════════════════════════════════════════════════
+
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2MB ceiling (stricter for fallback)
+const IMAGE_TIMEOUT_MS = 10_000;
+
+/** Words that signal a non-content image */
+const SKIP_WORDS = ['logo', 'favicon', 'icon', 'social', 'avatar', 'emoji', 'spinner', 'loading', 'placeholder', 'pixel', 'spacer'];
+
+/**
+ * Find the best flyer image URL from the page HTML.
+ * Scans <img> tags, data-src, AND background-image: url(...).
+ */
+function findFlyerUrl(html) {
+  const currentMonth = MONTH_NAMES_LOWER[new Date().getMonth()];
+
+  const allRefs = [
+    ...html.matchAll(/(?:src|data-src|data-lazy-src|data-bg)="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))[^"]*"/gi),
+    ...html.matchAll(/background-image\s*:\s*url\(\s*['"]?(https?:\/\/[^'")\s]+\.(?:jpg|jpeg|png|webp))[^'")\s]*/gi),
+  ];
+
+  const seen = new Set();
+  const urls = [];
+  for (const m of allRefs) {
+    const base = m[1].split('?')[0].split(' ')[0];
+    if (seen.has(base)) continue;
+    seen.add(base);
+    const lower = base.toLowerCase();
+    if (SKIP_WORDS.some(w => lower.includes(w))) continue;
+    if (/-\d{2,3}x\d{2,3}\./.test(lower)) continue;
+    urls.push(m[1].split(' ')[0]);
+  }
+
+  // Priority: music/schedule/month keywords
+  const priority = ['poster', 'schedule', 'calendar', 'lineup', 'flyer', 'music', 'live'];
+  for (const url of urls) {
+    const decoded = decodeURIComponent(url).toLowerCase();
+    if (priority.some(kw => decoded.includes(kw)) || decoded.includes(currentMonth)) {
+      return url;
+    }
+  }
+
+  // Context match
+  for (const url of urls) {
+    const lower = url.toLowerCase();
+    if (SKIP_WORDS.some(w => lower.includes(w))) continue;
+    const idx = html.indexOf(url);
+    if (idx !== -1) {
+      const context = html.slice(Math.max(0, idx - 400), idx + url.length + 400).toLowerCase();
+      if (priority.some(kw => context.includes(kw)) || context.includes(currentMonth)) {
+        return url;
+      }
+    }
+  }
+
+  // WordPress uploads fallback
+  for (const url of urls) {
+    if (url.toLowerCase().includes('/wp-content/uploads/')) return url;
+  }
+
+  return urls[0] || null;
+}
+
+/**
+ * Try downloading a flyer image with timeout + User-Agent + 2MB guard.
+ */
+async function tryVisionFallback(html) {
+  const flyerUrl = findFlyerUrl(html);
+  if (!flyerUrl) {
+    console.warn('[10thAveBurrito] Vision fallback: no flyer image found');
+    return [];
+  }
+
+  console.log(`[10thAveBurrito] Vision fallback: trying ${flyerUrl}`);
+
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), IMAGE_TIMEOUT_MS);
 
-    const res = await fetch(url, {
+    const imgRes = await fetch(flyerUrl, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept': 'image/*,*/*;q=0.8',
         'Referer': PAGE_URL,
       },
     });
-
     clearTimeout(timer);
 
-    if (!res.ok) {
-      console.warn(`[10thAveBurrito] Image HTTP ${res.status}: ${url}`);
-      return null;
+    if (!imgRes.ok) {
+      console.warn(`[10thAveBurrito] Vision fallback: image HTTP ${imgRes.status}`);
+      return [];
     }
 
-    // Check Content-Length header first (cheap guard)
-    const contentLength = parseInt(res.headers.get('content-length') || '0', 10);
+    // Check size before downloading body
+    const contentLength = parseInt(imgRes.headers.get('content-length') || '0', 10);
     if (contentLength > MAX_IMAGE_BYTES) {
-      console.warn(`[10thAveBurrito] Image too large (${(contentLength / 1024 / 1024).toFixed(1)}MB), skipping: ${url}`);
-      return null;
+      console.warn(`[10thAveBurrito] Vision fallback: image too large (${(contentLength / 1024 / 1024).toFixed(1)}MB > 2MB), skipping`);
+      return [];
     }
 
-    const buffer = await res.arrayBuffer();
-
-    // Double-check actual size (Content-Length can be missing/wrong)
+    const buffer = await imgRes.arrayBuffer();
     if (buffer.byteLength > MAX_IMAGE_BYTES) {
-      console.warn(`[10thAveBurrito] Image body too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB), skipping: ${url}`);
-      return null;
+      console.warn(`[10thAveBurrito] Vision fallback: image body too large (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB), skipping`);
+      return [];
     }
-
-    // Reject suspiciously small responses (likely error pages)
     if (buffer.byteLength < 2000) {
-      console.warn(`[10thAveBurrito] Image too small (${buffer.byteLength}B), probably not a flyer: ${url}`);
-      return null;
+      console.warn(`[10thAveBurrito] Vision fallback: image too small (${buffer.byteLength}B), skipping`);
+      return [];
     }
 
-    const lower = url.toLowerCase();
-    let mimeType = 'image/jpeg';
-    if (lower.includes('.png')) mimeType = 'image/png';
-    else if (lower.includes('.webp')) mimeType = 'image/webp';
+    console.log(`[10thAveBurrito] Vision fallback: image downloaded (${(buffer.byteLength / 1024).toFixed(0)}KB)`);
 
-    const base64 = Buffer.from(buffer).toString('base64');
-    return { base64, mimeType, sizeBytes: buffer.byteLength };
+    // extractEventsFromFlyer handles Gemini call
+    const now = new Date();
+    const extracted = await extractEventsFromFlyer(flyerUrl, {
+      venueName: VENUE,
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+    });
+
+    return extracted;
   } catch (err) {
-    console.warn(`[10thAveBurrito] Image download failed (${err.name === 'AbortError' ? 'timeout' : err.message}): ${url}`);
-    return null;
-  }
-}
-
-/**
- * Build Gemini request directly with pre-downloaded base64 data.
- * This avoids double-downloading and lets us control timeouts end-to-end.
- */
-async function callGeminiWithBase64(base64, mimeType, venueName, year, month) {
-  // Delegate to extractEventsFromFlyer with a data-URI so the visionOCR
-  // module can still parse it, OR we call it with the imageUrl and accept
-  // the double-download. Since extractEventsFromFlyer doesn't support
-  // base64 input, we'll create a temporary data URI approach.
-  //
-  // Actually — we call extractEventsFromFlyer with a synthetic data: URL.
-  // The visionOCR module will try to fetch it and fail, so instead we
-  // directly call the Gemini API here (same logic as visionOCR).
-  const GEMINI_MODEL = 'gemini-2.5-flash';
-  const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-  const apiKey = process.env.GOOGLE_AI_KEY;
-  if (!apiKey) throw new Error('[10thAveBurrito] GOOGLE_AI_KEY not set');
-
-  const now = new Date();
-  const currentYear = year || now.getFullYear();
-  const currentMonth = month || (now.getMonth() + 1);
-  const currentDay = now.getDate();
-  const monthName = new Date(currentYear, currentMonth - 1).toLocaleString('en-US', { month: 'long' });
-  const dayName = now.toLocaleString('en-US', { weekday: 'long' });
-  const todayISO = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
-
-  const SYSTEM_INSTRUCTION = `You are an expert data extractor for a live music event database. I will provide an image of a concert or festival poster. Your job is to extract the event details and return a strict JSON array of objects.
-
-Extraction Rules:
-1. Identify the Event/Festival Name: (e.g., Sea.Hear.Now).
-2. Identify the Venue/City: (e.g., Asbury Park, NJ).
-3. Date Mapping & Normalization:
-   - If the poster lists multiple days (e.g., Saturday vs. Sunday) and a general weekend date (e.g., Sept 19 & 20, 2026), you MUST map the correct specific date to the corresponding artists.
-   - CRITICAL: Convert ALL date references into strict YYYY-MM-DD format.
-   - Relative terms like "today", "tonight", "this Sunday" → resolve using the exact current date provided.
-   - Incomplete dates like "3/29", "March 29" → assume the current year.
-   - Day names like "Saturday", "Sunday" → resolve to the nearest upcoming date.
-   - If you absolutely cannot determine the date, use null.
-4. Filter Non-Musical Acts: Ignore sponsors, vendors, drink specials, food events, trivia nights, karaoke, open mic, and non-live-music events.
-5. For "artist": use the exact name as written on the poster.
-6. For "time": use strict 24-hour format HH:MM (e.g., "16:00"). If a time range is given, extract ONLY the start time. If no time is shown, use null.
-7. Do NOT invent, guess, or look up any information not on the poster.
-8. Do NOT write bios or descriptions.
-9. If the image is unreadable or contains no music events, return an empty array [].
-10. Smart Categorization: For each extracted artist, assign a "category" and "confidence_score".
-11. JSON Schema: Return an array of objects matching: [{"event_name": "string", "venue": "string", "date": "YYYY-MM-DD", "artist_name": "string", "time": "HH:MM or null", "category": "string", "confidence_score": integer}].`;
-
-  const userMessage = `Today is ${dayName}, ${monthName} ${currentDay}, ${currentYear} (${todayISO}). This is a live music event poster for ${venueName}. Extract all live music events from this image.`;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000); // 30s for Gemini
-
-  const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    signal: controller.signal,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-      contents: [{
-        role: 'user',
-        parts: [
-          { text: userMessage },
-          { inline_data: { mime_type: mimeType, data: base64 } },
-        ],
-      }],
-      generationConfig: {
-        response_mime_type: 'application/json',
-        response_schema: {
-          type: 'ARRAY',
-          items: {
-            type: 'OBJECT',
-            properties: {
-              event_name: { type: 'STRING' },
-              venue: { type: 'STRING' },
-              date: { type: 'STRING' },
-              artist_name: { type: 'STRING' },
-              time: { type: 'STRING', nullable: true },
-              category: { type: 'STRING' },
-              confidence_score: { type: 'INTEGER' },
-            },
-            required: ['artist_name', 'date', 'category', 'confidence_score'],
-          },
-        },
-        temperature: 0.1,
-      },
-    }),
-  });
-
-  clearTimeout(timer);
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Gemini API error ${res.status}: ${body.slice(0, 300)}`);
-  }
-
-  const data = await res.json();
-  const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!content) return [];
-
-  const cleaned = content.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
-  let events;
-  try {
-    events = JSON.parse(cleaned);
-  } catch {
-    console.error('[10thAveBurrito] Failed to parse Gemini JSON:', cleaned.slice(0, 300));
+    console.warn(`[10thAveBurrito] Vision fallback failed: ${err.message}`);
     return [];
   }
-
-  if (!Array.isArray(events)) return [];
-
-  return events
-    .filter(e => e && typeof (e.artist_name || e.artist) === 'string' && (e.artist_name || e.artist).trim())
-    .map(e => ({
-      artist: (e.artist_name || e.artist).trim(),
-      date: typeof e.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : null,
-      time: typeof e.time === 'string' ? e.time.trim() : null,
-      category: typeof e.category === 'string' ? e.category.trim() : 'Live Music',
-      confidence_score: typeof e.confidence_score === 'number' ? e.confidence_score : 50,
-    }))
-    .filter(e => e.date);
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  MAIN ENTRY POINT
+// ═══════════════════════════════════════════════════════════════════
 
 export async function scrapeTenthAveBurrito() {
   try {
     // ── Step 1: Fetch the events page ──
-    const pageController = new AbortController();
-    const pageTimer = setTimeout(() => pageController.abort(), 15_000);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15_000);
 
     const res = await fetch(PAGE_URL, {
-      signal: pageController.signal,
+      signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml',
       },
     });
-
-    clearTimeout(pageTimer);
+    clearTimeout(timer);
 
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} fetching 10th Ave Burrito events page`);
@@ -323,47 +344,46 @@ export async function scrapeTenthAveBurrito() {
     const html = await res.text();
     console.log(`[10thAveBurrito] Page fetched (${html.length} chars)`);
 
-    // ── Step 2: Find ALL candidate image URLs ──
-    const candidates = findAllCandidateUrls(html);
-    console.log(`[10thAveBurrito] Found ${candidates.length} candidate images`);
+    // ── Step 2: PRIMARY — Parse text-based "Upcoming Events" list ──
+    let parsed = parseUpcomingEventsStructured(html);
+    console.log(`[10thAveBurrito] Structured text parse: ${parsed.length} events`);
 
-    if (candidates.length === 0) {
-      return { events: [], error: 'No candidate images found on events page' };
+    // If structured parse got nothing, try regex fallback on plain text
+    if (parsed.length === 0) {
+      parsed = parseUpcomingEventsRegex(html);
+      console.log(`[10thAveBurrito] Regex text parse: ${parsed.length} events`);
     }
 
-    // ── Step 3: Try each candidate until one downloads successfully ──
-    let winnerBase64 = null;
-    let winnerMime = null;
-    let winnerUrl = null;
-
-    for (const url of candidates) {
-      console.log(`[10thAveBurrito] Trying image: ${url.slice(0, 120)}...`);
-      const result = await tryDownloadImage(url);
-      if (result) {
-        console.log(`[10thAveBurrito] ✓ Image downloaded (${(result.sizeBytes / 1024).toFixed(0)}KB, ${result.mimeType})`);
-        winnerBase64 = result.base64;
-        winnerMime = result.mimeType;
-        winnerUrl = url;
-        break;
-      }
-      // Move to next candidate immediately
-    }
-
-    if (!winnerBase64) {
-      return { events: [], error: `All ${candidates.length} candidate images failed to download` };
-    }
-
-    // ── Step 4: Send to Gemini (with pre-downloaded base64 — no double-fetch) ──
+    // ── Step 3: If text parse succeeded, format and return ──
     const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-
-    const extracted = await callGeminiWithBase64(winnerBase64, winnerMime, VENUE, year, month);
-    console.log(`[10thAveBurrito] Gemini extracted ${extracted.length} events from ${winnerUrl}`);
-
-    // ── Step 5: Convert to standard scraper output ──
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-    const events = extracted
+
+    if (parsed.length > 0) {
+      const events = parsed
+        .filter(e => e.date >= todayStr)
+        .map(e => ({
+          title: e.artist,
+          venue: VENUE,
+          date: e.date,
+          time: e.time || null,
+          description: null,
+          ticket_url: PAGE_URL,
+          price: null,
+          source_url: PAGE_URL,
+          external_id: `10thaveburrito-${e.date}-${e.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
+          image_url: null,
+        }));
+
+      console.log(`[10thAveBurrito] ✓ Text scrape found ${events.length} upcoming events`);
+      return { events, error: null };
+    }
+
+    // ── Step 4: FALLBACK — Vision OCR (only if text returned 0) ──
+    console.warn('[10thAveBurrito] Text scrape found 0 events — trying Vision OCR fallback');
+    const visionExtracted = await tryVisionFallback(html);
+    console.log(`[10thAveBurrito] Vision fallback extracted ${visionExtracted.length} events`);
+
+    const events = visionExtracted
       .filter(e => e.date && e.date >= todayStr)
       .map(e => ({
         title: e.artist,
@@ -378,8 +398,8 @@ export async function scrapeTenthAveBurrito() {
         image_url: null,
       }));
 
-    console.log(`[10thAveBurrito] Found ${events.length} upcoming events`);
-    return { events, error: null };
+    console.log(`[10thAveBurrito] Found ${events.length} upcoming events (via Vision fallback)`);
+    return { events, error: events.length === 0 ? 'Both text and vision strategies returned 0 events' : null };
 
   } catch (err) {
     console.error('[10thAveBurrito] Scraper error:', err.message);
