@@ -400,6 +400,7 @@ export async function POST(request) {
         website_url: reg.url || null,
         platform: reg.source || 'Unknown',
         events_found: result.count || 0,
+        last_sync_count: result.count || 0,
         status: result.error ? 'fail' : (result.count === 0 ? 'warning' : 'success'),
         error_message: result.error || null,
         last_sync: new Date().toISOString(),
