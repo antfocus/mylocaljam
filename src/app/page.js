@@ -2864,7 +2864,13 @@ export default function HomePage() {
               <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 {groupedEvents.map(group => (
                   <div key={group.date}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 0 6px' }}>
+                    <div style={{
+                      position: 'sticky', top: 0, zIndex: 20,
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      padding: '14px 0 6px',
+                      background: t.bg,
+                      /* Solid bg prevents card bleed-through on scroll */
+                    }}>
                       <span style={dateSeparatorStyle}>{group.label}</span>
                       <div style={{ flex: 1, height: '1px', background: t.border }} />
                     </div>
@@ -2917,9 +2923,11 @@ export default function HomePage() {
                 openSearch();
               }
             } else if (tab.key === 'home' && activeTab === 'home') {
-              // Already on Home — reset everything: blur keyboard, clear search, collapse omnibar, clear filters
+              // Already on Home — reset everything: scroll top, blur keyboard, clear search, collapse omnibar, clear filters, re-fetch
+              window.scrollTo({ top: 0, behavior: 'smooth' });
               document.activeElement?.blur();
               clearAllFilters();
+              fetchEvents(); // force fresh pull even if dateKey was already 'all'
             } else {
               if (tab.key === 'saved') handleSetSavedSegment('events');
               setActiveTab(tab.key);
