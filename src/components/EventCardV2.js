@@ -618,26 +618,30 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
         />
       )}
 
-      {/* Flag bottom-sheet modal */}
-      {flagSheet && (
+      {/* Flag report modal — portaled to body to escape overflow:hidden clipping */}
+      {flagSheet && mounted && createPortal(
         <div
           onClick={e => { e.stopPropagation(); setFlagSheet(false); }}
           style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-            zIndex: 250, background: overlayBg,
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            zIndex: 150,
+            background: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
           <div
             onClick={e => e.stopPropagation()}
             style={{
-              width: '100%', maxWidth: '500px',
+              width: 'calc(100% - 32px)', maxWidth: '400px',
               background: sheetBg,
-              borderRadius: '16px 16px 0 0',
+              borderRadius: '20px',
               border: `1px solid ${sheetBorder}`,
-              borderBottom: 'none',
-              padding: '20px 16px 28px',
-              boxShadow: '0 -8px 40px rgba(0,0,0,0.3)',
+              padding: '20px 16px 24px',
+              boxShadow: darkMode
+                ? '0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)'
+                : '0 12px 40px rgba(0,0,0,0.2)',
               animation: 'slideUp 0.25s ease-out',
             }}
           >
@@ -700,7 +704,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 Cover Charge Added
               </button>
 
-              {/* Other / Incorrect Info */}
+              {/* Other */}
               <button
                 onClick={() => setFlagOtherOpen(prev => !prev)}
                 disabled={flagSubmitting}
@@ -716,7 +720,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 }}
               >
                 <span style={{ fontSize: '20px' }}>💬</span>
-                Other / Incorrect Info
+                Other
               </button>
 
               {/* Expandable text area for Other reports */}
@@ -739,6 +743,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                       color: textPrimary, fontSize: '13px',
                       fontFamily: "'DM Sans', sans-serif",
                       outline: 'none', resize: 'none',
+                      boxSizing: 'border-box',
                     }}
                   />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
@@ -800,7 +805,8 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Follow popover — portaled to body to escape overflow:hidden */}

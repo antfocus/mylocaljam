@@ -546,6 +546,7 @@ export default function HomePage() {
   // Refs for the follow upsell — lets toggleFavorite call follow logic defined later without TDZ issues
   const followingRef = useRef([]);
   const followEntityRef = useRef(null);
+  const homeScrollRef = useRef(null); // scroll container for home event list — used by double-tap-home
   // Refs for stable callbacks — avoids recreating useCallbacks on every state change
   const isLoggedInRef = useRef(false);
   const favoritesRef = useRef(new Set());
@@ -1517,7 +1518,7 @@ export default function HomePage() {
 
   return (
     <>
-      <div style={{ minHeight: '100svh', display: 'flex', flexDirection: 'column', background: t.bg, maxWidth: '480px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+      <div style={{ height: '100svh', display: 'flex', flexDirection: 'column', background: t.bg, maxWidth: '480px', margin: '0 auto', width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
 
         {/* ── Top Nav ────────────────────────────────────────────────────── */}
         <header onClick={() => { if (filtersExpanded) { setFiltersExpanded(false); setActiveFilterCard(null); } }} style={{
@@ -2849,7 +2850,7 @@ export default function HomePage() {
 
         {/* ── Event list (home tab) ─────────────────────────────────────── */}
         {activeTab === 'home' && (
-          <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg }}>
+          <div ref={homeScrollRef} style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg, WebkitOverflowScrolling: 'touch' }}>
             {loading ? (
               <div style={{ textAlign: 'center', padding: '64px 0', color: t.textMuted, fontSize: '15px' }}>
                 Loading events…
@@ -2865,7 +2866,7 @@ export default function HomePage() {
                 {groupedEvents.map(group => (
                   <div key={group.date}>
                     <div style={{
-                      position: 'sticky', top: 0, zIndex: 20,
+                      position: 'sticky', top: 0, zIndex: 50,
                       display: 'flex', alignItems: 'center', gap: '8px',
                       padding: '14px 0 6px',
                       background: t.bg,
@@ -2924,7 +2925,7 @@ export default function HomePage() {
               }
             } else if (tab.key === 'home' && activeTab === 'home') {
               // Already on Home — reset everything: scroll top, blur keyboard, clear search, collapse omnibar, clear filters, re-fetch
-              window.scrollTo({ top: 0, behavior: 'smooth' });
+              homeScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               document.activeElement?.blur();
               clearAllFilters();
               fetchEvents(); // force fresh pull even if dateKey was already 'all'
