@@ -6,22 +6,27 @@ import ModalWrapper from '@/components/ui/ModalWrapper';
 /**
  * BetaWelcome — Mobile-first welcome overlay with versioned persistence.
  *
- * VERSION 2 (2026-04-08):
- *   - Bumped key to `hasSeenWelcome_v2` so existing users see the new copy.
- *   - Centered header, larger typography, energetic badge.
- *   - Color Boost emoji wrappers retained from v1.
- *   - localStorage persistence survives logout/login.
+ * VERSION 2 — FINAL COPY (2026-04-08):
+ *   - Strict text hierarchy: pure white (#FFFFFF) for all labels/headings,
+ *     light grey (#D1D5DB) for all body/description text.
+ *   - Stacked feature layout: [Icon] → [Column: White title, Grey desc].
+ *   - Centered header, badge, and sign-off.
+ *   - localStorage key: hasSeenWelcome_v2.
  *   - Only dismissed via "Let's Jam" — backdrop/Escape do nothing.
  *   - z-index 9999.
  */
 
 const WELCOME_KEY = 'hasSeenWelcome_v2';
 
+// ── Text hierarchy tokens ──
+const WHITE = '#FFFFFF';   // labels, headings, feature names
+const GREY  = '#D1D5DB';   // body text, descriptions
+
 const FEATURES = [
-  { emoji: '\uD83D\uDD0D', label: 'Discover', desc: 'Find live music, trivia, and specials happening around you.', tint: 'rgba(232, 114, 42, 0.15)' },
-  { emoji: '\u2795',        label: 'Follow',   desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'rgba(58, 173, 160, 0.15)' },
-  { emoji: '\uD83D\uDCE4',  label: 'Share',    desc: 'Easily send event details to friends to coordinate your night out.', tint: 'rgba(96, 165, 250, 0.15)' },
-  { emoji: '\uD83D\uDCA1',  label: 'Ideas',    desc: 'Head to Help & Feedback section in your Profile.', tint: 'rgba(250, 204, 21, 0.15)' },
+  { emoji: '\uD83D\uDD0D', label: 'Discover', desc: 'Find live music, trivia, and specials happening around you.', tint: 'rgba(255, 165, 0, 0.15)' },
+  { emoji: '\u2795',        label: 'Follow',   desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'rgba(50, 205, 50, 0.15)' },
+  { emoji: '\uD83D\uDCE4',  label: 'Share',    desc: 'Easily send event details to friends to coordinate your night out.', tint: 'rgba(30, 144, 255, 0.15)' },
+  { emoji: '\uD83D\uDCA1',  label: 'Ideas',    desc: 'Head to Help & Feedback section in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
 ];
 
 export default function BetaWelcome() {
@@ -46,11 +51,10 @@ export default function BetaWelcome() {
 
   const surface   = '#1A1A24';
   const border    = '#2A2A3A';
-  const text      = '#F0F0F5';
-  const muted     = '#9898B8';
   const featureBg = '#22222E';
   const accent    = '#E8722A';
   const teal      = '#3AADA0';
+  const font      = "'DM Sans', sans-serif";
 
   return (
     <ModalWrapper
@@ -84,7 +88,8 @@ export default function BetaWelcome() {
         maxHeight: 'calc(90vh - 4px)',
         WebkitOverflowScrolling: 'touch',
       }}>
-        {/* Header — centered branded wordmark */}
+
+        {/* ── Header — centered wordmark + tagline ── */}
         <div style={{ textAlign: 'center', marginBottom: '4px' }}>
           <h2 style={{
             margin: 0,
@@ -93,7 +98,7 @@ export default function BetaWelcome() {
             fontFamily: "'Outfit', sans-serif",
             lineHeight: 1.2,
           }}>
-            <span style={{ color: text }}>my</span>
+            <span style={{ color: WHITE }}>my</span>
             <span style={{ color: accent }}>local</span>
             <span style={{ color: teal }}>jam</span>
           </h2>
@@ -101,16 +106,16 @@ export default function BetaWelcome() {
             margin: '6px 0 0',
             fontSize: '15px',
             fontWeight: 500,
-            fontFamily: "'DM Sans', sans-serif",
-            color: muted,
+            fontFamily: font,
+            color: GREY,
             lineHeight: 1.4,
           }}>
             Your local scene, all in one spot.
           </p>
         </div>
 
-        {/* Beta badge — centered, energetic */}
-        <div style={{ textAlign: 'center', marginTop: '14px', marginBottom: '18px' }}>
+        {/* ── Beta badge — centered ── */}
+        <div style={{ textAlign: 'center', marginTop: '14px', marginBottom: '20px' }}>
           <span style={{
             display: 'inline-block',
             padding: '5px 16px',
@@ -119,7 +124,7 @@ export default function BetaWelcome() {
             color: accent,
             fontSize: '12px',
             fontWeight: 800,
-            fontFamily: "'DM Sans', sans-serif",
+            fontFamily: font,
             letterSpacing: '1.2px',
             border: '1px solid rgba(232, 114, 42, 0.4)',
           }}>
@@ -127,45 +132,58 @@ export default function BetaWelcome() {
           </span>
         </div>
 
-        {/* Intro */}
+        {/* ── Intro ── */}
         <p style={{
-          margin: '0 0 14px',
+          margin: '0 0 16px',
           fontSize: '15px',
-          fontFamily: "'DM Sans', sans-serif",
-          color: text,
+          fontFamily: font,
+          color: GREY,
           lineHeight: 1.7,
         }}>
           I appreciate you being an early user and for continuing to support the local scene.
         </p>
 
-        {/* The Story */}
+        {/* ── The Story ── */}
         <p style={{
-          margin: '0 0 14px',
+          margin: '0 0 16px',
           fontSize: '15px',
-          fontFamily: "'DM Sans', sans-serif",
-          color: text,
+          fontFamily: font,
+          color: GREY,
           lineHeight: 1.7,
         }}>
+          <strong style={{ color: WHITE, fontWeight: 700 }}>The Story:</strong>{' '}
           I wanted to find out what was going on without having to shuffle around a bunch of different sites. I built mylocaljam to put everything in one place, letting you spend less time searching for it and more time being there!
         </p>
 
-        {/* Territory */}
+        {/* ── Territory ── */}
         <p style={{
-          margin: '0 0 20px',
-          fontSize: '14px',
-          fontFamily: "'DM Sans', sans-serif",
-          color: muted,
+          margin: '0 0 22px',
+          fontSize: '15px',
+          fontFamily: font,
+          color: GREY,
           lineHeight: 1.7,
         }}>
+          <strong style={{ color: WHITE, fontWeight: 700 }}>Territory:</strong>{' '}
           Right now, I am focused on the Jersey Shore, specifically serving Monmouth and Ocean County. As we find our rhythm and grow, I{'\u2019'}ll be expanding into new territories.
         </p>
 
-        {/* ── Color Boost Feature List ── */}
+        {/* ── Quick Features header ── */}
+        <h3 style={{
+          margin: '0 0 10px',
+          fontSize: '15px',
+          fontWeight: 700,
+          fontFamily: font,
+          color: WHITE,
+        }}>
+          Quick Features:
+        </h3>
+
+        {/* ── Color Boost Feature List — Stacked Layout ── */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
           gap: '8px',
-          marginBottom: '20px',
+          marginBottom: '22px',
         }}>
           {FEATURES.map(({ emoji, label, desc, tint }) => (
             <div key={label} style={{
@@ -176,6 +194,7 @@ export default function BetaWelcome() {
               borderRadius: '10px',
               background: featureBg,
             }}>
+              {/* Emoji icon wrapper — tinted background */}
               <div style={{
                 width: '34px',
                 height: '34px',
@@ -190,36 +209,51 @@ export default function BetaWelcome() {
               }}>
                 {emoji}
               </div>
-              <div style={{ lineHeight: 1.55, flex: 1, minWidth: 0, paddingTop: '2px' }}>
+              {/* Stacked text: title on row 1, description on row 2 */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px',
+                flex: 1,
+                minWidth: 0,
+                paddingTop: '1px',
+              }}>
                 <span style={{
                   fontSize: '14px',
                   fontWeight: 700,
-                  fontFamily: "'DM Sans', sans-serif",
-                  color: text,
-                }}>{label}: </span>
+                  fontFamily: font,
+                  color: WHITE,
+                  lineHeight: 1.3,
+                }}>
+                  {label}
+                </span>
                 <span style={{
-                  fontSize: '14px',
-                  fontFamily: "'DM Sans', sans-serif",
-                  color: muted,
-                }}>{desc}</span>
+                  fontSize: '13px',
+                  fontWeight: 400,
+                  fontFamily: font,
+                  color: GREY,
+                  lineHeight: 1.5,
+                }}>
+                  {desc}
+                </span>
               </div>
             </div>
           ))}
         </div>
 
-        {/* Sign-off — centered */}
+        {/* ── Sign-off — centered, white ── */}
         <p style={{
           margin: '0 0 20px',
           fontSize: '15px',
-          fontWeight: 600,
-          fontFamily: "'DM Sans', sans-serif",
-          color: teal,
+          fontWeight: 700,
+          fontFamily: font,
+          color: WHITE,
           textAlign: 'center',
         }}>
           See you out there!
         </p>
 
-        {/* CTA Button — only way to dismiss */}
+        {/* ── CTA Button — only way to dismiss ── */}
         <button
           onClick={handleDismiss}
           style={{
@@ -232,7 +266,7 @@ export default function BetaWelcome() {
             color: '#1C1917',
             fontSize: '16px',
             fontWeight: 700,
-            fontFamily: "'DM Sans', sans-serif",
+            fontFamily: font,
             cursor: 'pointer',
             letterSpacing: '0.3px',
             WebkitTapHighlightColor: 'transparent',
