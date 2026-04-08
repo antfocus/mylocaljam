@@ -6,33 +6,34 @@ import { useEffect, useRef, memo } from 'react';
  * HeroPiston — Direct scroll-synced "piston" collapse for the Hero.
  *
  * ═══════════════════════════════════════════════════════════════════
- *  1:1 LINEAR TRACKING VERSION (2026-04-08)
+ *  TRUE 1:1 PIXEL TRACKING VERSION (2026-04-08)
  *
- *  The Hero slides up at exactly the speed of the user's thumb.
- *  No easing, no transitions, no percentage math — pure pixels.
+ *  50px of thumb movement = exactly 50px of hero movement.
+ *  No ratio multiplication, no easing, no transitions.
  *
- *  Previous versions used `translateY(calc(var * 1%))` which
- *  produced non-linear movement: as the wrapper height shrank,
- *  1% represented fewer pixels, making the end of the collapse
- *  feel faster than the beginning.
+ *  The key insight: COLLAPSE_RANGE must equal heroHeight.
+ *  Previous versions used a fixed 200px range against a ~260px
+ *  hero. The ratio hit 1.0 after 200px of scroll, but the pixel
+ *  offset was ratio * 260 = 260px — cramming the last 60px of
+ *  visual movement into the final 40px of scroll. That's the
+ *  "speeds up at the end" feeling.
  *
- *  This version:
- *    - Computes an exact pixel offset for translate3d.
- *    - Rounds to whole pixels (Math.round) to prevent sub-pixel
- *      jitter / vibration.
- *    - Uses NO CSS transitions on the wrapper or inner div.
- *    - rAF fires immediately on every scroll event.
- *    - The mapping is strictly linear:
- *        progress = max(0, scrollTop - THRESHOLD)
- *        ratio    = min(progress / COLLAPSE_RANGE, 1)
- *        offsetPx = round(ratio * heroHeight)
- *        heightPx = round(heroHeight - offsetPx)
+ *  This version eliminates the ratio entirely:
+ *    moveY  = min(scrollTop - THRESHOLD, heroHeight)
+ *    height = heroHeight - moveY
+ *    transform = translate3d(0, -moveY px, 0)
+ *
+ *  1px of scroll past threshold = 1px of hero movement. Always.
  *
  *  Scroll behavior:
- *    - 0–100px: Hero fully visible (premium delay).
- *    - 100–300px: Hero slides up 1:1 with scroll.
- *    - 300px+: Hero fully hidden, 0px tall.
+ *    - 0–10px: Hero fully visible (tiny buffer).
+ *    - 10px → 10+heroHeight: Hero slides up 1:1 with scroll.
+ *    - Beyond: Hero fully hidden, 0px tall.
  *    - Scroll back: tracks back identically.
+ *
+ *  Anti-jump:
+ *    - overflow-anchor: none on wrapper prevents browser scroll
+ *      anchoring from "helping" when height changes.
  *
  *  Performance:
  *    - Zero React re-renders (ref + direct style mutation)
@@ -81,8 +82,7 @@ export default function HeroPiston({ children }) {
     if (!anchor || !wrapper || !inner) return;
 
     // ── Constants ──
-    const THRESHOLD      = 100; // px of free scroll before collapse starts
-    const COLLAPSE_RANGE = 200; // px over which the hero fully collapses
+    const THRESHOLD = 10; // px of free scroll before collapse starts (tiny buffer)
 
     // ── Measure hero height ──
     const measure = () => {
@@ -97,6 +97,12 @@ export default function HeroPiston({ children }) {
     // ── Find scroll container ──
     const scrollEl = getScrollParent(anchor);
     if (!scrollEl) return;
+
+    // ── Disable browser scroll anchoring on the wrapper ──
+    // When the wrapper height shrinks, the browser may "help" by
+    // adjusting scrollTop to keep content in place. This fights
+    // our manual tracking and causes the late-stage speed-up / jump.
+    wrapper.style.overflowAnchor = 'none';
 
     // ── Scroll handler: rAF-throttled, zero React re-renders ──
     const onScroll = () => {
@@ -117,18 +123,13 @@ export default function HeroPiston({ children }) {
           return;
         }
 
-        // ── Linear mapping — strictly no easing ──
-        const progress = Math.max(0, scrollY - THRESHOLD);
-        const ratio = Math.min(progress / COLLAPSE_RANGE, 1);
+        // ── True 1:1 pixel mapping — no ratio, no multiplication ──
+        // moveY is clamped between 0 and heroHeight.
+        // 1px of scroll past threshold = 1px of hero movement.
+        const moveY = Math.min(scrollY - THRESHOLD, h);
 
-        // Pixel offset: how many px to slide the hero upward.
-        // Math.round prevents sub-pixel jitter.
-        const offsetPx = Math.round(ratio * h);
-        const visiblePx = h - offsetPx;
-
-        // Direct style mutation — no CSS variables, no transitions
-        inner.style.transform = 'translate3d(0, -' + offsetPx + 'px, 0)';
-        wrapper.style.height = visiblePx + 'px';
+        inner.style.transform = 'translate3d(0, ' + (-moveY) + 'px, 0)';
+        wrapper.style.height = (h - moveY) + 'px';
       });
     };
 
