@@ -6,37 +6,40 @@ import { useEffect, useRef, memo } from 'react';
  * HeroPiston — Direct scroll-synced "piston" collapse for the Hero.
  *
  * ═══════════════════════════════════════════════════════════════════
- *  STABILITY-FIRST VERSION (2026-04-08)
+ *  1:1 LINEAR TRACKING VERSION (2026-04-08)
  *
- *  Previous versions used grid-template-rows to reclaim vertical
- *  space as the Hero collapsed. This caused layout shifts: the
- *  total scrollable height changed mid-scroll, the browser
- *  compensated by adjusting scrollTop, and the page "jumped."
+ *  The Hero slides up at exactly the speed of the user's thumb.
+ *  No easing, no transitions, no percentage math — pure pixels.
  *
- *  This version uses a fundamentally different approach:
- *    - The Hero wrapper has a FIXED height (measured once on mount).
- *    - Collapse is purely visual: translate3d moves the content
- *      upward and a clip (overflow: hidden) hides it.
- *    - The wrapper's height animates with a CSS variable so content
- *      below can reclaim space WITHOUT reflowing.
- *    - Because translate3d is compositor-only and the height is
- *      driven by a CSS variable on a single element, this avoids
- *      the multi-element reflow that caused the jump.
+ *  Previous versions used `translateY(calc(var * 1%))` which
+ *  produced non-linear movement: as the wrapper height shrank,
+ *  1% represented fewer pixels, making the end of the collapse
+ *  feel faster than the beginning.
+ *
+ *  This version:
+ *    - Computes an exact pixel offset for translate3d.
+ *    - Rounds to whole pixels (Math.round) to prevent sub-pixel
+ *      jitter / vibration.
+ *    - Uses NO CSS transitions on the wrapper or inner div.
+ *    - rAF fires immediately on every scroll event.
+ *    - The mapping is strictly linear:
+ *        progress = max(0, scrollTop - THRESHOLD)
+ *        ratio    = min(progress / COLLAPSE_RANGE, 1)
+ *        offsetPx = round(ratio * heroHeight)
+ *        heightPx = round(heroHeight - offsetPx)
  *
  *  Scroll behavior:
- *    - 0–100px: Hero stays fully visible (premium delay).
- *    - 100–300px: Hero slides up proportionally (200px range).
+ *    - 0–100px: Hero fully visible (premium delay).
+ *    - 100–300px: Hero slides up 1:1 with scroll.
  *    - 300px+: Hero fully hidden, 0px tall.
  *    - Scroll back: tracks back identically.
  *
  *  Performance:
- *    - Zero React re-renders (ref + CSS variable injection only)
+ *    - Zero React re-renders (ref + direct style mutation)
  *    - rAF throttle — max one DOM write per frame
- *    - translate3d — GPU compositor layer, no layout/paint
- *    - will-change: transform, height for compositor promotion
- *
- *  CSS variable contract:
- *    --piston-ty:  0 → -100  (used in translate3d Y%)
+ *    - translate3d(0, px, 0) — GPU compositor, no layout/paint
+ *    - will-change: transform, height on wrapper
+ *    - No CSS transitions anywhere — scroll IS the animation
  *
  * Props:
  *   children — The <HeroSection /> component
@@ -56,12 +59,7 @@ function getScrollParent(el) {
   return null;
 }
 
-function clamp(val, min, max) {
-  return Math.min(Math.max(val, min), max);
-}
-
 // ── Memoized inner wrapper ──────────────────────────────────────────────
-// Prevents the HeroSection tree from re-rendering on parent updates.
 const HeroContent = memo(function HeroContent({ children }) {
   return children;
 });
@@ -84,13 +82,15 @@ export default function HeroPiston({ children }) {
 
     // ── Constants ──
     const THRESHOLD      = 100; // px of free scroll before collapse starts
-    const COLLAPSE_RANGE = 200; // px of scrolling over which collapse occurs
+    const COLLAPSE_RANGE = 200; // px over which the hero fully collapses
 
-    // ── Measure hero height and set the fixed wrapper height ──
+    // ── Measure hero height ──
     const measure = () => {
       const h = inner.scrollHeight || 260;
       heroHeight.current = h;
-      wrapper.style.setProperty('--piston-h', `${h}px`);
+      // Reset to full height on re-measure
+      wrapper.style.height = h + 'px';
+      inner.style.transform = 'translate3d(0, 0px, 0)';
     };
     measure();
 
@@ -112,26 +112,27 @@ export default function HeroPiston({ children }) {
 
         // ── Below threshold: fully open ──
         if (scrollY <= THRESHOLD) {
-          wrapper.style.setProperty('--piston-ty', '0');
-          wrapper.style.setProperty('--piston-h', `${h}px`);
+          wrapper.style.height = h + 'px';
+          inner.style.transform = 'translate3d(0, 0px, 0)';
           return;
         }
 
-        // ── Proportional collapse over COLLAPSE_RANGE ──
-        const progress = scrollY - THRESHOLD;
-        const ratio = clamp(progress / COLLAPSE_RANGE, 0, 1);
+        // ── Linear mapping — strictly no easing ──
+        const progress = Math.max(0, scrollY - THRESHOLD);
+        const ratio = Math.min(progress / COLLAPSE_RANGE, 1);
 
-        // translate3d: slide content upward (GPU-only, no layout)
-        wrapper.style.setProperty('--piston-ty', `${-ratio * 100}`);
-        // Height: shrink wrapper from full hero height → 0
-        // This is a single-element height change on a non-grid div,
-        // which is far cheaper than grid-template-rows reflow.
-        const visibleH = h * (1 - ratio);
-        wrapper.style.setProperty('--piston-h', `${visibleH}px`);
+        // Pixel offset: how many px to slide the hero upward.
+        // Math.round prevents sub-pixel jitter.
+        const offsetPx = Math.round(ratio * h);
+        const visiblePx = h - offsetPx;
+
+        // Direct style mutation — no CSS variables, no transitions
+        inner.style.transform = 'translate3d(0, -' + offsetPx + 'px, 0)';
+        wrapper.style.height = visiblePx + 'px';
       });
     };
 
-    // Initial position
+    // Initial position (handles mid-scroll page load)
     onScroll();
 
     scrollEl.addEventListener('scroll', onScroll, { passive: true });
@@ -152,29 +153,23 @@ export default function HeroPiston({ children }) {
         style={{ height: '1px', width: '100%', flexShrink: 0 }}
       />
 
-      {/* Wrapper: fixed-height container that shrinks via CSS variable.
-          overflow: hidden clips content as it translates upward.
-          will-change promotes both transform AND height to GPU. */}
+      {/* Wrapper: fixed-height container, overflow clips content.
+          Height set directly in px by scroll handler — no CSS variables.
+          No transition property — scroll IS the animation. */}
       <div
         ref={wrapperRef}
         style={{
           position: 'relative',
           zIndex: 1,
           overflow: 'hidden',
-          height: 'var(--piston-h, auto)',
-          willChange: 'transform, height',
-          // CSS variables initialized (overwritten by scroll handler)
-          '--piston-ty': '0',
-          '--piston-h': 'auto',
+          willChange: 'height',
         }}
       >
-        {/* Inner: the actual hero content.
-            translate3d for GPU-only upward movement.
-            No layout changes — pure compositor work. */}
+        {/* Inner: translate3d in pixels for GPU-only movement.
+            No transition — rAF drives position every frame. */}
         <div
           ref={innerRef}
           style={{
-            transform: 'translate3d(0, calc(var(--piston-ty) * 1%), 0)',
             willChange: 'transform',
             backfaceVisibility: 'hidden',
             WebkitBackfaceVisibility: 'hidden',
