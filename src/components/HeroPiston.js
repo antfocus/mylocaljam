@@ -103,6 +103,10 @@ export default function HeroPiston({ children }) {
     const COLLAPSE_RANGE    = 150; // px of scrolling over which collapse occurs
     const FALLBACK_THRESHOLD = 50; // px if no 2nd header exists
 
+    // ── Debug: log once on mount what the DOM actually sees ──
+    let debugLogCount = 0;
+    const DEBUG_MAX_LOGS = 5; // throttle to first 5 scroll frames
+
     // ── Scroll handler: rAF-throttled, zero React re-renders ──
     const onScroll = () => {
       if (rafPending.current) return;
@@ -114,16 +118,49 @@ export default function HeroPiston({ children }) {
         const scrollY = scrollEl.scrollTop;
 
         // ── Find the "tomorrow" gate ──
-        // Look for the 2nd [data-date-header] inside the scroll container.
+        // querySelectorAll on the scroll container for [data-date-header].
+        // getBoundingClientRect is used instead of offsetTop because
+        // sticky headers and nested positioned ancestors make offsetTop
+        // unreliable — BCR always gives viewport-relative coords.
         const headers = scrollEl.querySelectorAll('[data-date-header]');
+        const containerTop = scrollEl.getBoundingClientRect().top;
         let threshold;
+
         if (headers.length >= 2) {
-          // offsetTop is relative to offsetParent; we need distance from
-          // the top of the scroll container's content.
-          threshold = headers[1].offsetTop - SEARCH_BAR_BUFFER;
+          // Distance from the scroll container's visual top to the
+          // header's visual top, PLUS how far we've already scrolled.
+          // This gives us the header's position within the scrollable
+          // content — the "absolute" content offset.
+          const headerRect = headers[1].getBoundingClientRect();
+          threshold = (headerRect.top - containerTop) + scrollY - SEARCH_BAR_BUFFER;
+
+          // ── DEBUG ──
+          if (debugLogCount < DEBUG_MAX_LOGS) {
+            console.log(
+              '[HeroPiston] Found', headers.length, 'date headers.',
+              'Gate header:', headers[1].getAttribute('data-date-header'),
+              '| headerRect.top:', Math.round(headerRect.top),
+              '| containerTop:', Math.round(containerTop),
+              '| scrollY:', Math.round(scrollY),
+              '| threshold:', Math.round(threshold),
+              '| SEARCH_BAR_BUFFER:', SEARCH_BAR_BUFFER
+            );
+            debugLogCount++;
+          }
         } else {
-          // Fallback: few events, no 2nd header — use simple threshold
+          // Fallback: only 1 (or 0) headers — not enough for a gate
           threshold = FALLBACK_THRESHOLD;
+          if (debugLogCount < DEBUG_MAX_LOGS) {
+            console.warn(
+              '[HeroPiston] FALLBACK: Only', headers.length,
+              'date header(s) found inside scroll container.',
+              'Need >= 2 for tomorrow gate. Using default threshold:',
+              FALLBACK_THRESHOLD, 'px.',
+              'Selector: [data-date-header], container:', scrollEl.tagName,
+              scrollEl.className || '(no class)'
+            );
+            debugLogCount++;
+          }
         }
 
         // ── Gate: Hero stays fully open until threshold ──
