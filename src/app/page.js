@@ -2363,14 +2363,7 @@ export default function HomePage() {
           }}
         />
 
-        {/* ── Hero (home tab only) — hidden when searching or filtering ── */}
-        {/* HeroPiston wraps the Hero with a smooth scroll-collapse interaction. */}
-        {/* Staging only: in production, HeroPiston is a transparent passthrough. */}
-        {activeTab === 'home' && !hasActiveFilters && (
-          <HeroPiston scrollRef={homeScrollRef}>
-            <HeroSection events={heroEvents} isToday={heroIsToday} />
-          </HeroPiston>
-        )}
+        {/* ── Hero moved INSIDE scroll container (see below) ── */}
 
         {/* ── Saved view (Phase 2: Segmented — Saved Events | Following) ── */}
         {activeTab === 'saved' && (
@@ -2857,6 +2850,13 @@ export default function HomePage() {
         {/* ── Event list (home tab) ─────────────────────────────────────── */}
         {activeTab === 'home' && (
           <div ref={homeScrollRef} style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg, WebkitOverflowScrolling: 'touch' }}>
+            {/* ── Hero (inside scroll container) — IntersectionObserver drives collapse ── */}
+            {/* HeroPiston uses a sentinel + sticky positioning. No scrollRef needed. */}
+            {!hasActiveFilters && (
+              <HeroPiston>
+                <HeroSection events={heroEvents} isToday={heroIsToday} />
+              </HeroPiston>
+            )}
             {loading ? (
               <div style={{ textAlign: 'center', padding: '64px 0', color: t.textMuted, fontSize: '15px' }}>
                 Loading events…
