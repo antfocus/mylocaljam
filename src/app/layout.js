@@ -3,20 +3,29 @@ import { Suspense } from 'react';
 import PostHogProvider from '@/components/PostHogProvider';
 
 export const metadata = {
-  title: 'MyLocalJam — Live Music at the Jersey Shore',
-  description: 'Find live music events tonight at 20+ venues across Asbury Park, Belmar, Point Pleasant, and the Jersey Shore. Updated daily.',
+  title: 'My Local Jam',
+  description: 'Your local scene, all in one spot!',
   keywords: 'live music, jersey shore, asbury park, belmar, point pleasant, concerts, events tonight, local bands, NJ music',
   openGraph: {
-    title: 'MyLocalJam — Live Music at the Jersey Shore',
-    description: 'Find live music events tonight at 20+ venues across Asbury Park, Belmar, Point Pleasant, and the Jersey Shore.',
+    title: 'My Local Jam',
+    description: 'Your local scene, all in one spot!',
     type: 'website',
     url: 'https://mylocaljam.com',
-    siteName: 'MyLocalJam',
+    siteName: 'My Local Jam',
+    images: [
+      {
+        url: '/images/og-share.png',
+        width: 1200,
+        height: 630,
+        alt: 'My Local Jam — Your local scene, all in one spot!',
+      },
+    ],
   },
   twitter: {
-    card: 'summary',
-    title: 'MyLocalJam — Live Music at the Jersey Shore',
-    description: 'Find live music events tonight at 20+ venues along the Jersey Shore.',
+    card: 'summary_large_image',
+    title: 'My Local Jam',
+    description: 'Your local scene, all in one spot!',
+    images: ['/images/og-share.png'],
   },
   icons: {
     icon: '/favicon.ico',
