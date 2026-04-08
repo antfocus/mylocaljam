@@ -3,84 +3,54 @@
 import { useState, useEffect } from 'react';
 import ModalWrapper from '@/components/ui/ModalWrapper';
 
-const SESSION_KEY = 'hasSeenWelcomeNote';
-
 /**
- * BetaWelcome — Full-screen glassmorphism welcome overlay for the beta launch.
+ * BetaWelcome — Condensed mobile-first welcome overlay with versioned persistence.
  *
- * PRODUCTION VERSION (2026-04-08):
- *   - No staging gate. Runs in all environments.
- *   - z-index 9999 to guarantee it's above all app layers.
- *   - sessionStorage: appears once per browser session. Closing the tab
- *     or logging out resets it so it appears again on next visit.
- *   - Clicking "Let's Jam" hides it for the rest of that session.
+ * VERSIONED PERSISTENCE (2026-04-08):
+ *   - Uses localStorage with a versioned key: `hasSeenWelcome_v1`.
+ *   - Bump the version number to re-show after major updates.
+ *   - Survives logout/login cycles (localStorage, not sessionStorage).
+ *   - Only dismissed via the "Let's Jam" button — backdrop click and
+ *     Escape key do NOT close it (pass no-op to ModalWrapper).
  *
  * UI:
- *   Matches the Help & Feedback modal — dark rounded container,
- *   DM Sans / Outfit fonts, Material Design inline SVG icons (no emojis).
- *   Uses ModalWrapper for backdrop-blur, scroll-lock, escape-to-dismiss.
+ *   - Condensed copy, vibrant emoji icon wrappers with tinted backgrounds.
+ *   - Dark theme, DM Sans / Outfit fonts, brand orange CTA.
+ *   - z-index 9999 (above all app layers).
  */
 
-// ── Inline SVG Icons (exact copies from the codebase) ──────────────────────
+const WELCOME_KEY = 'hasSeenWelcome_v1';
 
-function SearchIcon({ color }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={color} />
-    </svg>
-  );
-}
-
-function FollowIcon({ color }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <circle cx="12" cy="12" r="9" stroke={color} strokeWidth="1.8" fill="none" />
-      <line x1="12" y1="8" x2="12" y2="16" stroke={color} strokeWidth="2" strokeLinecap="round" />
-      <line x1="8" y1="12" x2="16" y2="12" stroke={color} strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ShareIcon({ color }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill={color} />
-    </svg>
-  );
-}
-
-function FeedbackIcon({ color }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-      <path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z" fill={color} />
-    </svg>
-  );
-}
-
-// ── Component ──────────────────────────────────────────────────────────────
+// ── Feature list with emoji color mapping ──
+const FEATURES = [
+  { emoji: '\uD83D\uDD0D', label: 'Discover', desc: 'Find live music, trivia, and specials happening near you.', tint: 'rgba(232, 114, 42, 0.15)' },         // orange
+  { emoji: '\u2795',       label: 'Follow',   desc: 'Save favorite venues and artists for gig reminders.', tint: 'rgba(58, 173, 160, 0.15)' },                  // green/teal
+  { emoji: '\uD83D\uDCE4', label: 'Share',    desc: 'Easily coordinate your night with friends.', tint: 'rgba(96, 165, 250, 0.15)' },                           // blue
+  { emoji: '\uD83D\uDCAC', label: 'Feedback', desc: 'Under the Help & Feedback section in your profile.', tint: 'rgba(250, 204, 21, 0.15)' },                   // gold
+];
 
 export default function BetaWelcome() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
     try {
-      if (sessionStorage.getItem(SESSION_KEY) !== 'true') {
+      if (localStorage.getItem(WELCOME_KEY) !== 'true') {
         setShow(true);
       }
     } catch {
-      // Private browsing or storage blocked — show once, won't persist
+      // Storage blocked — show once, won't persist
       setShow(true);
     }
   }, []);
 
   function handleDismiss() {
     setShow(false);
-    try { sessionStorage.setItem(SESSION_KEY, 'true'); } catch {}
+    try { localStorage.setItem(WELCOME_KEY, 'true'); } catch {}
   }
 
   if (!show) return null;
 
-  // ── Theme tokens (dark-only, matches Help & Feedback / SupportModal) ──
+  // ── Theme tokens ──
   const surface   = '#1A1A24';
   const border    = '#2A2A3A';
   const text      = '#F0F0F5';
@@ -88,18 +58,10 @@ export default function BetaWelcome() {
   const featureBg = '#22222E';
   const accent    = '#E8722A';
   const teal      = '#3AADA0';
-  const iconColor = '#9898B8';
-
-  const features = [
-    { Icon: SearchIcon,   label: 'Discover', desc: 'Find live music, trivia, and specials happening near you.' },
-    { Icon: FollowIcon,   label: 'Follow',   desc: 'Save favorite venues and artists for gig reminders and notifications.' },
-    { Icon: ShareIcon,    label: 'Share',    desc: 'Easily send event details to friends to coordinate your night out.' },
-    { Icon: FeedbackIcon, label: 'Feedback', desc: "I\u2019m still learning! If you see a missing venue or have an idea, head to the Help & Feedback section under your Profile tab and let me know." },
-  ];
 
   return (
     <ModalWrapper
-      onClose={handleDismiss}
+      onClose={() => {}} /* No-op: backdrop click and Escape do NOT dismiss */
       zIndex={9999}
       blur={12}
       overlayBg="rgba(0,0,0,0.55)"
@@ -129,7 +91,7 @@ export default function BetaWelcome() {
         maxHeight: 'calc(90vh - 4px)',
         WebkitOverflowScrolling: 'touch',
       }}>
-        {/* Title */}
+        {/* Header: branded wordmark + tagline */}
         <h2 style={{
           margin: '0 0 4px',
           fontSize: '22px',
@@ -138,78 +100,64 @@ export default function BetaWelcome() {
           lineHeight: 1.3,
         }}>
           <span style={{ color: text }}>my</span>
-          <span style={{ color: accent }}>Local</span>
-          <span style={{ color: teal }}>Jam</span>
+          <span style={{ color: accent }}>local</span>
+          <span style={{ color: teal }}>jam</span>
+          <span style={{ color: muted, fontWeight: 400, fontSize: '14px' }}>
+            {': '}
+          </span>
+          <span style={{ color: text, fontWeight: 400, fontSize: '14px', fontFamily: "'DM Sans', sans-serif" }}>
+            Your local scene, all in one spot.
+          </span>
         </h2>
-        <p style={{
-          margin: '0 0 18px',
-          fontSize: '13px',
-          fontWeight: 600,
-          fontFamily: "'DM Sans', sans-serif",
-          color: muted,
-        }}>
-          Your local scene, all in one spot.
-        </p>
 
         {/* Beta badge */}
         <div style={{
           display: 'inline-block',
-          padding: '3px 10px',
+          padding: '4px 12px',
           borderRadius: '100px',
           background: 'rgba(232, 114, 42, 0.15)',
           color: accent,
           fontSize: '11px',
-          fontWeight: 700,
+          fontWeight: 800,
           fontFamily: "'DM Sans', sans-serif",
-          letterSpacing: '0.5px',
+          letterSpacing: '1px',
+          marginTop: '12px',
           marginBottom: '16px',
+          border: '1px solid rgba(232, 114, 42, 0.3)',
         }}>
           OFFICIALLY IN BETA
         </div>
 
-        {/* Intro */}
+        {/* Body — personal story */}
         <p style={{
-          margin: '0 0 14px',
-          fontSize: '14px',
+          margin: '0 0 12px',
+          fontSize: '13.5px',
           fontFamily: "'DM Sans', sans-serif",
           color: text,
-          lineHeight: 1.6,
+          lineHeight: 1.65,
         }}>
-          Thanks for being an early user and for supporting the local scene.
+          Thank you for being an early supporter. I built this platform because I was frustrated with having to search multiple sites just to find out what was going on. I wanted to bring the entire scene together in one spot, so you never have to miss out on what{'\u2019'}s happening locally.
         </p>
 
-        {/* The Story */}
+        {/* Territory */}
         <p style={{
-          margin: '0 0 14px',
+          margin: '0 0 18px',
           fontSize: '13px',
           fontFamily: "'DM Sans', sans-serif",
           color: muted,
           lineHeight: 1.65,
         }}>
-          <strong style={{ color: text, fontWeight: 700 }}>The Story:</strong>{' '}
-          I was frustrated with how hard it was to keep track of everything going on around town, so I decided to do something about it. I built mylocaljam to bring the whole scene into one place, letting you spend less time searching and more time out on the town.
+          Right now, I am focused on the Jersey Shore{'\u2014'}specifically serving Monmouth and Ocean County. As we find our rhythm and grow, I{'\u2019'}ll be expanding!
         </p>
 
-        {/* The Territory */}
-        <p style={{
-          margin: '0 0 20px',
-          fontSize: '13px',
-          fontFamily: "'DM Sans', sans-serif",
-          color: muted,
-          lineHeight: 1.65,
-        }}>
-          <strong style={{ color: text, fontWeight: 700 }}>The Territory:</strong>{' '}
-          {"Right now, I am focused on the Jersey Shore, specifically serving Monmouth and Ocean County. As we find our rhythm and grow, I\u2019ll be expanding into new territories."}
-        </p>
-
-        {/* Quick Features — with real SVG icons */}
+        {/* ── Color Boost Feature List ── */}
         <div style={{
           display: 'flex',
           flexDirection: 'column',
           gap: '8px',
           marginBottom: '20px',
         }}>
-          {features.map(({ Icon, label, desc }) => (
+          {FEATURES.map(({ emoji, label, desc, tint }) => (
             <div key={label} style={{
               display: 'flex',
               gap: '12px',
@@ -218,10 +166,22 @@ export default function BetaWelcome() {
               borderRadius: '10px',
               background: featureBg,
             }}>
-              <div style={{ marginTop: '1px' }}>
-                <Icon color={iconColor} />
+              {/* Emoji icon wrapper — tinted background matching emoji vibe */}
+              <div style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '6px',
+                background: tint,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                fontSize: '16px',
+                lineHeight: 1,
+              }}>
+                {emoji}
               </div>
-              <div style={{ lineHeight: 1.5 }}>
+              <div style={{ lineHeight: 1.5, flex: 1, minWidth: 0 }}>
                 <span style={{
                   fontSize: '13px',
                   fontWeight: 700,
@@ -238,18 +198,7 @@ export default function BetaWelcome() {
           ))}
         </div>
 
-        {/* Sign-off */}
-        <p style={{
-          margin: '0 0 20px',
-          fontSize: '14px',
-          fontWeight: 600,
-          fontFamily: "'DM Sans', sans-serif",
-          color: teal,
-        }}>
-          See you out there!
-        </p>
-
-        {/* CTA Button */}
+        {/* CTA Button — only way to dismiss */}
         <button
           onClick={handleDismiss}
           style={{
@@ -265,9 +214,10 @@ export default function BetaWelcome() {
             fontFamily: "'DM Sans', sans-serif",
             cursor: 'pointer',
             letterSpacing: '0.3px',
+            WebkitTapHighlightColor: 'transparent',
           }}
         >
-          {"Let\u2019s Jam"}
+          Let{'\u2019'}s Jam
         </button>
       </div>
     </ModalWrapper>
