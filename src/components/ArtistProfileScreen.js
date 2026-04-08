@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 const BRAND_ORANGE = '#E8722A';
 
 export default function ArtistProfileScreen({
@@ -57,6 +57,73 @@ export default function ArtistProfileScreen({
   const textMuted    = darkMode ? '#8A8AA8' : '#6B7280';
   const sectionTitle = darkMode ? '#7878A0' : '#6B7280';
 
+  // ── Swipe-to-back gesture ────────────────────────────────────────────────
+  // Swipe right (L→R) to trigger onBack. Live translateX tracks the thumb.
+  const SWIPE_THRESHOLD = 75;      // px — minimum dx to trigger back
+  const containerRef = useRef(null);
+  const swipeRef = useRef(null);    // { startX, startY, tracking }
+
+  const handleTouchStart = useCallback((e) => {
+    swipeRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+      tracking: false, // will lock to horizontal once we confirm direction
+    };
+    // Reset any lingering transform
+    if (containerRef.current) {
+      containerRef.current.style.transition = 'none';
+      containerRef.current.style.transform = 'translateX(0)';
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((e) => {
+    if (!swipeRef.current) return;
+    const dx = e.touches[0].clientX - swipeRef.current.startX;
+    const dy = e.touches[0].clientY - swipeRef.current.startY;
+
+    // On first significant move, decide: horizontal or vertical?
+    if (!swipeRef.current.tracking) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; // too small, wait
+      if (Math.abs(dy) > Math.abs(dx)) {
+        // Vertical — abort swipe tracking, let normal scroll happen
+        swipeRef.current = null;
+        return;
+      }
+      swipeRef.current.tracking = true;
+    }
+
+    // Only track rightward movement (dx > 0). Clamp so it can't go left.
+    const offset = Math.max(0, dx);
+    if (containerRef.current) {
+      containerRef.current.style.transform = `translateX(${offset}px)`;
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback((e) => {
+    if (!swipeRef.current || !swipeRef.current.tracking) {
+      swipeRef.current = null;
+      return;
+    }
+    const dx = e.changedTouches[0].clientX - swipeRef.current.startX;
+    swipeRef.current = null;
+
+    if (dx > SWIPE_THRESHOLD) {
+      // Animate off-screen to the right, then trigger back
+      if (containerRef.current) {
+        containerRef.current.style.transition = 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)';
+        containerRef.current.style.transform = 'translateX(100%)';
+      }
+      // Call onBack after the exit animation
+      setTimeout(() => { onBack?.(); }, 200);
+    } else {
+      // Snap back to original position
+      if (containerRef.current) {
+        containerRef.current.style.transition = 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
+        containerRef.current.style.transform = 'translateX(0)';
+      }
+    }
+  }, [onBack]);
+
   // Follow / unfollow with confirmation
   const handleFollowToggle = () => {
     if (isFollowed) {
@@ -68,13 +135,21 @@ export default function ArtistProfileScreen({
   };
 
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      zIndex: 200, background: bgColor,
-      display: 'flex', flexDirection: 'column',
-      overflowY: 'auto',
-      maxWidth: '480px', margin: '0 auto',
-    }}>
+    <div
+      ref={containerRef}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={{
+        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+        zIndex: 200, background: bgColor,
+        display: 'flex', flexDirection: 'column',
+        overflowY: 'auto',
+        maxWidth: '480px', margin: '0 auto',
+        touchAction: 'pan-y',
+        willChange: 'transform',
+      }}
+    >
       {/* ── 1. Hero Header (only if image exists) ─────────────────────── */}
       {imageUrl ? (
         <div style={{ position: 'relative', width: '100%', height: '300px', flexShrink: 0 }}>
