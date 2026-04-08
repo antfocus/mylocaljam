@@ -1924,8 +1924,23 @@ export default function HomePage() {
                   background: darkMode ? '#262636' : '#FFFFFF',
                   borderRadius: '12px 12px 0 0',
                 }}>
-                  {/* Top row: Close X (right-aligned) */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                  {/* Top row: Clear All (left) + Close X (right) */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <button onClick={clearAllFilters} style={{
+                      background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0',
+                      fontSize: '12px', fontWeight: 600,
+                      color: darkMode ? '#C0C0D0' : '#6B7280',
+                      fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.3px',
+                      textDecoration: 'underline', textUnderlineOffset: '2px',
+                      display: 'inline-flex', alignItems: 'center', gap: '3px',
+                      opacity: hasActiveFilters ? 1 : 0.5,
+                    }}>
+                      {/* Material: restart_alt */}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                        <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor" />
+                      </svg>
+                      Clear All
+                    </button>
                     <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                       background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2072,20 +2087,34 @@ export default function HomePage() {
                   })}
                 </div>
 
-                {/* 1. WHERE section — always expanded */}
+                {/* 1. WHERE card — Blue accent (#E8722A) */}
                 <div style={{
-                  background: darkMode ? '#262636' : '#FFFFFF',
-                  borderTop: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  background: activeFilterCard === 'distance'
+                    ? (darkMode ? '#2A1E14' : '#FFF8F3')
+                    : (darkMode ? '#262636' : '#FFFFFF'),
+                  border: activeFilterCard === 'distance'
+                    ? `1.5px solid ${darkMode ? '#E8722A80' : '#E8722A'}`
+                    : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  borderRadius: activeFilterCard === 'distance' ? '10px' : '0',
+                  margin: activeFilterCard === 'distance' ? '4px 6px' : '0',
+                  transition: 'all 0.2s ease',
                   colorScheme: darkMode ? 'dark' : 'light',
                 }}>
-                  {/* Section header (non-clickable) */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', padding: '10px 12px', gap: '8px',
+                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'distance' ? null : 'distance')} style={{
+                    display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
                     <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={milesRadius !== null ? '#E8722A' : t.textMuted} /></svg>
-                    <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: milesRadius !== null ? '#E8722A' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1 }}>Where</div>
-                  </div>
-                  <div style={{ padding: '0 12px 10px', position: 'relative' }}>
+                    <div style={{ flex: 1, textAlign: 'left' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: milesRadius !== null ? '#E8722A' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Where</div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>
+                        {milesRadius !== null ? `Within ${milesRadius} miles` : 'Any distance'}
+                      </div>
+                    </div>
+                    <svg width="12" height="12" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={milesRadius !== null ? '#E8722A' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
+                  </button>
+                  {activeFilterCard === 'distance' && (
+                    <div style={{ padding: '0 12px 10px', position: 'relative' }}>
                       {/* Location input with crosshairs GPS button */}
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: '8px',
@@ -2205,21 +2234,35 @@ export default function HomePage() {
                         </div>
                       )}
                     </div>
+                  )}
                 </div>
 
-                {/* 2. WHEN section — always expanded */}
+                {/* 2. WHEN card — Green accent (#E8722A) */}
                 <div style={{
-                  background: darkMode ? '#262636' : '#FFFFFF',
-                  borderTop: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  background: activeFilterCard === 'when'
+                    ? (darkMode ? '#2A1E14' : '#FFF8F3')
+                    : (darkMode ? '#262636' : '#FFFFFF'),
+                  border: activeFilterCard === 'when'
+                    ? `1.5px solid ${darkMode ? '#E8722A80' : '#E8722A'}`
+                    : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  borderRadius: activeFilterCard === 'when' ? '10px' : '0',
+                  margin: activeFilterCard === 'when' ? '4px 6px' : '0',
+                  transition: 'all 0.2s ease',
                 }}>
-                  {/* Section header (non-clickable) */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', padding: '10px 12px', gap: '8px',
+                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'when' ? null : 'when')} style={{
+                    display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
+                    {/* Material: calendar_month */}
                     <svg width="18" height="18" viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z" fill={dateKey !== 'all' ? '#E8722A' : t.textMuted} /></svg>
-                    <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: dateKey !== 'all' ? '#E8722A' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1 }}>When</div>
-                  </div>
-                  <div style={{ padding: '0 12px 8px 12px' }}>
+                    <div style={{ flex: 1, textAlign: 'left' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: dateKey !== 'all' ? '#E8722A' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>When</div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{whenLabel}</div>
+                    </div>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'when' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={dateKey !== 'all' ? '#E8722A' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
+                  </button>
+                  {activeFilterCard === 'when' && (
+                    <div style={{ padding: '0 12px 8px 12px' }}>
                       {/* Row 1: Quick-select pills — forced single line */}
                       <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px' }}>
                         {DATE_OPTIONS.filter(o => o.key !== 'pick').map(opt => (
@@ -2285,26 +2328,16 @@ export default function HomePage() {
                         />
                       </div>
                     </div>
+                  )}
                 </div>
 
-                {/* Action bar — Clear All link + Show events CTA */}
+                {/* Action bar — Show events CTA */}
                 <div style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px',
-                  padding: '10px 12px', background: darkMode ? '#262636' : '#FFFFFF',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: '8px 12px', background: darkMode ? '#262636' : '#FFFFFF',
                   borderTop: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
                   borderRadius: '0 0 12px 12px',
                 }}>
-                  {/* Clear All — subtle muted text link */}
-                  <button onClick={clearAllFilters} style={{
-                    background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0',
-                    fontSize: '12px', fontWeight: 500,
-                    color: darkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF',
-                    fontFamily: "'DM Sans', sans-serif",
-                    opacity: hasActiveFilters ? 1 : 0.4,
-                    transition: 'opacity 0.15s',
-                  }}>
-                    Clear All Filters
-                  </button>
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                     padding: '10px 24px', borderRadius: '10px', border: 'none',
                     background: t.accent, color: '#1C1917', cursor: 'pointer',
