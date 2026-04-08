@@ -2367,7 +2367,11 @@ export default function HomePage() {
 
         {/* ── Saved view (Phase 2: Segmented — Saved Events | Following) ── */}
         {activeTab === 'saved' && (
-          <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg }}>
+          <div
+            onTouchStart={handleSavedTouchStart}
+            onTouchEnd={handleSavedTouchEnd}
+            style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg, touchAction: 'pan-y' }}
+          >
             {/* Segmented control toggle */}
             <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '24px' }}>
               <div style={{
@@ -2375,10 +2379,10 @@ export default function HomePage() {
                 display: 'flex',
                 width: '90%',
                 maxWidth: '400px',
-                background: 'rgba(255, 255, 255, 0.05)',
+                background: darkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)',
                 backdropFilter: 'blur(12px)',
                 WebkitBackdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                border: `1px solid ${darkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)'}`,
                 borderRadius: '100px',
                 padding: '4px',
               }}>
@@ -2406,7 +2410,9 @@ export default function HomePage() {
                     border: 'none',
                     cursor: 'pointer',
                     padding: '10px 0',
-                    color: savedSegment === seg.key ? '#1C1917' : 'rgba(255,255,255,0.85)',
+                    color: savedSegment === seg.key
+                      ? '#1C1917'
+                      : darkMode ? 'rgba(255,255,255,0.85)' : '#4B5563',
                     fontSize: '16px',
                     fontWeight: 700,
                     fontFamily: "'DM Sans', sans-serif",
@@ -2419,12 +2425,8 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Swipeable content area */}
-            <div
-              onTouchStart={handleSavedTouchStart}
-              onTouchEnd={handleSavedTouchEnd}
-              style={{ flex: 1, transition: 'opacity 0.2s ease' }}
-            >
+            {/* Content area — swipe handled by outer scroll container */}
+            <div style={{ flex: 1, transition: 'opacity 0.2s ease' }}>
 
             {/* View A: Saved Events */}
             {savedSegment === 'events' && (() => {
