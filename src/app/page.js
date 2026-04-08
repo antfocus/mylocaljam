@@ -3039,7 +3039,7 @@ export default function HomePage() {
       <BetaWelcome />
 
       {/* ── Artist Spotlight Overlay (detached from HeroSection, z-9000) ── */}
-      <ArtistSpotlight event={spotlightEvent} onClose={() => setSpotlightEvent(null)} />
+      <ArtistSpotlight event={spotlightEvent} onClose={() => setSpotlightEvent(null)} darkMode={darkMode} />
 
       {/* ── Auth Modal ──────────────────────────────────────────────────── */}
       {showAuthModal && (
