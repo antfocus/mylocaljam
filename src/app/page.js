@@ -7,6 +7,7 @@ import { getVenueColor, groupEventsByDate } from '@/lib/utils';
 import { requestNotificationPermission, scheduleReminder, cancelReminder, rehydrateReminders, notificationsGranted } from '@/lib/notifications';
 
 import HeroSection       from '@/components/HeroSection';
+import HeroPiston        from '@/components/HeroPiston';
 import EventCardV2       from '@/components/EventCardV2';
 import SavedGigCard      from '@/components/SavedGigCard';
 import MapView           from '@/components/MapView';
@@ -17,6 +18,7 @@ import Toast             from '@/components/Toast';
 import FollowingTab      from '@/components/FollowingTab';
 import ArtistProfileScreen from '@/components/ArtistProfileScreen';
 import SupportModal      from '@/components/SupportModal';
+import BetaWelcome       from '@/components/BetaWelcome';
 import ModalWrapper      from '@/components/ui/ModalWrapper';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -2362,8 +2364,12 @@ export default function HomePage() {
         />
 
         {/* ── Hero (home tab only) — hidden when searching or filtering ── */}
+        {/* HeroPiston wraps the Hero with a smooth scroll-collapse interaction. */}
+        {/* Staging only: in production, HeroPiston is a transparent passthrough. */}
         {activeTab === 'home' && !hasActiveFilters && (
-          <HeroSection events={heroEvents} isToday={heroIsToday} />
+          <HeroPiston scrollRef={homeScrollRef}>
+            <HeroSection events={heroEvents} isToday={heroIsToday} />
+          </HeroPiston>
         )}
 
         {/* ── Saved view (Phase 2: Segmented — Saved Events | Following) ── */}
@@ -3024,6 +3030,9 @@ export default function HomePage() {
           }}
         />
       )}
+
+      {/* ── Beta Welcome Overlay (first-visit only, localStorage-gated) ── */}
+      <BetaWelcome />
 
       {/* ── Auth Modal ──────────────────────────────────────────────────── */}
       {showAuthModal && (
