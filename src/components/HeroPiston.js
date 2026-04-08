@@ -74,11 +74,13 @@ export default function HeroPiston({ children }) {
   const innerRef = useRef(null);
   const heroHeight = useRef(0);
   const rafPending = useRef(false);
+  const hudRef = useRef(null);       // ◆ DIAGNOSTIC HUD
 
   useEffect(() => {
     const anchor = anchorRef.current;
     const wrapper = wrapperRef.current;
     const inner = innerRef.current;
+    const hud = hudRef.current;
     if (!anchor || !wrapper || !inner) return;
 
     // ── Constants ──
@@ -99,10 +101,14 @@ export default function HeroPiston({ children }) {
     if (!scrollEl) return;
 
     // ── Disable browser scroll anchoring on the wrapper ──
-    // When the wrapper height shrinks, the browser may "help" by
-    // adjusting scrollTop to keep content in place. This fights
-    // our manual tracking and causes the late-stage speed-up / jump.
     wrapper.style.overflowAnchor = 'none';
+
+    // ── Also disable on the scroll container itself ──
+    // The browser may anchor on elements INSIDE the scroller
+    // (like sticky date headers) when the hero shrinks. This
+    // causes it to bump scrollTop upward to "keep them in place,"
+    // which our handler then reads as extra scroll → speed-up.
+    scrollEl.style.overflowAnchor = 'none';
 
     // ── Scroll handler: rAF-throttled, zero React re-renders ──
     const onScroll = () => {
@@ -116,20 +122,41 @@ export default function HeroPiston({ children }) {
         const h = heroHeight.current;
         if (h <= 0) return;
 
+        let moveY = 0;
+
         // ── Below threshold: fully open ──
         if (scrollY <= THRESHOLD) {
           wrapper.style.height = h + 'px';
           inner.style.transform = 'translate3d(0, 0px, 0)';
-          return;
+        } else {
+          // ── True 1:1 pixel mapping ──
+          moveY = Math.min(scrollY - THRESHOLD, h);
+          inner.style.transform = 'translate3d(0, ' + (-moveY) + 'px, 0)';
+          wrapper.style.height = (h - moveY) + 'px';
         }
 
-        // ── True 1:1 pixel mapping — no ratio, no multiplication ──
-        // moveY is clamped between 0 and heroHeight.
-        // 1px of scroll past threshold = 1px of hero movement.
-        const moveY = Math.min(scrollY - THRESHOLD, h);
+        // ◆ DIAGNOSTIC: Update HUD
+        if (hud) {
+          const pct = h > 0 ? ((moveY / h) * 100).toFixed(1) : '0.0';
+          hud.textContent =
+            'scrollTop: ' + Math.round(scrollY) +
+            '\nmoveY: ' + moveY + ' / ' + h +
+            '\nwrapH: ' + (h - moveY) +
+            '\nprogress: ' + pct + '%' +
+            '\nscrollH: ' + scrollEl.scrollHeight +
+            '\nclientH: ' + scrollEl.clientHeight;
+        }
 
-        inner.style.transform = 'translate3d(0, ' + (-moveY) + 'px, 0)';
-        wrapper.style.height = (h - moveY) + 'px';
+        // ◆ DIAGNOSTIC: Log final 20% (80-100%) of collapse
+        if (moveY > h * 0.8 && moveY < h) {
+          console.log(
+            '[Piston 80-100%] scrollTop:', Math.round(scrollY),
+            '| moveY:', moveY, '/', h,
+            '| wrapH:', (h - moveY),
+            '| scrollH:', scrollEl.scrollHeight,
+            '| delta:', Math.round(scrollY) - THRESHOLD - moveY
+          );
+        }
       });
     };
 
@@ -147,6 +174,29 @@ export default function HeroPiston({ children }) {
 
   return (
     <>
+      {/* ◆ DIAGNOSTIC HUD — fixed overlay, top-right */}
+      <div
+        ref={hudRef}
+        style={{
+          position: 'fixed',
+          top: 'calc(10px + env(safe-area-inset-top))',
+          right: '10px',
+          zIndex: 99999,
+          background: 'rgba(0,0,0,0.85)',
+          color: '#00FF88',
+          fontFamily: 'monospace',
+          fontSize: '10px',
+          lineHeight: 1.5,
+          padding: '6px 10px',
+          borderRadius: '6px',
+          pointerEvents: 'none',
+          whiteSpace: 'pre',
+          minWidth: '160px',
+        }}
+      >
+        scrollTop: --{'\n'}moveY: -- / --{'\n'}wrapH: --{'\n'}progress: --%
+      </div>
+
       {/* Anchor: 1px div for getScrollParent() traversal */}
       <div
         ref={anchorRef}
@@ -154,9 +204,7 @@ export default function HeroPiston({ children }) {
         style={{ height: '1px', width: '100%', flexShrink: 0 }}
       />
 
-      {/* Wrapper: fixed-height container, overflow clips content.
-          Height set directly in px by scroll handler — no CSS variables.
-          No transition property — scroll IS the animation. */}
+      {/* Wrapper: ◆ RED debug border */}
       <div
         ref={wrapperRef}
         style={{
@@ -164,16 +212,17 @@ export default function HeroPiston({ children }) {
           zIndex: 1,
           overflow: 'hidden',
           willChange: 'height',
+          border: '2px solid #FF0000',  /* ◆ DEBUG — red = wrapper bounds */
         }}
       >
-        {/* Inner: translate3d in pixels for GPU-only movement.
-            No transition — rAF drives position every frame. */}
+        {/* Inner: ◆ BLUE debug border */}
         <div
           ref={innerRef}
           style={{
             willChange: 'transform',
             backfaceVisibility: 'hidden',
             WebkitBackfaceVisibility: 'hidden',
+            border: '2px solid #0088FF',  /* ◆ DEBUG — blue = inner content bounds */
           }}
         >
           <HeroContent>{children}</HeroContent>
