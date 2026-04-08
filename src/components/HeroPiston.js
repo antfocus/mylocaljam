@@ -6,28 +6,37 @@ import { useEffect, useRef, memo } from 'react';
  * HeroPiston — Direct scroll-synced "piston" collapse for the Hero.
  *
  * ═══════════════════════════════════════════════════════════════════
- *  STICKY-ANCHOR GATED VERSION (2026-04-08)
+ *  STABILITY-FIRST VERSION (2026-04-08)
  *
- *  The Hero stays locked at 100% until the "Tomorrow" date header
- *  reaches the top of the screen. Then it collapses proportionally
- *  over 200px of scrolling with zero layout shift.
+ *  Previous versions used grid-template-rows to reclaim vertical
+ *  space as the Hero collapsed. This caused layout shifts: the
+ *  total scrollable height changed mid-scroll, the browser
+ *  compensated by adjusting scrollTop, and the page "jumped."
  *
- *  Key fixes over previous versions:
- *    - thresholdRef: The "Tomorrow" header's content-space position
- *      is measured ONCE and locked. This prevents the threshold from
- *      drifting as the Hero shrinks (which caused the "jump").
- *    - null fallback: If < 2 headers exist (data still loading, or
- *      only one day of events), threshold stays null → Hero stays
- *      100% open. No more 50px default causing premature collapse.
- *    - getBoundingClientRect + scrollTop: Produces a fixed "mile
- *      marker" in scroll-content space that doesn't shift with
- *      sticky positioning or nested offsetParents.
- *    - will-change on grid wrapper: Promotes the grid-template-rows
- *      animation to the GPU compositor layer.
+ *  This version uses a fundamentally different approach:
+ *    - The Hero wrapper has a FIXED height (measured once on mount).
+ *    - Collapse is purely visual: translate3d moves the content
+ *      upward and a clip (overflow: hidden) hides it.
+ *    - The wrapper's height animates with a CSS variable so content
+ *      below can reclaim space WITHOUT reflowing.
+ *    - Because translate3d is compositor-only and the height is
+ *      driven by a CSS variable on a single element, this avoids
+ *      the multi-element reflow that caused the jump.
  *
- *  CSS variable contract (unchanged):
- *    --piston-ty:    -ratio * 100  (% for translateY)
- *    --piston-rows:   1 - ratio    (fr for grid row)
+ *  Scroll behavior:
+ *    - 0–100px: Hero stays fully visible (premium delay).
+ *    - 100–300px: Hero slides up proportionally (200px range).
+ *    - 300px+: Hero fully hidden, 0px tall.
+ *    - Scroll back: tracks back identically.
+ *
+ *  Performance:
+ *    - Zero React re-renders (ref + CSS variable injection only)
+ *    - rAF throttle — max one DOM write per frame
+ *    - translate3d — GPU compositor layer, no layout/paint
+ *    - will-change: transform, height for compositor promotion
+ *
+ *  CSS variable contract:
+ *    --piston-ty:  0 → -100  (used in translate3d Y%)
  *
  * Props:
  *   children — The <HeroSection /> component
@@ -62,35 +71,32 @@ HeroContent.displayName = 'HeroContent';
 
 export default function HeroPiston({ children }) {
   const anchorRef = useRef(null);
-  const gridRef = useRef(null);
+  const wrapperRef = useRef(null);
   const innerRef = useRef(null);
   const heroHeight = useRef(0);
   const rafPending = useRef(false);
-  const thresholdRef = useRef(null); // locked "mile marker" — null until measured
 
   useEffect(() => {
     const anchor = anchorRef.current;
-    const grid = gridRef.current;
+    const wrapper = wrapperRef.current;
     const inner = innerRef.current;
-    if (!anchor || !grid || !inner) return;
+    if (!anchor || !wrapper || !inner) return;
 
-    // ── Measure hero height ──
+    // ── Constants ──
+    const THRESHOLD      = 100; // px of free scroll before collapse starts
+    const COLLAPSE_RANGE = 200; // px of scrolling over which collapse occurs
+
+    // ── Measure hero height and set the fixed wrapper height ──
     const measure = () => {
-      heroHeight.current = inner.scrollHeight || 260;
+      const h = inner.scrollHeight || 260;
+      heroHeight.current = h;
+      wrapper.style.setProperty('--piston-h', `${h}px`);
     };
     measure();
 
     // ── Find scroll container ──
     const scrollEl = getScrollParent(anchor);
     if (!scrollEl) return;
-
-    // ── Constants ──
-    const SEARCH_BAR_BUFFER = 80;  // px reserved for search bar / sticky chrome
-    const COLLAPSE_RANGE    = 200; // px of scrolling over which collapse occurs
-
-    // ── Debug throttle ──
-    let debugLogCount = 0;
-    const DEBUG_MAX_LOGS = 5;
 
     // ── Scroll handler: rAF-throttled, zero React re-renders ──
     const onScroll = () => {
@@ -101,80 +107,39 @@ export default function HeroPiston({ children }) {
         rafPending.current = false;
 
         const scrollY = scrollEl.scrollTop;
+        const h = heroHeight.current;
+        if (h <= 0) return;
 
-        // ── Try to lock the threshold if we haven't yet ──
-        if (thresholdRef.current === null) {
-          const headers = scrollEl.querySelectorAll('[data-date-header]');
-
-          if (headers.length >= 2) {
-            // Fixed "mile marker": the header's visual position in
-            // viewport space, converted to content-space by adding
-            // how far the container has already scrolled.
-            // This value is constant — it doesn't shift when the Hero
-            // shrinks because it was measured BEFORE any collapse.
-            const headerTop = headers[1].getBoundingClientRect().top;
-            const milestone = headerTop + scrollY - SEARCH_BAR_BUFFER;
-            thresholdRef.current = milestone;
-
-            if (debugLogCount < DEBUG_MAX_LOGS) {
-              console.log(
-                '[HeroPiston] Threshold LOCKED.',
-                'Headers found:', headers.length,
-                '| Gate header:', headers[1].getAttribute('data-date-header'),
-                '| headerTop (viewport):', Math.round(headerTop),
-                '| scrollY:', Math.round(scrollY),
-                '| milestone:', Math.round(milestone)
-              );
-              debugLogCount++;
-            }
-          } else {
-            // Not enough headers yet — Hero stays fully open.
-            if (debugLogCount < DEBUG_MAX_LOGS) {
-              console.warn(
-                '[HeroPiston] Waiting for 2nd date header. Found:',
-                headers.length,
-                '| Container:', scrollEl.tagName,
-                scrollEl.className || '(no class)',
-                '| Hero stays 100% open.'
-              );
-              debugLogCount++;
-            }
-            grid.style.setProperty('--piston-ty', '0');
-            grid.style.setProperty('--piston-rows', '1fr');
-            return;
-          }
-        }
-
-        // ── Gate: Hero stays fully open until threshold ──
-        const threshold = thresholdRef.current;
-        if (scrollY < threshold) {
-          grid.style.setProperty('--piston-ty', '0');
-          grid.style.setProperty('--piston-rows', '1fr');
+        // ── Below threshold: fully open ──
+        if (scrollY <= THRESHOLD) {
+          wrapper.style.setProperty('--piston-ty', '0');
+          wrapper.style.setProperty('--piston-h', `${h}px`);
           return;
         }
 
-        // ── Proportional collapse over COLLAPSE_RANGE px ──
-        const progress = Math.max(0, scrollY - threshold);
+        // ── Proportional collapse over COLLAPSE_RANGE ──
+        const progress = scrollY - THRESHOLD;
         const ratio = clamp(progress / COLLAPSE_RANGE, 0, 1);
 
-        grid.style.setProperty('--piston-ty', `${-ratio * 100}`);
-        grid.style.setProperty('--piston-rows', `${1 - ratio}fr`);
+        // translate3d: slide content upward (GPU-only, no layout)
+        wrapper.style.setProperty('--piston-ty', `${-ratio * 100}`);
+        // Height: shrink wrapper from full hero height → 0
+        // This is a single-element height change on a non-grid div,
+        // which is far cheaper than grid-template-rows reflow.
+        const visibleH = h * (1 - ratio);
+        wrapper.style.setProperty('--piston-h', `${visibleH}px`);
       });
     };
 
-    // Initial position (in case page loads mid-scroll)
+    // Initial position
     onScroll();
 
     scrollEl.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', () => {
-      measure();
-      // Unlock threshold so it re-measures after layout change
-      thresholdRef.current = null;
-    }, { passive: true });
+    window.addEventListener('resize', measure, { passive: true });
 
     return () => {
       scrollEl.removeEventListener('scroll', onScroll);
-      // resize listener is on window — cleaned up by component unmount
+      window.removeEventListener('resize', measure);
     };
   }, []); // single mount — all updates via DOM refs
 
@@ -187,30 +152,29 @@ export default function HeroPiston({ children }) {
         style={{ height: '1px', width: '100%', flexShrink: 0 }}
       />
 
-      {/* Grid wrapper: row height driven by --piston-rows CSS variable.
-          No transitions — scroll IS the animation.
-          will-change on both transform and grid-template-rows for GPU. */}
+      {/* Wrapper: fixed-height container that shrinks via CSS variable.
+          overflow: hidden clips content as it translates upward.
+          will-change promotes both transform AND height to GPU. */}
       <div
-        ref={gridRef}
+        ref={wrapperRef}
         style={{
-          display: 'grid',
-          gridTemplateRows: 'var(--piston-rows, 1fr)',
           position: 'relative',
           zIndex: 1,
-          willChange: 'transform, grid-template-rows',
+          overflow: 'hidden',
+          height: 'var(--piston-h, auto)',
+          willChange: 'transform, height',
           // CSS variables initialized (overwritten by scroll handler)
           '--piston-ty': '0',
-          '--piston-rows': '1fr',
+          '--piston-h': 'auto',
         }}
       >
-        {/* Inner: overflow:hidden clips content as grid row shrinks.
-            translateY driven by --piston-ty for the upward drift.
-            GPU-promoted via will-change + translateZ. */}
+        {/* Inner: the actual hero content.
+            translate3d for GPU-only upward movement.
+            No layout changes — pure compositor work. */}
         <div
           ref={innerRef}
           style={{
-            overflow: 'hidden',
-            transform: 'translateY(calc(var(--piston-ty) * 1%)) translateZ(0)',
+            transform: 'translate3d(0, calc(var(--piston-ty) * 1%), 0)',
             willChange: 'transform',
             backfaceVisibility: 'hidden',
             WebkitBackfaceVisibility: 'hidden',
