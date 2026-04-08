@@ -19,6 +19,7 @@ import FollowingTab      from '@/components/FollowingTab';
 import ArtistProfileScreen from '@/components/ArtistProfileScreen';
 import SupportModal      from '@/components/SupportModal';
 import BetaWelcome       from '@/components/BetaWelcome';
+import ArtistSpotlight   from '@/components/ArtistSpotlight';
 import ModalWrapper      from '@/components/ui/ModalWrapper';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -286,6 +287,7 @@ export default function HomePage() {
   const [showSupport,    setShowSupport]    = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [activeFilterCard, setActiveFilterCard] = useState(null); // 'distance' | 'when' | 'artist' | 'venue'
+  const [spotlightEvent, setSpotlightEvent] = useState(null);   // event for ArtistSpotlight overlay
   const [venueSearch, setVenueSearch] = useState('');
   const [locationOrigin, setLocationOrigin] = useState('');       // zip or city text
   const [locationLabel, setLocationLabel] = useState('Current Location');  // display label
@@ -2856,7 +2858,7 @@ export default function HomePage() {
             {/* HeroPiston uses a sentinel + sticky positioning. No scrollRef needed. */}
             {!hasActiveFilters && (
               <HeroPiston>
-                <HeroSection events={heroEvents} isToday={heroIsToday} />
+                <HeroSection events={heroEvents} isToday={heroIsToday} onArtistTap={setSpotlightEvent} />
               </HeroPiston>
             )}
             {loading ? (
@@ -3035,6 +3037,9 @@ export default function HomePage() {
 
       {/* ── Beta Welcome Overlay (first-visit only, localStorage-gated) ── */}
       <BetaWelcome />
+
+      {/* ── Artist Spotlight Overlay (detached from HeroSection, z-9000) ── */}
+      <ArtistSpotlight event={spotlightEvent} onClose={() => setSpotlightEvent(null)} />
 
       {/* ── Auth Modal ──────────────────────────────────────────────────── */}
       {showAuthModal && (
