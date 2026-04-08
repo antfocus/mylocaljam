@@ -1,52 +1,51 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, memo } from 'react';
 
 /**
- * HeroPiston — Smooth "piston" scroll-collapse for the Hero section.
+ * HeroPiston — Direct scroll-synced "piston" collapse for the Hero.
  *
  * ═══════════════════════════════════════════════════════════════════
- *  CLEAN-SLATE REWRITE (2026-04-08)
- *  Previous approach: scroll listener on a passed-in ref (homeScrollRef).
- *  Problem: HeroPiston was outside the scroll container, and the ref
- *           wasn't populated at mount time → listener never attached.
+ *  PROPORTIONAL TRACKING VERSION (2026-04-08)
  *
- *  New approach: IntersectionObserver on a sentinel <div>.
- *  - HeroPiston now renders INSIDE the scroll container.
- *  - A 1px sentinel div sits above the sticky hero.
- *  - When the sentinel scrolls out of the container's visible area,
- *    we know the user has scrolled past the hero's natural position.
- *  - The hero collapses with translateY(-100%) + max-height: 0.
- *  - No refs need to be passed from the parent. Zero timing issues.
- * ═══════════════════════════════════════════════════════════════════
+ *  This version removes all animated transitions and state-based
+ *  thresholds. The Hero moves 1:1 with the user's scroll position.
+ *  Move your thumb 1 inch → Hero moves 1 inch. It behaves like a
+ *  physical part of the scroll list.
  *
- * STAGING GATE:
- *   Activates when NEXT_PUBLIC_APP_ENV === 'staging' OR when the
- *   current URL contains 'staging'. Logs console.error if neither
- *   condition is met so you can see exactly why it's blocked.
+ *  How it works:
+ *    1. On mount, measure the Hero's natural height.
+ *    2. On every scroll frame (rAF-throttled), compute:
+ *         scrollRatio = clamp(scrollTop / heroHeight, 0, 1)
+ *    3. Inject two CSS custom properties directly on the wrapper DOM
+ *       node via ref (no React re-render, no setState):
+ *         --piston-ty:   -scrollRatio * 100  (% for translateY)
+ *         --piston-rows:  1 - scrollRatio     (fr for grid row)
+ *    4. CSS picks them up:
+ *         transform: translateY(calc(var(--piston-ty) * 1%))
+ *         grid-template-rows: var(--piston-rows, 1fr)
+ *    5. When scrollRatio hits 1, Hero is fully hidden and takes 0 space.
+ *       When user scrolls back, it tracks back proportionally.
  *
- * DEBUG DOT:
- *   A tiny fixed dot in the top-left corner of the screen:
- *     RED   = component rendered but gate FAILED (shouldn't normally appear)
- *     GREEN = piston logic is ACTIVE and running
- *   Remove the dot by setting DEBUG_DOT = false once confirmed working.
+ *  Performance:
+ *    - Zero React re-renders during scroll (ref + CSS variables only)
+ *    - rAF throttle ensures max one DOM write per frame
+ *    - will-change: transform for GPU compositor layer
+ *    - No transitions — scroll IS the animation
+ *
+ *  Layout:
+ *    - Grid wrapper with dynamic row height handles space reclamation
+ *    - overflow: hidden on inner div clips content during collapse
+ *    - z-index 1 keeps Hero below date headers (z-index 50)
  *
  * Props:
  *   children — The <HeroSection /> component
+ * ═══════════════════════════════════════════════════════════════════
  */
-
-// ── Config ──────────────────────────────────────────────────────────────
-const TRANSITION_DURATION = '0.4s';
-const TRANSITION_EASING = 'cubic-bezier(0.25, 1, 0.5, 1)';
-const DEBUG_DOT = true; // flip to false once piston is confirmed working
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-/**
- * Walk up the DOM to find the nearest ancestor with overflow-y scrolling.
- * Used as the IntersectionObserver `root` so it observes within the
- * scroll container — not the viewport (which won't work for overflow divs).
- */
+/** Walk up the DOM to find the nearest scrollable ancestor. */
 function getScrollParent(el) {
   let parent = el?.parentElement;
   while (parent) {
@@ -57,175 +56,113 @@ function getScrollParent(el) {
   return null;
 }
 
-// ── Main export ─────────────────────────────────────────────────────────
-
-export default function HeroPiston({ children }) {
-  // Synchronous check — NEXT_PUBLIC_* is inlined by Next.js at build time
-  const envStaging = process.env.NEXT_PUBLIC_APP_ENV === 'staging';
-
-  // URL check must wait for client mount
-  const [isStaging, setIsStaging] = useState(envStaging);
-
-  useEffect(() => {
-    const urlMatch = window.location.href.includes('staging');
-
-    if (envStaging) {
-      console.log(
-        '[HeroPiston] ✅ Staging gate PASSED (env var)',
-        { NEXT_PUBLIC_APP_ENV: process.env.NEXT_PUBLIC_APP_ENV }
-      );
-    } else if (urlMatch) {
-      console.log(
-        '[HeroPiston] ✅ Staging gate PASSED (URL contains "staging")',
-        { url: window.location.href }
-      );
-      setIsStaging(true);
-    } else {
-      console.error(
-        '[HeroPiston] ❌ Staging gate FAILED — piston will NOT activate.',
-        {
-          NEXT_PUBLIC_APP_ENV: process.env.NEXT_PUBLIC_APP_ENV || '(not set)',
-          url: window.location.href,
-          fix: 'Set NEXT_PUBLIC_APP_ENV=staging in Vercel env vars, or deploy to a URL containing "staging".',
-        }
-      );
-    }
-  }, [envStaging]);
-
-  // Gate failed → transparent passthrough, no extra DOM, no hooks
-  if (!isStaging) {
-    return <>{children}</>;
-  }
-
-  // Gate passed → render the full piston machinery
-  return <PistonCore>{children}</PistonCore>;
+function clamp(val, min, max) {
+  return Math.min(Math.max(val, min), max);
 }
 
-// ── PistonCore (only mounts in staging) ─────────────────────────────────
+// ── Memoized inner wrapper ──────────────────────────────────────────────
+// Prevents the HeroSection tree from re-rendering on parent updates.
+const HeroContent = memo(function HeroContent({ children }) {
+  return children;
+});
+HeroContent.displayName = 'HeroContent';
 
-function PistonCore({ children }) {
-  const sentinelRef = useRef(null);
-  const heroRef = useRef(null);
-  const [collapsed, setCollapsed] = useState(false);
-  const [heroHeight, setHeroHeight] = useState(0);
+// ── Component ───────────────────────────────────────────────────────────
 
-  // ── Measure hero height (for accurate max-height transition) ──
+export default function HeroPiston({ children }) {
+  const anchorRef = useRef(null);
+  const gridRef = useRef(null);
+  const innerRef = useRef(null);
+  const heroHeight = useRef(0);
+  const rafPending = useRef(false);
+
   useEffect(() => {
+    const anchor = anchorRef.current;
+    const grid = gridRef.current;
+    const inner = innerRef.current;
+    if (!anchor || !grid || !inner) return;
+
+    // ── Measure hero height ──
     const measure = () => {
-      if (heroRef.current) {
-        const h = heroRef.current.scrollHeight;
-        setHeroHeight(h);
-        console.log('[HeroPiston] Measured hero height:', h);
-      }
+      // scrollHeight of the inner div = natural content height
+      heroHeight.current = inner.scrollHeight || 260; // fallback to ~HeroSection min
     };
     measure();
+
+    // ── Find scroll container ──
+    const scrollEl = getScrollParent(anchor);
+    if (!scrollEl) return;
+
+    // ── Scroll handler: rAF-throttled, zero React re-renders ──
+    const onScroll = () => {
+      if (rafPending.current) return;
+      rafPending.current = true;
+
+      requestAnimationFrame(() => {
+        rafPending.current = false;
+        const h = heroHeight.current;
+        if (h <= 0) return;
+
+        const scrollY = scrollEl.scrollTop;
+        const ratio = clamp(scrollY / h, 0, 1);
+
+        // Direct DOM mutation — bypasses React for 60fps performance
+        // translateY: 0% at top, -100% when fully scrolled past hero
+        grid.style.setProperty('--piston-ty', `${-ratio * 100}`);
+        // grid row: 1fr at top, 0fr when fully collapsed
+        grid.style.setProperty('--piston-rows', `${1 - ratio}fr`);
+      });
+    };
+
+    // Initial position (in case page loads mid-scroll)
+    onScroll();
+
+    scrollEl.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', measure, { passive: true });
-    return () => window.removeEventListener('resize', measure);
-  }, [children]);
-
-  // ── IntersectionObserver on the sentinel ──
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) {
-      console.error('[HeroPiston] Sentinel ref is null — cannot observe');
-      return;
-    }
-
-    // Find the scroll container (the overflow-y: auto div)
-    const scrollRoot = getScrollParent(sentinel);
-    if (!scrollRoot) {
-      console.error('[HeroPiston] Could not find scrollable parent — observer will use viewport');
-    } else {
-      console.log(
-        '[HeroPiston] IntersectionObserver root:',
-        scrollRoot.tagName,
-        `(${scrollRoot.offsetWidth}x${scrollRoot.offsetHeight})`
-      );
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        const shouldCollapse = !entry.isIntersecting;
-        setCollapsed(prev => {
-          if (prev !== shouldCollapse) {
-            console.log('[HeroPiston] Sentinel', shouldCollapse ? 'LEFT' : 'ENTERED', 'view → collapsed:', shouldCollapse);
-            return shouldCollapse;
-          }
-          return prev;
-        });
-      },
-      {
-        root: scrollRoot || null, // scroll container, or viewport fallback
-        threshold: 0,             // fire as soon as any pixel exits
-        rootMargin: '0px',
-      }
-    );
-
-    observer.observe(sentinel);
-    console.log('[HeroPiston] Observer attached to sentinel ✔');
 
     return () => {
-      observer.disconnect();
-      console.log('[HeroPiston] Observer disconnected');
+      scrollEl.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', measure);
     };
-  }, []); // intentionally empty — runs once on mount, sentinel is always present
-
-  const expandedMax = heroHeight > 0 ? `${heroHeight}px` : '500px';
+  }, []); // single mount — all updates via DOM refs
 
   return (
     <>
-      {/* ── Debug dot: green = active, shows in top-left ── */}
-      {DEBUG_DOT && (
-        <div
-          aria-hidden="true"
-          style={{
-            position: 'fixed',
-            top: '6px',
-            left: '6px',
-            width: '8px',
-            height: '8px',
-            borderRadius: '50%',
-            background: '#22c55e', // green — piston is ACTIVE
-            zIndex: 99999,
-            pointerEvents: 'none',
-            boxShadow: '0 0 4px rgba(34,197,94,0.6)',
-            transition: 'background 0.3s ease',
-          }}
-        />
-      )}
-
-      {/* ── Sentinel: 1px div in normal flow, observed by IntersectionObserver ──
-           When this scrolls out of the container, the hero collapses. */}
+      {/* Anchor: 1px div for getScrollParent() traversal */}
       <div
-        ref={sentinelRef}
-        data-piston-sentinel="true"
+        ref={anchorRef}
+        data-piston-anchor="true"
         style={{ height: '1px', width: '100%', flexShrink: 0 }}
       />
 
-      {/* ── Sticky hero container ──
-           position: sticky keeps it pinned at top while scrolling.
-           z-index: 1 is BELOW date headers (z-index: 50) so headers
-           visually slide over the hero as they reach the top. */}
+      {/* Grid wrapper: row height driven by --piston-rows CSS variable.
+          No transitions — scroll IS the animation. */}
       <div
-        ref={heroRef}
+        ref={gridRef}
         style={{
-          position: 'sticky',
-          top: 0,
+          display: 'grid',
+          gridTemplateRows: 'var(--piston-rows, 1fr)',
+          position: 'relative',
           zIndex: 1,
-          overflow: 'hidden',
-          flexShrink: 0,
-          maxHeight: collapsed ? '0px' : expandedMax,
-          transition: `max-height ${TRANSITION_DURATION} ${TRANSITION_EASING}`,
-          willChange: 'max-height',
+          // CSS variables initialized (overwritten by scroll handler)
+          '--piston-ty': '0',
+          '--piston-rows': '1fr',
         }}
       >
+        {/* Inner: overflow:hidden clips content as grid row shrinks.
+            translateY driven by --piston-ty for the upward drift.
+            GPU-promoted via will-change + translateZ. */}
         <div
+          ref={innerRef}
           style={{
-            transform: collapsed ? 'translateY(-100%)' : 'translateY(0)',
-            transition: `transform ${TRANSITION_DURATION} ${TRANSITION_EASING}`,
+            overflow: 'hidden',
+            transform: 'translateY(calc(var(--piston-ty) * 1%)) translateZ(0)',
+            willChange: 'transform',
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
           }}
         >
-          {children}
+          <HeroContent>{children}</HeroContent>
         </div>
       </div>
     </>

@@ -2871,7 +2871,7 @@ export default function HomePage() {
               <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 {groupedEvents.map(group => (
                   <div key={group.date}>
-                    <div style={{
+                    <div data-date-header={group.date} style={{
                       position: 'sticky', top: 0, zIndex: 50,
                       display: 'flex', alignItems: 'center', gap: '8px',
                       padding: '14px 0 6px',

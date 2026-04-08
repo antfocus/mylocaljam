@@ -8,17 +8,15 @@ const SESSION_KEY = 'hasSeenWelcomeNote';
 /**
  * BetaWelcome — Full-screen glassmorphism welcome overlay for the beta launch.
  *
- * HARD STOP SAFETY GATE:
- *   Only renders when NEXT_PUBLIC_APP_ENV === 'staging'.
- *   Returns null in production — completely invisible.
- *
- * LOGIC (session-based):
- *   Uses sessionStorage (not localStorage). Appears once per browser session.
- *   Closing the tab or logging out resets it so it appears on next visit.
- *   Clicking "Let's Jam" hides it for the remainder of that session.
+ * PRODUCTION VERSION (2026-04-08):
+ *   - No staging gate. Runs in all environments.
+ *   - z-index 9999 to guarantee it's above all app layers.
+ *   - sessionStorage: appears once per browser session. Closing the tab
+ *     or logging out resets it so it appears again on next visit.
+ *   - Clicking "Let's Jam" hides it for the rest of that session.
  *
  * UI:
- *   Matches the existing Help & Feedback modal — dark rounded container,
+ *   Matches the Help & Feedback modal — dark rounded container,
  *   DM Sans / Outfit fonts, Material Design inline SVG icons (no emojis).
  *   Uses ModalWrapper for backdrop-blur, scroll-lock, escape-to-dismiss.
  */
@@ -64,11 +62,7 @@ function FeedbackIcon({ color }) {
 export default function BetaWelcome() {
   const [show, setShow] = useState(false);
 
-  // HARD STOP: staging-only gate
-  const isStaging = process.env.NEXT_PUBLIC_APP_ENV === 'staging';
-
   useEffect(() => {
-    if (!isStaging) return;
     try {
       if (sessionStorage.getItem(SESSION_KEY) !== 'true') {
         setShow(true);
@@ -77,15 +71,14 @@ export default function BetaWelcome() {
       // Private browsing or storage blocked — show once, won't persist
       setShow(true);
     }
-  }, [isStaging]);
+  }, []);
 
   function handleDismiss() {
     setShow(false);
     try { sessionStorage.setItem(SESSION_KEY, 'true'); } catch {}
   }
 
-  // Safety gate: invisible in production
-  if (!isStaging || !show) return null;
+  if (!show) return null;
 
   // ── Theme tokens (dark-only, matches Help & Feedback / SupportModal) ──
   const surface   = '#1A1A24';
@@ -107,7 +100,7 @@ export default function BetaWelcome() {
   return (
     <ModalWrapper
       onClose={handleDismiss}
-      zIndex={700}
+      zIndex={9999}
       blur={12}
       overlayBg="rgba(0,0,0,0.55)"
       maxWidth="420px"
