@@ -345,7 +345,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                   loading="lazy"
                   style={{
                     width: '100%', height: '100%',
-                    objectFit: 'cover', objectPosition: 'center center',
+                    objectFit: 'cover', objectPosition: 'center 15%',
                     display: 'block',
                   }}
                   onError={e => { e.currentTarget.parentElement.style.display = 'none'; }}
