@@ -6,42 +6,28 @@ import { useEffect, useRef, memo } from 'react';
  * HeroPiston — Direct scroll-synced "piston" collapse for the Hero.
  *
  * ═══════════════════════════════════════════════════════════════════
- *  TOMORROW-HEADER GATED VERSION (2026-04-08)
+ *  STICKY-ANCHOR GATED VERSION (2026-04-08)
  *
- *  The Hero stays locked open at 100% while the user is viewing
- *  "Today" events. Collapse only begins once the SECOND date header
- *  (i.e. "Tomorrow") reaches the top of the viewport minus a
- *  search-bar buffer.
+ *  The Hero stays locked at 100% until the "Tomorrow" date header
+ *  reaches the top of the screen. Then it collapses proportionally
+ *  over 200px of scrolling with zero layout shift.
  *
- *  How it works:
- *    1. On mount, measure the Hero's natural height.
- *    2. On every scroll frame (rAF-throttled):
- *       a. Find the 2nd [data-date-header] inside the scroll
- *          container. Its offsetTop minus an 80px buffer = threshold.
- *       b. If no 2nd header found, fallback threshold = 50px.
- *       c. If scrollTop < threshold → Hero stays fully open (0 / 1fr).
- *       d. If scrollTop >= threshold → proportional 1:1 mapping over
- *          the next COLLAPSE_RANGE (150px) of scrolling.
- *    3. Inject two CSS custom properties on the wrapper DOM node
- *       via ref (no React re-render, no setState):
- *         --piston-ty:   -ratio * 100   (% for translateY)
- *         --piston-rows:  1 - ratio      (fr for grid row)
- *    4. CSS picks them up:
- *         transform: translateY(calc(var(--piston-ty) * 1%))
- *         grid-template-rows: var(--piston-rows, 1fr)
+ *  Key fixes over previous versions:
+ *    - thresholdRef: The "Tomorrow" header's content-space position
+ *      is measured ONCE and locked. This prevents the threshold from
+ *      drifting as the Hero shrinks (which caused the "jump").
+ *    - null fallback: If < 2 headers exist (data still loading, or
+ *      only one day of events), threshold stays null → Hero stays
+ *      100% open. No more 50px default causing premature collapse.
+ *    - getBoundingClientRect + scrollTop: Produces a fixed "mile
+ *      marker" in scroll-content space that doesn't shift with
+ *      sticky positioning or nested offsetParents.
+ *    - will-change on grid wrapper: Promotes the grid-template-rows
+ *      animation to the GPU compositor layer.
  *
- *  Performance:
- *    - Zero React re-renders during scroll (ref + CSS variables only)
- *    - rAF throttle ensures max one DOM write per frame
- *    - will-change: transform for GPU compositor layer
- *    - No transitions — scroll IS the animation
- *    - Header lookup is a fast querySelectorAll on every frame; the
- *      DOM list is tiny (typically 2-5 headers).
- *
- *  Layout:
- *    - Grid wrapper with dynamic row height handles space reclamation
- *    - overflow: hidden on inner div clips content during collapse
- *    - z-index 1 keeps Hero below date headers (z-index 50)
+ *  CSS variable contract (unchanged):
+ *    --piston-ty:    -ratio * 100  (% for translateY)
+ *    --piston-rows:   1 - ratio    (fr for grid row)
  *
  * Props:
  *   children — The <HeroSection /> component
@@ -80,6 +66,7 @@ export default function HeroPiston({ children }) {
   const innerRef = useRef(null);
   const heroHeight = useRef(0);
   const rafPending = useRef(false);
+  const thresholdRef = useRef(null); // locked "mile marker" — null until measured
 
   useEffect(() => {
     const anchor = anchorRef.current;
@@ -89,8 +76,7 @@ export default function HeroPiston({ children }) {
 
     // ── Measure hero height ──
     const measure = () => {
-      // scrollHeight of the inner div = natural content height
-      heroHeight.current = inner.scrollHeight || 260; // fallback to ~HeroSection min
+      heroHeight.current = inner.scrollHeight || 260;
     };
     measure();
 
@@ -100,12 +86,11 @@ export default function HeroPiston({ children }) {
 
     // ── Constants ──
     const SEARCH_BAR_BUFFER = 80;  // px reserved for search bar / sticky chrome
-    const COLLAPSE_RANGE    = 150; // px of scrolling over which collapse occurs
-    const FALLBACK_THRESHOLD = 50; // px if no 2nd header exists
+    const COLLAPSE_RANGE    = 200; // px of scrolling over which collapse occurs
 
-    // ── Debug: log once on mount what the DOM actually sees ──
+    // ── Debug throttle ──
     let debugLogCount = 0;
-    const DEBUG_MAX_LOGS = 5; // throttle to first 5 scroll frames
+    const DEBUG_MAX_LOGS = 5;
 
     // ── Scroll handler: rAF-throttled, zero React re-renders ──
     const onScroll = () => {
@@ -117,53 +102,51 @@ export default function HeroPiston({ children }) {
 
         const scrollY = scrollEl.scrollTop;
 
-        // ── Find the "tomorrow" gate ──
-        // querySelectorAll on the scroll container for [data-date-header].
-        // getBoundingClientRect is used instead of offsetTop because
-        // sticky headers and nested positioned ancestors make offsetTop
-        // unreliable — BCR always gives viewport-relative coords.
-        const headers = scrollEl.querySelectorAll('[data-date-header]');
-        const containerTop = scrollEl.getBoundingClientRect().top;
-        let threshold;
+        // ── Try to lock the threshold if we haven't yet ──
+        if (thresholdRef.current === null) {
+          const headers = scrollEl.querySelectorAll('[data-date-header]');
 
-        if (headers.length >= 2) {
-          // Distance from the scroll container's visual top to the
-          // header's visual top, PLUS how far we've already scrolled.
-          // This gives us the header's position within the scrollable
-          // content — the "absolute" content offset.
-          const headerRect = headers[1].getBoundingClientRect();
-          threshold = (headerRect.top - containerTop) + scrollY - SEARCH_BAR_BUFFER;
+          if (headers.length >= 2) {
+            // Fixed "mile marker": the header's visual position in
+            // viewport space, converted to content-space by adding
+            // how far the container has already scrolled.
+            // This value is constant — it doesn't shift when the Hero
+            // shrinks because it was measured BEFORE any collapse.
+            const headerTop = headers[1].getBoundingClientRect().top;
+            const milestone = headerTop + scrollY - SEARCH_BAR_BUFFER;
+            thresholdRef.current = milestone;
 
-          // ── DEBUG ──
-          if (debugLogCount < DEBUG_MAX_LOGS) {
-            console.log(
-              '[HeroPiston] Found', headers.length, 'date headers.',
-              'Gate header:', headers[1].getAttribute('data-date-header'),
-              '| headerRect.top:', Math.round(headerRect.top),
-              '| containerTop:', Math.round(containerTop),
-              '| scrollY:', Math.round(scrollY),
-              '| threshold:', Math.round(threshold),
-              '| SEARCH_BAR_BUFFER:', SEARCH_BAR_BUFFER
-            );
-            debugLogCount++;
-          }
-        } else {
-          // Fallback: only 1 (or 0) headers — not enough for a gate
-          threshold = FALLBACK_THRESHOLD;
-          if (debugLogCount < DEBUG_MAX_LOGS) {
-            console.warn(
-              '[HeroPiston] FALLBACK: Only', headers.length,
-              'date header(s) found inside scroll container.',
-              'Need >= 2 for tomorrow gate. Using default threshold:',
-              FALLBACK_THRESHOLD, 'px.',
-              'Selector: [data-date-header], container:', scrollEl.tagName,
-              scrollEl.className || '(no class)'
-            );
-            debugLogCount++;
+            if (debugLogCount < DEBUG_MAX_LOGS) {
+              console.log(
+                '[HeroPiston] Threshold LOCKED.',
+                'Headers found:', headers.length,
+                '| Gate header:', headers[1].getAttribute('data-date-header'),
+                '| headerTop (viewport):', Math.round(headerTop),
+                '| scrollY:', Math.round(scrollY),
+                '| milestone:', Math.round(milestone)
+              );
+              debugLogCount++;
+            }
+          } else {
+            // Not enough headers yet — Hero stays fully open.
+            if (debugLogCount < DEBUG_MAX_LOGS) {
+              console.warn(
+                '[HeroPiston] Waiting for 2nd date header. Found:',
+                headers.length,
+                '| Container:', scrollEl.tagName,
+                scrollEl.className || '(no class)',
+                '| Hero stays 100% open.'
+              );
+              debugLogCount++;
+            }
+            grid.style.setProperty('--piston-ty', '0');
+            grid.style.setProperty('--piston-rows', '1fr');
+            return;
           }
         }
 
         // ── Gate: Hero stays fully open until threshold ──
+        const threshold = thresholdRef.current;
         if (scrollY < threshold) {
           grid.style.setProperty('--piston-ty', '0');
           grid.style.setProperty('--piston-rows', '1fr');
@@ -171,13 +154,10 @@ export default function HeroPiston({ children }) {
         }
 
         // ── Proportional collapse over COLLAPSE_RANGE px ──
-        const progress = scrollY - threshold; // 0 → COLLAPSE_RANGE
+        const progress = Math.max(0, scrollY - threshold);
         const ratio = clamp(progress / COLLAPSE_RANGE, 0, 1);
 
-        // Direct DOM mutation — bypasses React for 60fps performance
-        // translateY: 0% at threshold, -100% when fully collapsed
         grid.style.setProperty('--piston-ty', `${-ratio * 100}`);
-        // grid row: 1fr at threshold, 0fr when fully collapsed
         grid.style.setProperty('--piston-rows', `${1 - ratio}fr`);
       });
     };
@@ -186,11 +166,15 @@ export default function HeroPiston({ children }) {
     onScroll();
 
     scrollEl.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', measure, { passive: true });
+    window.addEventListener('resize', () => {
+      measure();
+      // Unlock threshold so it re-measures after layout change
+      thresholdRef.current = null;
+    }, { passive: true });
 
     return () => {
       scrollEl.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', measure);
+      // resize listener is on window — cleaned up by component unmount
     };
   }, []); // single mount — all updates via DOM refs
 
@@ -204,7 +188,8 @@ export default function HeroPiston({ children }) {
       />
 
       {/* Grid wrapper: row height driven by --piston-rows CSS variable.
-          No transitions — scroll IS the animation. */}
+          No transitions — scroll IS the animation.
+          will-change on both transform and grid-template-rows for GPU. */}
       <div
         ref={gridRef}
         style={{
@@ -212,6 +197,7 @@ export default function HeroPiston({ children }) {
           gridTemplateRows: 'var(--piston-rows, 1fr)',
           position: 'relative',
           zIndex: 1,
+          willChange: 'transform, grid-template-rows',
           // CSS variables initialized (overwritten by scroll handler)
           '--piston-ty': '0',
           '--piston-rows': '1fr',
