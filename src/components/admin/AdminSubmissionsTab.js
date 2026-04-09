@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect, useRef } from 'react';
 import { GENRES, VIBES } from '@/lib/utils';
 
 export default function AdminSubmissionsTab({
@@ -22,6 +23,46 @@ export default function AdminSubmissionsTab({
   qLabelStyle, qInputStyle,
   qGreen, qRed,
 }) {
+  // ── Local preview state — gatekeeper before OCR ──
+  const [pendingPoster, setPendingPoster] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const confirmedRef = useRef(false);
+
+  // Clean up object URL when preview changes
+  useEffect(() => {
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
+  }, [previewUrl]);
+
+  /** Stage a file for preview — does NOT trigger OCR */
+  function stageFile(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    // Revoke previous preview URL
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    const url = URL.createObjectURL(file);
+    setPendingPoster(file);
+    setPreviewUrl(url);
+    confirmedRef.current = false;
+  }
+
+  /** User confirmed — now send to OCR */
+  function handleConfirmExtract() {
+    if (!pendingPoster) return;
+    confirmedRef.current = true;
+    handleAdminFlyerUpload(pendingPoster);
+    // Clear preview state (the uploading spinner will take over via adminFlyerUploading prop)
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPendingPoster(null);
+    setPreviewUrl(null);
+  }
+
+  /** User cancelled — discard staged file */
+  function handleCancelPreview() {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPendingPoster(null);
+    setPreviewUrl(null);
+    confirmedRef.current = false;
+  }
+
   return (
         <div>
           {queue.length === 0 ? (
@@ -33,14 +74,55 @@ export default function AdminSubmissionsTab({
                 ref={adminFlyerRef}
                 type="file"
                 accept="image/*"
-                onChange={(e) => { if (e.target.files?.[0]) handleAdminFlyerUpload(e.target.files[0]); e.target.value = ''; }}
+                onChange={(e) => { if (e.target.files?.[0]) stageFile(e.target.files[0]); e.target.value = ''; }}
                 style={{ display: 'none' }}
               />
+              {/* ── Preview + Confirmation (empty queue zone) ── */}
+              {previewUrl && !adminFlyerUploading ? (
+                <div style={{
+                  maxWidth: '420px', margin: '0 auto', padding: '16px',
+                  borderRadius: '12px', border: `1px solid ${qBorder}`,
+                  background: '#0D0D12', textAlign: 'center',
+                }}>
+                  <img
+                    src={previewUrl}
+                    alt="Flyer preview"
+                    style={{
+                      width: '100%', maxHeight: '400px', objectFit: 'contain',
+                      borderRadius: '10px', background: '#000', marginBottom: '14px',
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                    <button
+                      onClick={handleConfirmExtract}
+                      style={{
+                        padding: '12px 24px', borderRadius: '10px', border: 'none',
+                        background: '#E8722A', color: '#1C1917',
+                        fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      🔮 Confirm &amp; Extract (AI)
+                    </button>
+                    <button
+                      onClick={handleCancelPreview}
+                      style={{
+                        padding: '12px 20px', borderRadius: '10px',
+                        border: `1px solid ${qBorder}`, background: 'transparent',
+                        color: qTextMuted, fontSize: '14px', fontWeight: 600, cursor: 'pointer',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
               <div
                 onClick={() => !adminFlyerUploading && adminFlyerRef.current?.click()}
                 onDragOver={(e) => { e.preventDefault(); setAdminFlyerDragOver(true); }}
                 onDragLeave={() => setAdminFlyerDragOver(false)}
-                onDrop={(e) => { e.preventDefault(); setAdminFlyerDragOver(false); const f = e.dataTransfer?.files?.[0]; if (f && f.type.startsWith('image/')) handleAdminFlyerUpload(f); }}
+                onDrop={(e) => { e.preventDefault(); setAdminFlyerDragOver(false); const f = e.dataTransfer?.files?.[0]; if (f && f.type.startsWith('image/')) stageFile(f); }}
                 style={{
                   padding: '24px 32px', borderRadius: '12px', cursor: adminFlyerUploading ? 'wait' : 'pointer',
                   border: `2px dashed ${adminFlyerDragOver ? '#E8722A' : qBorder}`,
@@ -49,14 +131,15 @@ export default function AdminSubmissionsTab({
                 }}
               >
                 {adminFlyerUploading ? (
-                  <p className="text-sm font-medium" style={{ color: '#E8722A' }}>Processing flyer...</p>
+                  <p className="text-sm font-medium" style={{ color: '#E8722A' }}>Analyzing with AI...</p>
                 ) : (
                   <>
                     <p className="font-display font-bold text-sm" style={{ color: qText }}>Upload a Flyer / Poster</p>
-                    <p className="text-xs mt-1" style={{ color: qTextMuted }}>Drop an image or click to upload — OCR will extract artists automatically</p>
+                    <p className="text-xs mt-1" style={{ color: qTextMuted }}>Drop an image or click to upload — preview before AI extraction</p>
                   </>
                 )}
               </div>
+              )}
               <button onClick={fetchQueue} className="px-4 py-2 rounded-lg text-sm font-medium" style={{ border: `1px solid ${qBorder}`, background: qSurface, color: qText }}>
                 ↻ Refresh
               </button>
@@ -71,14 +154,55 @@ export default function AdminSubmissionsTab({
                   ref={adminFlyerRef}
                   type="file"
                   accept="image/*"
-                  onChange={(e) => { if (e.target.files?.[0]) handleAdminFlyerUpload(e.target.files[0]); e.target.value = ''; }}
+                  onChange={(e) => { if (e.target.files?.[0]) stageFile(e.target.files[0]); e.target.value = ''; }}
                   style={{ display: 'none' }}
                 />
+                {/* ── Sidebar Preview + Confirmation ── */}
+                {previewUrl && !adminFlyerUploading ? (
+                  <div style={{
+                    margin: '10px', padding: '10px', borderRadius: '10px',
+                    border: `1px solid ${qBorder}`, background: '#0D0D12',
+                    textAlign: 'center',
+                  }}>
+                    <img
+                      src={previewUrl}
+                      alt="Flyer preview"
+                      style={{
+                        width: '100%', maxHeight: '180px', objectFit: 'contain',
+                        borderRadius: '8px', background: '#000', marginBottom: '8px',
+                      }}
+                    />
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        onClick={handleConfirmExtract}
+                        style={{
+                          flex: 1, padding: '8px 4px', borderRadius: '8px', border: 'none',
+                          background: '#E8722A', color: '#1C1917',
+                          fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                          fontFamily: "'DM Sans', sans-serif",
+                        }}
+                      >
+                        🔮 Extract
+                      </button>
+                      <button
+                        onClick={handleCancelPreview}
+                        style={{
+                          flex: 1, padding: '8px 4px', borderRadius: '8px',
+                          border: `1px solid ${qBorder}`, background: 'transparent',
+                          color: qTextMuted, fontSize: '11px', fontWeight: 600, cursor: 'pointer',
+                          fontFamily: "'DM Sans', sans-serif",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                 <div
                   onClick={() => !adminFlyerUploading && adminFlyerRef.current?.click()}
                   onDragOver={(e) => { e.preventDefault(); setAdminFlyerDragOver(true); }}
                   onDragLeave={() => setAdminFlyerDragOver(false)}
-                  onDrop={(e) => { e.preventDefault(); setAdminFlyerDragOver(false); const f = e.dataTransfer?.files?.[0]; if (f && f.type.startsWith('image/')) handleAdminFlyerUpload(f); }}
+                  onDrop={(e) => { e.preventDefault(); setAdminFlyerDragOver(false); const f = e.dataTransfer?.files?.[0]; if (f && f.type.startsWith('image/')) stageFile(f); }}
                   style={{
                     margin: '10px', padding: adminFlyerUploading ? '12px 10px' : '14px 10px',
                     borderRadius: '10px',
@@ -90,7 +214,7 @@ export default function AdminSubmissionsTab({
                 >
                   {adminFlyerUploading ? (
                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#E8722A', fontFamily: "'DM Sans', sans-serif" }}>
-                      Processing with AI...
+                      Analyzing with AI...
                     </div>
                   ) : (
                     <>
@@ -99,11 +223,12 @@ export default function AdminSubmissionsTab({
                         Drop Flyer Here
                       </div>
                       <div style={{ fontSize: '10px', color: qTextMuted, fontFamily: "'DM Sans', sans-serif", marginTop: '2px' }}>
-                        AI reads it instantly
+                        Preview before AI extraction
                       </div>
                     </>
                   )}
                 </div>
+                )}
 
                 <div style={{ padding: '12px 16px', borderBottom: `1px solid ${qBorder}`, fontSize: '11px', fontWeight: 700, color: qTextMuted, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
                   Pending ({queue.length})
