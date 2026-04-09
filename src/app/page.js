@@ -839,8 +839,9 @@ export default function HomePage() {
             return raw.substring(0, 10);
           })(),
           start_time:    extractedStartTime,
-          // Waterfall: custom event override → event-level field → global artist field
-          description:   e.custom_bio || e.artist_bio || e.artists?.bio || '',
+          // Hierarchy of Truth: custom event override → inherited artist bio → scraped fallback
+          // artist_bio (scraped) must NEVER override a curated artists.bio
+          description:   e.custom_bio || e.artists?.bio || e.artist_bio || '',
           artist_genres: e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
           artist_vibes:  e.custom_vibes?.length ? e.custom_vibes : (e.vibe ? [e.vibe] : (e.artists?.vibes || [])),
           is_tribute:    e.artists?.is_tribute || false,
@@ -1241,9 +1242,10 @@ export default function HomePage() {
               return raw.substring(0, 10);
             })(),
             start_time:    extractedStartTime,
-            // Waterfall: custom event override → event-level field → global artist field
+            // Hierarchy of Truth: custom event override → inherited artist bio → scraped fallback
             // cleanStr filters "", "None", and whitespace-only so the chain keeps falling
-            description:   cleanStr(e.custom_bio) || cleanStr(e.artist_bio) || cleanStr(e.artists?.bio) || '',
+            // artist_bio (scraped) must NEVER override a curated artists.bio
+            description:   cleanStr(e.custom_bio) || cleanStr(e.artists?.bio) || cleanStr(e.artist_bio) || '',
             artist_genres: e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
             artist_vibes:  e.custom_vibes?.length ? e.custom_vibes : (e.vibe ? [e.vibe] : (e.artists?.vibes || [])),
             is_tribute:    e.artists?.is_tribute || false,

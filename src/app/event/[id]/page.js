@@ -96,8 +96,9 @@ function flattenEvent(e) {
     status:         e.status,
     ticket_link:    e.ticket_link || null,
     category:       e.category || 'Live Music',
-    // Waterfall: custom event override → event-level field → global artist field
-    description:    e.custom_bio || e.artist_bio || e.artists?.bio || '',
+    // Hierarchy of Truth: custom event override → inherited artist bio → scraped fallback
+    // artist_bio (scraped) must NEVER override a curated artists.bio
+    description:    e.custom_bio || e.artists?.bio || e.artist_bio || '',
     // Image waterfall: custom → event-level → legacy scraper column → artist
     event_image:    cleanImg(e.custom_image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
     artist_image:   cleanImg(e.artists?.image_url) || null,

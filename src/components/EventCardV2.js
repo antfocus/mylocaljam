@@ -77,7 +77,8 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
     dismissPopover();
   }, [event?.artist_name, onFollowArtist, dismissPopover]);
 
-  const desc = event?.description || event?.artist_bio || '';
+  // description is pre-resolved via Hierarchy of Truth in page.js
+  const desc = event?.description || '';
 
   // Check if description text is actually truncated
   useEffect(() => {
