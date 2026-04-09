@@ -24,9 +24,9 @@ const GREY  = '#D1D5DB';   // body text, descriptions
 
 const FEATURES = [
   { emoji: '\uD83D\uDD0D', label: 'Discover', desc: 'Find live music, trivia, and specials happening around you.', tint: 'rgba(255, 165, 0, 0.15)' },
-  { emoji: '\u2795',        label: 'Follow',   desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'rgba(50, 205, 50, 0.15)' },
-  { emoji: '\uD83D\uDCE4',  label: 'Share',    desc: 'Easily send event details to friends to coordinate your night out.', tint: 'rgba(30, 144, 255, 0.15)' },
-  { emoji: '\uD83D\uDCA1',  label: 'Ideas',    desc: 'Head to Help & Feedback section in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
+  { emoji: '\u2A01',        label: 'Follow',   desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'rgba(50, 205, 50, 0.15)', emojiColor: '#FFFFFF' },
+  { emoji: '\uD83D\uDCF2',  label: 'Share',    desc: 'Easily send event details to friends to coordinate your night out.', tint: 'rgba(30, 144, 255, 0.15)' },
+  { emoji: '\uD83D\uDCA1',  label: 'Ideas',    desc: 'Head to the Help & Feedback section in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
 ];
 
 export default function BetaWelcome() {
@@ -152,7 +152,7 @@ export default function BetaWelcome() {
           lineHeight: 1.7,
         }}>
           <strong style={{ color: WHITE, fontWeight: 700 }}>My Story:</strong>{' '}
-          I wanted to know what was going on without having to bounce around many different sites. I built mylocaljam to put everything in one place, with one simple goal: less time hunting for plans, more time actually enjoying them!
+          I wanted to keep up with the local music scene without having to bounce around multiple sites. I built mylocaljam to put everything in one place, with one simple goal: less time searching for plans, and more time enjoying them!
         </p>
 
         {/* ── Territory ── */}
@@ -164,7 +164,7 @@ export default function BetaWelcome() {
           lineHeight: 1.7,
         }}>
           <strong style={{ color: WHITE, fontWeight: 700 }}>Territory:</strong>{' '}
-          Right now, I am focused on the Jersey Shore, specifically serving Monmouth and Ocean County. As we find our rhythm and grow, I{'\u2019'}ll be expanding into new territories.
+          Jersey Shore - currently serving Monmouth and Ocean Counties. New territories will be added as we grow!
         </p>
 
         {/* ── Quick Features header ── */}
@@ -185,7 +185,7 @@ export default function BetaWelcome() {
           gap: '8px',
           marginBottom: '22px',
         }}>
-          {FEATURES.map(({ emoji, label, desc, tint }) => (
+          {FEATURES.map(({ emoji, label, desc, tint, emojiColor }) => (
             <div key={label} style={{
               display: 'flex',
               gap: '12px',
@@ -207,7 +207,7 @@ export default function BetaWelcome() {
                 fontSize: '17px',
                 lineHeight: 1,
               }}>
-                {emoji}
+                <span style={emojiColor ? { color: emojiColor } : undefined}>{emoji}</span>
               </div>
               {/* Stacked text: title on row 1, description on row 2 */}
               <div style={{
