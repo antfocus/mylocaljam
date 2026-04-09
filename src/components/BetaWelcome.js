@@ -24,7 +24,7 @@ const GREY  = '#D1D5DB';   // body text, descriptions
 
 const FEATURES = [
   { emoji: '\uD83D\uDD0D', label: 'Discover', desc: 'Find live music, trivia, and specials happening around you.', tint: 'rgba(255, 165, 0, 0.15)' },
-  { emoji: '\u2A01',        label: 'Follow',   desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'rgba(50, 205, 50, 0.15)', emojiColor: '#FFFFFF' },
+  { emoji: null, svg: true,  label: 'Follow',   desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'rgba(50, 205, 50, 0.15)' },
   { emoji: '\uD83D\uDCF2',  label: 'Share',    desc: 'Easily send event details to friends to coordinate your night out.', tint: 'rgba(30, 144, 255, 0.15)' },
   { emoji: '\uD83D\uDCA1',  label: 'Ideas',    desc: 'Head to the Help & Feedback section in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
 ];
@@ -110,7 +110,7 @@ export default function BetaWelcome() {
             color: GREY,
             lineHeight: 1.4,
           }}>
-            Your local scene, all in one spot.
+            Your local source, all in one spot.
           </p>
         </div>
 
@@ -140,7 +140,7 @@ export default function BetaWelcome() {
           color: GREY,
           lineHeight: 1.7,
         }}>
-          I appreciate you being an early user and for continuing to support the local scene.
+          I appreciate you being an early user and for continuing to support local music.
         </p>
 
         {/* ── The Story ── */}
@@ -163,8 +163,9 @@ export default function BetaWelcome() {
           color: GREY,
           lineHeight: 1.7,
         }}>
-          <strong style={{ color: WHITE, fontWeight: 700 }}>Territory:</strong>{' '}
-          Jersey Shore - currently serving Monmouth and Ocean Counties. New territories will be added as we grow!
+          <strong style={{ color: WHITE, fontWeight: 700 }}>Territory: Jersey Shore</strong>
+          <br />
+          <span style={{ color: GREY }}>currently serving Monmouth and Ocean Counties. New territories will be added as we grow!</span>
         </p>
 
         {/* ── Quick Features header ── */}
@@ -185,7 +186,7 @@ export default function BetaWelcome() {
           gap: '8px',
           marginBottom: '22px',
         }}>
-          {FEATURES.map(({ emoji, label, desc, tint, emojiColor }) => (
+          {FEATURES.map(({ emoji, svg, label, desc, tint }) => (
             <div key={label} style={{
               display: 'flex',
               gap: '12px',
@@ -207,7 +208,19 @@ export default function BetaWelcome() {
                 fontSize: '17px',
                 lineHeight: 1,
               }}>
-                <span style={emojiColor ? { color: emojiColor } : undefined}>{emoji}</span>
+                {svg ? (
+                  <div style={{
+                    width: '20px', height: '20px', borderRadius: '5px',
+                    background: '#000000',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                      <path d="M6 1v10M1 6h10" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                ) : (
+                  <span>{emoji}</span>
+                )}
               </div>
               {/* Stacked text: title on row 1, description on row 2 */}
               <div style={{
