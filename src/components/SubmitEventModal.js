@@ -509,15 +509,18 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                     Preview
                   </span>
 
-                  {/* Image preview */}
+                  {/* Image preview — contain (no crop), dark letterbox fill */}
                   <div style={{
                     position: 'relative', borderRadius: '12px', overflow: 'hidden',
                     border: `1px solid ${t.border}`,
+                    background: darkMode ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.06)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    maxHeight: '400px',
                   }}>
                     <img
                       src={photoPreview}
                       alt="Flyer preview"
-                      style={{ width: '100%', maxHeight: '300px', objectFit: 'cover', display: 'block' }}
+                      style={{ width: '100%', maxHeight: '400px', objectFit: 'contain', display: 'block' }}
                     />
                   </div>
 
