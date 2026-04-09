@@ -74,13 +74,17 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
     return () => { if (photoPreview) URL.revokeObjectURL(photoPreview); };
   }, [photoPreview]);
 
-  // Drag-and-drop for poster card
-  const handleFileDrop = useCallback((file) => {
+  // ── RULE: File selection ONLY sets local preview — NEVER uploads ──────
+  const setPreviewFromFile = useCallback((file) => {
+    if (!file) return;
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
     setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
     setView('poster');
-  }, []);
-  const { dragOver, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(handleFileDrop);
+  }, [photoPreview]);
+
+  // Drag-and-drop — only sets preview, never uploads
+  const { dragOver, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(setPreviewFromFile);
 
   // Scroll input into view (iOS keyboard fix)
   const scrollFieldIntoView = (e) => {
@@ -119,16 +123,14 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
     onClose();
   }, [onClose, photoPreview]);
 
-  // ── Photo handlers ────────────────────────────────────────────────────
-  const handlePhotoSelect = (e) => {
+  // ── File input onChange — preview only, NEVER uploads ───────────────
+  const handlePhotoSelect = useCallback((e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Revoke old preview URL if replacing an image
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhotoFile(file);
-    setPhotoPreview(URL.createObjectURL(file));
-    setView('poster');
-  };
+    // Reset input value so re-selecting the same file still fires onChange
+    e.target.value = '';
+    setPreviewFromFile(file);
+  }, [setPreviewFromFile]);
 
   const handlePhotoSubmit = async () => {
     if (!photoFile || uploading || submittedRef.current) return;
@@ -273,16 +275,20 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
           {view === 'cards' && (
             <>
               {/* ── Card 1: Submit Gig Poster (Primary / Massive) ──────── */}
+              {/* Hidden file input — NOT linked via <label htmlFor> to prevent
+                  double-fire on drag-and-drop. Triggered via fileRef.click(). */}
               <input
                 ref={fileRef}
-                id="flyer-upload"
                 type="file"
                 accept="image/*"
                 onChange={handlePhotoSelect}
                 style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, overflow: 'hidden', zIndex: -1, top: 0, left: 0 }}
               />
-              <label
-                htmlFor="flyer-upload"
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => fileRef.current?.click()}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileRef.current?.click(); }}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
@@ -322,7 +328,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                 }}>
                   &#9889; Fastest way
                 </span>
-              </label>
+              </div>
 
               {/* ── Card 2: Create Manually (Secondary / Smaller) ──────── */}
               <button
@@ -437,9 +443,9 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
              ═══════════════════════════════════════════════════════════════ */}
           {view === 'poster' && (
             <>
+              {/* Hidden file input — triggered via fileRef.click() only */}
               <input
                 ref={fileRef}
-                id="flyer-upload-inner"
                 type="file"
                 accept="image/*"
                 onChange={handlePhotoSelect}
@@ -448,8 +454,11 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
 
               {!photoPreview ? (
                 /* ── No file selected yet — drop zone ──────────────────── */
-                <label
-                  htmlFor="flyer-upload-inner"
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => fileRef.current?.click()}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileRef.current?.click(); }}
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
@@ -469,7 +478,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                   <span style={{ fontSize: '13px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
                     Drag &amp; drop or tap to browse
                   </span>
-                </label>
+                </div>
               ) : (
                 /* ── Preview + Confirmation ─────────────────────────────── */
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
