@@ -102,7 +102,7 @@ export default function AdminSubmissionsTab({
                         fontFamily: "'DM Sans', sans-serif",
                       }}
                     >
-                      🔮 Confirm &amp; Extract (AI)
+                      🔮 Scan Flyer
                     </button>
                     <button
                       onClick={handleCancelPreview}
@@ -131,7 +131,7 @@ export default function AdminSubmissionsTab({
                 }}
               >
                 {adminFlyerUploading ? (
-                  <p className="text-sm font-medium" style={{ color: '#E8722A' }}>Analyzing with AI...</p>
+                  <p className="text-sm font-medium" style={{ color: '#E8722A' }}>Scanning...</p>
                 ) : (
                   <>
                     <p className="font-display font-bold text-sm" style={{ color: qText }}>Upload a Flyer / Poster</p>
@@ -182,7 +182,7 @@ export default function AdminSubmissionsTab({
                           fontFamily: "'DM Sans', sans-serif",
                         }}
                       >
-                        🔮 Extract
+                        🔮 Scan
                       </button>
                       <button
                         onClick={handleCancelPreview}
@@ -214,7 +214,7 @@ export default function AdminSubmissionsTab({
                 >
                   {adminFlyerUploading ? (
                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#E8722A', fontFamily: "'DM Sans', sans-serif" }}>
-                      Analyzing with AI...
+                      Scanning...
                     </div>
                   ) : (
                     <>
