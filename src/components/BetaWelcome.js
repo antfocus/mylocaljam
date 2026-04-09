@@ -151,8 +151,8 @@ export default function BetaWelcome() {
           color: GREY,
           lineHeight: 1.7,
         }}>
-          <strong style={{ color: WHITE, fontWeight: 700 }}>The Story:</strong>{' '}
-          I wanted to find out what was going on without having to shuffle around a bunch of different sites. I built mylocaljam to put everything in one place, letting you spend less time searching for it and more time being there!
+          <strong style={{ color: WHITE, fontWeight: 700 }}>My Story:</strong>{' '}
+          I wanted to know what was going on without having to bounce around many different sites. I built mylocaljam to put everything in one place, with one simple goal: less time hunting for plans, more time actually enjoying them!
         </p>
 
         {/* ── Territory ── */}
