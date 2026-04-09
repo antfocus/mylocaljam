@@ -48,6 +48,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
   const fileRef = useRef(null);
   const scrollRef = useRef(null);
   const submittedRef = useRef(false);
+  const confirmedRef = useRef(false);  // GATEKEEPER: only true when Confirm button is clicked
 
   // ── View state: 'cards' (default) | 'poster' | 'manual' ──────────────
   const [view, setView] = useState('cards');
@@ -120,6 +121,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
     setDate('');
     setSubmitting(false);
     submittedRef.current = false;
+    confirmedRef.current = false;  // Reset gatekeeper
     onClose();
   }, [onClose, photoPreview]);
 
@@ -133,6 +135,21 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
   }, [setPreviewFromFile]);
 
   const handlePhotoSubmit = async () => {
+    // ── DEBUG: trace every invocation ──
+    console.log('DEBUG: handlePhotoSubmit TRIGGERED', {
+      confirmedRef: confirmedRef.current,
+      hasFile: !!photoFile,
+      uploading,
+      submitted: submittedRef.current,
+      caller: new Error().stack?.split('\n')[2]?.trim(),
+    });
+
+    // ── GATEKEEPER: block unless Confirm button was explicitly clicked ──
+    if (!confirmedRef.current) {
+      console.warn('DEBUG: handlePhotoSubmit BLOCKED — confirmedRef is false');
+      return;
+    }
+
     if (!photoFile || uploading || submittedRef.current) return;
     const MAX_SIZE = 10 * 1024 * 1024;
     const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -162,6 +179,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
     } catch (err) {
       alert(`Upload failed: ${err.message || 'Please try again.'}`);
       submittedRef.current = false;
+      confirmedRef.current = false;  // Reset gatekeeper on failure
     }
     setUploading(false);
   };
@@ -512,6 +530,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                         setPhotoFile(null);
                         setPhotoPreview(null);
                         submittedRef.current = false;
+                        confirmedRef.current = false;  // Reset gatekeeper
                         // Re-open file picker immediately
                         setTimeout(() => fileRef.current?.click(), 50);
                       }}
@@ -528,9 +547,9 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                       Change Image
                     </button>
 
-                    {/* Confirm & Upload — primary */}
+                    {/* Confirm & Upload — THE ONLY PATH that sets confirmedRef */}
                     <button
-                      onClick={handlePhotoSubmit}
+                      onClick={() => { confirmedRef.current = true; handlePhotoSubmit(); }}
                       disabled={uploading}
                       style={{
                         flex: 1, padding: '14px', borderRadius: '12px', border: 'none',
