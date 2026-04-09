@@ -430,22 +430,23 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
             );
           })}
         </div>
-      </div>
 
-      {/* Dots — positioned over the hero */}
-      {featured.length > 1 && (
-        <div style={{ position: 'absolute', bottom: '10px', right: '20px', display: 'flex', gap: '5px', zIndex: 10 }}>
-          {featured.map((_, i) => (
-            <button key={i} onClick={() => handleDotClick(i)} style={{
-              height: '7px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-              width: i === active ? '18px' : '7px',
-              background: i === active ? '#E8722A' : 'rgba(255,255,255,0.4)',
-              transition: 'all 0.3s',
-              WebkitTapHighlightColor: 'transparent',
-            }} />
-          ))}
-        </div>
-      )}
+        {/* Dots — inside viewport so they aren't clipped by HeroPiston's
+            overflow:hidden + contain:layout paint on desktop browsers */}
+        {featured.length > 1 && (
+          <div style={{ position: 'absolute', bottom: '10px', right: '20px', display: 'flex', gap: '5px', zIndex: 10 }}>
+            {featured.map((_, i) => (
+              <button key={i} onClick={() => handleDotClick(i)} style={{
+                height: '7px', borderRadius: '4px', border: 'none', cursor: 'pointer',
+                width: i === active ? '18px' : '7px',
+                background: i === active ? '#E8722A' : 'rgba(255,255,255,0.4)',
+                transition: 'all 0.3s',
+                WebkitTapHighlightColor: 'transparent',
+              }} />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* ── Bio Bottom Sheet — MOVED to ArtistSpotlight (root level in page.js) ── */}
 
