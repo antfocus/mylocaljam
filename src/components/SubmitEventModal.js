@@ -69,12 +69,15 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
 
   const todayStr = new Date().toISOString().split('T')[0];
 
+  // Clean up object URLs to prevent memory leaks
+  useEffect(() => {
+    return () => { if (photoPreview) URL.revokeObjectURL(photoPreview); };
+  }, [photoPreview]);
+
   // Drag-and-drop for poster card
   const handleFileDrop = useCallback((file) => {
     setPhotoFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setPhotoPreview(ev.target.result);
-    reader.readAsDataURL(file);
+    setPhotoPreview(URL.createObjectURL(file));
     setView('poster');
   }, []);
   const { dragOver, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(handleFileDrop);
@@ -103,6 +106,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
 
   // ── Reset + close ──────────────────────────────────────────────────────
   const handleClose = useCallback(() => {
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
     setView('cards');
     setPhotoFile(null);
     setPhotoPreview(null);
@@ -113,16 +117,16 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
     setSubmitting(false);
     submittedRef.current = false;
     onClose();
-  }, [onClose]);
+  }, [onClose, photoPreview]);
 
   // ── Photo handlers ────────────────────────────────────────────────────
   const handlePhotoSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Revoke old preview URL if replacing an image
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
     setPhotoFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setPhotoPreview(ev.target.result);
-    reader.readAsDataURL(file);
+    setPhotoPreview(URL.createObjectURL(file));
     setView('poster');
   };
 
@@ -231,7 +235,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
         <div style={{ padding: '8px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {view !== 'cards' && (
-              <button onClick={() => { setView('cards'); setPhotoFile(null); setPhotoPreview(null); }} style={{
+              <button onClick={() => { if (photoPreview) URL.revokeObjectURL(photoPreview); setView('cards'); setPhotoFile(null); setPhotoPreview(null); }} style={{
                 background: 'none', border: 'none', cursor: 'pointer', color: t.textMuted, fontSize: '20px',
                 padding: '4px', display: 'flex', alignItems: 'center',
               }}>
@@ -443,6 +447,7 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
               />
 
               {!photoPreview ? (
+                /* ── No file selected yet — drop zone ──────────────────── */
                 <label
                   htmlFor="flyer-upload-inner"
                   onDragOver={handleDragOver}
@@ -466,35 +471,80 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                   </span>
                 </label>
               ) : (
+                /* ── Preview + Confirmation ─────────────────────────────── */
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ position: 'relative', borderRadius: '12px', overflow: 'hidden', border: `1px solid ${t.border}` }}>
-                    <img src={photoPreview} alt="Flyer preview" style={{ width: '100%', maxHeight: '300px', objectFit: 'cover', display: 'block' }} />
+                  {/* Preview label */}
+                  <span style={{
+                    fontSize: '12px', fontWeight: 700, color: t.textMuted,
+                    textTransform: 'uppercase', letterSpacing: '0.6px',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    Preview
+                  </span>
+
+                  {/* Image preview */}
+                  <div style={{
+                    position: 'relative', borderRadius: '12px', overflow: 'hidden',
+                    border: `1px solid ${t.border}`,
+                  }}>
+                    <img
+                      src={photoPreview}
+                      alt="Flyer preview"
+                      style={{ width: '100%', maxHeight: '300px', objectFit: 'cover', display: 'block' }}
+                    />
+                  </div>
+
+                  {/* Confirmation buttons */}
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    {/* Change Image — secondary */}
                     <button
-                      onClick={() => { setPhotoFile(null); setPhotoPreview(null); submittedRef.current = false; }}
+                      onClick={() => {
+                        if (photoPreview) URL.revokeObjectURL(photoPreview);
+                        setPhotoFile(null);
+                        setPhotoPreview(null);
+                        submittedRef.current = false;
+                        // Re-open file picker immediately
+                        setTimeout(() => fileRef.current?.click(), 50);
+                      }}
+                      disabled={uploading}
                       style={{
-                        position: 'absolute', top: '8px', right: '8px',
-                        width: '28px', height: '28px', borderRadius: '50%',
-                        background: 'rgba(0,0,0,0.6)', border: 'none', cursor: 'pointer',
-                        color: 'white', fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flex: 1, padding: '14px', borderRadius: '12px',
+                        border: `1px solid ${t.border}`, background: t.surfaceAlt,
+                        color: t.text, fontWeight: 700, fontSize: '14px',
+                        cursor: uploading ? 'default' : 'pointer',
+                        fontFamily: "'DM Sans', sans-serif",
+                        opacity: uploading ? 0.5 : 1,
                       }}
                     >
-                      &times;
+                      Change Image
+                    </button>
+
+                    {/* Confirm & Upload — primary */}
+                    <button
+                      onClick={handlePhotoSubmit}
+                      disabled={uploading}
+                      style={{
+                        flex: 1, padding: '14px', borderRadius: '12px', border: 'none',
+                        background: uploading ? t.textMuted : t.accent,
+                        color: '#1C1917', fontWeight: 700, fontSize: '14px',
+                        cursor: uploading ? 'default' : 'pointer',
+                        fontFamily: "'DM Sans', sans-serif",
+                        opacity: uploading ? 0.7 : 1,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                      }}
+                    >
+                      {uploading && (
+                        <span style={{
+                          display: 'inline-block', width: '14px', height: '14px',
+                          border: '2px solid rgba(28,25,23,0.3)',
+                          borderTopColor: '#1C1917',
+                          borderRadius: '50%',
+                          animation: 'submitSpin 0.6s linear infinite',
+                        }} />
+                      )}
+                      {uploading ? 'Uploading\u2026' : 'Confirm & Upload'}
                     </button>
                   </div>
-                  <button
-                    onClick={handlePhotoSubmit}
-                    disabled={uploading}
-                    style={{
-                      width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
-                      background: uploading ? t.textMuted : t.accent,
-                      color: '#1C1917', fontWeight: 700, fontSize: '15px',
-                      cursor: uploading ? 'default' : 'pointer',
-                      fontFamily: "'DM Sans', sans-serif",
-                      opacity: uploading ? 0.7 : 1,
-                    }}
-                  >
-                    {uploading ? 'Uploading...' : 'Submit Flyer'}
-                  </button>
                 </div>
               )}
               <div style={{ height: '40vh' }} />
@@ -552,6 +602,9 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
 
         </div>
       </div>
+
+      {/* Spinner keyframe for Confirm & Upload button */}
+      <style>{`@keyframes submitSpin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
