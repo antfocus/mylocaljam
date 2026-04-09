@@ -1901,8 +1901,11 @@ export default function HomePage() {
           boxSizing: 'border-box',
           zIndex: 120,
           opacity: filtersExpanded ? 1 : 0,
+          visibility: filtersExpanded ? 'visible' : 'hidden',
           pointerEvents: filtersExpanded ? 'auto' : 'none',
-          transition: 'opacity 0.2s ease, transform 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
+          transition: filtersExpanded
+            ? 'opacity 0.2s ease, transform 0.25s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s'
+            : 'opacity 0.2s ease, transform 0.25s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s 0.25s',
           background: darkMode ? '#1A1A28' : '#F2F0ED',
           borderBottom: filtersExpanded ? `1px solid ${t.border}` : 'none',
           borderRadius: '0 0 16px 16px',
@@ -2353,17 +2356,17 @@ export default function HomePage() {
         </div>
 
         {/* Scrim overlay when filter panel is open — dims content, click to close */}
-        <div
-          onClick={() => { if (filtersExpanded) { setFiltersExpanded(false); setActiveFilterCard(null); } }}
-          style={{
-            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 110,
-            background: filtersExpanded ? 'rgba(0,0,0,0.55)' : 'rgba(0,0,0,0)',
-            backdropFilter: filtersExpanded ? 'blur(4px)' : 'none',
-            WebkitBackdropFilter: filtersExpanded ? 'blur(4px)' : 'none',
-            pointerEvents: filtersExpanded ? 'auto' : 'none',
-            transition: 'background 0.2s ease, backdrop-filter 0.2s ease',
-          }}
-        />
+        {filtersExpanded && (
+          <div
+            onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }}
+            style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 110,
+              background: 'rgba(0,0,0,0.55)',
+              backdropFilter: 'blur(4px)',
+              WebkitBackdropFilter: 'blur(4px)',
+            }}
+          />
+        )}
 
         {/* ── Hero moved INSIDE scroll container (see below) ── */}
 
