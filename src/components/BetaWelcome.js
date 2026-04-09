@@ -6,9 +6,10 @@ import ModalWrapper from '@/components/ui/ModalWrapper';
 /**
  * BetaWelcome — Mobile-first welcome overlay with versioned persistence.
  *
- * VERSION 2 — FINAL COPY (2026-04-08):
- *   - Strict text hierarchy: pure white (#FFFFFF) for all labels/headings,
- *     light grey (#D1D5DB) for all body/description text.
+ * VERSION 2 — FINAL COPY (2026-04-09):
+ *   - Three-tier text hierarchy: vibrant teal (#2DD4BF) for category titles,
+ *     pure white (#FFFFFF) for feature labels, light grey (#D1D5DB) for body.
+ *   - Solid teal (#0D9488) Beta badge centered above logo.
  *   - Stacked feature layout: [Icon] → [Column: White title, Grey desc].
  *   - Centered header, badge, and sign-off.
  *   - localStorage key: hasSeenWelcome_v2.
@@ -21,6 +22,7 @@ const WELCOME_KEY = 'hasSeenWelcome_v2';
 // ── Text hierarchy tokens ──
 const WHITE = '#FFFFFF';   // labels, headings, feature names
 const GREY  = '#D1D5DB';   // body text, descriptions
+const TEAL  = '#2DD4BF';   // category titles (high-contrast vibrant teal)
 
 const FEATURES = [
   { emoji: '\uD83D\uDD0D', label: 'Discover', desc: 'Find live music, trivia, and specials happening around you.', tint: 'rgba(255, 165, 0, 0.15)' },
@@ -89,6 +91,23 @@ export default function BetaWelcome() {
         WebkitOverflowScrolling: 'touch',
       }}>
 
+        {/* ── Beta badge — centered, above logo, solid teal ── */}
+        <div style={{ textAlign: 'center', marginBottom: '12px' }}>
+          <span style={{
+            display: 'inline-block',
+            padding: '5px 16px',
+            borderRadius: '100px',
+            background: '#0D9488',
+            color: WHITE,
+            fontSize: '12px',
+            fontWeight: 800,
+            fontFamily: font,
+            letterSpacing: '1.2px',
+          }}>
+            OFFICIALLY IN BETA!
+          </span>
+        </div>
+
         {/* ── Header — centered wordmark + tagline ── */}
         <div style={{ textAlign: 'center', marginBottom: '4px' }}>
           <h2 style={{
@@ -103,7 +122,7 @@ export default function BetaWelcome() {
             <span style={{ color: teal }}>jam</span>
           </h2>
           <p style={{
-            margin: '6px 0 0',
+            margin: '6px 0 0 0',
             fontSize: '15px',
             fontWeight: 500,
             fontFamily: font,
@@ -112,24 +131,6 @@ export default function BetaWelcome() {
           }}>
             Your local source, all in one spot.
           </p>
-        </div>
-
-        {/* ── Beta badge — centered ── */}
-        <div style={{ textAlign: 'center', marginTop: '14px', marginBottom: '20px' }}>
-          <span style={{
-            display: 'inline-block',
-            padding: '5px 16px',
-            borderRadius: '100px',
-            background: 'rgba(232, 114, 42, 0.2)',
-            color: accent,
-            fontSize: '12px',
-            fontWeight: 800,
-            fontFamily: font,
-            letterSpacing: '1.2px',
-            border: '1px solid rgba(232, 114, 42, 0.4)',
-          }}>
-            OFFICIALLY IN BETA!
-          </span>
         </div>
 
         {/* ── Intro ── */}
@@ -151,7 +152,7 @@ export default function BetaWelcome() {
           color: GREY,
           lineHeight: 1.7,
         }}>
-          <strong style={{ color: WHITE, fontWeight: 700 }}>My Story:</strong>{' '}
+          <strong style={{ color: TEAL, fontWeight: 700 }}>My Story:</strong>{' '}
           I wanted to keep up with the local music scene without having to bounce around multiple sites. I built mylocaljam to put everything in one place, with one simple goal: less time searching for plans, and more time enjoying them!
         </p>
 
@@ -163,7 +164,7 @@ export default function BetaWelcome() {
           color: GREY,
           lineHeight: 1.7,
         }}>
-          <strong style={{ color: WHITE, fontWeight: 700 }}>Territory: Jersey Shore</strong>
+          <strong style={{ color: TEAL, fontWeight: 700 }}>Territory: Jersey Shore</strong>
           <br />
           <span style={{ color: GREY }}>Currently serving Monmouth and Ocean Counties. New territories will be added as we grow!</span>
         </p>
@@ -174,7 +175,7 @@ export default function BetaWelcome() {
           fontSize: '15px',
           fontWeight: 700,
           fontFamily: font,
-          color: WHITE,
+          color: TEAL,
         }}>
           Quick Features:
         </h3>
@@ -254,13 +255,13 @@ export default function BetaWelcome() {
           ))}
         </div>
 
-        {/* ── Sign-off — centered, white ── */}
+        {/* ── Sign-off — centered, teal ── */}
         <p style={{
           margin: '0 0 20px',
           fontSize: '15px',
           fontWeight: 700,
           fontFamily: font,
-          color: WHITE,
+          color: TEAL,
           textAlign: 'center',
         }}>
           See you out there!
