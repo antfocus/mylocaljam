@@ -24,7 +24,7 @@ const GREY  = '#D1D5DB';   // body text, descriptions
 
 const FEATURES = [
   { emoji: '\uD83D\uDD0D', label: 'Discover', desc: 'Find live music, trivia, and specials happening around you.', tint: 'rgba(255, 165, 0, 0.15)' },
-  { emoji: null, svg: true,  label: 'Follow',   desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'rgba(50, 205, 50, 0.15)' },
+  { emoji: null, svg: true,  label: 'Follow',   desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'transparent' },
   { emoji: '\uD83D\uDCF2',  label: 'Share',    desc: 'Easily send event details to friends to coordinate your night out.', tint: 'rgba(30, 144, 255, 0.15)' },
   { emoji: '\uD83D\uDCA1',  label: 'Ideas',    desc: 'Head to the Help & Feedback section in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
 ];
@@ -165,7 +165,7 @@ export default function BetaWelcome() {
         }}>
           <strong style={{ color: WHITE, fontWeight: 700 }}>Territory: Jersey Shore</strong>
           <br />
-          <span style={{ color: GREY }}>currently serving Monmouth and Ocean Counties. New territories will be added as we grow!</span>
+          <span style={{ color: GREY }}>Currently serving Monmouth and Ocean Counties. New territories will be added as we grow!</span>
         </p>
 
         {/* ── Quick Features header ── */}
