@@ -288,6 +288,10 @@ export default function HomePage() {
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [activeFilterCard, setActiveFilterCard] = useState(null); // 'distance' | 'when' | 'artist' | 'venue'
   const [spotlightEvent, setSpotlightEvent] = useState(null);   // event for ArtistSpotlight overlay
+
+  // ── Hero carousel dot state (lifted from HeroSection for overlay rendering) ──
+  const heroRef = useRef(null);
+  const [heroSlide, setHeroSlide] = useState({ active: 0, total: 0 });
   const [venueSearch, setVenueSearch] = useState('');
   const [locationOrigin, setLocationOrigin] = useState('');       // zip or city text
   const [locationLabel, setLocationLabel] = useState('Current Location');  // display label
@@ -1462,6 +1466,11 @@ export default function HomePage() {
   }, [events, todayStr, spotlightData]);
 
   const heroIsToday = heroEvents.length > 0 && heroEvents[0]?.date === todayStr;
+
+  // ── Stable callback for HeroSection slide changes (avoids re-renders) ──
+  const handleHeroSlideChange = useCallback((active, total) => {
+    setHeroSlide(prev => (prev.active === active && prev.total === total) ? prev : { active, total });
+  }, []);
 
   // Venue list with event counts (for venue filter)
   const venueListWithCounts = useMemo(() => {
@@ -2860,9 +2869,49 @@ export default function HomePage() {
             {/* ── Hero (inside scroll container) — IntersectionObserver drives collapse ── */}
             {/* HeroPiston uses a sentinel + sticky positioning. No scrollRef needed. */}
             {!hasActiveFilters && (
-              <HeroPiston>
-                <HeroSection events={heroEvents} isToday={heroIsToday} onArtistTap={setSpotlightEvent} />
-              </HeroPiston>
+              <div style={{ position: 'relative' }}>
+                <HeroPiston>
+                  <HeroSection
+                    ref={heroRef}
+                    events={heroEvents}
+                    isToday={heroIsToday}
+                    onArtistTap={setSpotlightEvent}
+                    onSlideChange={handleHeroSlideChange}
+                  />
+                </HeroPiston>
+
+                {/* ── Pagination dots — rendered OUTSIDE HeroPiston's clipping chain ── */}
+                {heroSlide.total > 1 && (
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '10px',
+                    right: '20px',
+                    display: 'flex',
+                    gap: '5px',
+                    zIndex: 50,
+                    pointerEvents: 'none',
+                  }}>
+                    {Array.from({ length: heroSlide.total }, (_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => heroRef.current?.goToSlide(i)}
+                        style={{
+                          height: '7px',
+                          borderRadius: '4px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          pointerEvents: 'auto',
+                          width: i === heroSlide.active ? '18px' : '7px',
+                          background: i === heroSlide.active ? '#E8722A' : 'rgba(255,255,255,0.4)',
+                          transition: 'all 0.3s',
+                          WebkitTapHighlightColor: 'transparent',
+                          padding: 0,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {loading ? (
               <div style={{ textAlign: 'center', padding: '64px 0', color: t.textMuted, fontSize: '15px' }}>

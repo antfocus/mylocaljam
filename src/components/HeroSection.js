@@ -11,7 +11,7 @@
  * Uses custom touch handlers with translateX (proven on iOS Safari).
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 
 const SKELETON = '__skeleton__';
 
@@ -35,7 +35,7 @@ function formatTimeFull(timeStr) {
   return `${h12}${mins} ${period}`;
 }
 
-export default function HeroSection({ events = [], spotlightEvents = [], isToday = true, onArtistTap }) {
+const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEvents = [], isToday = true, onArtistTap, onSlideChange }, ref) {
   const hasSpotlight = spotlightEvents.length > 0;
   const featured = hasSpotlight
     ? spotlightEvents.slice(0, 8)
@@ -216,6 +216,16 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
     snapTo(i);
     scheduleResume();
   }, [pauseAutoRotate, snapTo, scheduleResume]);
+
+  // ── Expose goToSlide to parent via imperative handle ──
+  useImperativeHandle(ref, () => ({
+    goToSlide: (i) => handleDotClick(i),
+  }), [handleDotClick]);
+
+  // ── Notify parent of slide changes ──
+  useEffect(() => {
+    if (onSlideChange) onSlideChange(active, featured.length);
+  }, [active, featured.length, onSlideChange]);
 
   // ── Bio Bottom Sheet — MOVED to ArtistSpotlight component (root level) ──
 
@@ -431,21 +441,8 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
           })}
         </div>
 
-        {/* Dots — inside viewport so they aren't clipped by HeroPiston's
-            overflow:hidden + contain:layout paint on desktop browsers */}
-        {featured.length > 1 && (
-          <div style={{ position: 'absolute', bottom: '10px', right: '20px', display: 'flex', gap: '5px', zIndex: 10 }}>
-            {featured.map((_, i) => (
-              <button key={i} onClick={() => handleDotClick(i)} style={{
-                height: '7px', borderRadius: '4px', border: 'none', cursor: 'pointer',
-                width: i === active ? '18px' : '7px',
-                background: i === active ? '#E8722A' : 'rgba(255,255,255,0.4)',
-                transition: 'all 0.3s',
-                WebkitTapHighlightColor: 'transparent',
-              }} />
-            ))}
-          </div>
-        )}
+        {/* Dots removed — rendered in page.js as a sibling overlay of HeroPiston
+            to escape the overflow:hidden + contain:layout paint clipping chain */}
       </div>
 
       {/* ── Bio Bottom Sheet — MOVED to ArtistSpotlight (root level in page.js) ── */}
@@ -453,4 +450,7 @@ export default function HeroSection({ events = [], spotlightEvents = [], isToday
       <style>{`@keyframes shimmer { from { opacity: 0.6; } to { opacity: 1; } }`}</style>
     </div>
   );
-}
+});
+
+HeroSection.displayName = 'HeroSection';
+export default HeroSection;
