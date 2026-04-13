@@ -9,6 +9,7 @@ import AdminDashboardTab from '@/components/admin/AdminDashboardTab';
 import AdminTriageTab from '@/components/admin/AdminTriageTab';
 import AdminEventsTab from '@/components/admin/AdminEventsTab';
 import AdminArtistsTab from '@/components/admin/AdminArtistsTab';
+import AdminEventTemplatesTab from '@/components/admin/AdminEventTemplatesTab';
 import AdminSpotlightTab from '@/components/admin/AdminSpotlightTab';
 import AdminVenuesTab from '@/components/admin/AdminVenuesTab';
 // AdminFestivalsTab consolidated into AdminEventsTab (Phase 4 nav refactor)
@@ -20,6 +21,7 @@ import ModalWrapper from '@/components/ui/ModalWrapper';
 import useAdminQueue from '@/hooks/useAdminQueue';
 import useAdminTriage from '@/hooks/useAdminTriage';
 import useAdminArtists from '@/hooks/useAdminArtists';
+import useAdminEventTemplates from '@/hooks/useAdminEventTemplates';
 import useAdminSpotlight from '@/hooks/useAdminSpotlight';
 import useAdminEvents from '@/hooks/useAdminEvents';
 import useAdminVenues from '@/hooks/useAdminVenues';
@@ -110,6 +112,7 @@ export default function AdminPage() {
   const re = useAdminReports({ password });
 
   const ev = useAdminEvents({ password, showQueueToast, setAuthenticated });
+  const et = useAdminEventTemplates({ password });
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -118,6 +121,7 @@ export default function AdminPage() {
         ev.fetchEvents(),
         fetch('/api/submissions', { headers: { Authorization: `Bearer ${password}` } }),
         fetch('/api/reports', { headers: { Authorization: `Bearer ${password}` } }),
+        et.fetchTemplates(),
       ]);
 
       if (subRes.ok) {
@@ -132,7 +136,7 @@ export default function AdminPage() {
       console.error(err);
     }
     setLoading(false);
-  }, [password, ev.fetchEvents]);
+  }, [password, ev.fetchEvents, et.fetchTemplates]);
 
   const ve = useAdminVenues({ password, showQueueToast });
   const q = useAdminQueue({ password, venues: ve.venues, setVenues: ve.setVenues, fetchAll, supabase, toTitleCase, showQueueToast, authenticated });
@@ -265,6 +269,7 @@ export default function AdminPage() {
           { key: 'triage', label: 'Triage', count: tr.triageEvents.length },
           { key: 'events', label: 'Event Feed', count: ev.eventsTotal || ev.events.length },
           { key: 'artists', label: 'Artists', count: ar.artists.length },
+          { key: 'templates', label: 'Event Templates', count: et.templates.length },
           { key: 'spotlight', label: 'Spotlight', count: sp.spotlightPins.length },
           { key: 'venues', label: 'Venues', count: ve.scraperHealth.filter(s => s.status === 'fail').length },
           { key: 'submissions', label: 'Submissions', count: q.queue.length },
@@ -281,7 +286,7 @@ export default function AdminPage() {
                 ? { background: 'var(--bg-card)', borderBottom: '2px solid #E8722A', color: '#FFFFFF' }
                 : { opacity: 0.6 }),
             }}
-            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); re.fetchReports(); ve.fetchScraperHealth(); } if (tab.key === 'events') { ev.fetchEvents(); fe.fetchFestivalNames(); } if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'venues') ve.fetchScraperHealth(); if (tab.key === 'reports') { re.setFlagsViewFilter('pending'); re.fetchReports(); } }}
+            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); re.fetchReports(); ve.fetchScraperHealth(); } if (tab.key === 'events') { ev.fetchEvents(); fe.fetchFestivalNames(); } if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'templates') et.fetchTemplates(et.templatesSearch, et.templatesNeedsInfo); if (tab.key === 'venues') ve.fetchScraperHealth(); if (tab.key === 'reports') { re.setFlagsViewFilter('pending'); re.fetchReports(); } }}
           >
             {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? '#1C1917' : 'var(--text-secondary)' }}>{tab.count}</span>}
           </button>
@@ -388,6 +393,29 @@ export default function AdminPage() {
           regenerateField={ar.regenerateField} showQueueToast={showQueueToast}
           setActiveTab={setActiveTab} setReturnToTab={setReturnToTab} returnToTab={returnToTab}
           GENRES={GENRES} VIBES={VIBES}
+        />
+      )}
+
+      {/* Event Templates Tab */}
+      {activeTab === 'templates' && !loading && (
+        <AdminEventTemplatesTab
+          templates={et.templates} venues={ve.venues} password={password} isMobile={isMobile}
+          templatesSearch={et.templatesSearch} setTemplatesSearch={et.setTemplatesSearch}
+          templatesNeedsInfo={et.templatesNeedsInfo} setTemplatesNeedsInfo={et.setTemplatesNeedsInfo}
+          templateMissingFilters={et.templateMissingFilters} setTemplateMissingFilters={et.setTemplateMissingFilters}
+          templatesSortBy={et.templatesSortBy} setTemplatesSortBy={et.setTemplatesSortBy}
+          templateSubTab={et.templateSubTab} setTemplateSubTab={et.setTemplateSubTab}
+          directorySort={et.directorySort} setDirectorySort={et.setDirectorySort}
+          editingTemplate={et.editingTemplate} setEditingTemplate={et.setEditingTemplate}
+          templateForm={et.templateForm} setTemplateForm={et.setTemplateForm}
+          templateToast={et.templateToast} setTemplateToast={et.setTemplateToast}
+          duplicateNameWarning={et.duplicateNameWarning} setDuplicateNameWarning={et.setDuplicateNameWarning}
+          imageCandidates={et.imageCandidates} setImageCandidates={et.setImageCandidates}
+          imageCarouselIdx={et.imageCarouselIdx} setImageCarouselIdx={et.setImageCarouselIdx}
+          editPanelRef={et.editPanelRef}
+          deleteConfirm={et.deleteConfirm} setDeleteConfirm={et.setDeleteConfirm}
+          fetchTemplates={et.fetchTemplates}
+          showQueueToast={showQueueToast}
         />
       )}
 
