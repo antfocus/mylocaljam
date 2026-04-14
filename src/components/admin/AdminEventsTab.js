@@ -59,6 +59,17 @@ export default function AdminEventsTab({
     return m;
   }, [events, templates]);
 
+  // Pre-computed options for the per-row "Link Template" dropdown rendered
+  // in the No-Match slot. Relies on the API's ORDER BY template_name; we
+  // just project each row to {id,label} so every dropdown renders the
+  // same compact array, and React reconciliation stays cheap across the
+  // 1,800+ event feed.
+  const templateOptions = useMemo(() => {
+    return (templates || [])
+      .filter(t => t?.id && t.template_name)
+      .map(t => ({ id: t.id, label: t.template_name }));
+  }, [templates]);
+
   // Confirm a suggested match → PUT /api/admin { id, template_id } + optimistic update.
   // Rolls back on failure so the UI never lies about DB state.
   const confirmTemplateMatch = async (ev, templateId, templateName) => {
@@ -617,17 +628,63 @@ export default function AdminEventsTab({
                         </button>
                       );
                     }
+                    // ── No Match state ────────────────────────────────────
+                    // Manual Template Picker + Magic Wand, side by side.
+                    // Dropdown is only rendered when the event is unlinked AND
+                    // the matcher produced no suggestion — saves 1,800+ selects
+                    // from existing even in memory for linked/suggested rows.
                     return (
-                      <span
-                        title="The matchmaker couldn't find a template for this event's title + venue"
-                        style={{
-                          fontFamily: "'DM Sans', sans-serif", fontSize: '11px', fontWeight: 500,
-                          color: 'var(--text-muted)', fontStyle: 'italic',
-                          padding: '3px 6px',
-                        }}
+                      <div
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        onClick={(e) => e.stopPropagation()}
+                        title="No matched template — pick one manually or wand a new one"
                       >
-                        No Match
-                      </span>
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const templateId = e.target.value;
+                            if (!templateId) return;
+                            const t = (templates || []).find(x => x.id === templateId);
+                            if (!t) return;
+                            confirmTemplateMatch(ev, t.id, t.template_name);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[11px] font-display font-semibold rounded-lg px-2 py-1"
+                          style={{
+                            background: 'var(--bg-elevated)',
+                            border: '1px solid var(--border)',
+                            color: 'var(--text-muted)',
+                            fontFamily: "'DM Sans', sans-serif",
+                            maxWidth: isMobile ? '140px' : '190px',
+                            appearance: 'auto',
+                          }}
+                        >
+                          <option value="">{'\u2014 Link Template \u2014'}</option>
+                          {templateOptions.map(opt => (
+                            <option key={opt.id} value={opt.id}>{opt.label}</option>
+                          ))}
+                        </select>
+                        {/* Magic Wand — relocated here from the right-side
+                            action cluster so it lives with the picker. */}
+                        <button
+                          type="button"
+                          className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent"
+                          onClick={(e) => { e.stopPropagation(); handleCreateTemplateFromEvent(ev); }}
+                          title="Create template from this event"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M15 4V2"/>
+                            <path d="M15 16v-2"/>
+                            <path d="M8 9h2"/>
+                            <path d="M20 9h2"/>
+                            <path d="m17.8 11.8 1.2 1.2"/>
+                            <path d="m17.8 6.2 1.2-1.2"/>
+                            <path d="m3 21 9-9"/>
+                            <path d="m12.2 6.2-1.2-1.2"/>
+                          </svg>
+                        </button>
+                      </div>
                     );
                   })()}
                   <select
@@ -699,23 +756,6 @@ export default function AdminEventsTab({
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
                     </a>
                   )}
-                  {/* Magic Wand — create a new Event Template from this row. */}
-                  <button
-                    className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent"
-                    onClick={(e) => { e.stopPropagation(); handleCreateTemplateFromEvent(ev); }}
-                    title="Create template from this event"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M15 4V2"/>
-                      <path d="M15 16v-2"/>
-                      <path d="M8 9h2"/>
-                      <path d="M20 9h2"/>
-                      <path d="m17.8 11.8 1.2 1.2"/>
-                      <path d="m17.8 6.2 1.2-1.2"/>
-                      <path d="m3 21 9-9"/>
-                      <path d="m12.2 6.2-1.2-1.2"/>
-                    </svg>
-                  </button>
                   <button className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent" onClick={() => { setEditingEvent(ev); setShowEventForm(true); }}>
                     {Icons.edit}
                   </button>
