@@ -112,7 +112,8 @@ export default function AdminPage() {
   const re = useAdminReports({ password });
 
   const ev = useAdminEvents({ password, showQueueToast, setAuthenticated });
-  const et = useAdminEventTemplates({ password });
+  const ve = useAdminVenues({ password, showQueueToast });
+  const et = useAdminEventTemplates({ password, venues: ve.venues });
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -138,7 +139,6 @@ export default function AdminPage() {
     setLoading(false);
   }, [password, ev.fetchEvents, et.fetchTemplates]);
 
-  const ve = useAdminVenues({ password, showQueueToast });
   const q = useAdminQueue({ password, venues: ve.venues, setVenues: ve.setVenues, fetchAll, supabase, toTitleCase, showQueueToast, authenticated });
   const tr = useAdminTriage({ password, showQueueToast });
   const ar = useAdminArtists({ password });
@@ -333,7 +333,9 @@ export default function AdminPage() {
       {/* Events Tab */}
       {activeTab === 'events' && !loading && (
         <AdminEventsTab
-          events={ev.events} artists={ar.artists} venues={ve.venues} password={password}
+          events={ev.events} artists={ar.artists} venues={ve.venues}
+          templates={et.templates}
+          password={password}
           isMobile={isMobile}
           eventsSearch={ev.eventsSearch} setEventsSearch={ev.setEventsSearch}
           eventsStatusFilter={ev.eventsStatusFilter} setEventsStatusFilter={ev.setEventsStatusFilter}
@@ -414,6 +416,9 @@ export default function AdminPage() {
           imageCarouselIdx={et.imageCarouselIdx} setImageCarouselIdx={et.setImageCarouselIdx}
           editPanelRef={et.editPanelRef}
           deleteConfirm={et.deleteConfirm} setDeleteConfirm={et.setDeleteConfirm}
+          regenerateField={et.regenerateField} regeneratingField={et.regeneratingField}
+          runBulkEnrich={et.runBulkEnrich} bulkEnrichProgress={et.bulkEnrichProgress}
+          aiLoading={et.aiLoading} setAiLoading={et.setAiLoading}
           fetchTemplates={et.fetchTemplates}
           showQueueToast={showQueueToast}
         />

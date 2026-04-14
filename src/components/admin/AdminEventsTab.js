@@ -1,11 +1,14 @@
 'use client';
 
+import { useMemo } from 'react';
 import { formatDate, formatTime } from '@/lib/utils';
 import { Icons } from '@/components/Icons';
 import Badge from '@/components/ui/Badge';
+import { matchTemplate } from '@/lib/matchTemplate';
 
 export default function AdminEventsTab({
   events, artists, venues,
+  templates = [],
   eventsSearch, setEventsSearch, eventsStatusFilter, setEventsStatusFilter,
   eventsMissingTime, setEventsMissingTime,
   eventsSortField, setEventsSortField, eventsSortOrder, setEventsSortOrder,
@@ -21,6 +24,62 @@ export default function AdminEventsTab({
   editingFestival, setEditingFestival, fetchFestivalNames,
 }) {
   const headers = { Authorization: 'Bearer ' + password };
+
+  // ── Template matcher dry-run wiring ───────────────────────────────────
+  // Two lookup tables, both memoised so we don't recompute per row:
+  //
+  //   templatesById      — O(1) resolve of `ev.template_id` → template row
+  //                        (used to render the solid-green "Linked" badge
+  //                         with the bound template's name).
+  //   matchByEventId     — O(1) lookup of the matchmaker's suggestion for
+  //                        every event currently in memory. `null` means
+  //                        no match → renders the gray "No Match" text.
+  //
+  // Recompute keys: `events` and `templates`. Filtering/pagination creates
+  // new event arrays, but the underlying objects' identities hold, so the
+  // inner map work is cheap even on a 500-event page.
+  const templatesById = useMemo(() => {
+    const m = new Map();
+    for (const t of templates || []) if (t?.id) m.set(t.id, t);
+    return m;
+  }, [templates]);
+
+  const matchByEventId = useMemo(() => {
+    const m = new Map();
+    for (const ev of events || []) {
+      // Skip events already linked — we don't need a suggestion for them.
+      if (ev.template_id) continue;
+      m.set(ev.id, matchTemplate(
+        { title: ev.event_title || ev.artist_name, venue_id: ev.venue_id },
+        templates,
+      ));
+    }
+    return m;
+  }, [events, templates]);
+
+  // Confirm a suggested match → PUT /api/admin { id, template_id } + optimistic update.
+  // Rolls back on failure so the UI never lies about DB state.
+  const confirmTemplateMatch = async (ev, templateId, templateName) => {
+    if (!ev?.id || !templateId) return;
+    const prevEvents = events;
+    setEvents(list => list.map(e => e.id === ev.id ? { ...e, template_id: templateId } : e));
+    try {
+      const res = await fetch('/api/admin', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+        body: JSON.stringify({ id: ev.id, template_id: templateId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      showQueueToast(`\uD83D\uDD17 Linked "${ev.event_title || ev.artist_name}" \u2192 ${templateName}`);
+    } catch (err) {
+      console.error('Template link failed:', err);
+      setEvents(prevEvents);
+      alert(`Link failed: ${err.message}`);
+    }
+  };
         // Server-side filtering handles status/date — client filters by search text + missing time
         const searchLower = eventsSearch.trim().toLowerCase();
         let filtered = events;
@@ -476,6 +535,70 @@ export default function AdminEventsTab({
                   display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', flexShrink: 0,
                   ...(isMobile ? { paddingLeft: '26px' } : {}),
                 }}>
+                  {/* ── Suggested Template / Linked / No Match badge ──────────
+                     Dry-run output of matchTemplate.js. Three render paths:
+                       - ev.template_id present → solid green "Linked: <name>"
+                       - match found          → orange-bordered "Suggest: <name>" (clickable → confirm)
+                       - null                 → subtle gray "No Match" text        */}
+                  {(() => {
+                    if (ev.template_id) {
+                      const linked = templatesById.get(ev.template_id);
+                      const label = linked?.template_name || 'Template linked';
+                      return (
+                        <span
+                          title={`Linked to template: ${label}`}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            padding: '3px 8px', borderRadius: '999px',
+                            background: '#22c55e', color: '#052e14',
+                            fontFamily: "'DM Sans', sans-serif", fontSize: '11px', fontWeight: 700,
+                            maxWidth: isMobile ? '140px' : '180px',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <span aria-hidden="true">{'\uD83D\uDD17'}</span>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Linked: {label}</span>
+                        </span>
+                      );
+                    }
+                    const suggestion = matchByEventId.get(ev.id);
+                    if (suggestion && suggestion.template) {
+                      const t = suggestion.template;
+                      const matchKindLabel = suggestion.matchType.replace('_', ' ');
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => confirmTemplateMatch(ev, t.id, t.template_name)}
+                          title={`Confirm match: ${t.template_name} (${matchKindLabel}). Click to set template_id.`}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            padding: '3px 8px', borderRadius: '999px',
+                            background: 'rgba(232,114,42,0.08)', color: '#E8722A',
+                            border: '1px solid #E8722A',
+                            cursor: 'pointer',
+                            fontFamily: "'DM Sans', sans-serif", fontSize: '11px', fontWeight: 700,
+                            maxWidth: isMobile ? '150px' : '200px',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}
+                        >
+                          <span aria-hidden="true">{'\u2728'}</span>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Suggest: {t.template_name}</span>
+                        </button>
+                      );
+                    }
+                    return (
+                      <span
+                        title="The matchmaker couldn't find a template for this event's title + venue"
+                        style={{
+                          fontFamily: "'DM Sans', sans-serif", fontSize: '11px', fontWeight: 500,
+                          color: 'var(--text-muted)', fontStyle: 'italic',
+                          padding: '3px 6px',
+                        }}
+                      >
+                        No Match
+                      </span>
+                    );
+                  })()}
                   <select
                     value={ev.category || 'Live Music'}
                     onChange={(e) => updateEventCategory(ev, e.target.value)}

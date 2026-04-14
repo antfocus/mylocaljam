@@ -139,13 +139,21 @@ export async function POST(request) {
 
   try {
     // ── Pass 1: Single Perplexity call — bio + category + vibes ─────────────
+    // When a venue is specified, we inject an extra clause that tells the model
+    // to write a bio rooted in THAT specific venue's branding — not a generic
+    // description of the event type. This is the difference between
+    // "Wonder Bar Music Bingo" and just "Music Bingo".
+    const venueSpecificClause = venueName
+      ? `\n- IMPORTANT: This event runs specifically at "${venueName}" (Jersey Shore area). The bio MUST reflect THAT location's particular character, crowd, and branding — not a generic description of the event type. If "${venueName}" has a known reputation (dive bar, upscale lounge, brewery, beach club, listening room, etc.), lean into it. Mention distinguishing details that would make a regular nod in recognition.`
+      : '';
+
     const systemPrompt = `Act as a professional event curator and local guide. Write a three-sentence bio for "${templateName}". Describe the physical atmosphere, the crowd, and what a guest can expect to experience while attending.
 
 Constraints:
 - Strictly three sentences long.
 - Do NOT mention past venues or history.
 - Use evocative, high-energy language suitable for a discovery app.
-- Use a 'Dark Mode' aesthetic in your descriptions — think moody, vibrant, and immersive.
+- Use a 'Dark Mode' aesthetic in your descriptions — think moody, vibrant, and immersive.${venueSpecificClause}
 
 Additionally classify with:
 - category: MUST be exactly one of these canonical values: ${JSON.stringify(ALLOWED_CATEGORIES)}

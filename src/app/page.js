@@ -783,7 +783,7 @@ export default function HomePage() {
       // Using select('*') for broad compatibility; revisit with explicit columns after schema audit.
       const { data, error } = await supabase
         .from('events')
-        .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url)')
+        .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates(bio, image_url)')
         .gte('event_date', floor)
         .eq('status', 'published')
         .order('event_date', { ascending: true })
@@ -839,15 +839,22 @@ export default function HomePage() {
             return raw.substring(0, 10);
           })(),
           start_time:    extractedStartTime,
-          // Hierarchy of Truth: custom event override → inherited artist bio → scraped fallback
-          // artist_bio (scraped) must NEVER override a curated artists.bio
-          description:   e.custom_bio || e.artists?.bio || e.artist_bio || '',
+          // Hierarchy of Truth (bio):
+          //   1. event.custom_bio            — manual admin override
+          //   2. event_templates.bio         — AI-enriched template bio (recurring show)
+          //   3. artists.bio                 — curated band bio
+          //   4. event.artist_bio            — raw scraper description fallback
+          description:   e.custom_bio || e.event_templates?.bio || e.artists?.bio || e.artist_bio || '',
           artist_genres: e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
           artist_vibes:  e.custom_vibes?.length ? e.custom_vibes : (e.vibe ? [e.vibe] : (e.artists?.vibes || [])),
           is_tribute:    e.artists?.is_tribute || false,
-          // Image waterfall: custom → event-level → legacy scraper column → artist → venue
-          // cleanImg treats "" and "None" as null so the waterfall keeps falling
-          event_image:   cleanImg(e.custom_image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
+          // Image waterfall:
+          //   1. custom_image_url            — manual admin override
+          //   2. event_templates.image_url   — AI-enriched template image
+          //   3. event_image_url / image_url — per-event scraper flyer (kept so specific posters still show)
+          //   4. artists.image_url           — band photo fallback
+          //   cleanImg treats "" and "None" as null so the waterfall keeps falling
+          event_image:   cleanImg(e.custom_image_url) || cleanImg(e.event_templates?.image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
           artist_image:  cleanImg(e.artists?.image_url) || null,
           venue_type:    e.venues?.venue_type || null,
           venue_tags:    e.venues?.tags || [],
@@ -1242,15 +1249,15 @@ export default function HomePage() {
               return raw.substring(0, 10);
             })(),
             start_time:    extractedStartTime,
-            // Hierarchy of Truth: custom event override → inherited artist bio → scraped fallback
-            // cleanStr filters "", "None", and whitespace-only so the chain keeps falling
-            // artist_bio (scraped) must NEVER override a curated artists.bio
-            description:   cleanStr(e.custom_bio) || cleanStr(e.artists?.bio) || cleanStr(e.artist_bio) || '',
+            // Hierarchy of Truth (bio) — same ladder as fetchEvents:
+            //   1. custom_bio → 2. event_templates.bio → 3. artists.bio → 4. artist_bio (scraper)
+            description:   cleanStr(e.custom_bio) || cleanStr(e.event_templates?.bio) || cleanStr(e.artists?.bio) || cleanStr(e.artist_bio) || '',
             artist_genres: e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
             artist_vibes:  e.custom_vibes?.length ? e.custom_vibes : (e.vibe ? [e.vibe] : (e.artists?.vibes || [])),
             is_tribute:    e.artists?.is_tribute || false,
-            // Image waterfall synced with fetchEvents: custom → event-level → legacy → artist
-            event_image:   cleanImg(e.custom_image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
+            // Image waterfall synced with fetchEvents:
+            //   1. custom_image_url → 2. event_templates.image_url → 3. event-level scraper flyer → 4. artist photo
+            event_image:   cleanImg(e.custom_image_url) || cleanImg(e.event_templates?.image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
             artist_image:  cleanImg(e.artists?.image_url) || null,
             venue_type:    e.venues?.venue_type || null,
             venue_tags:    e.venues?.tags || [],

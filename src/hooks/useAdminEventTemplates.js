@@ -2,7 +2,16 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-export default function useAdminEventTemplates({ password }) {
+export default function useAdminEventTemplates({ password, venues = [] }) {
+  // Resolve a template's venue name from the venues list passed in by the caller.
+  // Used to give the AI prompt context about WHERE a recurring event runs, so
+  // the bio and image search reflect that specific location's branding.
+  const resolveVenueName = (venueId) => {
+    if (!venueId) return '';
+    const v = (venues || []).find(x => x.id === venueId);
+    return v?.name || '';
+  };
+
   const [templates, setTemplates] = useState([]);
   const [templatesSearch, setTemplatesSearch] = useState('');
   const [templatesNeedsInfo, setTemplatesNeedsInfo] = useState(false);
@@ -100,10 +109,11 @@ export default function useAdminEventTemplates({ password }) {
       try {
         if (template.is_locked) { done++; setBulkEnrichProgress({ done, total: toEnrich.length }); continue; }
 
+        const venueName = resolveVenueName(template.venue_id);
         const res = await fetch('/api/admin/event-templates/ai-lookup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-          body: JSON.stringify({ templateName: template.template_name }),
+          body: JSON.stringify({ templateName: template.template_name, venueName }),
         });
         if (!res.ok) { done++; setBulkEnrichProgress({ done, total: toEnrich.length }); continue; }
         const ai = await res.json();
@@ -148,10 +158,11 @@ export default function useAdminEventTemplates({ password }) {
     setRegeneratingField(field);
     setTemplateToast(null);
     try {
+      const venueName = resolveVenueName(editingTemplate.venue_id);
       const res = await fetch('/api/admin/event-templates/ai-lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-        body: JSON.stringify({ templateName: editingTemplate.template_name }),
+        body: JSON.stringify({ templateName: editingTemplate.template_name, venueName }),
       });
       if (!res.ok) throw new Error('AI lookup failed');
       const ai = await res.json();

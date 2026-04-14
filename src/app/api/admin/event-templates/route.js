@@ -74,6 +74,43 @@ export async function GET(request) {
     );
   }
 
+  // Attach `_event_count` — how many times each template_name (or alias)
+  // appears in the live `events` feed. Enables "Sort by Frequency" in the
+  // admin UI and lets callers see at a glance which templates are actively
+  // recurring. Counted case-insensitively against name + aliases.
+  try {
+    // `events` stores the event name in `event_title` (confirmed Staging + Prod).
+    const { data: events } = await supabase
+      .from('events')
+      .select('event_title')
+      .not('event_title', 'is', null)
+      .limit(10000);
+
+    const counts = new Map();
+    for (const row of events || []) {
+      const key = (row?.event_title || '').trim().toLowerCase();
+      if (!key) continue;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+
+    results = results.map(t => {
+      let count = 0;
+      if (t.template_name) {
+        count += counts.get(t.template_name.trim().toLowerCase()) || 0;
+      }
+      if (Array.isArray(t.aliases)) {
+        for (const a of t.aliases) {
+          if (!a) continue;
+          count += counts.get(String(a).trim().toLowerCase()) || 0;
+        }
+      }
+      return { ...t, _event_count: count };
+    });
+  } catch {
+    // Non-fatal — templates list still renders without counts.
+    results = results.map(t => ({ ...t, _event_count: 0 }));
+  }
+
   return NextResponse.json(results);
 }
 

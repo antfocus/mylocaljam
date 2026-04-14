@@ -221,6 +221,9 @@ export async function PUT(request) {
     ...(body.category !== undefined && { category: body.category }),
     ...(body.triage_status !== undefined && { triage_status: body.triage_status }),
     ...(body.artist_id !== undefined && { artist_id: body.artist_id }),
+    // template_id: null clears a link (use case: "unlink from template"),
+    // a UUID sets the "Safe Link" from the Discovery / Event Feed matchmaker UI.
+    ...(body.template_id !== undefined && { template_id: body.template_id || null }),
     // ── Custom metadata fields (Phase 3: Unified Visual CMS) ──────────────
     ...(body.custom_bio !== undefined && { custom_bio: body.custom_bio || null }),
     ...(body.custom_genres !== undefined && { custom_genres: body.custom_genres || null }),

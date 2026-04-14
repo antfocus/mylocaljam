@@ -53,10 +53,14 @@ function getServerClient() {
 const EVENT_SELECT = [
   'id', 'artist_name', 'event_title', 'venue_name', 'event_date',
   'genre', 'vibe', 'cover', 'ticket_link', 'artist_bio',
-  'source', 'status', 'category', 'artist_id', 'event_image_url', 'image_url',
+  'source', 'status', 'category', 'artist_id', 'template_id',
+  'event_image_url', 'image_url',
   'custom_bio', 'custom_genres', 'custom_vibes', 'custom_image_url', 'is_custom_metadata',
   'venues(name, address, color, photo_url, venue_type)',
   'artists(name, bio, image_url, genres, vibes, is_tribute)',
+  // New: pull the AI-enriched template bio + image so the priority ladder
+  // can reach them without a second round-trip.
+  'event_templates(bio, image_url)',
 ].join(', ');
 
 /**
@@ -96,11 +100,18 @@ function flattenEvent(e) {
     status:         e.status,
     ticket_link:    e.ticket_link || null,
     category:       e.category || 'Live Music',
-    // Hierarchy of Truth: custom event override → inherited artist bio → scraped fallback
-    // artist_bio (scraped) must NEVER override a curated artists.bio
-    description:    e.custom_bio || e.artists?.bio || e.artist_bio || '',
-    // Image waterfall: custom → event-level → legacy scraper column → artist
-    event_image:    cleanImg(e.custom_image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
+    // Hierarchy of Truth (bio):
+    //   1. custom_bio                — admin manual override
+    //   2. event_templates.bio       — AI-enriched template bio (recurring show)
+    //   3. artists.bio               — curated band bio
+    //   4. artist_bio                — raw scraper description fallback
+    description:    e.custom_bio || e.event_templates?.bio || e.artists?.bio || e.artist_bio || '',
+    // Image waterfall:
+    //   1. custom_image_url          — admin manual override
+    //   2. event_templates.image_url — AI-enriched template image
+    //   3. event_image_url/image_url — per-event scraper flyer
+    //   4. artists.image_url         — band photo (set separately below)
+    event_image:    cleanImg(e.custom_image_url) || cleanImg(e.event_templates?.image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
     artist_image:   cleanImg(e.artists?.image_url) || null,
     artist_genres:  e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
     is_tribute:     e.artists?.is_tribute || false,

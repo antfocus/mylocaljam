@@ -51,6 +51,7 @@ import { scrapeCaptainsInn } from '@/lib/scrapers/captainsInn';
 import { scrapeCharleysOceanGrill } from '@/lib/scrapers/charleysOceanGrill';
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
 import { enrichArtist } from '@/lib/enrichArtist';
+import { matchTemplate } from '@/lib/matchTemplate';
 
 
 export const dynamic = 'force-dynamic';
@@ -505,6 +506,58 @@ export async function POST(request) {
       for (const row of (locked || [])) protectedIds.add(row.external_id);
     }
   } catch { /* proceed without protection if query fails */ }
+
+  // ── Event-template matchmaker: attach template_id pre-upsert ─────────────
+  // One-shot fetch of all event_templates; matchTemplate is pure so we only
+  // need name + aliases + venue_id + id. Staying well under the 5k row cap
+  // keeps this comfortable even as the template library grows.
+  let templates = [];
+  try {
+    const { data: tplRows } = await supabase
+      .from('event_templates')
+      .select('id, template_name, aliases, venue_id')
+      .limit(5000);
+    templates = tplRows || [];
+  } catch { /* no templates → matcher returns null for every event, harmless */ }
+
+  // Preserve admin cherry-picks: any event row that already has a non-null
+  // template_id in the DB was either manually linked via the Event Feed's
+  // "Suggest: X" action or claimed during Discovery. We MUST NOT clobber it
+  // with a fresh automated match, even if the matcher would agree.
+  const alreadyLinkedExtIds = new Set();
+  if (templates.length > 0 && allExtIds.length > 0) {
+    try {
+      for (let i = 0; i < allExtIds.length; i += 200) {
+        const chunk = allExtIds.slice(i, i + 200);
+        const { data: linked } = await supabase
+          .from('events')
+          .select('external_id')
+          .in('external_id', chunk)
+          .not('template_id', 'is', null);
+        for (const row of (linked || [])) alreadyLinkedExtIds.add(row.external_id);
+      }
+    } catch { /* if lookup fails, we fall through and may re-link — non-fatal */ }
+  }
+
+  // Attach template_id to any validEvent whose (title, venue_id) resolves to
+  // a known template. mapEvent stored the cleaned title in `artist_name` and
+  // the resolved venue uuid in `venue_id`; that's exactly what matchTemplate
+  // needs. We skip events whose row already has a template_id so admin
+  // cherry-picks stay pinned.
+  let templatesLinked = 0;
+  if (templates.length > 0) {
+    for (const ev of validEvents) {
+      if (alreadyLinkedExtIds.has(ev.external_id)) continue;
+      const result = matchTemplate(
+        { title: ev.artist_name, venue_id: ev.venue_id },
+        templates
+      );
+      if (result && result.template && result.template.id) {
+        ev.template_id = result.template.id;
+        templatesLinked++;
+      }
+    }
+  }
 
   // Split events: unprotected get full upsert, protected only get safe fields updated
   const unprotectedEvents = validEvents.filter(ev => !protectedIds.has(ev.external_id));
@@ -984,6 +1037,11 @@ export async function POST(request) {
     scraperArtistEnrich: {
       created: scraperEnrichResult.created,
       updated: scraperEnrichResult.updated,
+    },
+    templateMatcher: {
+      templatesLoaded: templates.length,
+      eventsLinked: templatesLinked,
+      adminLinksPreserved: alreadyLinkedExtIds.size,
     },
     enrichment: {
       artistsLookedUp: enrichResult.artistsLookedUp,
