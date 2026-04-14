@@ -20,6 +20,8 @@ const CATEGORY_CONFIG = {
 };
 const DEFAULT_CONFIG = { color: '#FF6B35', emoji: '🎵' };
 
+const ARTIST_SUBTITLE_CATEGORIES = ['Live Music', 'Comedy'];
+
 export default function SiteEventCard({ event, isFavorited = false, onToggleFavorite }) {
   const [hovered, setHovered] = useState(false);
 
@@ -36,6 +38,7 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
   const ticketLink = event.ticket_link || null;
   const sourceLink = event.source || null;
   const isFree     = event.cover === '0' || event.cover === 0 || (event.cover && String(event.cover).toLowerCase() === 'free');
+  const showArtistSubtitle = ARTIST_SUBTITLE_CATEGORIES.includes(event.category) && eventTitle && artistName && eventTitle !== artistName;
 
   // Build tags
   const tags = [];
@@ -95,7 +98,7 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
             fontSize: '19px',
             fontWeight: 600,
             color: 'var(--text-primary)',
-            marginBottom: eventTitle && artistName && eventTitle !== artistName ? '2px' : '6px',
+            marginBottom: showArtistSubtitle ? '2px' : '6px',
             lineHeight: 1.3,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -105,7 +108,7 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
           }}>
             {name}
           </h3>
-          {eventTitle && artistName && eventTitle !== artistName && (
+          {showArtistSubtitle && (
             <p style={{
               fontSize: '13px',
               fontWeight: 500,

@@ -20,6 +20,8 @@ const CATEGORY_CONFIG = {
 
 const DEFAULT_CONFIG = { color: '#E8722A', bg: '#E8722A', emoji: '🎵' };
 
+const ARTIST_SUBTITLE_CATEGORIES = ['Live Music', 'Comedy'];
+
 function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = true, onFollowArtist, isArtistFollowed, onFlag, autoExpand = false }) {
   const [expanded, setExpanded] = useState(autoExpand);
   const [bioExpanded, setBioExpanded] = useState(false);
@@ -106,6 +108,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
   const timeStr    = formatTimeRange(event.start_time);
   const isCanceled = event.status === 'cancelled' || event.status === 'canceled';
+  const showArtistSubtitle = ARTIST_SUBTITLE_CATEGORIES.includes(event.category) && eventTitle && artistName && eventTitle !== artistName;
 
   // Theme colors — all dynamic based on darkMode
   const cardBg      = darkMode ? '#1A1A24' : '#FFFFFF';
@@ -260,7 +263,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             }}>
               {name}
             </span>
-            {eventTitle && artistName && eventTitle !== artistName && (
+            {showArtistSubtitle && (
               <span style={{
                 fontSize: '13px', fontWeight: 500, color: darkMode ? '#C0C0D0' : '#6B7280',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
