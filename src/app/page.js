@@ -783,7 +783,7 @@ export default function HomePage() {
       // Using select('*') for broad compatibility; revisit with explicit columns after schema audit.
       const { data, error } = await supabase
         .from('events')
-        .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates(template_name, bio, image_url)')
+        .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates(template_name, bio, image_url, category)')
         .gte('event_date', floor)
         .eq('status', 'published')
         .order('event_date', { ascending: true })
@@ -832,6 +832,8 @@ export default function HomePage() {
           //   2. event_templates.template_name  — clean name from master library
           //   3. event_title                    — raw scraper title fallback
           event_title: e.custom_title || e.event_templates?.template_name || e.event_title || null,
+          // Category ladder: template category > scraper category > 'Other'
+          category:   e.event_templates?.category || e.category || 'Other',
           venue:      e.venues?.name || e.venue_name || e.venue || '',
           date: (() => {
             const raw = e.event_date || '';
@@ -1246,6 +1248,8 @@ export default function HomePage() {
             //   2. event_templates.template_name  — clean name from master library
             //   3. event_title                    — raw scraper title fallback
             event_title:   e.custom_title || e.event_templates?.template_name || e.event_title || null,
+            // Category ladder: template category > scraper category > 'Other'
+            category:      e.event_templates?.category || e.category || 'Other',
             venue:         e.venues?.name || e.venue_name || '',
             date: (() => {
               const raw = e.event_date || '';

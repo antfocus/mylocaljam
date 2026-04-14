@@ -60,7 +60,7 @@ const EVENT_SELECT = [
   'artists(name, bio, image_url, genres, vibes, is_tribute)',
   // New: pull the AI-enriched template name + bio + image so the priority ladders
   // (title, bio, image) can reach them without a second round-trip.
-  'event_templates(template_name, bio, image_url)',
+  'event_templates(template_name, bio, image_url, category)',
 ].join(', ');
 
 /**
@@ -103,7 +103,8 @@ function flattenEvent(e) {
     source:         e.source,
     status:         e.status,
     ticket_link:    e.ticket_link || null,
-    category:       e.category || 'Live Music',
+    // Category ladder: template category > scraper category > 'Other'
+    category:       e.event_templates?.category || e.category || 'Other',
     // Hierarchy of Truth (bio):
     //   1. custom_bio                — admin manual override
     //   2. event_templates.bio       — AI-enriched template bio (recurring show)

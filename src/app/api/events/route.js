@@ -13,7 +13,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('events')
-    .select('*, venues(name, address, color), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url)')
+    .select('*, venues(name, address, color), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url, category)')
     .gte('event_date', start)
     .eq('status', 'published')
     .order('event_date', { ascending: true });
@@ -28,9 +28,14 @@ export async function GET() {
   //   3. event.event_title              — raw scraper title fallback
   // Output is re-written into `event_title` so EventCardV2 / SiteEventCard
   // pick it up with no component changes.
+  // Category ladder:
+  //   1. event_templates.category — from the master library
+  //   2. event.category           — raw scraper category fallback
+  //   3. 'Other'                  — ultimate default
   const ladderApplied = (data || []).map(e => ({
     ...e,
     event_title: e.custom_title || e.event_templates?.template_name || e.event_title || '',
+    category: e.event_templates?.category || e.category || 'Other',
   }));
 
   // Prevent Vercel edge/CDN from caching stale data

@@ -169,7 +169,7 @@ export async function GET(request) {
   try {
     const { data: hydrated, error } = await supabase
       .from('events')
-      .select('*, venues(name, address, color, latitude, longitude, venue_type, tags), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url)')
+      .select('*, venues(name, address, color, latitude, longitude, venue_type, tags), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url, category)')
       .in('id', collected);
 
     if (error || !hydrated || hydrated.length === 0) return NextResponse.json(fallback);
@@ -187,6 +187,8 @@ export async function GET(request) {
           event_id: id,
           ...e,
           event_title: e.custom_title || e.event_templates?.template_name || e.event_title || '',
+          // Category ladder: template category > scraper category > 'Other'
+          category: e.event_templates?.category || e.category || 'Other',
           sort_order: i,
         };
       })
