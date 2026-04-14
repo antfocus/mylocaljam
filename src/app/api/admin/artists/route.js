@@ -36,6 +36,23 @@ export async function GET(request) {
 
   let results = data || [];
 
+  // ── Ghost Hunt Blacklist: drop any artists whose name is on the
+  //    ignored_artists list. Prevents noise rows ("Pizza Night", "Trivia
+  //    Tuesday") from rematerializing in the admin UI if the scraper briefly
+  //    re-creates them between sync runs.
+  try {
+    const { data: ignored } = await supabase
+      .from('ignored_artists')
+      .select('name_lower');
+    if (Array.isArray(ignored) && ignored.length > 0) {
+      const blocklist = new Set(ignored.map(r => r.name_lower).filter(Boolean));
+      results = results.filter(a => !blocklist.has((a.name || '').toLowerCase().trim()));
+    }
+  } catch (blErr) {
+    // Non-fatal — if the table doesn't exist yet, just skip the filter.
+    console.error('ignored_artists filter failed (non-fatal):', blErr);
+  }
+
   // Filter to artists missing at least one key field
   if (needsInfo) {
     results = results.filter(a =>

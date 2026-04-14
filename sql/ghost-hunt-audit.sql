@@ -30,6 +30,10 @@ WHERE artist_id IS NULL
   AND TRIM(artist_name) <> ''
   AND category = 'Live Music'
   AND status = 'published'
+  -- Ghost Hunt Blacklist: suppress names the admin has explicitly ignored.
+  AND LOWER(TRIM(artist_name)) NOT IN (
+    SELECT name_lower FROM ignored_artists
+  )
 GROUP BY artist_name
 ORDER BY occurrence_count DESC, last_seen DESC
 LIMIT 100;
