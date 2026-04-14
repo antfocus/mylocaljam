@@ -756,8 +756,31 @@ export default function AdminEventsTab({
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {ev.venue_name || ev.venues?.name} · {formatDate(ev.event_date)} · {formatTime(ev.event_date)}
                       </span>
-                      {isMobile && ev.source && /^https?:\/\//i.test(ev.source) && (
-                        <a href={ev.source} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ color: 'var(--text-muted)', flexShrink: 0, textDecoration: 'none', display: 'inline-flex' }} title="Open source"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>
+                      {/* Source chain-link — relocated from the right-side action
+                          cluster. Sits next to the time so the "source" feels
+                          tethered to the venue/time context, matching the
+                          Triage UI pattern. */}
+                      {ev.source && /^https?:\/\//i.test(ev.source) && (
+                        <a
+                          href={ev.source}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          className="ml-2"
+                          title={`Source: ${(() => { try { return new URL(ev.source).hostname; } catch { return 'link'; } })()}`}
+                          style={{
+                            color: 'var(--text-muted)',
+                            flexShrink: 0,
+                            textDecoration: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            transition: 'color 0.15s',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--accent)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+                        </a>
                       )}
                     </div>
                     {/* Timestamps — hidden on mobile */}
@@ -945,19 +968,8 @@ export default function AdminEventsTab({
                       <option key={s.value} value={s.value}>{s.label}</option>
                     ))}
                   </select>
-                  {!isMobile && ev.source && /^https?:\/\//i.test(ev.source) && (
-                    <a
-                      href={ev.source}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent"
-                      title={`Source: ${(() => { try { return new URL(ev.source).hostname; } catch { return 'link'; } })()}`}
-                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
-                    </a>
-                  )}
+                  {/* Source chain-link was relocated to the details row
+                      (next to time) — see above. */}
                   <button className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent" onClick={() => { setEditingEvent(ev); setShowEventForm(true); }}>
                     {Icons.edit}
                   </button>
