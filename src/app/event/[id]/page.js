@@ -58,9 +58,9 @@ const EVENT_SELECT = [
   'custom_bio', 'custom_genres', 'custom_vibes', 'custom_image_url', 'is_custom_metadata',
   'venues(name, address, color, photo_url, venue_type)',
   'artists(name, bio, image_url, genres, vibes, is_tribute)',
-  // New: pull the AI-enriched template bio + image so the priority ladder
-  // can reach them without a second round-trip.
-  'event_templates(bio, image_url)',
+  // New: pull the AI-enriched template name + bio + image so the priority ladders
+  // (title, bio, image) can reach them without a second round-trip.
+  'event_templates(template_name, bio, image_url)',
 ].join(', ');
 
 /**
@@ -89,7 +89,11 @@ function flattenEvent(e) {
   return {
     id:             e.id,
     artist_name:    e.artists?.name || e.artist_name,
-    event_title:    e.event_title || null,
+    // Title ladder:
+    //   1. custom_title                   — manual override (column may not exist yet)
+    //   2. event_templates.template_name  — clean name from master library
+    //   3. event_title                    — raw scraper title fallback
+    event_title:    e.custom_title || e.event_templates?.template_name || e.event_title || null,
     venue_name:     e.venues?.name || e.venue_name || '',
     event_date:     e.event_date,
     start_time:     startTime,

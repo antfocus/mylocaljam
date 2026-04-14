@@ -169,14 +169,27 @@ export async function GET(request) {
   try {
     const { data: hydrated, error } = await supabase
       .from('events')
-      .select('*, venues(name, address, color, latitude, longitude, venue_type, tags), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(bio, image_url)')
+      .select('*, venues(name, address, color, latitude, longitude, venue_type, tags), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url)')
       .in('id', collected);
 
     if (error || !hydrated || hydrated.length === 0) return NextResponse.json(fallback);
 
     const byId = Object.fromEntries(hydrated.map(e => [e.id, e]));
+    // Title ladder:
+    //   1. event.custom_title             — manual override (column may not exist yet)
+    //   2. event_templates.template_name  — clean name from master library
+    //   3. event.event_title              — raw scraper title fallback
     const result = collected
-      .map((id, i) => byId[id] ? { event_id: id, ...byId[id], sort_order: i } : null)
+      .map((id, i) => {
+        const e = byId[id];
+        if (!e) return null;
+        return {
+          event_id: id,
+          ...e,
+          event_title: e.custom_title || e.event_templates?.template_name || e.event_title || '',
+          sort_order: i,
+        };
+      })
       .filter(Boolean);
 
     return NextResponse.json(result);
