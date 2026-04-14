@@ -3713,6 +3713,87 @@ All previous Safety Locks remain in force. This sprint adds the following invari
 
 ---
 
+## Architecture Reference (April 14, 2026)
+
+This section is the canonical reference for five cross-cutting systems shipped in the Flat-18 / Twin Editor rollout. Numbers here are enforced in code — if they drift, update the code, not this section.
+
+### 1. Metadata Waterfall (4-tier provenance)
+
+Every event renders four fields — **bio**, **image**, **genres**, **vibes** — through a declarative waterfall. The top populated tier wins.
+
+| Priority | Tier | Source column(s) | Badge color |
+|---|---|---|---|
+| 1 | Admin Override | `events.custom_bio`, `custom_image_url`, `custom_genres`, `custom_vibes` | Orange |
+| 2 | Template | `event_templates.bio`, `.image_url`, `.genres` | Blue |
+| 3 | Artist Profile | `artists.bio`, `.image_url`, `.genres`, `.vibes` | Purple |
+| 4 | Raw Scraper | `events.artist_bio`, `.event_image_url`/`.image_url`, `.genre`, `.vibe` | Gray |
+
+**Key files:**
+- `src/lib/metadataWaterfall.js` — `TIERS`, `resolveTier(sources, type)`, `parentTierValue()`, `hasText`, `hasArray`. Pure, no React dependency.
+- `src/components/admin/shared/MetadataField.js` — renders the provenance badge + Reset (undo-arrow) button. Dual-mode: Mode A when `sources` prop is passed (waterfall), Mode B legacy 2-tier for Artists/Templates tabs.
+- `src/components/EventFormModal.js` — the "Twin Editor." Builds four `sources` objects, calls `seedOverride(field)` on focus, `resetField(field)` from Reset button.
+- Vibes uses a **3-tier** waterfall (no template column) — templates don't carry vibes.
+
+**Twin interaction contract:**
+- Displayed value: `form.custom_<field> || resolved.value` — shows override if typed, else inherited.
+- On `onFocus`, `seedOverride()` copies the parent tier value into `custom_<field>` so the admin edits a populated textarea instead of fighting a placeholder.
+- Reset button appears only when `resolved.tier.key === 'override'`. Clicking it sets `custom_<field>` to `''` / `[]`, flipping the badge back to the inherited tier.
+
+### 2. Taxonomy Standard — Flat-18
+
+The canonical genre list is 18 items, stored verbatim in the DB and used everywhere (UI chips, AI validation, scraper normalization):
+
+```
+Rock, Pop, Country, Acoustic, Cover Band, DJ, Electronic, Jazz, Blues,
+Reggae, R&B, Hip Hop, Latin, Emo, Punk, Metal, Indie, Folk
+```
+
+**Enforcement points — all must stay in lockstep:**
+- `src/lib/utils.js` → `GENRES` (18 items)
+- `src/app/api/admin/artists/ai-lookup/route.js` → `ALLOWED_GENRES` (18 items)
+- DB rows: translated by `sql/taxonomy-flat-18-migration.sql` on April 13, 2026 (0 post-flight rows confirmed green)
+
+Legacy compound labels (`'Latin / Reggaeton'`, `'Rock / Indie'`, etc.) are gone from the DB. Scrapers that still emit compound labels must normalize before upsert, or the row will fail the whitelist filter downstream.
+
+### 3. Image Candidate System
+
+Serper Google Image Search results are cached on the **artist**, never on the event.
+
+- **Column:** `artists.image_candidates TEXT[]` (nullable). Migration: `sql/artists-image-candidates.sql`.
+- **Hard cap:** 5 images. Enforced in `searchArtistImages()` (break at `valid.length >= 5`) and on both placeholder fallback paths (`shuffled.slice(0, 5)`).
+- **Write paths (both in `src/hooks/useAdminArtists.js`):**
+  - Bulk enrich — `runBulkEnrich` adds `image_candidates` to the existing PUT body.
+  - Single-field regen — `regenerateField('image_url')` fires a parallel PUT so the carousel survives reload.
+- **Read path:** `EventFormModal.js` carousel reads `linkedArtist.image_candidates`. Events never store the candidate array.
+
+### 4. Query Requirements Invariant
+
+The `event_templates(...)` embed must include `genres` everywhere events are hydrated for rendering, or the waterfall will silently fall through to artist/scraper tiers for template-linked events.
+
+**Required embed shape:**
+```
+event_templates(template_name, bio, image_url, category, start_time, genres)
+```
+
+**Files to keep in sync:**
+- `src/app/page.js`
+- `src/app/api/events/route.js`
+- `src/app/api/spotlight/route.js`
+- `src/app/event/[id]/page.js`
+
+Missing `genres` here is the #1 regression risk when adding a new events-rendering route.
+
+### 5. Security Hard Stops
+
+All enforced in `src/app/api/admin/route.js` (POST + PUT handlers).
+
+- **Bio length cap: 500 characters.** Applied to `custom_bio` and `artist_bio` via `capBio()`. Client-side mirror: `maxLength={500}` on the Event Edit Modal bio textarea with a live counter.
+- **Light XSS sanitization.** `sanitizeString()` strips `<script>`, `<iframe>`, `<style>` tag bodies, inline `on*=` event handlers (quoted and unquoted), and `javascript:` pseudo-URLs. Applied as part of `capBio()`.
+- **URL validation.** `validateUrl()` requires `http://` or `https://` prefix; anything else becomes `null`. Applied to `custom_image_url`, `image_url`, `event_image_url`.
+- These are defense-in-depth — the UI never renders admin strings as raw HTML — but they cap the blast radius if a future component starts doing so.
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.

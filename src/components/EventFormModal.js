@@ -323,8 +323,12 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 placeholder="Event description — click to edit the inherited value or type your own"
                 value={form.custom_bio || bioResolved.value}
                 onFocus={() => seedOverride('bio')}
-                onChange={e => update('custom_bio', e.target.value)}
+                onChange={e => update('custom_bio', e.target.value.slice(0, 500))}
+                maxLength={500}
               />
+              <div style={{ fontSize: '11px', color: '#888', textAlign: 'right', marginTop: '2px' }}>
+                {(form.custom_bio || bioResolved.value || '').length} / 500
+              </div>
             </MetadataField>
 
             {/* AI Enhance button */}

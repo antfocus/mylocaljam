@@ -192,14 +192,14 @@ No markdown, no commentary, no code fences.`;
       if (image_candidates.length > 0) {
         image_source = 'serper';
       } else {
-        // Fallback: pick 3 random placeholders so there's still a carousel
+        // Fallback: pick 5 random placeholders so there's still a carousel
         const shuffled = [...FALLBACK_IMAGES].sort(() => Math.random() - 0.5);
-        image_candidates = shuffled.slice(0, 3);
+        image_candidates = shuffled.slice(0, 5);
         image_source = 'placeholder';
       }
     } catch {
       const shuffled = [...FALLBACK_IMAGES].sort(() => Math.random() - 0.5);
-      image_candidates = shuffled.slice(0, 3);
+      image_candidates = shuffled.slice(0, 5);
       image_source = 'placeholder';
     }
 

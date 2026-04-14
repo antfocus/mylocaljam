@@ -2,6 +2,43 @@
 
 import { useState, useCallback } from 'react';
 
+/**
+ * Merge two event arrays into a single array with no duplicate `id` values,
+ * preserving the ORDER of the incoming array (fresh server data wins). If
+ * the same id appears in both, the incoming row replaces the stale one so
+ * server-side edits (category changes, triage flips, etc.) stay visible.
+ *
+ * This is the client-side twin of the admin GET's row-multiplication guard.
+ * Together they guarantee: 1 DB row = 1 array slot, no matter how many times
+ * fetchEvents races, re-mounts, or double-pages.
+ */
+function mergeEventsById(existing, incoming) {
+  const byId = new Map();
+  // Seed with existing rows so prior pages survive an append…
+  for (const ev of existing) {
+    if (ev?.id) byId.set(ev.id, ev);
+  }
+  // …then let the incoming page overwrite on id collision (freshness wins).
+  for (const ev of incoming) {
+    if (ev?.id) byId.set(ev.id, ev);
+  }
+  // Return in insertion order: existing rows first (for pagination append),
+  // then any genuinely new incoming rows. For page === 1 callers pass [] as
+  // `existing`, so this collapses to "incoming, deduped by id."
+  return Array.from(byId.values());
+}
+
+function dedupeById(rows) {
+  const seen = new Set();
+  const out = [];
+  for (const r of rows) {
+    if (!r?.id || seen.has(r.id)) continue;
+    seen.add(r.id);
+    out.push(r);
+  }
+  return out;
+}
+
 const CATEGORY_OPTIONS = [
   { key: 'Live Music', label: 'Live Music', color: '#23CE6B' },
   { key: 'Food & Drink Special', label: 'Food & Drink', color: '#F59E0B' },
@@ -41,12 +78,25 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
       if (res.status === 401) { setAuthenticated(false); try { sessionStorage.removeItem('mlj_admin_pw'); } catch {} alert('Invalid password'); return; }
       const data = await res.json();
       if (data.events) {
-        setEvents(prev => page === 1 ? data.events : [...prev, ...data.events]);
+        // ── Strict idempotency guarantee ──────────────────────────────────
+        // page === 1: replace with a deduped snapshot (guards double-mount /
+        //             StrictMode / quick filter toggles firing two fetches).
+        // page >  1: merge by id (guards the "same page fetched twice"
+        //             race where React re-runs an effect before the first
+        //             response lands and both pages append the same rows).
+        // Result: the list NEVER contains two rows with the same id, so
+        // React's reconciliation key warning can't fire and the "4 Skinny
+        // Amigos" ghost cannot reappear from client-side state drift.
+        setEvents(prev =>
+          page === 1
+            ? dedupeById(data.events)
+            : mergeEventsById(prev, data.events)
+        );
         setEventsPage(data.pagination.page);
         setEventsTotalPages(data.pagination.totalPages);
         setEventsTotal(data.pagination.total);
       } else {
-        setEvents(Array.isArray(data) ? data : []);
+        setEvents(dedupeById(Array.isArray(data) ? data : []));
       }
       if (data.newEvents24h !== undefined) setNewEvents24h(data.newEvents24h);
     } catch (err) { console.error(err); }

@@ -7,6 +7,40 @@ function checkAuth(request) {
   return authHeader === `Bearer ${process.env.ADMIN_PASSWORD}`;
 }
 
+// ── Security Hard Stops ─────────────────────────────────────────────────────
+// Light XSS sanitization for admin-authored free-text. Strips <script>,
+// <iframe>, <style>, and inline on*= event handlers. This is not a full
+// HTML sanitizer — the UI never renders admin strings as raw HTML — it's a
+// defense-in-depth cap against copy-paste surprises and future renderers.
+const BIO_MAX_LEN = 500;
+
+function sanitizeString(v) {
+  if (typeof v !== 'string') return v;
+  return v
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, '')
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+    .replace(/javascript:/gi, '')
+    .trim();
+}
+
+function capBio(v) {
+  const s = sanitizeString(v);
+  if (typeof s !== 'string') return s;
+  return s.slice(0, BIO_MAX_LEN);
+}
+
+function validateUrl(v) {
+  if (typeof v !== 'string') return v;
+  const trimmed = v.trim();
+  if (!trimmed) return null;
+  if (!/^https?:\/\//i.test(trimmed)) return null;
+  return trimmed;
+}
+
 // GET events with pagination support
 // Query params: page (1-based), limit (default 100), sort (column), order (asc/desc)
 export async function GET(request) {
@@ -67,7 +101,21 @@ export async function GET(request) {
 
   const { data, error } = await query;
 
-  let filtered = data || [];
+  // ── Row-multiplication guard ─────────────────────────────────────────────
+  // Context: dual-writing aliases into both artists.alias_names AND the
+  // artist_aliases reverse-FK table can cause PostgREST to emit the same
+  // event row multiple times when a future query embeds artist_aliases (or
+  // when any reverse-FK embed is added downstream). We enforce the invariant
+  // "1 row in events = 1 object in the returned JSON" by deduping on
+  // events.id before pagination counts or slicing. This is a defensive O(n)
+  // pass — on a clean base table it's a no-op.
+  const seenIds = new Set();
+  const filtered = [];
+  for (const row of (data || [])) {
+    if (!row?.id || seenIds.has(row.id)) continue;
+    seenIds.add(row.id);
+    filtered.push(row);
+  }
 
   // Compute count
   let count;
@@ -125,7 +173,6 @@ export async function POST(request) {
     .insert({
       event_title: body.event_title || null,
       artist_name: body.artist_name,
-      artist_bio: body.artist_bio || null,
       venue_id: body.venue_id || null,
       venue_name: body.venue_name,
       event_date: body.event_date,
@@ -139,13 +186,15 @@ export async function POST(request) {
       triage_status: 'reviewed',
       status: body.status || 'published',
       source: body.source || 'Admin',
-      event_image_url: body.event_image_url || null,
+      event_image_url: validateUrl(body.event_image_url) || null,
       verified_at: new Date().toISOString(),
       // ── Custom metadata fields (Phase 3: Unified Visual CMS) ──────────────
-      custom_bio: body.custom_bio || null,
+      // Sanitized + length-capped (bio: 500 chars) + URL-validated before insert.
+      custom_bio: body.custom_bio ? capBio(body.custom_bio) : null,
       custom_genres: body.custom_genres || null,
       custom_vibes: body.custom_vibes || null,
-      custom_image_url: body.custom_image_url || null,
+      custom_image_url: body.custom_image_url ? validateUrl(body.custom_image_url) : null,
+      artist_bio: body.artist_bio ? capBio(body.artist_bio) : null,
       is_custom_metadata: newHasCustom,
     })
     .select();
@@ -203,7 +252,7 @@ export async function PUT(request) {
   const updates = {
     ...(body.event_title !== undefined && { event_title: body.event_title || null }),
     ...(body.artist_name !== undefined && { artist_name: body.artist_name }),
-    ...(body.artist_bio !== undefined && { artist_bio: body.artist_bio || null }),
+    ...(body.artist_bio !== undefined && { artist_bio: body.artist_bio ? capBio(body.artist_bio) : null }),
     ...(body.venue_id !== undefined && { venue_id: body.venue_id || null }),
     ...(body.venue_name !== undefined && { venue_name: body.venue_name }),
     ...(body.event_date !== undefined && { event_date: body.event_date }),
@@ -216,8 +265,8 @@ export async function PUT(request) {
     ...(body.is_featured !== undefined && { is_featured: body.is_featured }),
     ...(body.status !== undefined && { status: body.status }),
     ...(body.source !== undefined && { source: body.source }),
-    ...(body.image_url !== undefined && { image_url: body.image_url }),
-    ...(body.event_image_url !== undefined && { event_image_url: body.event_image_url || null }),
+    ...(body.image_url !== undefined && { image_url: validateUrl(body.image_url) }),
+    ...(body.event_image_url !== undefined && { event_image_url: body.event_image_url ? validateUrl(body.event_image_url) : null }),
     ...(body.category !== undefined && { category: body.category }),
     ...(body.triage_status !== undefined && { triage_status: body.triage_status }),
     ...(body.artist_id !== undefined && { artist_id: body.artist_id }),
@@ -225,10 +274,11 @@ export async function PUT(request) {
     // a UUID sets the "Safe Link" from the Discovery / Event Feed matchmaker UI.
     ...(body.template_id !== undefined && { template_id: body.template_id || null }),
     // ── Custom metadata fields (Phase 3: Unified Visual CMS) ──────────────
-    ...(body.custom_bio !== undefined && { custom_bio: body.custom_bio || null }),
+    // Security Hard Stops: bio → sanitize + 500-char cap; image_url → http(s) only.
+    ...(body.custom_bio !== undefined && { custom_bio: body.custom_bio ? capBio(body.custom_bio) : null }),
     ...(body.custom_genres !== undefined && { custom_genres: body.custom_genres || null }),
     ...(body.custom_vibes !== undefined && { custom_vibes: body.custom_vibes || null }),
-    ...(body.custom_image_url !== undefined && { custom_image_url: body.custom_image_url || null }),
+    ...(body.custom_image_url !== undefined && { custom_image_url: body.custom_image_url ? validateUrl(body.custom_image_url) : null }),
     // Always mark as human-edited on any admin save — protects from scraper overwrites
     is_human_edited: true,
     verified_at: new Date().toISOString(),
@@ -250,6 +300,53 @@ export async function PUT(request) {
     updates.is_custom_metadata = hasAnyCustom;
   }
 
+  // ── Ghost Link → learning system ─────────────────────────────────────────
+  // If the admin is linking this event to an artist (body.artist_id set to a
+  // real UUID) AND the event's current artist_name differs from the target
+  // artist's canonical name, append the ghost string to the target's
+  // `alias_names` array. Future syncs will then auto-resolve this variant.
+  //
+  // Also mirror into the existing `artist_aliases` table so the sync
+  // pipeline's alias_lower lookup keeps working (dual-write until we
+  // consolidate to one store).
+  let ghostLink = null;
+  if (body.artist_id) {
+    try {
+      const [{ data: evRow }, { data: artRow }] = await Promise.all([
+        supabase.from('events').select('artist_name, artist_id').eq('id', id).single(),
+        supabase.from('artists').select('id, name, alias_names').eq('id', body.artist_id).single(),
+      ]);
+      const ghostName = (evRow?.artist_name || '').trim();
+      const canonical = (artRow?.name || '').trim();
+      const existingAliases = Array.isArray(artRow?.alias_names) ? artRow.alias_names : [];
+      const existingLower = new Set(existingAliases.map(x => (x || '').toLowerCase().trim()));
+      const isNewAlias =
+        ghostName &&
+        ghostName.toLowerCase() !== canonical.toLowerCase() &&
+        !existingLower.has(ghostName.toLowerCase());
+
+      if (isNewAlias) {
+        const nextAliases = [...existingAliases, ghostName];
+        await supabase
+          .from('artists')
+          .update({ alias_names: nextAliases })
+          .eq('id', body.artist_id);
+
+        // Mirror into artist_aliases (sync pipeline reads this)
+        await supabase
+          .from('artist_aliases')
+          .upsert(
+            { artist_id: body.artist_id, alias: ghostName, alias_lower: ghostName.toLowerCase() },
+            { onConflict: 'alias_lower' }
+          );
+
+        ghostLink = { added_alias: ghostName, canonical_name: canonical };
+      }
+    } catch (err) {
+      console.error('Ghost-link alias append failed (non-fatal):', err);
+    }
+  }
+
   const { data, error } = await supabase
     .from('events')
     .update(updates)
@@ -264,7 +361,7 @@ export async function PUT(request) {
   revalidatePath('/');
   revalidatePath('/api/events');
 
-  return NextResponse.json(data[0]);
+  return NextResponse.json(ghostLink ? { ...data[0], ghost_link: ghostLink } : data[0]);
 }
 
 // DELETE event
