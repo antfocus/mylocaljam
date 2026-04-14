@@ -249,6 +249,34 @@ export default function AdminEventsTab({
       alert(`Link failed: ${err.message}`);
     }
   };
+
+  // Unlink a template binding → PUT /api/admin { id, template_id: null }.
+  // Inverse of confirmTemplateMatch; same optimistic-then-rollback contract.
+  // After unlinking, the ladder drops back to raw scraper data on the next
+  // render and the row's No-Match branch (TemplatePicker + Magic Wand) becomes
+  // reachable again, so the admin can immediately re-link or re-template.
+  const handleUnlinkTemplate = async (ev) => {
+    if (!ev?.id || !ev.template_id) return;
+    if (typeof window !== 'undefined' && !window.confirm('Unlink this template?')) return;
+    const prevEvents = events;
+    setEvents(list => list.map(e => e.id === ev.id ? { ...e, template_id: null } : e));
+    try {
+      const res = await fetch('/api/admin', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+        body: JSON.stringify({ id: ev.id, template_id: null }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      showQueueToast(`\uD83D\uDD17\u274C Unlinked: ${ev.event_title || ev.artist_name || ''}`);
+    } catch (err) {
+      console.error('Template unlink failed:', err);
+      setEvents(prevEvents);
+      showQueueToast(`\u26A0\uFE0F Unlink failed: ${err.message}`);
+    }
+  };
         // Server-side filtering handles status/date — client filters by search text + missing time
         const searchLower = eventsSearch.trim().toLowerCase();
         let filtered = events;
@@ -760,21 +788,41 @@ export default function AdminEventsTab({
                     if (ev.template_id) {
                       const linked = templatesById.get(ev.template_id);
                       const label = linked?.template_name || 'Template linked';
+                      // Actionable Linked badge: same green pill, but the whole
+                      // thing is a button now. Click anywhere on it → confirm →
+                      // handleUnlinkTemplate. Trailing × indicates removability.
                       return (
-                        <span
-                          title={`Linked to template: ${label}`}
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleUnlinkTemplate(ev); }}
+                          title={`Linked to template: ${label} — click to unlink`}
                           style={{
                             display: 'inline-flex', alignItems: 'center', gap: '4px',
                             padding: '3px 8px', borderRadius: '999px',
                             background: '#22c55e', color: '#052e14',
+                            border: 'none', cursor: 'pointer',
                             fontFamily: "'DM Sans', sans-serif", fontSize: '11px', fontWeight: 700,
-                            maxWidth: isMobile ? '140px' : '180px',
+                            maxWidth: isMobile ? '160px' : '200px',
                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                           }}
                         >
                           <span aria-hidden="true">{'\uD83D\uDD17'}</span>
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>Linked: {label}</span>
-                        </span>
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: '14px', height: '14px', borderRadius: '999px',
+                              background: 'rgba(5,46,20,0.25)',
+                              marginLeft: '2px', flexShrink: 0,
+                            }}
+                          >
+                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="18" y1="6" x2="6" y2="18" />
+                              <line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                          </span>
+                        </button>
                       );
                     }
                     const suggestion = matchByEventId.get(ev.id);
