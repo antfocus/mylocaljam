@@ -1319,48 +1319,10 @@ export default function AdminArtistsTab({
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" /></svg>
                     </button>
-                    {/* Ignore (Ghost Hunt blacklist) — one-click silence */}
-                    <button
-                      title="Ignore — blacklist this name so the scraper never re-creates it. Unlinks events to 'Other / Special Event'."
-                      disabled={artistActionLoading === artist.id}
-                      onClick={async () => {
-                        // Snapshot for undo-on-failure
-                        const prevArtists = artists;
-                        // Optimistic local removal
-                        setArtists(list => list.filter(a => a.id !== artist.id));
-                        setSelectedArtists(prev => {
-                          const next = new Set(prev);
-                          next.delete(artist.id);
-                          return next;
-                        });
-                        try {
-                          // 1. Blacklist the name (idempotent upsert by name_lower)
-                          const bl = await fetch('/api/admin/ignored-names', {
-                            method: 'POST',
-                            headers,
-                            body: JSON.stringify({ name: artist.name, reason: 'ghost_ignored' }),
-                          });
-                          if (!bl.ok) throw new Error('blacklist_failed');
-                          // 2. Delete artist row + unlink upcoming events to "Other / Special Event"
-                          const del = await fetch(`/api/admin/artists?id=${artist.id}&action=unlink-events`, {
-                            method: 'DELETE',
-                            headers,
-                          });
-                          if (!del.ok) throw new Error('delete_failed');
-                          setArtistToast({ type: 'success', message: `Ignored "${artist.name}" — blacklisted & unlinked` });
-                          setTimeout(() => setArtistToast(null), 3500);
-                        } catch (err) {
-                          console.error('Ignore action failed:', err);
-                          // Rollback optimistic removal
-                          setArtists(prevArtists);
-                          setArtistToast({ type: 'error', message: `Failed to ignore "${artist.name}"` });
-                          setTimeout(() => setArtistToast(null), 4000);
-                        }
-                      }}
-                      style={{ color: 'var(--text-muted)', cursor: 'pointer', background: 'none', border: 'none', padding: '6px', opacity: artistActionLoading === artist.id ? 0.5 : 1, fontSize: '14px', lineHeight: 1 }}
-                    >
-                      {'\uD83D\uDEAB'}
-                    </button>
+                    {/* Per-row 🚫 Ignore button removed — April 14, 2026.
+                        Bulk flow (checkbox + "Ignore Selected (N)" in the
+                        bottom action bar) is now the single path. Batch
+                        endpoint /api/admin/ignored-names accepts names[]. */}
                   </div>
                 </div>
               );
