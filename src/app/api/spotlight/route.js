@@ -175,6 +175,8 @@ export async function GET(request) {
     if (error || !hydrated || hydrated.length === 0) return NextResponse.json(fallback);
 
     const byId = Object.fromEntries(hydrated.map(e => [e.id, e]));
+    // Treat "" and "None" as null so the image waterfall keeps falling.
+    const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
     // Title ladder:
     //   1. event.custom_title             — manual override (column may not exist yet)
     //   2. event_templates.template_name  — clean name from master library
@@ -191,6 +193,10 @@ export async function GET(request) {
           category: e.event_templates?.category || e.category || 'Other',
           // Start-time ladder: template Master Time > raw event start_time.
           start_time: e.event_templates?.start_time || e.start_time || null,
+          // Golden Ladder (bio): custom_bio > template.bio > artists.bio > artist_bio
+          description: e.custom_bio || e.event_templates?.bio || e.artists?.bio || e.artist_bio || '',
+          // Golden Ladder (image): same priority order for the image waterfall.
+          event_image: cleanImg(e.custom_image_url) || cleanImg(e.event_templates?.image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
           sort_order: i,
         };
       })

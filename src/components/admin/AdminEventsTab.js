@@ -114,18 +114,34 @@ export default function AdminEventsTab({
   // already linked, this is the clean template name and produces a
   // harmless duplicate alias; unlinked events yield the raw scraper title,
   // which is what we want so the next sync matches this template cleanly.
+  // Drop candidate data that is either empty OR a verbatim echo of the event
+  // title — prevents the Wand from seeding the Template Editor with a bio that
+  // is really just the scraper title (which would then "poison" the admin's
+  // override via the existing custom_bio-first Golden Ladder). Case-insensitive,
+  // whitespace-tolerant; falls through to empty string otherwise.
+  const sanitizeForTemplate = (value, rawTitle) => {
+    if (!value) return '';
+    const v = String(value).trim();
+    if (!v) return '';
+    const t = String(rawTitle || '').trim();
+    if (t && v.toLowerCase() === t.toLowerCase()) return '';
+    return v;
+  };
+
   const handleCreateTemplateFromEvent = (ev) => {
     if (!ev || !setActiveTab || !setEditingTemplate || !setTemplateForm) return;
     const rawTitle = ev.event_title || ev.name || '';
+    const bioSource   = ev.custom_bio        || ev.description     || ev.artist_bio || '';
+    const imageSource = ev.custom_image_url  || ev.event_image_url || ev.image_url  || '';
     setTemplateForm({
       template_name: rawTitle,                                              // editable — admin can trim scraper junk
       aliases: rawTitle,                                                    // guarantees match on next sync
       category: ev.category || 'Live Music',
       venue_id: ev.venue_id || '',
-      bio: ev.custom_bio || ev.description || ev.artist_bio || '',
+      bio: sanitizeForTemplate(bioSource, rawTitle),
       genres: '',
       vibes: '',
-      image_url: ev.custom_image_url || ev.event_image_url || ev.image_url || '',
+      image_url: sanitizeForTemplate(imageSource, rawTitle),
       start_time: ev.start_time || '',
       is_human_edited: {},
     });

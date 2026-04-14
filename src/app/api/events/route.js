@@ -28,6 +28,10 @@ export async function GET() {
   //   3. event.event_title              — raw scraper title fallback
   // Output is re-written into `event_title` so EventCardV2 / SiteEventCard
   // pick it up with no component changes.
+  // Treat "" and "None" as null so the image waterfall keeps falling — mirrors
+  // cleanImg in event/[id]/page.js and app/page.js.
+  const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
+
   // Category ladder:
   //   1. event_templates.category — from the master library
   //   2. event.category           — raw scraper category fallback
@@ -40,6 +44,14 @@ export async function GET() {
     // Downstream consumers still handle event_date / title-regex fallbacks
     // when both rungs are null, so we don't flatten those here.
     start_time: e.event_templates?.start_time || e.start_time || null,
+    // Golden Ladder (bio) — admin manual override wins.
+    //   1. custom_bio           — admin manual override (highest priority)
+    //   2. event_templates.bio  — AI-enriched template bio
+    //   3. artists.bio          — curated band bio
+    //   4. artist_bio           — raw scraper description (lowest priority)
+    description: e.custom_bio || e.event_templates?.bio || e.artists?.bio || e.artist_bio || '',
+    // Golden Ladder (image) — same priority order for the image waterfall.
+    event_image: cleanImg(e.custom_image_url) || cleanImg(e.event_templates?.image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
   }));
 
   // Prevent Vercel edge/CDN from caching stale data
