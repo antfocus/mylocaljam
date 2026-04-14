@@ -35,37 +35,53 @@ export async function GET(request) {
   return NextResponse.json(data || []);
 }
 
-// POST /api/admin/ignored-names  Body: { name: string, reason?: string }
-// Adds (or refreshes) a blacklist entry. Idempotent via name_lower upsert.
+// POST /api/admin/ignored-names
+//   Single: Body: { name: string, reason?: string }
+//   Batch : Body: { names: string[], reason?: string }
+// Adds (or refreshes) blacklist entries. Idempotent via name_lower upsert.
+// Batch mode lets the admin UI "Ignore Selected" without N round-trips.
 export async function POST(request) {
   if (!checkAuth(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const body = await request.json();
-  const raw = (body?.name || '').trim();
-  if (!raw) {
-    return NextResponse.json({ error: 'name is required' }, { status: 400 });
+  const reason = (body?.reason || 'ghost_ignored').slice(0, 200);
+
+  // Accept either `name` (single) or `names[]` (batch), and normalize to a
+  // deduped list keyed by lowercased+trimmed form. Blank entries are dropped.
+  const rawList = Array.isArray(body?.names)
+    ? body.names
+    : (body?.name ? [body.name] : []);
+  const seen = new Set();
+  const rows = [];
+  for (const entry of rawList) {
+    const t = typeof entry === 'string' ? entry.trim() : '';
+    if (!t) continue;
+    const k = t.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    rows.push({ name: t, name_lower: k, reason });
+  }
+  if (rows.length === 0) {
+    return NextResponse.json({ error: 'name or names[] is required' }, { status: 400 });
   }
 
   const supabase = getAdminClient();
-  const row = {
-    name: raw,
-    name_lower: raw.toLowerCase(),
-    reason: (body?.reason || 'ghost_ignored').slice(0, 200),
-  };
-
   const { data, error } = await supabase
     .from('ignored_artists')
-    .upsert(row, { onConflict: 'name_lower' })
-    .select()
-    .single();
+    .upsert(rows, { onConflict: 'name_lower' })
+    .select();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  // Single-item callers get the row object; batch callers get the array.
+  if (!Array.isArray(body?.names)) {
+    return NextResponse.json(data?.[0] || null);
+  }
+  return NextResponse.json({ success: true, inserted: data?.length || 0, rows: data });
 }
 
 // DELETE /api/admin/ignored-names?id=<uuid>  OR  ?name=<string>

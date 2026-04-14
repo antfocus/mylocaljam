@@ -171,7 +171,7 @@ export default function AdminEventsTab({
   eventsPage, setEventsPage, eventsTotalPages, eventsTotal,
   newEvents24h, eventsRecentlyAdded, setEventsRecentlyAdded,
   selectedEvents, setSelectedEvents, setEvents,
-  fetchEvents, deleteEvent, toggleFeatured, unpublishEvent, updateEventCategory,
+  fetchEvents, deleteEvent, toggleFeatured, unpublishEvent, updateEventCategory, runAICategorize,
   setEditingEvent, setShowEventForm, setBulkTimeModal, setBulkTime,
   isMobile, showQueueToast, CATEGORY_OPTIONS,
   password,
@@ -182,6 +182,7 @@ export default function AdminEventsTab({
   editingFestival, setEditingFestival, fetchFestivalNames,
 }) {
   const headers = { Authorization: 'Bearer ' + password };
+  const [aiCategorizeLoading, setAiCategorizeLoading] = useState(false);
 
   // ── Template matcher dry-run wiring ───────────────────────────────────
   // Two lookup tables, both memoised so we don't recompute per row:
@@ -712,6 +713,36 @@ export default function AdminEventsTab({
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" fill="currentColor" /></svg>
                   Edit Time ({selectedEvents.size})
                 </button>
+                {/* AI Categorize — G Spot Protocol. Server-side route gates on
+                    is_category_verified + template_id before spending LLM calls. */}
+                <button
+                  disabled={aiCategorizeLoading || typeof runAICategorize !== 'function'}
+                  onClick={async () => {
+                    const ids = Array.from(selectedEvents);
+                    if (ids.length === 0) return;
+                    setAiCategorizeLoading(true);
+                    try {
+                      const summary = await runAICategorize(ids);
+                      // Refresh to pick up server writes (category + source + confidence).
+                      if (summary) await fetchEvents(1);
+                    } finally {
+                      setAiCategorizeLoading(false);
+                    }
+                  }}
+                  title="AI Categorize — skips verified + template-linked events. Low-confidence results flag for Manual Review."
+                  style={{
+                    padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
+                    background: aiCategorizeLoading ? 'rgba(168,85,247,0.08)' : 'rgba(168,85,247,0.12)',
+                    color: '#A855F7',
+                    border: '1px solid rgba(168,85,247,0.35)',
+                    cursor: aiCategorizeLoading ? 'wait' : 'pointer',
+                    opacity: aiCategorizeLoading ? 0.7 : 1,
+                    fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: '5px',
+                  }}
+                >
+                  <span style={{ fontSize: '13px', lineHeight: 1 }}>{'\uD83E\uDD16'}</span>
+                  {aiCategorizeLoading ? `Classifying ${selectedEvents.size}...` : `AI Categorize (${selectedEvents.size})`}
+                </button>
               </div>
             ) : (
               <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
@@ -749,8 +780,37 @@ export default function AdminEventsTab({
                     style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#E8722A', flexShrink: 0 }}
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="font-display font-bold" style={{ fontSize: isMobile ? '15px' : '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {ev.artist_name}
+                    <div className="font-display font-bold" style={{ fontSize: isMobile ? '15px' : '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.artist_name}</span>
+                      {/* AI-set category indicator — G Spot Protocol. Shows
+                          when auto-categorize wrote this row's category. If
+                          the admin later flips the dropdown, the Verified
+                          Flip sets category_source='manual' and this icon
+                          goes away. */}
+                      {ev.category_source === 'ai' && !ev.is_category_verified && (
+                        <span
+                          title={`Set by AI${typeof ev.category_confidence === 'number' ? ` · ${Math.round(ev.category_confidence * 100)}% confidence` : ''} — change the category dropdown to verify.`}
+                          style={{ fontSize: '12px', lineHeight: 1, flexShrink: 0, cursor: 'help' }}
+                        >
+                          {'\uD83E\uDD16'}
+                        </span>
+                      )}
+                      {ev.category_ai_flagged_at && !ev.is_category_verified && (
+                        <span
+                          title="AI flagged this event for Manual Review (confidence below 0.85). Please pick a category."
+                          style={{ fontSize: '11px', lineHeight: 1, flexShrink: 0, color: '#fbbf24', cursor: 'help' }}
+                        >
+                          {'\u26A0\uFE0F'}
+                        </span>
+                      )}
+                      {ev.is_category_verified && (
+                        <span
+                          title="Category verified by admin"
+                          style={{ fontSize: '11px', lineHeight: 1, flexShrink: 0, color: '#22c55e', cursor: 'help' }}
+                        >
+                          {'\u2705'}
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-brand-text-secondary" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

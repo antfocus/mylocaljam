@@ -269,6 +269,11 @@ export async function PUT(request) {
     ...(body.event_image_url !== undefined && { event_image_url: body.event_image_url ? validateUrl(body.event_image_url) : null }),
     ...(body.category !== undefined && { category: body.category }),
     ...(body.triage_status !== undefined && { triage_status: body.triage_status }),
+    // ── G Spot Protocol columns ─────────────────────────────────────────
+    ...(body.is_category_verified !== undefined && { is_category_verified: !!body.is_category_verified }),
+    ...(body.category_source !== undefined && { category_source: body.category_source }),
+    ...(body.category_confidence !== undefined && { category_confidence: body.category_confidence }),
+    ...(body.category_ai_flagged_at !== undefined && { category_ai_flagged_at: body.category_ai_flagged_at }),
     ...(body.artist_id !== undefined && { artist_id: body.artist_id }),
     // template_id: null clears a link (use case: "unlink from template"),
     // a UUID sets the "Safe Link" from the Discovery / Event Feed matchmaker UI.

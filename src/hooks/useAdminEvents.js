@@ -114,19 +114,67 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
 
   const updateEventCategory = async (ev, newCategory) => {
     const prev = events;
-    setEvents(p => p.map(e => e.id === ev.id ? { ...e, category: newCategory, triage_status: 'reviewed' } : e));
+    // G Spot §Verified Flip — a manual dropdown change locks the row from
+    // future AI rewrites. `is_category_verified=true` is the sacrosanct flag
+    // that auto-categorize checks as its first safety gate.
+    setEvents(p => p.map(e => e.id === ev.id ? {
+      ...e,
+      category: newCategory,
+      triage_status: 'reviewed',
+      is_category_verified: true,
+      category_source: 'manual',
+      category_ai_flagged_at: null,
+    } : e));
     try {
-      const body = { id: ev.id, category: newCategory, triage_status: 'reviewed' };
+      const body = {
+        id: ev.id,
+        category: newCategory,
+        triage_status: 'reviewed',
+        is_category_verified: true,
+        category_source: 'manual',
+        category_ai_flagged_at: null,
+      };
       if (newCategory !== 'Live Music') {
         body.artist_bio = null;
         body.artist_id = null;
       }
       const res = await fetch('/api/admin', { method: 'PUT', headers, body: JSON.stringify(body) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      showQueueToast(`Re-categorized → ${newCategory}`);
+      showQueueToast(`Re-categorized → ${newCategory} · Verified \u2705`);
     } catch (err) {
       console.error('Category update failed:', err);
       setEvents(prev);
+    }
+  };
+
+  /**
+   * Run the G Spot AI categorization over the currently-selected events.
+   * The server-side route handles safety gates (verified + template skips)
+   * and confidence gating. Optimistic UI just shows a toast — results
+   * trigger a fetchEvents() to pick up the writes.
+   */
+  const runAICategorize = async (eventIds) => {
+    if (!Array.isArray(eventIds) || eventIds.length === 0) return null;
+    try {
+      const res = await fetch('/api/admin/auto-categorize', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ eventIds }),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const summary = await res.json();
+      const parts = [];
+      if (summary.updated) parts.push(summary.updated + ' updated');
+      if (summary.flagged) parts.push(summary.flagged + ' flagged');
+      if (summary.skipped_verified) parts.push(summary.skipped_verified + ' verified-skip');
+      if (summary.skipped_template) parts.push(summary.skipped_template + ' template-skip');
+      if (summary.failed) parts.push(summary.failed + ' failed');
+      showQueueToast('\uD83E\uDD16 AI Categorize: ' + (parts.join(' · ') || 'no-op'));
+      return summary;
+    } catch (err) {
+      console.error('AI categorize failed:', err);
+      showQueueToast({ type: 'error', msg: 'AI categorize failed: ' + err.message });
+      return null;
     }
   };
 
@@ -151,6 +199,7 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
     fetchEvents,
     toggleFeatured,
     updateEventCategory,
+    runAICategorize,
     CATEGORY_OPTIONS,
   };
 }

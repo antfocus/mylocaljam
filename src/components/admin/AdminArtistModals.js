@@ -5,7 +5,8 @@ import Badge from '@/components/ui/Badge';
 
 export default function AdminArtistModals({
   activeTab,
-  artists, password,
+  artists, setArtists, password,
+  setArtistToast,
   selectedArtists, setSelectedArtists,
   bulkEnrichProgress, setBulkEnrichProgress,
   enrichConfirm, setEnrichConfirm,
@@ -102,6 +103,69 @@ export default function AdminArtistModals({
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" /></svg>
               Delete ({selectedArtists.size})
+            </button>
+            {/* Ignore Selected — Ghost Hunt blacklist, batched */}
+            <button
+              onClick={async () => {
+                const selected = artists.filter(a => selectedArtists.has(a.id));
+                if (selected.length === 0) return;
+                const selectedIds = new Set(selected.map(a => a.id));
+                const names = selected.map(a => a.name).filter(Boolean);
+                // Snapshot for undo-on-failure
+                const prevArtists = artists;
+                // Optimistically remove all selected rows
+                if (typeof setArtists === 'function') {
+                  setArtists(list => list.filter(a => !selectedIds.has(a.id)));
+                }
+                setSelectedArtists(new Set());
+                try {
+                  // 1. Batch-blacklist the names (single round-trip).
+                  const bl = await fetch('/api/admin/ignored-names', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + password },
+                    body: JSON.stringify({ names, reason: 'ghost_ignored_bulk' }),
+                  });
+                  if (!bl.ok) throw new Error('blacklist_failed');
+                  // 2. Delete each artist + unlink events. We loop with a
+                  //    small concurrency (Promise.all) — the endpoint is
+                  //    per-id, and batching here would require a new API.
+                  const results = await Promise.allSettled(
+                    selected.map(a =>
+                      fetch('/api/admin/artists?id=' + encodeURIComponent(a.id) + '&action=unlink-events', {
+                        method: 'DELETE',
+                        headers: { Authorization: 'Bearer ' + password },
+                      }).then(r => { if (!r.ok) throw new Error('delete_failed:' + a.id); return r; })
+                    )
+                  );
+                  const failed = results.filter(r => r.status === 'rejected').length;
+                  if (typeof setArtistToast === 'function') {
+                    if (failed === 0) {
+                      setArtistToast({ type: 'success', message: 'Ignored ' + selected.length + ' artist' + (selected.length !== 1 ? 's' : '') + ' — blacklisted & unlinked' });
+                    } else {
+                      setArtistToast({ type: 'error', message: failed + ' of ' + selected.length + ' ignores failed — refreshing list' });
+                      if (typeof fetchArtists === 'function') fetchArtists(artistsSearch, artistsNeedsInfo);
+                    }
+                    setTimeout(() => setArtistToast(null), 4000);
+                  }
+                } catch (err) {
+                  console.error('Bulk ignore failed:', err);
+                  // Rollback optimistic removal
+                  if (typeof setArtists === 'function') setArtists(prevArtists);
+                  if (typeof setArtistToast === 'function') {
+                    setArtistToast({ type: 'error', message: 'Bulk ignore failed — no changes applied' });
+                    setTimeout(() => setArtistToast(null), 4000);
+                  }
+                }
+              }}
+              style={{
+                padding: '10px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 700,
+                background: 'rgba(156,163,175,0.12)', color: '#9CA3AF',
+                border: '1px solid rgba(156,163,175,0.35)', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '6px',
+              }}
+            >
+              <span style={{ fontSize: '14px', lineHeight: 1 }}>{'\uD83D\uDEAB'}</span>
+              Ignore Selected ({selectedArtists.size})
             </button>
             {selectedArtists.size >= 2 && (
               <button

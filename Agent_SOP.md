@@ -169,3 +169,31 @@ The following items were flagged in Senior Systems Architect review on April 14,
 14. New venue SQL — include `lat`/`lng` when known; reference Nominatim geocoder + `not_found` cache gotcha.
 15. Title fallback terminal value is `''` not "Raw Scraper Title" (scraper title IS the raw rung).
 16. Google Calendar path correct, but flag DST requirement via `easternOffset()`.
+
+---
+
+## 🛡️ Protocol: G Spot (Safety & Confidence Enforcement)
+
+When building or modifying automated data handlers, the Agent must prioritize **data integrity over speed**.
+
+### Required invariants
+
+1. **Verified Lock column.** The Agent is required to implement an `is_category_verified` boolean on relevant tables (`events`, `artists`). Default `false`. Flips to `true` only on explicit human action (save-from-modal, triage categorize, bulk approve). Automation logic must skip any "Verified" records without exception.
+2. **Confidence threshold.** All LLM-based categorization must return a numeric confidence score alongside its label. If the score is below **0.85**, the handler must fail-safe to `'Other / Special Event'` (or `triage_status: 'pending'` for artist metadata) and flag the row for human review rather than auto-saving. Scores should be persisted in a `category_confidence` (or field-scoped) column for auditability.
+3. **Enum Prison.** AI outputs must be validated against the canonical whitelist before any DB write:
+   - Categories → `CATEGORY_OPTIONS` in `src/hooks/useAdminEvents.js`
+   - Genres → `GENRES` Flat-18 in `src/lib/utils.js` (also mirrored as `ALLOWED_GENRES` in the ai-lookup route)
+   Any value not in the whitelist is dropped (not coerced).
+4. **Chain of Command.** Resolution order for categorization and metadata is non-negotiable: **Templates → Linked Artist → AI Suggestion → Default.** AI never overrides a template-linked or artist-linked value. This is the Metadata Waterfall — see HANDOVER.md §1 for field-by-field enforcement.
+5. **Batch Economy.** Where the endpoint supports it, AI operations must be processed in server-side batches. Reference pattern: `POST /api/admin/ignored-names` accepts `names[]` and upserts via `onConflict: 'name_lower'` in a single round-trip. Do not issue N serial requests when the API exposes a batch shape.
+
+### Sacrosanct locks (existing, reinforced)
+
+These pre-existing locks still apply and are complemented — not replaced — by the G Spot protocol:
+- `is_human_edited` (JSONB field map on `artists`) — per-field lock. PUT handler in `src/app/api/admin/artists/route.js` strips any incoming field that is locked unless the same request explicitly unlocks it.
+- `is_locked` (boolean on `artists`) — Master Lock. When `true`, AI enrichment skips the row entirely.
+- Admin "save" stamps `metadata_source: 'manual'` automatically; AI writes stamp `'ai_generated'`. Never overwrite `'manual'` with `'ai_generated'`.
+
+### Rollout requirement
+
+Any PR that introduces a new automated classifier, enrichment job, or cron-backed data writer must cite this protocol in its description and demonstrate each of the five invariants is satisfied. PRs that fail the protocol are blocked at review, regardless of test coverage.

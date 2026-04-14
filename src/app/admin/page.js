@@ -351,6 +351,7 @@ export default function AdminPage() {
           fetchEvents={ev.fetchEvents} deleteEvent={deleteEvent}
           toggleFeatured={ev.toggleFeatured} unpublishEvent={unpublishEvent}
           updateEventCategory={ev.updateEventCategory}
+          runAICategorize={ev.runAICategorize}
           CATEGORY_OPTIONS={ev.CATEGORY_OPTIONS}
           setEditingEvent={ev.setEditingEvent} setShowEventForm={ev.setShowEventForm}
           setBulkTimeModal={ev.setBulkTimeModal} setBulkTime={ev.setBulkTime}
@@ -730,7 +731,8 @@ export default function AdminPage() {
       {/* Sticky Bulk Action Bar + Artist Modals */}
       <AdminArtistModals
         activeTab={activeTab}
-        artists={ar.artists} password={password}
+        artists={ar.artists} setArtists={ar.setArtists} password={password}
+        setArtistToast={ar.setArtistToast}
         selectedArtists={ar.selectedArtists} setSelectedArtists={ar.setSelectedArtists}
         bulkEnrichProgress={ar.bulkEnrichProgress} setBulkEnrichProgress={ar.setBulkEnrichProgress}
         enrichConfirm={ar.enrichConfirm} setEnrichConfirm={ar.setEnrichConfirm}

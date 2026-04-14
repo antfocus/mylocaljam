@@ -3799,3 +3799,44 @@ GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.
 User's local path: `~/mylocaljam` (NOT `~/Documents/mylocaljam`)
 
+
+---
+
+## 🛠️ Recent Core Hardening (April 14, 2026)
+
+1. **Ghost-Killer & Alias Symmetry.** Deployed bidirectional logic ensuring that if an artist is merged or renamed, all past and future events for that alias are automatically mapped to the canonical profile. The two alias stores — `artists.alias_names` (array, admin UI) and `artist_aliases` (lookup table, sync pipeline) — now dual-write in lockstep on rename, merge, and the tag-input UI in `AdminArtistsTab.js`. Events carrying the retired `artist_name` are re-pointed to the master `artist_id` inside the merge transaction.
+2. **Ghost Hunt Blacklist.** Implemented the `ignored_artists` table and the 🚫 (Ignore) per-row action + bulk "Ignore Selected" bar button to silence non-artist noise ("Pizza Night", "Drink Specials", recurring themes). Ignored entries are filtered out of the admin artists GET and the `sql/ghost-hunt-audit.sql` report, so they cannot reappear via scraper re-creation. Affected events are preserved on the frontend as "Other / Special Event" rather than hard-deleted.
+3. **Bulk Triage UI.** Added multi-select checkbox capabilities (header Select-All + per-row checkboxes) and a fixed bottom bulk actions bar to the Metadata Triage view in `AdminArtistsTab.js` / `AdminArtistModals.js`. Batch endpoints: AI Enrich (loop), Delete (per-id with confirmation + event count), Merge (≥2 selected), and Ignore (single POST accepts `names[]` array + fan-out unlink). All actions optimistically remove rows with rollback on failure.
+4. **Row-Multiplication Defense-in-Depth.** The "4 Skinny Amigos" ghost was killed with two independent guards: server-side `Set`-based dedupe in the admin GET (`src/app/api/admin/route.js`) and client-side `Map(id → row)` idempotent merge in `useAdminEvents.js`. One DB row = one array slot, regardless of StrictMode double-mounts, fetch races, or pagination re-entry.
+
+---
+
+## 🛡️ The "G Spot" Protocol (Global Safety & Efficiency)
+
+All future automation — specifically AI-powered classification and enrichment — must adhere to this protocol:
+
+- **Verified Lock.** AI cannot touch rows where `is_category_verified` is `true`. Human edits are sacrosanct. This complements the existing `is_human_edited` field-level lock map and the `is_locked` master toggle on artists.
+- **Confidence Bar.** Minimum 0.85 (85%) threshold for auto-updates. Below this, the row must be flagged for human review (e.g. `triage_status: 'pending'` + `category: 'Other / Special Event'`) rather than auto-saved.
+- **Enum Prison.** AI must select strictly from pre-defined category lists (`CATEGORY_OPTIONS` in `useAdminEvents.js`, `GENRES` Flat-18 in `src/lib/utils.js`, `ALLOWED_GENRES` in ai-lookup route). No "invented" tags. Whitelist filter runs before any DB write.
+- **Chain of Command.** The resolution order for categorization and metadata is: **Event Templates → Linked Artists → AI Suggestion → Default (`'Other / Special Event'`).** AI suggestions never override a template-linked or artist-linked value.
+- **Batch Economy.** Operations must be processed in server-side batches where possible. The single `/api/admin/ignored-names` POST accepting `names[]` is the reference pattern — one round-trip, idempotent via `onConflict: 'name_lower'` upsert.
+
+---
+
+## 📌 Addendum — Files Touched April 14, 2026
+
+- `sql/artists-alias-names.sql` (new) — alias_names column + GIN index + backfill
+- `sql/ghost-hunt-audit.sql` (new, then filtered against `ignored_artists`)
+- `sql/ignored-artists.sql` (new) — Ghost Hunt Blacklist table
+- `src/lib/artistMatcher.js` (new) — Smart Match helper
+- `src/app/api/admin/route.js` — sanitizer + bio cap + URL validation + GET dedupe + Ghost Link learning
+- `src/app/api/admin/artists/route.js` — rename dual-write, alias mirror, ignored_artists filter
+- `src/app/api/admin/artists/merge/route.js` — alias-transfer on merge (dual-write)
+- `src/app/api/admin/artists/ai-lookup/route.js` — image cap 3→5
+- `src/app/api/admin/ignored-names/route.js` (new) — GET / POST (single+batch) / DELETE
+- `src/hooks/useAdminEvents.js` — Map-based client idempotency
+- `src/hooks/useAdminArtists.js` — alias_names in form state + duplicate-name check
+- `src/components/EventFormModal.js` — bio maxLength 500 + counter
+- `src/components/admin/AdminArtistsTab.js` — alias tag input + Ignore row button
+- `src/components/admin/AdminArtistModals.js` — Ignore Selected bulk button
+- `src/app/admin/page.js` — wired `setArtists` + `setArtistToast` through to modals
