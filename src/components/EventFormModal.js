@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { MetadataField, StyleMoodSelector, ImagePreviewSection, GENRES, VIBES } from '@/components/admin/shared';
+import { resolveTier, parentTierValue } from '@/lib/metadataWaterfall';
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   EventFormModal — Unified Visual Metadata CMS (Phase 2)
+   EventFormModal — Unified Visual Metadata CMS (Phase 3: Twin Editor)
    Two-column layout: Left = Identity, Right = Visuals & Logistics
-   Supports artist inheritance via custom_* fields + sync toggles
+   Waterfall provenance: override → template → artist → scraper
    ═══════════════════════════════════════════════════════════════════════════ */
 
 export default function EventFormModal({ event, artists = [], venues = [], onClose, onSave, adminPassword, onNavigateToArtist }) {
@@ -22,31 +23,22 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     ticket_link:      event?.ticket_link || '',
     status:           event?.status || 'published',
     source:           event?.source || 'Admin',
-    // Legacy field — still sent for backward compat
+    // Legacy scraper-tier fields — still sent for backward compat
     artist_bio:       event?.artist_bio || '',
-    // Custom override fields (Phase 0 columns)
+    event_image_url:  event?.event_image_url || '',
+    genre:            event?.genre || '',
+    vibe:             event?.vibe || '',
+    // Override-tier fields (Phase 0 custom_* columns)
     custom_bio:       event?.custom_bio || '',
     custom_genres:    event?.custom_genres || [],
     custom_vibes:     event?.custom_vibes || [],
-    custom_image_url: event?.custom_image_url || event?.event_image_url || '',
-    // Legacy single-select fields (kept for backward compat)
-    genre:            event?.genre || '',
-    vibe:             event?.vibe || '',
-    event_image_url:  event?.event_image_url || '',
+    custom_image_url: event?.custom_image_url || '',
     is_featured:      event?.is_featured || false,
   });
   const [aiLoading, setAiLoading] = useState(false);
   const [toast, setToast] = useState(null); // { message, type: 'error' | 'success' }
-
-  // ── Sync lock state per field ─────────────────────────────────────────────
-  // Locked = inheriting from artist (custom_* is empty)
-  // Unlocked = event has custom override
-  const [locks, setLocks] = useState({
-    bio:    !form.custom_bio,
-    genres: !form.custom_genres?.length,
-    vibes:  !form.custom_vibes?.length,
-    image:  !form.custom_image_url,
-  });
+  const [aiResult, setAiResult] = useState(null);
+  const [carouselIdx, setCarouselIdx] = useState(0);
 
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -56,30 +48,60 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     : artists.find(a => a.name?.toLowerCase() === form.artist_name?.toLowerCase());
   const hasArtist = !!linkedArtist;
   const artistName = linkedArtist?.name || form.artist_name || '';
-  const inheritedBio = linkedArtist?.bio || '';
-  const inheritedGenres = linkedArtist?.genres || [];
-  const inheritedVibes = linkedArtist?.vibes || [];
-  const inheritedImage = linkedArtist?.image_url || '';
 
-  // ── Sync toggle handlers ──────────────────────────────────────────────────
-  // When unlocking: copy artist data into custom field so it's not blank
-  // When locking: clear custom field to revert to inheritance
-  const toggleLock = (field) => {
-    const newLocked = !locks[field];
-    setLocks(l => ({ ...l, [field]: newLocked }));
+  // ── Waterfall tiers ───────────────────────────────────────────────────────
+  // Override → Template → Artist Profile → Raw Scraper
+  const template = event?.event_templates || null;
 
-    if (newLocked) {
-      // Re-locking → clear custom data (revert to artist)
-      if (field === 'bio')    update('custom_bio', '');
-      if (field === 'genres') update('custom_genres', []);
-      if (field === 'vibes')  update('custom_vibes', []);
-      if (field === 'image')  { update('custom_image_url', ''); update('event_image_url', ''); }
-    } else {
-      // Unlocking → seed custom field with current artist data
-      if (field === 'bio')    update('custom_bio', inheritedBio);
-      if (field === 'genres') update('custom_genres', [...inheritedGenres]);
-      if (field === 'vibes')  update('custom_vibes', [...inheritedVibes]);
-      if (field === 'image')  update('custom_image_url', inheritedImage);
+  const bioSources = {
+    override: form.custom_bio,
+    template: template?.bio || '',
+    artist:   linkedArtist?.bio || '',
+    scraper:  event?.artist_bio || '',
+  };
+  const imageSources = {
+    override: form.custom_image_url,
+    template: template?.image_url || '',
+    artist:   linkedArtist?.image_url || '',
+    scraper:  event?.event_image_url || '',
+  };
+  const genreSources = {
+    override: form.custom_genres,
+    template: Array.isArray(template?.genres) ? template.genres : [],
+    artist:   linkedArtist?.genres || [],
+    scraper:  event?.genre ? [event.genre] : [],
+  };
+  // Vibes get a 3-tier waterfall (templates don't carry vibes)
+  const vibeSources = {
+    override: form.custom_vibes,
+    artist:   linkedArtist?.vibes || [],
+    scraper:  event?.vibe ? [event.vibe] : [],
+  };
+
+  const bioResolved   = resolveTier(bioSources);
+  const imageResolved = resolveTier(imageSources);
+  const genreResolved = resolveTier(genreSources, 'array');
+  const vibeResolved  = resolveTier(vibeSources, 'array');
+
+  // ── Reset handlers — clear the override so the waterfall flows down ──────
+  const resetField = (field) => {
+    if (field === 'bio')    update('custom_bio', '');
+    if (field === 'genres') update('custom_genres', []);
+    if (field === 'vibes')  update('custom_vibes', []);
+    if (field === 'image')  { update('custom_image_url', ''); update('event_image_url', ''); }
+  };
+
+  // ── Click-in seeding — populate override with the parent tier's value so
+  //    the user can EDIT inherited content rather than retype it. Called on
+  //    first focus of a field that's currently showing an inherited value.
+  const seedOverride = (field) => {
+    if (field === 'bio' && !form.custom_bio) {
+      const seed = parentTierValue(bioSources);
+      if (seed) update('custom_bio', seed);
+    }
+    if (field === 'image' && !form.custom_image_url) {
+      const seed = parentTierValue(imageSources);
+      if (seed) { update('custom_image_url', seed); update('event_image_url', seed); }
     }
   };
 
@@ -93,13 +115,13 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     const etOffset = probe.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? '-04:00' : '-05:00';
     const eventDate = new Date(`${form.event_date}T${form.event_time}:00${etOffset}`).toISOString();
 
-    // Compute is_custom_metadata flag
+    // is_custom_metadata: any override tier has content
     const isCustom = !!(form.custom_bio || form.custom_genres?.length || form.custom_vibes?.length || form.custom_image_url);
 
-    // Backward compat: sync custom_bio → artist_bio, custom_image_url → event_image_url
     const payload = {
       ...form,
       event_date: eventDate,
+      // Backward-compat mirrors (legacy readers still consume these)
       artist_bio: form.custom_bio || form.artist_bio,
       event_image_url: form.custom_image_url || form.event_image_url,
       is_custom_metadata: isCustom,
@@ -109,8 +131,7 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     setTimeout(() => onSave(payload), 600);
   };
 
-  // ── AI Enhance (returns structured JSON: bio, genre, vibe, image_search_query) ──
-  const [aiResult, setAiResult] = useState(null); // stores last AI response for image_search_query display
+  // ── AI Enhance — writes into the override tier ────────────────────────────
   const handleAiEnhance = async () => {
     setAiLoading(true);
     setAiResult(null);
@@ -122,26 +143,15 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
           artist_name: form.artist_name,
           venue_name: form.venue_name,
           event_date: form.event_date,
-          genre: form.genre || (inheritedGenres[0] || ''),
-          current_description: form.custom_bio || inheritedBio,
+          genre: genreResolved.value[0] || '',
+          current_description: bioResolved.value,
         }),
       });
       const data = await res.json();
       if (data.enhanced || data.bio) {
-        // Always apply bio
         update('custom_bio', data.bio || data.enhanced);
-        setLocks(l => ({ ...l, bio: false }));
-        // Apply genre if returned and no custom override exists
-        if (data.genre && !form.custom_genres?.length) {
-          update('custom_genres', [data.genre]);
-          setLocks(l => ({ ...l, genres: false }));
-        }
-        // Apply vibe if returned and no custom override exists
-        if (data.vibe && !form.custom_vibes?.length) {
-          update('custom_vibes', [data.vibe]);
-          setLocks(l => ({ ...l, vibes: false }));
-        }
-        // Store full result for image_search_query display
+        if (data.genre && !form.custom_genres?.length) update('custom_genres', [data.genre]);
+        if (data.vibe  && !form.custom_vibes?.length)  update('custom_vibes',  [data.vibe]);
         setAiResult(data);
       } else {
         alert(data.error || 'AI enhance failed');
@@ -150,6 +160,13 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
       alert('AI enhance error: ' + err.message);
     }
     setAiLoading(false);
+  };
+
+  // ── Image carousel — read candidates from the linked artist ──────────────
+  const imageCandidates = Array.isArray(linkedArtist?.image_candidates) ? linkedArtist.image_candidates : [];
+  const setCandidateAsActive = (url) => {
+    update('custom_image_url', url);
+    update('event_image_url', url);
   };
 
   // ── Shared styles ─────────────────────────────────────────────────────────
@@ -210,6 +227,16 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 fontFamily: "'DM Sans', sans-serif",
               }}>
                 Linked: {artistName}
+              </span>
+            )}
+            {template && (
+              <span style={{
+                fontSize: '10px', fontWeight: 600, padding: '2px 8px',
+                borderRadius: '999px', background: 'rgba(59,130,246,0.08)',
+                color: '#60A5FA', border: '1px solid rgba(59,130,246,0.20)',
+                fontFamily: "'DM Sans', sans-serif",
+              }}>
+                Template: {template.template_name}
               </span>
             )}
             {!hasArtist && form.artist_name && (
@@ -284,39 +311,20 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
               </p>
             </div>
 
-            {/* Description / Bio — with sync toggle */}
+            {/* Description / Bio — Twin Editor, single editable textarea */}
             <MetadataField
               label="Description"
-              isCustom={!locks.bio}
-              artistName={artistName}
-              isLocked={locks.bio}
-              onToggleLock={() => toggleLock('bio')}
-              onRevert={!locks.bio ? () => toggleLock('bio') : null}
+              sources={bioSources}
+              onReset={() => resetField('bio')}
               hasArtist={hasArtist}
-              inheritedValue={locks.bio ? inheritedBio : null}
-              inheritedType="text"
             >
-              {locks.bio && hasArtist ? (
-                /* Locked — show read-only placeholder */
-                <textarea
-                  style={{
-                    ...inputStyle, resize: 'vertical', minHeight: '70px',
-                    opacity: 0.45, cursor: 'default',
-                    background: 'var(--bg-elevated)', borderStyle: 'dashed',
-                  }}
-                  placeholder="Inheriting artist bio — unlock to customize"
-                  readOnly
-                  onClick={() => toggleLock('bio')}
-                />
-              ) : (
-                /* Unlocked or no artist — editable */
-                <textarea
-                  style={{ ...inputStyle, resize: 'vertical', minHeight: '70px' }}
-                  placeholder="Custom event-specific description..."
-                  value={form.custom_bio}
-                  onChange={e => update('custom_bio', e.target.value)}
-                />
-              )}
+              <textarea
+                style={{ ...inputStyle, resize: 'vertical', minHeight: '70px' }}
+                placeholder="Event description — click to edit the inherited value or type your own"
+                value={form.custom_bio || bioResolved.value}
+                onFocus={() => seedOverride('bio')}
+                onChange={e => update('custom_bio', e.target.value)}
+              />
             </MetadataField>
 
             {/* AI Enhance button */}
@@ -338,7 +346,6 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
               >
                 {aiLoading ? 'Enhancing...' : '✨ AI Enhance (Bio + Genre + Vibe)'}
               </button>
-              {/* Show image search query hint after AI runs */}
               {aiResult?.image_search_query && (
                 <p style={{
                   fontSize: '11px', marginTop: '6px', color: '#7C3AED',
@@ -363,41 +370,35 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 Style & Mood
               </div>
 
-              {/* Genres — always show full grid, disabled when locked */}
+              {/* Genres — waterfall; selector seeded with resolved value */}
               <MetadataField
                 label="Genres"
-                isCustom={!locks.genres}
-                artistName={artistName}
-                isLocked={locks.genres}
-                onToggleLock={() => toggleLock('genres')}
-                onRevert={!locks.genres ? () => toggleLock('genres') : null}
+                sources={genreSources}
+                sourceType="array"
+                onReset={() => resetField('genres')}
                 hasArtist={hasArtist}
                 style={{ marginBottom: '12px' }}
               >
                 <StyleMoodSelector
                   options={GENRES}
-                  selected={locks.genres && hasArtist ? inheritedGenres : form.custom_genres}
+                  selected={form.custom_genres?.length ? form.custom_genres : genreResolved.value}
                   onChange={v => update('custom_genres', v)}
-                  disabled={locks.genres && hasArtist}
                 />
               </MetadataField>
 
-              {/* Vibes — always show full grid, disabled when locked */}
+              {/* Vibes — 3-tier waterfall (no template vibes) */}
               <MetadataField
                 label="Vibes"
-                isCustom={!locks.vibes}
-                artistName={artistName}
-                isLocked={locks.vibes}
-                onToggleLock={() => toggleLock('vibes')}
-                onRevert={!locks.vibes ? () => toggleLock('vibes') : null}
+                sources={vibeSources}
+                sourceType="array"
+                onReset={() => resetField('vibes')}
                 hasArtist={hasArtist}
               >
                 <StyleMoodSelector
                   options={VIBES}
-                  selected={locks.vibes && hasArtist ? inheritedVibes : form.custom_vibes}
+                  selected={form.custom_vibes?.length ? form.custom_vibes : vibeResolved.value}
                   onChange={v => update('custom_vibes', v)}
                   accentColor="#3AADA0"
-                  disabled={locks.vibes && hasArtist}
                 />
               </MetadataField>
             </div>
@@ -407,33 +408,103 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
           {/* ═══════════ RIGHT COLUMN — Visuals & Logistics ══════════════ */}
           <div style={{ padding: '20px 24px' }}>
 
-            {/* Event Image — unified single field for all events */}
+            {/* Event Image — waterfall + candidate carousel */}
             <MetadataField
               label="Event Image"
-              isCustom={!locks.image}
-              artistName={artistName}
-              isLocked={locks.image}
-              onToggleLock={hasArtist ? () => toggleLock('image') : undefined}
-              onRevert={!locks.image && hasArtist ? () => toggleLock('image') : null}
+              sources={imageSources}
+              onReset={() => resetField('image')}
               hasArtist={hasArtist}
-              hint="If set, this image takes priority over artist and venue photos."
+              hint="Waterfall picks the first non-empty tier. Pick a candidate below to override."
             >
               <ImagePreviewSection
-                imageUrl={locks.image && hasArtist ? '' : form.custom_image_url}
-                inheritedUrl={inheritedImage}
-                isInherited={locks.image && hasArtist}
+                imageUrl={imageResolved.value}
+                inheritedUrl=""
+                isInherited={false}
                 onUrlChange={v => {
                   update('custom_image_url', v);
-                  update('event_image_url', v); // keep legacy field in sync
+                  update('event_image_url', v);
                 }}
-                disabled={locks.image && hasArtist}
-                placeholder={hasArtist && inheritedImage ? 'Unlock to set a custom event image...' : 'https://... (paste image URL)'}
+                placeholder="https://... (paste image URL)"
               />
             </MetadataField>
 
+            {/* Image Candidate Carousel — from artists.image_candidates */}
+            {imageCandidates.length > 0 && (
+              <div style={{
+                marginTop: '10px', padding: '12px', borderRadius: '10px',
+                background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  marginBottom: '8px',
+                }}>
+                  <span style={{
+                    fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px',
+                    textTransform: 'uppercase', color: 'var(--text-secondary)',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    Image Candidates ({imageCandidates.length})
+                  </span>
+                  <span style={{
+                    fontSize: '10px', color: 'var(--text-muted)',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}>
+                    From artist AI enrichment
+                  </span>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
+                  gap: '8px',
+                }}>
+                  {imageCandidates.map((url, i) => {
+                    const isActive = url === imageResolved.value;
+                    return (
+                      <div key={`${url}-${i}`} style={{
+                        position: 'relative', borderRadius: '6px', overflow: 'hidden',
+                        border: isActive ? '2px solid #E8722A' : '1px solid var(--border)',
+                        aspectRatio: '1 / 1',
+                        boxShadow: isActive ? '0 0 0 2px rgba(232,114,42,0.20)' : 'none',
+                        transition: 'all 0.15s',
+                      }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`Candidate ${i + 1}`}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          onError={e => { e.currentTarget.style.opacity = 0.2; }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setCandidateAsActive(url)}
+                          disabled={isActive}
+                          style={{
+                            position: 'absolute', inset: 0, width: '100%', height: '100%',
+                            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                            padding: '4px',
+                            background: isActive
+                              ? 'linear-gradient(to top, rgba(232,114,42,0.85), transparent 60%)'
+                              : 'linear-gradient(to top, rgba(0,0,0,0.75), transparent 60%)',
+                            color: '#FFFFFF',
+                            fontSize: '10px', fontWeight: 700, letterSpacing: '0.3px',
+                            fontFamily: "'DM Sans', sans-serif",
+                            border: 'none', cursor: isActive ? 'default' : 'pointer',
+                            opacity: 1,
+                          }}
+                        >
+                          {isActive ? '✓ Active' : 'Set as Active'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* ── Logistics Rail ──────────────────────────────────────────── */}
             <div style={{
-              marginTop: '6px', padding: '14px', borderRadius: '10px',
+              marginTop: '14px', padding: '14px', borderRadius: '10px',
               background: 'var(--bg-elevated)',
               border: '1px solid var(--border)',
             }}>
@@ -492,8 +563,6 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 <input style={inputStyle} placeholder="https://..." value={form.ticket_link} onChange={e => update('ticket_link', e.target.value)} />
               </div>
 
-              {/* Standalone event_image_url input removed — unified into ImagePreviewSection above */}
-
               {/* Feature in Spotlight toggle */}
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -509,9 +578,9 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                   type="button"
                   onClick={() => {
                     if (!form.is_featured) {
-                      // Validate: must have image AND bio/description
-                      const hasImage = !!(form.custom_image_url || form.event_image_url || (hasArtist && inheritedImage));
-                      const hasBio = !!(form.custom_bio || (hasArtist && inheritedBio));
+                      // Require image + bio via the waterfall (any tier counts)
+                      const hasImage = !!imageResolved.value;
+                      const hasBio   = !!bioResolved.value;
                       if (!hasImage || !hasBio) {
                         const missing = [];
                         if (!hasImage) missing.push('image');
@@ -552,7 +621,6 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
             gap: '12px',
           }}
         >
-          {/* Cross-link to artist profile (only when linked + callback available) */}
           <div>
             {hasArtist && onNavigateToArtist ? (
               <button

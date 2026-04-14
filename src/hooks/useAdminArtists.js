@@ -116,6 +116,10 @@ export default function useAdminArtists({ password }) {
         if (ai.genres?.length && (!artist.genres || artist.genres.length === 0)) { update.genres = ai.genres; newStatus.genres = 'pending'; }
         if (ai.vibes?.length && (!artist.vibes || artist.vibes.length === 0)) { update.vibes = ai.vibes; newStatus.vibes = 'pending'; }
         if (ai.image_url && !artist.image_url) { update.image_url = ai.image_url; newStatus.image_url = 'pending'; }
+        // Persist the full candidate array so the Event Edit Modal carousel can read it later.
+        if (Array.isArray(ai.image_candidates) && ai.image_candidates.length > 0) {
+          update.image_candidates = ai.image_candidates;
+        }
         if (ai.is_tribute !== undefined && !artist.is_tribute) update.is_tribute = ai.is_tribute;
 
         if (Object.keys(update).length > 1) {
@@ -162,6 +166,15 @@ export default function useAdminArtists({ password }) {
         setImageCandidates(ai.image_candidates);
         setImageCarouselIdx(0);
         setArtistForm(p => ({ ...p, image_url: ai.image_candidates[0] }));
+        // Fire-and-forget: persist the candidate array so the carousel survives reload
+        // and the Event Edit Modal can read it via the linked artist.
+        if (editingArtist?.id) {
+          fetch('/api/admin/artists', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+            body: JSON.stringify({ id: editingArtist.id, image_candidates: ai.image_candidates }),
+          }).catch(err => console.error('Failed to persist image_candidates:', err));
+        }
         const note = ai.image_source === 'placeholder' ? ' (placeholders)' : ` (${ai.image_candidates.length} options)`;
         setArtistToast({ type: 'success', message: `Images refreshed${note} — use arrows to browse` });
       } else if (field === 'genres' && ai.genres?.length) {

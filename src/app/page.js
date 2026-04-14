@@ -783,7 +783,7 @@ export default function HomePage() {
       // Using select('*') for broad compatibility; revisit with explicit columns after schema audit.
       const { data, error } = await supabase
         .from('events')
-        .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates(template_name, bio, image_url, category, start_time)')
+        .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates(template_name, bio, image_url, category, start_time, genres)')
         .gte('event_date', floor)
         .eq('status', 'published')
         .order('event_date', { ascending: true })

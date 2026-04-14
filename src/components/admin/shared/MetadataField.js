@@ -2,46 +2,58 @@
 
 import Badge from '@/components/ui/Badge';
 import SyncToggle from './SyncToggle';
+import { resolveTier, TIERS } from '@/lib/metadataWaterfall';
 
 /**
- * MetadataField — Wrapper for any form field with source badge + sync toggle.
+ * MetadataField — Wrapper for any form field with a provenance badge.
  *
- * Renders a label row with:
- *   1. Field label
- *   2. Source Badge — [Inherited: Artist] (blue) or [Custom: Event] (orange)
- *   3. SyncToggle button (lock/unlock)
- *   4. Optional Revert button (when custom data exists)
+ * Two rendering modes (mutually exclusive):
  *
- * Props:
- *   label          (string)  — Field label text
- *   children       (node)    — The input / textarea / selector to wrap
- *   isCustom       (bool)    — true = event-level override; false = inherited
- *   artistName     (string)  — Name of linked artist (for badge text)
- *   isLocked       (bool)    — Current sync-lock state
- *   onToggleLock   (func)    — Called with new lock state
- *   onRevert       (func)    — Called when user clicks Revert (clears custom value)
- *   hasArtist      (bool)    — false hides all inheritance UI (standalone event mode)
- *   required       (bool)    — Show asterisk on label
- *   hint           (string)  — Small helper text below the field
- *   inheritedValue (string)  — The artist's value, shown as preview when locked
- *   inheritedType  (string)  — 'text' | 'image' — controls preview rendering
- *   style          (object)  — Additional style overrides on outer wrapper
+ * ─── MODE A: Waterfall (4-tier) ─────────────────────────────────────────
+ * Activated when `sources` prop is passed. Renders the top-layer provenance
+ * badge (Admin Override / Template / Artist Profile / Raw Scraper) + an
+ * undo-icon Reset button that clears the override and lets the waterfall
+ * flow down to the next tier. Used by the Event Edit Modal.
+ *
+ *   sources    (object)  — { override, template, artist, scraper }
+ *   sourceType ('text'|'array') — how to decide a tier is "filled"
+ *   onReset    (func)    — Called when the undo icon is clicked. Should
+ *                          null/empty out the override on the parent form.
+ *
+ * ─── MODE B: Legacy (2-tier sync-lock) ──────────────────────────────────
+ * Used by AdminArtistsTab + AdminEventTemplatesTab. Unchanged.
+ *
+ *   isCustom, isLocked, onToggleLock, onRevert, artistName, inheritedValue,
+ *   inheritedType — all preserved for backward compat.
+ *
+ * ─── Shared props ───────────────────────────────────────────────────────
+ *   label, children, hasArtist, required, hint, style
  */
 export default function MetadataField({
   label,
   children,
+  // Mode A — waterfall
+  sources,
+  sourceType = 'text',
+  onReset,
+  // Mode B — legacy sync-lock
   isCustom = false,
   artistName = '',
   isLocked = true,
   onToggleLock,
   onRevert,
+  inheritedValue,
+  inheritedType = 'text',
+  // Shared
   hasArtist = true,
   required = false,
   hint,
-  inheritedValue,
-  inheritedType = 'text',
   style = {},
 }) {
+  // Mode A takes precedence — compute the top tier from the waterfall.
+  const waterfallMode = !!sources;
+  const resolved = waterfallMode ? resolveTier(sources, sourceType) : null;
+  const canReset = waterfallMode && resolved?.tier?.key === 'override' && typeof onReset === 'function';
   return (
     <div style={{ marginBottom: '14px', ...style }}>
       {/* Label row */}
@@ -58,8 +70,46 @@ export default function MetadataField({
           {label}{required ? ' *' : ''}
         </label>
 
-        {/* Source badge — only when an artist is linked */}
-        {hasArtist && (
+        {/* ── MODE A: Waterfall badge + undo Reset ─────────────────────── */}
+        {waterfallMode && (
+          <>
+            <Badge
+              label={resolved.tier.label}
+              size="sm"
+              bg={resolved.tier.bg}
+              color={resolved.tier.color}
+              uppercase={false}
+              style={{
+                borderRadius: '999px',
+                border: `1px solid ${resolved.tier.border}`,
+              }}
+            />
+            {canReset && (
+              <button
+                type="button"
+                onClick={onReset}
+                title="Reset — clear override and inherit from next tier"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: '22px', height: '22px', borderRadius: '6px',
+                  background: 'rgba(232,114,42,0.08)',
+                  border: '1px solid rgba(232,114,42,0.25)',
+                  color: '#E8722A', cursor: 'pointer', padding: 0,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {/* Undo / counter-clockwise arrow */}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="1 4 1 10 7 10" />
+                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                </svg>
+              </button>
+            )}
+          </>
+        )}
+
+        {/* ── MODE B: Legacy 2-tier source badge ───────────────────────── */}
+        {!waterfallMode && hasArtist && (
           <Badge
             label={isCustom ? 'Custom: Event' : `Inherited: ${artistName || 'Artist'}`}
             size="sm"
@@ -73,8 +123,8 @@ export default function MetadataField({
           />
         )}
 
-        {/* Sync toggle — only when an artist is linked */}
-        {hasArtist && onToggleLock && (
+        {/* Legacy sync toggle — only in legacy mode */}
+        {!waterfallMode && hasArtist && onToggleLock && (
           <SyncToggle
             isLocked={isLocked}
             onToggle={onToggleLock}
@@ -82,8 +132,8 @@ export default function MetadataField({
           />
         )}
 
-        {/* Revert button — only when field has custom data */}
-        {isCustom && onRevert && (
+        {/* Legacy Revert button */}
+        {!waterfallMode && isCustom && onRevert && (
           <button
             type="button"
             onClick={onRevert}
@@ -104,8 +154,8 @@ export default function MetadataField({
       {/* Field content */}
       {children}
 
-      {/* Inherited preview — shown when locked and artist has a value */}
-      {isLocked && hasArtist && inheritedValue && (
+      {/* Inherited preview — legacy mode only, shown when locked */}
+      {!waterfallMode && isLocked && hasArtist && inheritedValue && (
         <InheritedPreview value={inheritedValue} type={inheritedType} />
       )}
 

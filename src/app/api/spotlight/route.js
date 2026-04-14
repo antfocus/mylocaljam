@@ -169,7 +169,7 @@ export async function GET(request) {
   try {
     const { data: hydrated, error } = await supabase
       .from('events')
-      .select('*, venues(name, address, color, latitude, longitude, venue_type, tags), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url, category, start_time)')
+      .select('*, venues(name, address, color, latitude, longitude, venue_type, tags), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url, category, start_time, genres)')
       .in('id', collected);
 
     if (error || !hydrated || hydrated.length === 0) return NextResponse.json(fallback);

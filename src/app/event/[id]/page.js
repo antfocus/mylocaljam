@@ -60,7 +60,7 @@ const EVENT_SELECT = [
   'artists(name, bio, image_url, genres, vibes, is_tribute)',
   // New: pull the AI-enriched template name + bio + image so the priority ladders
   // (title, bio, image) can reach them without a second round-trip.
-  'event_templates(template_name, bio, image_url, category, start_time)',
+  'event_templates(template_name, bio, image_url, category, start_time, genres)',
 ].join(', ');
 
 /**
