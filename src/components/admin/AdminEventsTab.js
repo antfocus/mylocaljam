@@ -19,6 +19,8 @@ export default function AdminEventsTab({
   setEditingEvent, setShowEventForm, setBulkTimeModal, setBulkTime,
   isMobile, showQueueToast, CATEGORY_OPTIONS,
   password,
+  // Magic Wand: cross-tab handoff for "Create Template from Event"
+  setActiveTab, setEditingTemplate, setTemplateForm,
   // Festival props (consolidated from sidebar)
   festivalData = [], festivalSearch = '', setFestivalSearch,
   editingFestival, setEditingFestival, fetchFestivalNames,
@@ -91,6 +93,35 @@ export default function AdminEventsTab({
           });
         }
         // Missing time filter is now server-side via ?missingTime=true
+
+  // ── Magic Wand: Create Template from Event ────────────────────────────
+  // Pre-fills the Template Editor with the event's current values and
+  // switches the admin to the Templates tab. No DB writes here — the
+  // admin still reviews and clicks Save in the editor panel.
+  //
+  // Alias source: uses `ev.event_title` as-is per design. If the event is
+  // already linked, this is the clean template name and produces a
+  // harmless duplicate alias; unlinked events yield the raw scraper title,
+  // which is what we want so the next sync matches this template cleanly.
+  const handleCreateTemplateFromEvent = (ev) => {
+    if (!ev || !setActiveTab || !setEditingTemplate || !setTemplateForm) return;
+    const rawTitle = ev.event_title || ev.name || '';
+    setTemplateForm({
+      template_name: rawTitle,                                              // editable — admin can trim scraper junk
+      aliases: rawTitle,                                                    // guarantees match on next sync
+      category: ev.category || 'Live Music',
+      venue_id: ev.venue_id || '',
+      bio: ev.custom_bio || ev.description || ev.artist_bio || '',
+      genres: '',
+      vibes: '',
+      image_url: ev.custom_image_url || ev.event_image_url || ev.image_url || '',
+      start_time: ev.start_time || '',
+      is_human_edited: {},
+    });
+    setEditingTemplate({ __new: true });
+    setActiveTab('templates');
+  };
+
   return (
         <div>
           {/* View tabs + Add Event */}
@@ -668,6 +699,23 @@ export default function AdminEventsTab({
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
                     </a>
                   )}
+                  {/* Magic Wand — create a new Event Template from this row. */}
+                  <button
+                    className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent"
+                    onClick={(e) => { e.stopPropagation(); handleCreateTemplateFromEvent(ev); }}
+                    title="Create template from this event"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M15 4V2"/>
+                      <path d="M15 16v-2"/>
+                      <path d="M8 9h2"/>
+                      <path d="M20 9h2"/>
+                      <path d="m17.8 11.8 1.2 1.2"/>
+                      <path d="m17.8 6.2 1.2-1.2"/>
+                      <path d="m3 21 9-9"/>
+                      <path d="m12.2 6.2-1.2-1.2"/>
+                    </svg>
+                  </button>
                   <button className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent" onClick={() => { setEditingEvent(ev); setShowEventForm(true); }}>
                     {Icons.edit}
                   </button>

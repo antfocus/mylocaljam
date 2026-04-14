@@ -355,6 +355,11 @@ export default function AdminPage() {
           setEditingEvent={ev.setEditingEvent} setShowEventForm={ev.setShowEventForm}
           setBulkTimeModal={ev.setBulkTimeModal} setBulkTime={ev.setBulkTime}
           showQueueToast={showQueueToast}
+          // Magic Wand handoff — lets AdminEventsTab seed the Template Editor
+          // and switch tabs in a single synchronous step. No DB write; the
+          // admin still confirms with the Template Save button.
+          setActiveTab={setActiveTab}
+          setEditingTemplate={et.setEditingTemplate} setTemplateForm={et.setTemplateForm}
           festivalData={fe.festivalData} festivalSearch={fe.festivalSearch}
           setFestivalSearch={fe.setFestivalSearch}
           editingFestival={fe.editingFestival} setEditingFestival={fe.setEditingFestival}
