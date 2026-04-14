@@ -12,7 +12,7 @@ export default function useAdminArtists({ password }) {
   const [artistSubTab, setArtistSubTab] = useState('directory');
   const [directorySort, setDirectorySort] = useState({ col: 'date_added', dir: 'desc' });
   const [editingArtist, setEditingArtist] = useState(null);
-  const [artistForm, setArtistForm] = useState({ name: '', bio: '', genres: '', vibes: '', image_url: '' });
+  const [artistForm, setArtistForm] = useState({ name: '', bio: '', genres: '', vibes: '', image_url: '', alias_names: [] });
   const [artistActionLoading, setArtistActionLoading] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [artistToast, setArtistToast] = useState(null);

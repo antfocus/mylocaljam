@@ -28,10 +28,10 @@ export async function POST(request) {
     return NextResponse.json({ error: 'masterId and duplicateIds[] are required' }, { status: 400 });
   }
 
-  // Validate master exists
+  // Validate master exists (pull alias_names too so we can merge into the array)
   const { data: master, error: masterErr } = await supabase
     .from('artists')
-    .select('id, name')
+    .select('id, name, alias_names')
     .eq('id', masterId)
     .single();
 
@@ -39,10 +39,11 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Master artist not found' }, { status: 404 });
   }
 
-  // Fetch duplicate artist names (needed for artist_name text matching)
+  // Fetch duplicate artist names + their existing aliases — the duplicate's
+  // aliases must also move to the master so no learning gets lost on delete.
   const { data: duplicates, error: dupErr } = await supabase
     .from('artists')
-    .select('id, name')
+    .select('id, name, alias_names')
     .in('id', duplicateIds);
 
   if (dupErr || !duplicates?.length) {
@@ -73,15 +74,70 @@ export async function POST(request) {
     totalEventsTransferred += byName?.length || 0;
   }
 
-  // Step C: Save duplicate names as aliases on the master profile
+  // Step C: Save duplicate names AND any aliases they carried as aliases on
+  // the master profile — write to BOTH stores so the array UI and the
+  // lookup table stay symmetric.
+  const masterLower = master.name.toLowerCase().trim();
+
+  // ── C.1: artist_aliases (lookup table, read by sync pipeline) ────────────
+  const aliasRows = [];
   for (const dup of duplicates) {
-    if (dup.name.toLowerCase().trim() !== master.name.toLowerCase().trim()) {
+    // The duplicate's canonical name becomes an alias of the master.
+    if (dup.name && dup.name.toLowerCase().trim() !== masterLower) {
+      aliasRows.push({
+        artist_id: masterId,
+        alias: dup.name,
+        alias_lower: dup.name.toLowerCase().trim(),
+      });
+    }
+    // Any aliases the duplicate was already carrying must also transfer.
+    const dupAliases = Array.isArray(dup.alias_names) ? dup.alias_names : [];
+    for (const a of dupAliases) {
+      const t = (a || '').trim();
+      if (!t) continue;
+      if (t.toLowerCase() === masterLower) continue;
+      aliasRows.push({
+        artist_id: masterId,
+        alias: t,
+        alias_lower: t.toLowerCase(),
+      });
+    }
+  }
+  if (aliasRows.length > 0) {
+    await supabase
+      .from('artist_aliases')
+      .upsert(aliasRows, { onConflict: 'alias_lower' });
+  }
+
+  // ── C.2: artists.alias_names (array column, read by admin UI) ────────────
+  // Union master's existing aliases + every incoming alias, deduped case-
+  // insensitively, with the master's canonical name excluded.
+  const existingMaster = Array.isArray(master.alias_names) ? master.alias_names : [];
+  const seen = new Set();
+  const mergedAliases = [];
+  const addAlias = (raw) => {
+    const t = (raw || '').trim();
+    if (!t) return;
+    const k = t.toLowerCase();
+    if (k === masterLower) return;
+    if (seen.has(k)) return;
+    seen.add(k);
+    mergedAliases.push(t);
+  };
+  for (const a of existingMaster) addAlias(a);
+  for (const dup of duplicates) {
+    addAlias(dup.name);
+    for (const a of (Array.isArray(dup.alias_names) ? dup.alias_names : [])) addAlias(a);
+  }
+  if (mergedAliases.length !== existingMaster.length ||
+      mergedAliases.some((v, i) => v !== existingMaster[i])) {
+    try {
       await supabase
-        .from('artist_aliases')
-        .upsert(
-          { artist_id: masterId, alias: dup.name, alias_lower: dup.name.toLowerCase().trim() },
-          { onConflict: 'alias_lower' }
-        );
+        .from('artists')
+        .update({ alias_names: mergedAliases })
+        .eq('id', masterId);
+    } catch (arrErr) {
+      console.error('alias_names array update on merge failed (non-fatal):', arrErr);
     }
   }
 

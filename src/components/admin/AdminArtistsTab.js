@@ -1,8 +1,147 @@
 'use client';
 
+import { useState } from 'react';
 import { formatDate } from '@/lib/utils';
 import Badge from '@/components/ui/Badge';
 import { MetadataField, StyleMoodSelector, ImagePreviewSection } from '@/components/admin/shared';
+
+/**
+ * AliasTagInput — pill/tag input for artists.alias_names.
+ *
+ * - Type + Enter (or comma) to commit a new tag.
+ * - Backspace on empty input removes the last tag (standard chip-input UX).
+ * - Click × on a pill to remove.
+ * - Duplicates (case-insensitive) are silently rejected.
+ * - The artist's canonical name is rejected (can't alias yourself).
+ * - Whitespace is trimmed; empty strings ignored.
+ *
+ * Controlled component: parent owns the string[] via `value` / `onChange`.
+ */
+function AliasTagInput({ value, onChange, canonicalName = '', disabled = false }) {
+  const [draft, setDraft] = useState('');
+  const tags = Array.isArray(value) ? value : [];
+
+  const commit = (raw) => {
+    const t = (raw || '').trim().replace(/,+$/, '').trim();
+    if (!t) return;
+    const tLower = t.toLowerCase();
+    if (canonicalName && tLower === canonicalName.trim().toLowerCase()) return;
+    if (tags.some(x => (x || '').toLowerCase() === tLower)) return;
+    onChange([...tags, t]);
+    setDraft('');
+  };
+
+  const removeAt = (idx) => {
+    const next = tags.slice();
+    next.splice(idx, 1);
+    onChange(next);
+  };
+
+  const onKeyDown = (e) => {
+    if (disabled) return;
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      commit(draft);
+    } else if (e.key === 'Backspace' && draft === '' && tags.length > 0) {
+      // Chip-input convention: backspace on empty field pops the last tag.
+      removeAt(tags.length - 1);
+    }
+  };
+
+  const onPaste = (e) => {
+    if (disabled) return;
+    const text = e.clipboardData.getData('text');
+    if (text.includes(',') || text.includes('\n')) {
+      e.preventDefault();
+      const parts = text.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+      let next = tags.slice();
+      const canonLower = canonicalName.trim().toLowerCase();
+      for (const p of parts) {
+        const pl = p.toLowerCase();
+        if (pl === canonLower) continue;
+        if (next.some(x => (x || '').toLowerCase() === pl)) continue;
+        next.push(p);
+      }
+      onChange(next);
+      setDraft('');
+    }
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px',
+        padding: '8px 10px',
+        background: disabled ? 'var(--bg-elevated)' : 'var(--bg-card)',
+        border: '1px solid var(--border)', borderRadius: '8px',
+        minHeight: '42px',
+        opacity: disabled ? 0.6 : 1,
+        cursor: disabled ? 'not-allowed' : 'text',
+      }}
+      onClick={(e) => {
+        // Focus the input when the user clicks empty space inside the pill box
+        const input = e.currentTarget.querySelector('input');
+        if (input) input.focus();
+      }}
+    >
+      {tags.map((tag, idx) => (
+        <span
+          key={`${tag}-${idx}`}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '3px 4px 3px 10px',
+            background: 'rgba(147, 51, 234, 0.12)',
+            color: '#C084FC',
+            border: '1px solid rgba(147, 51, 234, 0.28)',
+            borderRadius: '999px',
+            fontSize: '12px', fontWeight: 600,
+            fontFamily: "'DM Sans', sans-serif",
+            lineHeight: 1.2,
+          }}
+        >
+          {tag}
+          {!disabled && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); removeAt(idx); }}
+              aria-label={`Remove alias ${tag}`}
+              title="Remove alias"
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: '16px', height: '16px', borderRadius: '999px',
+                background: 'rgba(147, 51, 234, 0.22)',
+                color: '#C084FC',
+                border: 'none', cursor: 'pointer', padding: 0,
+                fontSize: '12px', lineHeight: 1,
+              }}
+            >
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </span>
+      ))}
+      <input
+        type="text"
+        value={draft}
+        disabled={disabled}
+        placeholder={tags.length === 0 ? 'e.g. "The Jukes", "Southside Johnny"' : ''}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={onKeyDown}
+        onPaste={onPaste}
+        onBlur={() => { if (draft.trim()) commit(draft); }}
+        style={{
+          flex: 1, minWidth: '120px',
+          background: 'transparent', border: 'none', outline: 'none',
+          color: 'var(--text-primary)', fontSize: '13px',
+          fontFamily: "'DM Sans', sans-serif",
+          padding: '2px 0',
+        }}
+      />
+    </div>
+  );
+}
 
 export default function AdminArtistsTab({
   artists, events, venues, password, isMobile,
@@ -587,6 +726,19 @@ export default function AdminArtistsTab({
                 )}
               </MetadataField>
 
+              {/* ── Aliases / Also Known As ─────────────────────────────────── */}
+              <MetadataField label="Also Known As (Aliases)" hasArtist={false} style={{ marginBottom: '16px' }}>
+                <AliasTagInput
+                  value={artistForm.alias_names}
+                  onChange={(next) => setArtistForm(p => ({ ...p, alias_names: next }))}
+                  canonicalName={artistForm.name}
+                  disabled={isArtistLocked}
+                />
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', fontFamily: "'DM Sans', sans-serif" }}>
+                  Type a variant name and press <kbd style={{ fontSize: '9px', padding: '1px 5px', background: 'var(--bg-card)', borderRadius: '3px', border: '1px solid var(--border)' }}>Enter</kbd> or <kbd style={{ fontSize: '9px', padding: '1px 5px', background: 'var(--bg-card)', borderRadius: '3px', border: '1px solid var(--border)' }}>,</kbd> to add. Future scraper rows matching any alias will auto-link to this artist.
+                </div>
+              </MetadataField>
+
               {/* ── Two-column grid ──────────────────────────────────────────── */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 {/* ── LEFT COLUMN: Identity & Creative ──────────────────────── */}
@@ -743,12 +895,28 @@ export default function AdminArtistsTab({
                     return;
                   }
                 }
+                // Normalize alias list: trim, dedupe (case-insensitive), drop empty,
+                // and strip any entry equal to the canonical name.
+                const canonicalLower = (artistForm.name || editingArtist.name || '').trim().toLowerCase();
+                const aliasSeen = new Set();
+                const aliasClean = [];
+                for (const a of (artistForm.alias_names || [])) {
+                  const t = (a || '').trim();
+                  if (!t) continue;
+                  const k = t.toLowerCase();
+                  if (k === canonicalLower) continue;
+                  if (aliasSeen.has(k)) continue;
+                  aliasSeen.add(k);
+                  aliasClean.push(t);
+                }
+
                 const payload = {
                   id: editingArtist.id,
                   bio: artistForm.bio || null,
                   genres: genres && genres.length > 0 ? genres : null,
                   vibes: vibes && vibes.length > 0 ? vibes : null,
                   image_url: finalImageUrl,
+                  alias_names: aliasClean,
                   field_status: newFS,
                 };
                 const nameChanged = artistForm.name && artistForm.name.trim() !== editingArtist.name;
@@ -1115,6 +1283,7 @@ export default function AdminArtistsTab({
                           genres: artist.genres ? (Array.isArray(artist.genres) ? artist.genres.join(', ') : artist.genres) : '',
                           vibes: artist.vibes ? (Array.isArray(artist.vibes) ? artist.vibes.join(', ') : artist.vibes) : '',
                           image_url: artist.image_url || '',
+                          alias_names: Array.isArray(artist.alias_names) ? [...artist.alias_names] : [],
                         });
                         try {
                           const params = new URLSearchParams({ page: '1', limit: '20', sort: 'event_date', order: 'asc' });

@@ -141,9 +141,10 @@ export async function PUT(request) {
     }
   }
 
-  // If name was changed, save the old name as an alias
+  // If name was changed, save the old name as an alias in BOTH stores so
+  // the array UI and the lookup table stay symmetric.
   if (old_name && updates.name && old_name !== updates.name) {
-    // Save old name as alias (ignore conflict if already exists)
+    // 1. Log into artist_aliases (lookup table, read by the sync pipeline).
     await supabase
       .from('artist_aliases')
       .upsert(
@@ -151,7 +152,34 @@ export async function PUT(request) {
         { onConflict: 'alias_lower' }
       );
 
-    // Update events that reference the old artist_name
+    // 2. Append to artists.alias_names (array column, read by the admin UI).
+    //    Merge with any admin-supplied alias_names on the same request so a
+    //    concurrent rename + tag-input edit doesn't clobber either source.
+    try {
+      const { data: aRow } = await supabase
+        .from('artists')
+        .select('alias_names')
+        .eq('id', id)
+        .single();
+      const existing = Array.isArray(aRow?.alias_names) ? aRow.alias_names : [];
+      const incoming = Array.isArray(updates.alias_names) ? updates.alias_names : [];
+      const seen = new Set();
+      const merged = [];
+      for (const a of [...existing, ...incoming, old_name]) {
+        const t = (a || '').trim();
+        if (!t) continue;
+        const k = t.toLowerCase();
+        if (k === updates.name.trim().toLowerCase()) continue;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        merged.push(t);
+      }
+      updates.alias_names = merged;
+    } catch (mergeErr) {
+      console.error('alias_names merge on rename failed (non-fatal):', mergeErr);
+    }
+
+    // 3. Update events that reference the old artist_name
     await supabase
       .from('events')
       .update({ artist_name: updates.name })
@@ -186,6 +214,31 @@ export async function PUT(request) {
       .from('events')
       .update({ artist_bio: updates.bio })
       .eq('artist_id', id);
+  }
+
+  // ── Mirror alias_names into the artist_aliases reverse-FK table ──────────
+  // The sync pipeline matches incoming scraper names via artist_aliases.alias_lower
+  // (see src/app/api/sync-events/route.js ~line 808). To make the manually-
+  // entered aliases from the tag-input UI actually resolve on future syncs,
+  // we upsert each alias here. Non-fatal — missing mirror shouldn't block
+  // the save, just degrade learning.
+  if (Array.isArray(updates.alias_names)) {
+    try {
+      const rows = updates.alias_names
+        .filter(a => typeof a === 'string' && a.trim().length > 0)
+        .map(a => ({
+          artist_id: id,
+          alias: a.trim(),
+          alias_lower: a.trim().toLowerCase(),
+        }));
+      if (rows.length > 0) {
+        await supabase
+          .from('artist_aliases')
+          .upsert(rows, { onConflict: 'alias_lower' });
+      }
+    } catch (aliasErr) {
+      console.error('Alias mirror to artist_aliases failed (non-fatal):', aliasErr);
+    }
   }
 
   // Invalidate live feed cache so artist changes reflect immediately
