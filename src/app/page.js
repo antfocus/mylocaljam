@@ -783,7 +783,7 @@ export default function HomePage() {
       // Using select('*') for broad compatibility; revisit with explicit columns after schema audit.
       const { data, error } = await supabase
         .from('events')
-        .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates(template_name, bio, image_url, category)')
+        .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates(template_name, bio, image_url, category, start_time)')
         .gte('event_date', floor)
         .eq('status', 'published')
         .order('event_date', { ascending: true })
@@ -794,7 +794,10 @@ export default function HomePage() {
       const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
 
       const mapped = (data || []).map(e => {
-        let extractedStartTime = e.start_time || (() => {
+        // Start-time ladder: template Master Time wins over raw start_time;
+        // if both are empty, fall through to the existing event_date extraction
+        // and (further down) title-regex fallback.
+        let extractedStartTime = e.event_templates?.start_time || e.start_time || (() => {
           if (e.event_date && e.event_date.includes('T')) {
             const d = new Date(e.event_date);
             // Use Eastern time, not UTC, so times display correctly
@@ -1223,7 +1226,9 @@ export default function HomePage() {
         const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
         const cleanStr = (v) => (v && v.trim() && v.trim() !== 'None') ? v.trim() : null;
         const mapped = data.map(e => {
-          let extractedStartTime = e.start_time || (() => {
+          // Start-time ladder: template Master Time wins over raw start_time;
+          // existing event_date fallback preserved below.
+          let extractedStartTime = e.event_templates?.start_time || e.start_time || (() => {
             if (e.event_date && e.event_date.includes('T')) {
               const d = new Date(e.event_date);
               const parts = d.toLocaleTimeString('en-US', {

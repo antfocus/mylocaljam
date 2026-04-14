@@ -13,7 +13,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('events')
-    .select('*, venues(name, address, color), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url, category)')
+    .select('*, venues(name, address, color), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url, category, start_time)')
     .gte('event_date', start)
     .eq('status', 'published')
     .order('event_date', { ascending: true });
@@ -36,6 +36,10 @@ export async function GET() {
     ...e,
     event_title: e.custom_title || e.event_templates?.template_name || e.event_title || '',
     category: e.event_templates?.category || e.category || 'Other',
+    // Start-time ladder: template Master Time > raw event start_time.
+    // Downstream consumers still handle event_date / title-regex fallbacks
+    // when both rungs are null, so we don't flatten those here.
+    start_time: e.event_templates?.start_time || e.start_time || null,
   }));
 
   // Prevent Vercel edge/CDN from caching stale data

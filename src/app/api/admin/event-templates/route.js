@@ -24,9 +24,10 @@ const ALLOWED_COLUMNS = [
   'field_status',
   'is_human_edited',
   'is_locked',
+  'start_time',
 ];
 
-const LOCKABLE_FIELDS = ['template_name', 'bio', 'genres', 'vibes', 'image_url', 'aliases', 'category'];
+const LOCKABLE_FIELDS = ['template_name', 'bio', 'genres', 'vibes', 'image_url', 'aliases', 'category', 'start_time'];
 
 function pickAllowed(body) {
   const out = {};

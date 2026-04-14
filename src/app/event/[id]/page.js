@@ -60,7 +60,7 @@ const EVENT_SELECT = [
   'artists(name, bio, image_url, genres, vibes, is_tribute)',
   // New: pull the AI-enriched template name + bio + image so the priority ladders
   // (title, bio, image) can reach them without a second round-trip.
-  'event_templates(template_name, bio, image_url, category)',
+  'event_templates(template_name, bio, image_url, category, start_time)',
 ].join(', ');
 
 /**
@@ -96,7 +96,9 @@ function flattenEvent(e) {
     event_title:    e.custom_title || e.event_templates?.template_name || e.event_title || null,
     venue_name:     e.venues?.name || e.venue_name || '',
     event_date:     e.event_date,
-    start_time:     startTime,
+    // Start-time ladder: template Master Time wins. Otherwise keep the
+    // pre-existing timestamp-extracted startTime (computed above).
+    start_time:     e.event_templates?.start_time || startTime,
     genre:          e.genre,
     vibe:           e.vibe,
     cover:          e.cover || null,

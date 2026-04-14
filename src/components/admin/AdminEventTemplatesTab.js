@@ -4,12 +4,12 @@ import { useState, Fragment } from 'react';
 import Badge from '@/components/ui/Badge';
 import { MetadataField, StyleMoodSelector, ImagePreviewSection, GENRES, VIBES } from '@/components/admin/shared';
 
-const NEW_TEMPLATE_FORM = { template_name: '', aliases: '', category: 'Live Music', venue_id: '', bio: '', genres: '', vibes: '', image_url: '', is_human_edited: {} };
+const NEW_TEMPLATE_FORM = { template_name: '', aliases: '', category: 'Live Music', venue_id: '', bio: '', genres: '', vibes: '', image_url: '', start_time: '', is_human_edited: {} };
 
 // Fields that respect per-field locks. Mirrors LOCKABLE_FIELDS in
 // /api/admin/event-templates/route.js — backend strips locked fields from
 // incoming PUTs, so keeping these in sync prevents silent discards.
-const LOCKABLE_FIELDS = ['template_name', 'bio', 'genres', 'vibes', 'image_url', 'aliases', 'category'];
+const LOCKABLE_FIELDS = ['template_name', 'bio', 'genres', 'vibes', 'image_url', 'aliases', 'category', 'start_time'];
 
 export default function AdminEventTemplatesTab({
   templates, venues, password, isMobile,
@@ -383,6 +383,8 @@ export default function AdminEventTemplatesTab({
       genres: Array.isArray(tpl.genres) ? tpl.genres.join(', ') : (tpl.genres || ''),
       vibes: Array.isArray(tpl.vibes) ? tpl.vibes.join(', ') : (tpl.vibes || ''),
       image_url: tpl.image_url || '',
+      // Master Time (HH:MM 24h) for recurring events — nullable.
+      start_time: tpl.start_time || '',
       // Carry the per-field lock map — each LockPill toggles the matching key.
       is_human_edited: (tpl.is_human_edited && typeof tpl.is_human_edited === 'object') ? { ...tpl.is_human_edited } : {},
     });
@@ -425,6 +427,8 @@ export default function AdminEventTemplatesTab({
       genres: genres && genres.length > 0 ? genres : null,
       vibes: vibes && vibes.length > 0 ? vibes : null,
       image_url: templateForm.image_url || null,
+      // Master Time — empty string becomes NULL so the frontend ladder falls through.
+      start_time: templateForm.start_time || null,
       field_status: newFS,
       // Per-field lock map — prevents AI Bulk Enrich from overwriting
       // fields the admin has explicitly locked.
@@ -893,6 +897,21 @@ export default function AdminEventTemplatesTab({
                     <option key={v.id} value={v.id}>{v.name}</option>
                   ))}
                 </select>
+              </MetadataField>
+
+              {/* Master Time — the top rung of the frontend start_time ladder.
+                  Leave blank to let the raw scraper time pass through. */}
+              <MetadataField label="Master Time" hasArtist={false}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+                  <LockPill field="start_time" />
+                </div>
+                <input
+                  type="time"
+                  value={templateForm.start_time || ''}
+                  onChange={e => !isFieldLocked('start_time') && setTemplateForm(p => ({ ...p, start_time: e.target.value }))}
+                  readOnly={isFieldLocked('start_time')}
+                  style={isFieldLocked('start_time') ? lockedInputStyle : inputStyle}
+                />
               </MetadataField>
 
               {/* Aliases */}
