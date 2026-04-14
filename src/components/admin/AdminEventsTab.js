@@ -1,10 +1,166 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState, useRef, useEffect } from 'react';
 import { formatDate, formatTime } from '@/lib/utils';
 import { Icons } from '@/components/Icons';
 import Badge from '@/components/ui/Badge';
 import { matchTemplate } from '@/lib/matchTemplate';
+
+// ── Status options for the unified row dropdown ──────────────────────────
+// Colors mirror the old Badge palette (published = green, draft/hidden = gray)
+// so the row's visual weight doesn't jump when the status changes.
+const STATUS_OPTIONS = [
+  { value: 'published', label: 'Published', color: '#22c55e' },
+  { value: 'draft',     label: 'Draft',     color: '#9CA3AF' },
+  { value: 'hidden',    label: 'Hidden',    color: '#6B7280' },
+];
+
+// ── Searchable Template Picker ───────────────────────────────────────────
+// Lightweight combobox: button trigger + absolute-positioned popover with
+// a text input filter over `templateOptions`. Replaces the long native
+// <select> in the "No Match" row state. No external libs.
+//
+// Mounting is still gated by the parent (only rendered for unlinked events
+// with no matcher suggestion), so there's at most ~dozens of these active
+// on screen even in the worst case.
+function TemplatePicker({ templateOptions, templates, onPick, isMobile }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const rootRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Click-outside + Escape to close. Mount/unmount tied to `open` so the
+  // listeners aren't live for every closed picker on the page.
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    // Focus the search input on open for quick typing.
+    const t = setTimeout(() => inputRef.current?.focus(), 0);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+      clearTimeout(t);
+    };
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return templateOptions;
+    return templateOptions.filter(opt => opt.label.toLowerCase().includes(q));
+  }, [query, templateOptions]);
+
+  const handlePick = (optId) => {
+    const t = (templates || []).find(x => x.id === optId);
+    if (!t) return;
+    setOpen(false);
+    setQuery('');
+    onPick(t);
+  };
+
+  return (
+    <div
+      ref={rootRef}
+      style={{ position: 'relative', display: 'inline-block' }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+        className="text-[11px] font-display font-semibold rounded-lg px-2 py-1"
+        style={{
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          color: 'var(--text-muted)',
+          fontFamily: "'DM Sans', sans-serif",
+          maxWidth: isMobile ? '140px' : '190px',
+          cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: '4px',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {'\u2014 Link Template \u2014'}
+        </span>
+        <span aria-hidden="true" style={{ fontSize: '8px', opacity: 0.7 }}>▼</span>
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 4px)',
+            left: 0,
+            zIndex: 50,
+            minWidth: isMobile ? '200px' : '240px',
+            maxWidth: '320px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: '8px',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+            padding: '6px',
+            fontFamily: "'DM Sans', sans-serif",
+          }}
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search templates…"
+            className="w-full text-[11px] rounded px-2 py-1"
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              color: 'var(--text-primary)',
+              outline: 'none',
+              marginBottom: '4px',
+            }}
+          />
+          <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '6px 8px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                No matches
+              </div>
+            ) : (
+              filtered.map(opt => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="option"
+                  onClick={() => handlePick(opt.id)}
+                  className="w-full text-left text-[11px] rounded"
+                  style={{
+                    display: 'block', width: '100%',
+                    padding: '6px 8px',
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    fontFamily: "'DM Sans', sans-serif",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-card)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                >
+                  {opt.label}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AdminEventsTab({
   events, artists, venues,
@@ -540,6 +696,8 @@ export default function AdminEventsTab({
             {filtered.map((ev) => {
               const isEvSelected = selectedEvents.has(ev.id);
               const catColor = CATEGORY_OPTIONS.find(c => c.key === (ev.category || 'Live Music'))?.color || '#666';
+              const statusValue = ev.status || 'draft';
+              const statusColor = STATUS_OPTIONS.find(s => s.value === statusValue)?.color || '#9CA3AF';
               return (
               <div key={ev.id} className="rounded-xl border" style={{
                 background: isEvSelected ? 'rgba(232,114,42,0.04)' : 'var(--bg-card)',
@@ -655,32 +813,12 @@ export default function AdminEventsTab({
                         onClick={(e) => e.stopPropagation()}
                         title="No matched template — pick one manually or wand a new one"
                       >
-                        <select
-                          value=""
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            const templateId = e.target.value;
-                            if (!templateId) return;
-                            const t = (templates || []).find(x => x.id === templateId);
-                            if (!t) return;
-                            confirmTemplateMatch(ev, t.id, t.template_name);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-[11px] font-display font-semibold rounded-lg px-2 py-1"
-                          style={{
-                            background: 'var(--bg-elevated)',
-                            border: '1px solid var(--border)',
-                            color: 'var(--text-muted)',
-                            fontFamily: "'DM Sans', sans-serif",
-                            maxWidth: isMobile ? '140px' : '190px',
-                            appearance: 'auto',
-                          }}
-                        >
-                          <option value="">{'\u2014 Link Template \u2014'}</option>
-                          {templateOptions.map(opt => (
-                            <option key={opt.id} value={opt.id}>{opt.label}</option>
-                          ))}
-                        </select>
+                        <TemplatePicker
+                          templateOptions={templateOptions}
+                          templates={templates}
+                          isMobile={isMobile}
+                          onPick={(t) => confirmTemplateMatch(ev, t.id, t.template_name)}
+                        />
                         {/* Magic Wand — relocated here from the right-side
                             action cluster so it lives with the picker. */}
                         <button
@@ -718,47 +856,47 @@ export default function AdminEventsTab({
                       <option key={c.key} value={c.key}>{c.label}</option>
                     ))}
                   </select>
-                  {ev.status === 'published' ? (
-                    <>
-                      <Badge label="Published" size="sm" bg="rgba(34,197,94,0.2)" color="#22c55e" style={{ borderRadius: '999px' }} />
-                      <button
-                        className="px-2 py-1 rounded-lg text-xs font-medium"
-                        style={{ border: '1px solid #F59E0B33', color: '#F59E0B', background: 'transparent' }}
-                        onClick={() => unpublishEvent(ev)}
-                        title="Pull from live feed"
-                      >
-                        Unpublish
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <Badge label={ev.status === 'draft' ? 'Draft' : 'Hidden'} size="sm" bg="rgba(107,114,128,0.2)" color="#9CA3AF" style={{ borderRadius: '999px' }} />
-                      <button
-                        className="px-2 py-1 rounded-lg text-xs font-medium"
-                        style={{ border: '1px solid #23CE6B33', color: '#23CE6B', background: 'transparent' }}
-                        onClick={async () => {
-                          const prev = events;
-                          setEvents(p => p.map(e => e.id === ev.id ? { ...e, status: 'published' } : e));
-                          try {
-                            const res = await fetch('/api/admin', {
-                              method: 'PUT',
-                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-                              body: JSON.stringify({ id: ev.id, status: 'published' }),
-                            });
-                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                            showQueueToast(`✅ Republished: ${ev.artist_name}`);
-                          } catch (err) {
-                            console.error('Republish failed:', err);
-                            setEvents(prev);
-                            alert(`Republish failed: ${err.message}`);
-                          }
-                        }}
-                        title="Publish to live feed"
-                      >
-                        Publish
-                      </button>
-                    </>
-                  )}
+                  {/* Unified Status Dropdown — replaces the old
+                      Published-badge + Unpublish-button (and the mirror
+                      Draft/Hidden-badge + Publish-button) with a single
+                      styled <select>. Styling mirrors the Category
+                      dropdown above so the row feels uniform. */}
+                  <select
+                    value={statusValue}
+                    onChange={async (e) => {
+                      const newStatus = e.target.value;
+                      if (newStatus === statusValue) return;
+                      const prev = events;
+                      setEvents(p => p.map(x => x.id === ev.id ? { ...x, status: newStatus } : x));
+                      try {
+                        const res = await fetch('/api/admin', {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+                          body: JSON.stringify({ id: ev.id, status: newStatus }),
+                        });
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        const label = STATUS_OPTIONS.find(s => s.value === newStatus)?.label || newStatus;
+                        showQueueToast(`\u2705 ${label}: ${ev.artist_name || ev.event_title || ''}`);
+                      } catch (err) {
+                        console.error('Status update failed:', err);
+                        setEvents(prev);
+                        alert(`Status update failed: ${err.message}`);
+                      }
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-[11px] font-display font-semibold rounded-lg px-2 py-1"
+                    style={{
+                      background: 'var(--bg-elevated)',
+                      border: `1px solid ${statusColor}44`,
+                      color: statusColor,
+                      cursor: 'pointer', flexShrink: 0, outline: 'none',
+                    }}
+                    title="Change event status"
+                  >
+                    {STATUS_OPTIONS.map(s => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </select>
                   {!isMobile && ev.source && /^https?:\/\//i.test(ev.source) && (
                     <a
                       href={ev.source}

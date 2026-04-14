@@ -3634,6 +3634,85 @@ All previous Safety Locks remain in force. Updated line references after this sp
 
 ---
 
+## Session: April 14, 2026 — Triple Crown Data Ladders, Linking Station, Magic Wand, Category Whitelist ✅ DEPLOYED
+
+### Current State
+
+The Event Templates roadmap from the April 6 sprint has been implemented end-to-end. The frontend and both public API routes now resolve every user-facing event field through a strict three-tier priority chain. Admins have a one-click Magic Wand to turn any raw scraper event into a Master Template, plus a manual Linking Station dropdown that replaced the bare "No Match" text with an actionable picker. Finally, the feed cards now suppress the messy scraper `artist_name` subtitle for non-music categories, so food/trivia/karaoke rows collapse cleanly to Title + Venue.
+
+### 1. The "Triple Crown" Data Ladders (Hierarchy of Truth)
+
+Every user-facing event field now resolves through a strict three-tier priority chain that is identical across the home feed, the event detail page, and both public API routes. The priority order — non-negotiable — is **Admin Override (`custom_*`) → Template Data (`event_templates.*`) → Scraper / Raw Data**, with a safe empty-state default. The admin's `custom_title`, `custom_bio`, `custom_image_url` columns always win; an unlinked event falls back to its raw scraper columns as before.
+
+The ladder covers five fields:
+
+- `event_title`: `e.custom_title || e.event_templates?.template_name || e.event_title || ''`
+- `category`: `e.event_templates?.category || e.category || 'Other'`
+- `start_time`: `e.custom_start_time || e.event_templates?.start_time || e.start_time || <existing event_date/title-regex fallbacks>`
+- `description`: `e.custom_bio || e.event_templates?.bio || e.artists?.bio || e.artist_bio || ''`
+- `event_image`: `cleanImg(e.custom_image_url) || cleanImg(e.event_templates?.image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null`
+
+These ladders are applied in exactly four flatten-points: `src/app/page.js` (home feed map ~line 820 and Spotlight map ~line 1240), `src/app/event/[id]/page.js` (detail page map ~line 100), `src/app/api/events/route.js` (public API `.map()` ~line 45), and `src/app/api/spotlight/route.js` (block-body map ~line 180). The two API routes each carry a local `cleanImg` helper so the image ladder behaves identically whether the consumer reads from the API or from the page-level Supabase call. The SQL join uses PostgREST's foreign-key embed syntax: `event_templates(template_name, bio, image_url, category, start_time)` added to every `.select(...)` that drives a feed.
+
+Output keys match what the UI components already consume (`event_title`, `category`, `start_time`, `description`, `event_image`) — do not rename them to `bio`/`image_url`/etc., or the cards will render blanks. The `custom_title` column is deliberately kept out of the `.select()` strings on some legacy paths; title resolution from `custom_title` happens via the embed/ladder only on the four flatten-points listed above.
+
+### 2. The Linking Station (Manual Template Picker)
+
+In `AdminEventsTab.js`, the row-level "No Match" state for unlinked events (events where no template alias fired) was replaced with a `<select>` dropdown populated from the admin's full template list. The options are computed once per render via `useMemo` (keyed on `templates`) and sorted alphabetically by `template_name` at the API layer, so the dropdown is stable and cheap. Selecting a template fires the existing `confirmTemplateMatch(event, template)` handler, which runs an optimistic in-place update on the events grid plus a `PUT /api/admin/events/:id` to persist `template_id`. On error, the row is rolled back and a toast is shown.
+
+The Magic Wand button (see §3) sits immediately next to the dropdown in the same "NoMatch" IIFE branch, so admins can either pick an existing template or clone the row into a new one without leaving the feed view. The wand was removed from the far-right action cluster to avoid visual duplication.
+
+### 3. The Magic Wand (Template Cloning from Raw Event)
+
+The Magic Wand button in each `AdminEventsTab.js` row invokes `handleCreateTemplateFromEvent(ev)`, which pre-fills the Template Editor with the event's data and flips the admin panel to the Templates tab via a cross-tab state handoff. Three new props were threaded from `admin/page.js` into `AdminEventsTab` — `setActiveTab`, `setEditingTemplate`, `setTemplateForm` — sharing the same React state that the Templates tab already reads. No URL params, no localStorage, no separate route — just a shared setter pattern, which means a half-filled template draft survives tab switches without leaking into the URL.
+
+The handoff populates `template_name` and `aliases` from the raw `event_title`, `venue_id` from `ev.venue_id`, and `category` from `ev.category || 'Live Music'`. `bio` and `image_url` run through a **sanitizer guard** (`sanitizeForTemplate(value, rawTitle)`) before being written to the form. The sanitizer drops any value that is empty, whitespace-only, or case-insensitively equal to the raw title. This was added to prevent "poisoning" — a recurring bug where the Magic Wand would pre-fill a template bio with the title itself (because the scraper had no real bio), the admin would save the template, and then the bio-ladder's template rung would rebroadcast that title-as-bio across every future matching event.
+
+### 4. The Category Whitelist (Subtitle Gating on Feed Cards)
+
+The scraper frequently writes noisy strings into `artist_name` — venue promoters, generic labels ("DJ", "Live Music"), punctuation-only fragments. This was acceptable when every card was a concert, but since the `events.category` column was introduced, food specials, trivia nights, karaoke, and happy hours were showing these junk artist names as the subtitle under the title.
+
+The fix is a module-level whitelist constant in both card components:
+
+```js
+const ARTIST_SUBTITLE_CATEGORIES = ['Live Music', 'Comedy'];
+```
+
+A derived `showArtistSubtitle` boolean combines the whitelist check with the pre-existing "eventTitle && artistName && eventTitle !== artistName" guard. The subtitle render and (in `SiteEventCard.js`) the title `marginBottom` tweak both key off this single boolean, so non-music categories collapse cleanly: the venue name sits directly under the title with no orphan 2px gap. Applied to `src/components/SiteEventCard.js` and `src/components/EventCardV2.js`; the per-file local constant pattern matches how `CATEGORY_CONFIG` is already defined in each card (no new shared module).
+
+The whitelist reads `event.category` directly — that field is guaranteed to be set by the Triple Crown category ladder (§1), defaulting to `'Other'` when missing, which correctly hides the subtitle.
+
+### Files Modified
+
+- `src/app/page.js` — home feed map + Spotlight map ladders (pre-existing from earlier sprint, verified as no-op in this session)
+- `src/app/event/[id]/page.js` — detail page ladder (verified as no-op)
+- `src/app/api/events/route.js` — added local `cleanImg` + description/event_image ladder rows
+- `src/app/api/spotlight/route.js` — added local `cleanImg` + description/event_image ladder rows
+- `src/components/admin/AdminEventsTab.js` — Magic Wand handler + `sanitizeForTemplate` + NoMatch dropdown + memoized `templateOptions`
+- `src/app/admin/page.js` — threaded `setActiveTab`, `setEditingTemplate`, `setTemplateForm` into `<AdminEventsTab>`
+- `src/components/SiteEventCard.js` — `ARTIST_SUBTITLE_CATEGORIES` + `showArtistSubtitle` guard
+- `src/components/EventCardV2.js` — `ARTIST_SUBTITLE_CATEGORIES` + `showArtistSubtitle` guard
+
+### Safety Locks — Cumulative (DO NOT TOUCH)
+
+All previous Safety Locks remain in force. This sprint adds the following invariants:
+
+- **Triple Crown ladder priority** — the order `custom_* → event_templates.* → raw/artist` must never be flipped. Admin overrides always win; flipping the order will silently erase hundreds of manual edits.
+- **Ladder output keys** — the flatten-points emit `event_title`, `category`, `start_time`, `description`, `event_image`. Do not rename to `bio` / `image_url` / `title` — the UI components read the former set and will render blanks if renamed.
+- **`cleanImg` locality** — `/api/events/route.js` and `/api/spotlight/route.js` each define their own local `cleanImg`. Do not promote to a shared helper without also auditing the three frontend copies (`page.js`, `event/[id]/page.js`, `EventCardV2.js`).
+- **`sanitizeForTemplate` in Magic Wand** — must remain active. Removing it re-opens the title-as-bio poisoning path that propagates via the `event_templates.bio` ladder rung.
+- **Category whitelist values** — `ARTIST_SUBTITLE_CATEGORIES = ['Live Music', 'Comedy']` is defined locally in each card file. Adding a category that legitimately has artist names (e.g. a future `'DJ'` top-level category) requires editing both `SiteEventCard.js` and `EventCardV2.js`.
+- **`'Other'` category default** — the category ladder's final fallback is the string `'Other'`, not `'Live Music'`. The old `'Live Music'` default was removed so un-categorized events no longer inherit the music-specific UI (subtitle, orange accent bar in some variants).
+- **Magic Wand prop contract** — `AdminEventsTab` requires `setActiveTab`, `setEditingTemplate`, `setTemplateForm` from its parent. The handler is a no-op if any is missing; a future admin refactor must preserve this prop surface.
+
+### Pending / TODO
+
+- Extract `<MetadataEditor>` (the "Twin Editor" from April 6 roadmap) — Artist edit panel and Template edit panel still duplicate form orchestration.
+- Punctuation-insensitive fuzzy match in `sanitizeForTemplate` — current comparison is case-insensitive + trim only. Titles like `"Open Mic Night!"` vs `"Open Mic Night"` still slip through. Deferred until a real regression is observed.
+- Admin pagination on the events grid — see April 6 sprint §3.
+
+---
+
 ## Repo
 GitHub: `https://github.com/antfocus/mylocaljam.git`
 Push to main = auto-deploy on Vercel.
