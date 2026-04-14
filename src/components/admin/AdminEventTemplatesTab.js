@@ -11,6 +11,11 @@ const NEW_TEMPLATE_FORM = { template_name: '', aliases: '', category: 'Live Musi
 // incoming PUTs, so keeping these in sync prevents silent discards.
 const LOCKABLE_FIELDS = ['template_name', 'bio', 'genres', 'vibes', 'image_url', 'aliases', 'category', 'start_time'];
 
+// Canonical category taxonomy for the Template Editor dropdown.
+// Keep in sync with scraper category normalisation — values below are
+// the exact strings stored in event_templates.category and events.category.
+const CATEGORY_OPTIONS = ['Live Music', 'Food & Drink', 'Drink/Food Special', 'Trivia & Games', 'Karaoke', 'Comedy', 'Community', 'Other'];
+
 export default function AdminEventTemplatesTab({
   templates, venues, password, isMobile,
   templatesSearch, setTemplatesSearch,
@@ -875,14 +880,16 @@ export default function AdminEventTemplatesTab({
                   <LockPill field="category" />
                   {!isFieldLocked('category') && <RegenBtn field="category" />}
                 </div>
-                <input
-                  type="text"
-                  value={templateForm.category}
+                <select
+                  value={templateForm.category || ''}
                   onChange={e => !isFieldLocked('category') && setTemplateForm(p => ({ ...p, category: e.target.value }))}
-                  readOnly={isFieldLocked('category')}
-                  placeholder="Live Music"
-                  style={isFieldLocked('category') ? lockedInputStyle : inputStyle}
-                />
+                  disabled={isFieldLocked('category')}
+                  style={{ ...(isFieldLocked('category') ? lockedInputStyle : inputStyle), appearance: 'auto' }}
+                >
+                  {CATEGORY_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
               </MetadataField>
 
               {/* Venue */}
