@@ -16,18 +16,10 @@
  *   accentColor (string)   — Active pill color (default: '#E8722A')
  */
 
-const GENRES = [
-  'Rock / Alternative', 'Yacht Rock / Surf', 'R&B / Soul / Funk',
-  'Country / Americana', 'Pop / Top 40', 'Acoustic / Singer-Songwriter',
-  'Jazz / Blues', 'Reggae / Island', 'Jam / Psych',
-  'Metal / Hardcore', 'Punk / Ska', 'Hip-Hop / Rap',
-  'Electronic / DJ', 'Latin / World', 'Tributes / Covers',
-];
-
-const VIBES = [
-  'Chill / Low Key', 'Energetic / Party',
-  'Outdoor / Patio', 'Family-Friendly',
-];
+// Re-exported from @/lib/utils to keep one source of truth. Historical callers
+// of this barrel (EventFormModal, AdminEventTemplatesTab) keep working without
+// changes, but the actual list now lives in utils.js.
+import { GENRES, VIBES } from '@/lib/utils';
 
 export { GENRES, VIBES };
 

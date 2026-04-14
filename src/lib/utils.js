@@ -115,13 +115,17 @@ export function getVenueColor(venueName) {
 }
 
 // Canonical allowed tags — these MUST match the AI system prompts in ai-lookup/route.js
-// Controlled vocabulary: admin tag-pickers and AI output both constrained to these exact strings
+// Controlled vocabulary: admin tag-pickers and AI output both constrained to these exact strings.
+// 2026-04-14: Replaced the 15-item compound-label list (e.g. 'Rock / Alternative',
+// 'Jazz / Blues') with the flat canonical list below. SQL migration of existing
+// DB rows is tracked separately — do not revert this list without coordinating
+// a rollback of the artists.genres and events genre columns.
+// 2026-04-14 (later): Added 'Latin' to bring the canonical to 18 items, after
+// discovering legacy 'Latin / Reggaeton' and 'Latin / World' rows had no home.
 export const GENRES = [
-  'Rock / Alternative', 'Yacht Rock / Surf', 'R&B / Soul / Funk',
-  'Country / Americana', 'Pop / Top 40', 'Acoustic / Singer-Songwriter',
-  'Jazz / Blues', 'Reggae / Island', 'Jam / Psych',
-  'Metal / Hardcore', 'Punk / Ska', 'Hip-Hop / Rap',
-  'Electronic / DJ', 'Latin / World', 'Tributes / Covers',
+  'Rock', 'Pop', 'Country', 'Acoustic', 'Cover Band', 'DJ', 'Electronic',
+  'Jazz', 'Blues', 'Reggae', 'R&B', 'Hip Hop', 'Latin', 'Emo', 'Punk', 'Metal',
+  'Indie', 'Folk',
 ];
 
 export const VIBES = [

@@ -5,9 +5,16 @@ function checkAuth(request) {
   return authHeader === `Bearer ${process.env.ADMIN_PASSWORD}`;
 }
 
-// Allowed tags — the AI is restricted to ONLY these values
-// Must stay in sync with GENRES/VIBES in src/lib/utils.js
-const ALLOWED_GENRES = ['Rock', 'Pop', 'Country', 'Reggae', 'Jazz/Blues', 'R&B/Soul', 'Hip-Hop', 'EDM/DJ', 'Tribute/Cover', 'Alternative', 'Jam Band'];
+// Allowed tags — the AI is restricted to ONLY these values.
+// NOTE (2026-04-14): ALLOWED_GENRES is the canonical 18-item flat list.
+// Mirrors GENRES in src/lib/utils.js — keep in lockstep. 'Latin' was added
+// after the utils.js migration to cover legacy 'Latin / Reggaeton' and
+// 'Latin / World' rows that had no other home.
+const ALLOWED_GENRES = [
+  'Rock', 'Pop', 'Country', 'Acoustic', 'Cover Band', 'DJ', 'Electronic',
+  'Jazz', 'Blues', 'Reggae', 'R&B', 'Hip Hop', 'Latin', 'Emo', 'Punk', 'Metal',
+  'Indie', 'Folk',
+];
 const ALLOWED_VIBES = ['Chill / Low Key', 'Energetic / Party', 'Outdoor / Patio', 'Family-Friendly'];
 
 // Premium placeholder fallback images — abstract music visuals
@@ -126,14 +133,13 @@ export async function POST(request) {
     const bioSystemPrompt = `You are an expert local music journalist writing bios for bands playing around the Jersey Shore. Your goal is to write engaging, punchy bios that get locals excited to see live music.
 
 Follow these strict rules:
-1. Keep the bio to exactly 3 to 4 sentences. Max 60 words.
+1. Strictly 2-3 sentences. Maximum 60 words. You MUST complete the final sentence. Focus on their musical style and origin.
 2. Always identify the band's primary genre and overall vibe (e.g., 'high-energy jam band,' 'acoustic rock,' 'classic rock covers').
 3. Keep the tone authentic to the local live music scene—avoid cheesy marketing speak.
 4. If the band has influences like the Grateful Dead or classic shore rock, highlight that musical style.
 5. Do not include introductory filler like 'Here is a bio for...'
-6. You MUST complete your final sentence. Never cut off mid-sentence or mid-word.
-7. If the provided data is completely insufficient to figure out who they are, return exactly: NEEDS_MANUAL_REVIEW
-8. Also return: "is_tribute" (boolean — true if they are primarily a cover band or tribute act).
+6. If the provided data is completely insufficient to figure out who they are, return exactly: NEEDS_MANUAL_REVIEW
+7. Also return: "is_tribute" (boolean — true if they are primarily a cover band or tribute act).
 
 Respond with valid JSON only: { "bio": "string", "is_tribute": boolean }
 No markdown, no commentary, no code fences.`;
@@ -144,15 +150,15 @@ No markdown, no commentary, no code fences.`;
 
     // ── Pass 2: Genre & Vibe Tagger ─────────────────────────────────────────
     const bioText = bioResult?.bio || '';
-    const tagSystemPrompt = `You are a music categorization engine. Review the provided artist bio and assign them exactly 1 Primary Genre, up to 2 Secondary Genres, and up to 2 Vibes.
+    const tagSystemPrompt = `You are a music categorization engine. Review the provided artist bio and assign them up to 3 Genres and up to 2 Vibes.
 
-CRITICAL RULE: You may ONLY select from the following allowed lists. Do not invent tags.
+CRITICAL RULE: You may only select up to 3 genres from this exact list. Do not invent new genres. If you think it is Alternative Rock, just output Rock.
 
 Allowed Genres: ${JSON.stringify(ALLOWED_GENRES)}
 Allowed Vibes: ${JSON.stringify(ALLOWED_VIBES)}
 
 Output Format: You must respond in strict JSON format:
-{ "primary_genre": "string", "secondary_genres": ["string", "string"], "vibes": ["string", "string"] }
+{ "genres": ["string", "string", "string"], "vibes": ["string", "string"] }
 No markdown, no commentary, no code fences.`;
 
     const tagUserPrompt = `Artist: "${name}"\nBio: "${bioText}"\n\nCategorize this artist using ONLY the allowed genre and vibe lists.`;
@@ -164,11 +170,14 @@ No markdown, no commentary, no code fences.`;
       ? bioResult.bio
       : null;
 
-    // Validate genres against allowed list
-    const rawGenres = [
-      tagResult?.primary_genre,
-      ...(tagResult?.secondary_genres || []),
-    ].filter(Boolean);
+    // Validate genres against allowed list. Belt-and-suspenders against LLM
+    // hallucinations even with the CRITICAL RULE in the prompt — any tag the
+    // AI invents gets stripped here before it ever reaches the DB.
+    // Back-compat: if the AI emits the legacy primary_genre/secondary_genres
+    // shape instead of the flat `genres` array, we still flatten it.
+    const rawGenres = Array.isArray(tagResult?.genres)
+      ? tagResult.genres
+      : [tagResult?.primary_genre, ...(tagResult?.secondary_genres || [])].filter(Boolean);
     const genres = rawGenres.filter(g => ALLOWED_GENRES.includes(g)).slice(0, 3);
 
     // Validate vibes against allowed list
