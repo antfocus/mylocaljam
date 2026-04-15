@@ -29,9 +29,29 @@ export async function POST(request) {
     ? new Date(event_date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
     : '';
 
-  const prompt = `You are enriching metadata for a live music event on the app myLocalJam. Return a JSON object with the following fields:
+  // ── Description tone contract (user-authored, April 14, 2026) ──────────
+  // This block is the SOURCE OF TRUTH for the "bio" field. If a future
+  // editor wants to tweak it, keep the banned-word list and the example
+  // intact — they're what keeps the model off the flowery-marketing rails.
+  const descriptionContract = `You are a local event data curator. Your job is to write clear, factual, and informative event descriptions. You are writing for locals who want to know what the vibe is, what is happening, and what to expect.
 
-1. "bio" — A short, exciting event description (2-3 sentences max). Keep it punchy and authentic. Focus on what makes this act worth seeing. No generic hype, no clichés, no fluff words like "vibrant tapestry," "captivating," "sonic journey," or "mesmerizing."
+STRICT CONSTRAINTS:
+- NO marketing hyperbole or flowery language.
+- NEVER use words like: 'Dive into', 'vibrant', 'savor', 'thrill', 'immersive', 'moody glow', 'flickering', 'dance'.
+- Focus on facts: Crowd type, venue style (e.g., sports bar, acoustic, dive), event sequence, and atmosphere.
+- Keep it strictly between 2 to 4 sentences.
+
+EXAMPLE OF PERFECT OUTPUT:
+Input: Tuesday BOGO Burger night at River Rock
+Output: The Tuesday BOGO burger night at River Rock is a high-energy, social event that draws a large local crowd for dining and competitive trivia. The atmosphere is lively and casual, blending a classic sports bar vibe with scenic marina views from the indoor dining area. As the night progresses, the energy shifts from a busy dinner rush to an engaging Quizzoholics Trivia session where teams fill the bar to compete for prizes.
+
+Now, write the description for the provided event using this exact factual, grounded tone.`;
+
+  const prompt = `${descriptionContract}
+
+You will return a JSON object with the following fields. ONLY the "bio" field is governed by the tone contract above — the other fields remain classification tasks.
+
+1. "bio" — The event description. Follow the STRICT CONSTRAINTS above to the letter. 2 to 4 sentences. No banned words. Facts over feelings.
 2. "genre" — The artist's primary genre. Pick ONE from this list: Rock / Alternative, Yacht Rock / Surf, R&B / Soul / Funk, Country / Americana, Pop / Top 40, Acoustic / Singer-Songwriter, Jazz / Blues, Reggae / Island, Jam / Psych, Metal / Hardcore, Punk / Ska, Hip-Hop / Rap, Electronic / DJ, Latin / World, Tributes / Covers. If unsure, use the closest match.
 3. "vibe" — The likely event atmosphere. Pick ONE from: ${ALLOWED_VIBES.join(', ')}. "Vibe" describes the venue experience (energy level, crowd atmosphere), NOT the artist's genre. A jazz trio at a wine bar is "Chill / Low Key". A jazz trio at a street festival is "Energetic / Party".
 4. "image_search_query" — A Google Image search query that would find a photo of this specific artist or band. Use the artist name plus terms like "band", "live", or "musician" to get relevant results. Example: "The Wallflowers band" or "DJ Jazzy Jeff live".
@@ -58,7 +78,7 @@ Respond with ONLY the JSON object — no markdown, no code fences, no preamble.`
           { role: 'user', content: prompt },
         ],
         max_tokens: 400,
-        temperature: 0.5,
+        temperature: 0.3,
       }),
     });
 
