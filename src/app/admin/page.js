@@ -371,7 +371,7 @@ export default function AdminPage() {
       {/* Artists Tab */}
       {activeTab === 'artists' && !loading && (
         <AdminArtistsTab
-          artists={ar.artists} events={ev.events} venues={ve.venues} password={password} isMobile={isMobile}
+          artists={ar.artists} setArtists={ar.setArtists} events={ev.events} venues={ve.venues} password={password} isMobile={isMobile}
           artistsSearch={ar.artistsSearch} setArtistsSearch={ar.setArtistsSearch}
           artistsNeedsInfo={ar.artistsNeedsInfo} setArtistsNeedsInfo={ar.setArtistsNeedsInfo}
           artistMissingFilters={ar.artistMissingFilters} setArtistMissingFilters={ar.setArtistMissingFilters}

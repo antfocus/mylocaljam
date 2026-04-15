@@ -101,22 +101,71 @@ export async function POST(request) {
   const supabase = getAdminClient();
   const body = await request.json();
 
+  // ── Manual Add Artist guardrails ──────────────────────────────────────
+  // The Artists tab now has a "+ Add Artist" button that hits this route
+  // with just `{ name }`. Validate, dedupe (case-insensitive), and refuse
+  // names sitting on the ignored_artists blacklist so an admin can't
+  // accidentally re-create a ghost we just blacklisted.
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  if (!name) {
+    return NextResponse.json({ error: 'Artist name is required' }, { status: 400 });
+  }
+  if (name.length > 200) {
+    return NextResponse.json({ error: 'Artist name is too long (max 200 chars)' }, { status: 400 });
+  }
+
+  const nameLower = name.toLowerCase();
+
+  // Block names on the ignored_artists list — non-fatal if table missing.
+  try {
+    const { data: ignoredRow } = await supabase
+      .from('ignored_artists')
+      .select('name_lower')
+      .eq('name_lower', nameLower)
+      .maybeSingle();
+    if (ignoredRow) {
+      return NextResponse.json(
+        { error: `"${name}" is on the ignored-artists blacklist. Remove it from the blacklist before re-adding.` },
+        { status: 409 }
+      );
+    }
+  } catch (blErr) {
+    console.error('ignored_artists check failed (non-fatal):', blErr);
+  }
+
+  // Case-insensitive duplicate check
+  const { data: existing } = await supabase
+    .from('artists')
+    .select('id, name')
+    .ilike('name', name)
+    .limit(1);
+  if (Array.isArray(existing) && existing.length > 0) {
+    return NextResponse.json(
+      { error: `Artist "${existing[0].name}" already exists.`, existing: existing[0] },
+      { status: 409 }
+    );
+  }
+
   const { data, error } = await supabase
     .from('artists')
     .insert({
-      name: body.name,
+      name,
       bio: body.bio || null,
       genres: body.genres || null,
       vibes: body.vibes || null,
       image_url: body.image_url || null,
       is_claimed: body.is_claimed || false,
       is_tribute: body.is_tribute || false,
+      metadata_source: body.metadata_source || 'manual',
     })
     .select();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  revalidatePath('/');
+  revalidatePath('/api/events');
 
   return NextResponse.json(data[0]);
 }

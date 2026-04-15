@@ -144,7 +144,7 @@ function AliasTagInput({ value, onChange, canonicalName = '', disabled = false }
 }
 
 export default function AdminArtistsTab({
-  artists, events, venues, password, isMobile,
+  artists, setArtists, events, venues, password, isMobile,
   artistsSearch, setArtistsSearch, artistsNeedsInfo, setArtistsNeedsInfo,
   artistMissingFilters = { bio: false, image_url: false, genres: false, vibes: false }, setArtistMissingFilters,
   artistsSortBy, setArtistsSortBy, artistSourceFilter, setArtistSourceFilter,
@@ -166,6 +166,157 @@ export default function AdminArtistsTab({
 }) {
   const headers = { Authorization: 'Bearer ' + password };
   const maxLen = 50;
+
+  // ── Manual "+ Add Artist" modal state ─────────────────────────────────
+  // Lets admins create an artist when the scraper missed one. POST hits
+  // /api/admin/artists with just `{ name }`; that route validates,
+  // dedupes case-insensitively, and refuses blacklisted names.
+  const [addArtistOpen, setAddArtistOpen] = useState(false);
+  const [addArtistName, setAddArtistName] = useState('');
+  const [addArtistLoading, setAddArtistLoading] = useState(false);
+  const [addArtistError, setAddArtistError] = useState(null);
+
+  const submitAddArtist = async () => {
+    const trimmed = addArtistName.trim();
+    if (!trimmed) {
+      setAddArtistError('Artist name is required');
+      return;
+    }
+    setAddArtistLoading(true);
+    setAddArtistError(null);
+    try {
+      const res = await fetch('/api/admin/artists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAddArtistError(data?.error || `Failed (${res.status})`);
+        setAddArtistLoading(false);
+        return;
+      }
+      // Optimistic: prepend to local list so the new artist is immediately visible.
+      if (typeof setArtists === 'function' && data?.id) {
+        setArtists(prev => [{ ...data, next_event_date: null }, ...(Array.isArray(prev) ? prev : [])]);
+      }
+      setAddArtistOpen(false);
+      setAddArtistName('');
+      setAddArtistLoading(false);
+      if (typeof setArtistToast === 'function') {
+        setArtistToast({ type: 'success', message: `Added "${trimmed}" — refresh from source to enrich.` });
+        setTimeout(() => setArtistToast(null), 4000);
+      }
+      // Reconcile with backend (so search/filter caches stay accurate).
+      if (typeof fetchArtists === 'function') {
+        fetchArtists(artistsSearch, artistsNeedsInfo);
+      }
+    } catch (err) {
+      setAddArtistError(err.message || 'Network error');
+      setAddArtistLoading(false);
+    }
+  };
+
+  const addArtistButton = (
+    <button
+      onClick={() => { setAddArtistError(null); setAddArtistName(''); setAddArtistOpen(true); }}
+      style={{
+        padding: '9px 14px', borderRadius: '8px',
+        background: '#E8722A', border: '1px solid #E8722A',
+        color: '#1C1917', fontWeight: 700, fontSize: '13px',
+        fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', gap: '6px',
+        whiteSpace: 'nowrap',
+      }}
+      title="Manually add an artist the scraper missed"
+    >
+      <span style={{ fontSize: '15px', lineHeight: 1 }}>+</span> Add Artist
+    </button>
+  );
+
+  const addArtistModal = addArtistOpen ? (
+    <div
+      onClick={() => { if (!addArtistLoading) setAddArtistOpen(false); }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 9999, padding: '20px',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'var(--bg-card)', border: '1px solid var(--border)',
+          borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '420px',
+          fontFamily: "'DM Sans', sans-serif",
+        }}
+      >
+        <h2 style={{ margin: '0 0 6px', fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
+          Add Artist
+        </h2>
+        <p style={{ margin: '0 0 16px', fontSize: '13px', color: 'var(--text-muted)' }}>
+          Creates a stub artist record. Bio, image, and tags can be enriched after.
+        </p>
+        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>
+          Artist Name
+        </label>
+        <input
+          type="text"
+          autoFocus
+          value={addArtistName}
+          onChange={e => { setAddArtistName(e.target.value); if (addArtistError) setAddArtistError(null); }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !addArtistLoading) submitAddArtist();
+            if (e.key === 'Escape' && !addArtistLoading) setAddArtistOpen(false);
+          }}
+          placeholder="e.g. The Wallflowers"
+          disabled={addArtistLoading}
+          style={{
+            width: '100%', padding: '10px 12px',
+            background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+            borderRadius: '8px', color: 'var(--text-primary)',
+            fontFamily: "'DM Sans', sans-serif", fontSize: '14px', outline: 'none',
+            marginBottom: '12px',
+          }}
+        />
+        {addArtistError && (
+          <div style={{ fontSize: '12px', color: '#EF4444', marginBottom: '12px' }}>
+            {addArtistError}
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+          <button
+            onClick={() => setAddArtistOpen(false)}
+            disabled={addArtistLoading}
+            style={{
+              padding: '8px 14px', borderRadius: '8px',
+              background: 'transparent', border: '1px solid var(--border)',
+              color: 'var(--text-muted)', fontWeight: 600, fontSize: '13px',
+              cursor: addArtistLoading ? 'not-allowed' : 'pointer',
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submitAddArtist}
+            disabled={addArtistLoading || !addArtistName.trim()}
+            style={{
+              padding: '8px 14px', borderRadius: '8px',
+              background: '#E8722A', border: '1px solid #E8722A',
+              color: '#1C1917', fontWeight: 700, fontSize: '13px',
+              cursor: (addArtistLoading || !addArtistName.trim()) ? 'not-allowed' : 'pointer',
+              opacity: (addArtistLoading || !addArtistName.trim()) ? 0.6 : 1,
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            {addArtistLoading ? 'Adding…' : 'Add Artist'}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   const filteredArtists = (() => {
     let list = artists;
 
@@ -289,7 +440,9 @@ export default function AdminArtistsTab({
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
             {artists.filter(a => a.bio && a.image_url).length} approved artist{artists.filter(a => a.bio && a.image_url).length !== 1 ? 's' : ''}
           </div>
+          <div style={{ marginLeft: 'auto' }}>{addArtistButton}</div>
         </div>
+        {addArtistModal}
 
         {/* Directory list — sortable, read-only */}
         {(() => {
@@ -572,7 +725,10 @@ export default function AdminArtistsTab({
         <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
           {artists.length} artist{artists.length !== 1 ? 's' : ''}
         </div>
+
+        <div style={{ marginLeft: 'auto' }}>{addArtistButton}</div>
       </div>
+      {addArtistModal}
 
       {/* Toast notification */}
       {artistToast && (
