@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase';
 import { getEasternDayBounds } from '@/lib/utils';
-import { applyWaterfall } from '@/lib/waterfall';
+import { applyWaterfall, normalizeName } from '@/lib/waterfall';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -165,13 +165,70 @@ export async function GET(request) {
     if (error || !hydrated || hydrated.length === 0) return NextResponse.json(fallback);
 
     const byId = Object.fromEntries(hydrated.map(e => [e.id, e]));
+
+    // ── Server-side artist fallback (parity with AdminSpotlightTab) ───────
+    // PostgREST's `artists(...)` embed is keyed on the `artist_id` FK. When
+    // that FK is null — which happens for any scraped event we haven't
+    // auto-linked yet — the embed returns null and `applyWaterfall` loses
+    // its last rung for bio/image. The admin modal papers over this by
+    // loading the full `artists` table and doing a normalized-name match.
+    //
+    // We mirror that logic here, but in a SINGLE batched query so we don't
+    // pay N round-trips when every pin is an unlinked artist:
+    //   1. Collect unique `artist_name` values from hydrated events where
+    //      neither the FK-embed nor the FK itself produced an artist.
+    //   2. `ilike`-fetch those names from `artists` in one call (ilike does
+    //      a case-insensitive DB match; we re-filter client-side with the
+    //      shared `normalizeName` to catch whitespace drift too).
+    //   3. Build a normalized-name → artist map and feed it to the
+    //      waterfall via `opts.artist`.
+    // Keeps the hero on structural parity with the admin picker without
+    // regressing latency: +1 DB read, always, regardless of pin count.
+    const unlinkedNames = Array.from(new Set(
+      hydrated
+        .filter(e => !e.artists && !e.artist_id && e.artist_name)
+        .map(e => e.artist_name)
+    ));
+
+    const artistByName = {};
+    if (unlinkedNames.length > 0) {
+      try {
+        // ilike with comma-joined OR across names. `artists.name` is the
+        // curator-controlled column, so the set is small (≲ thousands) and
+        // this stays an index scan.
+        const orClause = unlinkedNames
+          .map(n => `name.ilike.${n.replace(/[,()]/g, ' ').trim()}`)
+          .join(',');
+        const { data: candidateArtists } = await supabase
+          .from('artists')
+          .select('name, bio, image_url, genres, vibes, is_tribute')
+          .or(orClause);
+
+        if (candidateArtists) {
+          for (const a of candidateArtists) {
+            const key = normalizeName(a.name);
+            if (key && !artistByName[key]) artistByName[key] = a;
+          }
+        }
+      } catch (err) {
+        // Non-fatal — the waterfall will just fall through without the
+        // artist tier, matching the pre-fix behavior.
+        console.warn('[spotlight] Artist name-match fallback failed:', err.message);
+      }
+    }
+
     // Apply the full Data Inheritance Waterfall with Verified Lock +
     // Midnight Exception. See `applyWaterfall` at the top of this file.
     const result = collected
       .map((id, i) => {
         const e = byId[id];
         if (!e) return null;
-        const w = applyWaterfall(e);
+        // If the FK embed missed but we resolved the artist by name, hand
+        // it to the waterfall so bio/image can fall through to Tier 4.
+        const fallbackArtist = (!e.artists && !e.artist_id && e.artist_name)
+          ? artistByName[normalizeName(e.artist_name)] || null
+          : null;
+        const w = applyWaterfall(e, { artist: fallbackArtist });
         return {
           event_id: id,
           ...e,

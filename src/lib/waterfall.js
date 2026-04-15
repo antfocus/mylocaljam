@@ -43,6 +43,20 @@ export const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
 export const cleanStr = (v) => (v && v !== 'None' && v !== '') ? v : null;
 
 /**
+ * Canonical artist-name key for fuzzy matching between `events.artist_name`
+ * (often scraper-mangled — double spaces, trailing whitespace, case drift) and
+ * the curated `artists.name` column.
+ *
+ * Must stay in lockstep with every caller: AdminSpotlightTab uses it to pick
+ * an artist when `artist_id` is null, and /api/spotlight does the same on
+ * the public hero. Drift here re-introduces the "admin sees Mariel's photo,
+ * homepage shows a placeholder" bug.
+ */
+export function normalizeName(s) {
+  return (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Derive an Eastern-time `HH:MM` string from a full event_date timestamp.
  * Scrapers frequently leave the dedicated `start_time` column null while
  * still encoding the real start inside the ISO `event_date`. Without this

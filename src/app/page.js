@@ -1248,13 +1248,32 @@ export default function HomePage() {
             ...e,
             id:            e.id || e.event_id,
             name:          decodeEntities(e.artists?.name || e.artist_name || ''),
-            // Title ladder (idempotent — /api/spotlight pre-applies, this is a safety net):
-            //   1. custom_title                   — manual override (column may not exist yet)
-            //   2. event_templates.template_name  — clean name from master library
-            //   3. event_title                    — raw scraper title fallback
-            event_title:   e.custom_title || e.event_templates?.template_name || e.event_title || null,
-            // Category ladder: template category > scraper category > 'Other'
-            category:      e.event_templates?.category || e.category || 'Other',
+            // ── SERVER-FIRST MAPPING (Option A surgical patch) ─────────
+            // /api/spotlight runs the full Data Inheritance Waterfall on
+            // the server via `applyWaterfall` — including the Verified
+            // Lock, Midnight Exception, and the batched name-match artist
+            // fallback for unlinked events. Those resolved fields arrive
+            // on the payload as `e.event_title`, `e.category`,
+            // `e.start_time`, `e.description`, `e.event_image`.
+            //
+            // We prefer the server answer for every field it resolves.
+            // The legacy client ladders are retained ONLY as a defense-
+            // in-depth safety net: if a future consumer calls this route
+            // without the waterfall (or a legacy cached response is still
+            // in flight), the UI still degrades gracefully.
+            //
+            // `e.artists?.image_url` is now included as a client-side
+            // tier so hard-linked (artist_id set, FK embed hydrated)
+            // artists also render through the local path if the server
+            // field is ever absent.
+            //
+            // Title — server wins.
+            event_title:   e.event_title
+                           || e.custom_title
+                           || e.event_templates?.template_name
+                           || null,
+            // Category — server wins (Verified-Lock aware on server).
+            category:      e.category || e.event_templates?.category || 'Other',
             venue:         e.venues?.name || e.venue_name || '',
             date: (() => {
               const raw = e.event_date || '';
@@ -1265,16 +1284,37 @@ export default function HomePage() {
               }
               return raw.substring(0, 10);
             })(),
-            start_time:    extractedStartTime,
-            // Hierarchy of Truth (bio) — same ladder as fetchEvents:
-            //   1. custom_bio → 2. event_templates.bio → 3. artists.bio → 4. artist_bio (scraper)
-            description:   cleanStr(e.custom_bio) || cleanStr(e.event_templates?.bio) || cleanStr(e.artists?.bio) || cleanStr(e.artist_bio) || '',
+            // Start-time — server waterfall applies Midnight Exception +
+            // event_date derivation, so `e.start_time` is already the
+            // final answer. Fall back to the client's event_date
+            // extractor only if the server returned null/empty.
+            start_time:    e.start_time || extractedStartTime,
+            // Bio — server-resolved `e.description` wins. Server's
+            // waterfall now reaches the artist tier even for unlinked
+            // events (name-match fallback), so the hero bio drawer works
+            // for rows like Mariel's trombone show.
+            description:   cleanStr(e.description)
+                           || cleanStr(e.custom_bio)
+                           || cleanStr(e.event_templates?.bio)
+                           || cleanStr(e.artists?.bio)
+                           || cleanStr(e.artist_bio)
+                           || '',
             artist_genres: e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
             artist_vibes:  e.custom_vibes?.length ? e.custom_vibes : (e.vibe ? [e.vibe] : (e.artists?.vibes || [])),
             is_tribute:    e.artists?.is_tribute || false,
-            // Image waterfall synced with fetchEvents:
-            //   1. custom_image_url → 2. event_templates.image_url → 3. event-level scraper flyer → 4. artist photo
-            event_image:   cleanImg(e.custom_image_url) || cleanImg(e.event_templates?.image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
+            // Image — server-resolved `e.event_image` wins. Includes the
+            // artist-tier fallback on the server, so unlinked artist
+            // photos (e.g. Mariel's trombone shot) finally reach the
+            // hero. Local ladder retained for defense in depth, now with
+            // `e.artists?.image_url` so hard-linked rows also survive
+            // any server-field regression.
+            event_image:   cleanImg(e.event_image)
+                           || cleanImg(e.custom_image_url)
+                           || cleanImg(e.event_templates?.image_url)
+                           || cleanImg(e.event_image_url)
+                           || cleanImg(e.image_url)
+                           || cleanImg(e.artists?.image_url)
+                           || null,
             artist_image:  cleanImg(e.artists?.image_url) || null,
             venue_type:    e.venues?.venue_type || null,
             venue_tags:    e.venues?.tags || [],

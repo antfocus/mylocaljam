@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { formatTime } from '@/lib/utils';
-import { applyWaterfall, getSpotlightReadiness, isMidnight } from '@/lib/waterfall';
+import { applyWaterfall, getSpotlightReadiness, isMidnight, normalizeName } from '@/lib/waterfall';
 
 const TRAFFIC_COLORS = {
   green:  { dot: '#22C55E', ring: 'rgba(34,197,94,0.45)',  bg: 'rgba(34,197,94,0.08)' },
@@ -23,9 +23,9 @@ export default function AdminSpotlightTab({
   // Accordion expansion — UI-local only; hook doesn't need to know.
   const [expandedId, setExpandedId] = useState(null);
 
-  // Normalize whitespace + case so "Mariel Bildsten" matches "Mariel  Bildsten"
-  // (double space) or trailing-space scraper output.
-  const normalizeName = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  // `normalizeName` lives in @/lib/waterfall so the server-side spotlight
+  // route and this component use the exact same matcher. Drift there
+  // re-introduces the "admin finds the artist, homepage doesn't" bug.
 
   /**
    * Resolve an event through the shared waterfall module. We supply a
