@@ -513,9 +513,12 @@ export async function POST(request) {
   // keeps this comfortable even as the template library grows.
   let templates = [];
   try {
+    // Pull template fields used for inheritance (the "Master Time" + category +
+    // image/bio). Schema column for the master time is `start_time` (TIME); the
+    // user-facing spec calls it "master_time" but we keep DB names here.
     const { data: tplRows } = await supabase
       .from('event_templates')
-      .select('id, template_name, aliases, venue_id')
+      .select('id, template_name, aliases, venue_id, start_time, category, image_url, bio, genres')
       .limit(5000);
     templates = tplRows || [];
   } catch { /* no templates → matcher returns null for every event, harmless */ }
@@ -545,16 +548,88 @@ export async function POST(request) {
   // needs. We skip events whose row already has a template_id so admin
   // cherry-picks stay pinned.
   let templatesLinked = 0;
+  let templatesInherited = 0;
+
+  // Helper: replace the time portion of an ISO timestamp with the template's
+  // start_time (TIME column → "HH:MM:SS" or "HH:MM"). Anchored to America/
+  // New_York so the wall-clock time the admin set on the template is what
+  // shows up in the event row, regardless of DST.
+  const stampMasterTime = (eventDateIso, masterTime) => {
+    if (!eventDateIso || !masterTime) return null;
+    try {
+      // Parse master time → "HH:MM" (drop seconds if present)
+      const [hh, mm] = String(masterTime).split(':');
+      if (!hh || !mm) return null;
+      const datePart = new Date(eventDateIso).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const probe = new Date(`${datePart}T12:00:00`);
+      const isEDT = probe.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT');
+      const offset = isEDT ? '-04:00' : '-05:00';
+      return new Date(`${datePart}T${hh.padStart(2, '0')}:${mm.padStart(2, '0')}:00${offset}`).toISOString();
+    } catch {
+      return null;
+    }
+  };
+
   if (templates.length > 0) {
     for (const ev of validEvents) {
-      if (alreadyLinkedExtIds.has(ev.external_id)) continue;
-      const result = matchTemplate(
-        { title: ev.artist_name, venue_id: ev.venue_id },
-        templates
-      );
-      if (result && result.template && result.template.id) {
-        ev.template_id = result.template.id;
-        templatesLinked++;
+      // Resolve which template (if any) this event matches. We do this once
+      // and reuse the result for both the link-write and the inheritance pass.
+      let matchedTemplate = null;
+      if (alreadyLinkedExtIds.has(ev.external_id)) {
+        // Already pinned by admin — keep the existing template_id but still
+        // pull its metadata so master_time / category / image cascade in.
+        // We don't have the existing template_id on `ev` here (this is the
+        // scrape payload, not the DB row), so the fresh match acts as a
+        // best-effort proxy. If admin pinned a different template, the
+        // pinned one wins after upsert because we never overwrite template_id
+        // for already-linked rows below.
+        matchedTemplate = matchTemplate(
+          { title: ev.artist_name, venue_id: ev.venue_id },
+          templates
+        )?.template || null;
+      } else {
+        const result = matchTemplate(
+          { title: ev.artist_name, venue_id: ev.venue_id },
+          templates
+        );
+        if (result && result.template && result.template.id) {
+          ev.template_id = result.template.id;
+          matchedTemplate = result.template;
+          templatesLinked++;
+        }
+      }
+
+      // ── Template field inheritance ─────────────────────────────────────
+      // Spec: when an event matches a template, the template's master_time +
+      // category + image + bio overwrite the scraper data so the row is
+      // consistent at rest (no more 12:00 AM defaults bleeding through).
+      // We respect protectedIds (existing human_edited / locked rows) — never
+      // clobber an admin's manual edit.
+      if (matchedTemplate && !protectedIds.has(ev.external_id)) {
+        let inherited = false;
+
+        if (matchedTemplate.start_time) {
+          const stamped = stampMasterTime(ev.event_date, matchedTemplate.start_time);
+          if (stamped) { ev.event_date = stamped; inherited = true; }
+        }
+        if (matchedTemplate.category) {
+          ev.category = matchedTemplate.category;
+          // Templates take precedence in the Confidence Cascade — lock the
+          // category source so AI categorize never re-decides this row.
+          ev.category_source = 'template';
+          ev.is_category_verified = true;
+          ev.triage_status = 'reviewed';
+          inherited = true;
+        }
+        if (matchedTemplate.image_url && !ev.event_image_url) {
+          ev.event_image_url = matchedTemplate.image_url;
+          inherited = true;
+        }
+        if (matchedTemplate.bio && !ev.artist_bio) {
+          ev.artist_bio = matchedTemplate.bio;
+          inherited = true;
+        }
+        if (inherited) templatesInherited++;
       }
     }
   }
@@ -1072,6 +1147,7 @@ export async function POST(request) {
     templateMatcher: {
       templatesLoaded: templates.length,
       eventsLinked: templatesLinked,
+      eventsInherited: templatesInherited,
       adminLinksPreserved: alreadyLinkedExtIds.size,
     },
     enrichment: {

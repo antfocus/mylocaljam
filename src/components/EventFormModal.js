@@ -34,6 +34,10 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     custom_vibes:     event?.custom_vibes || [],
     custom_image_url: event?.custom_image_url || '',
     is_featured:      event?.is_featured || false,
+    // Category — Confidence Cascade enum. Empty string means "inherit from
+    // template/AI". When the user picks a value here, it counts as a manual
+    // override (Verified Flip) on save.
+    category:         event?.category || '',
   });
   const [aiLoading, setAiLoading] = useState(false);
   const [toast, setToast] = useState(null); // { message, type: 'error' | 'success' }
@@ -52,6 +56,33 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
   // ── Waterfall tiers ───────────────────────────────────────────────────────
   // Override → Template → Artist Profile → Raw Scraper
   const template = event?.event_templates || null;
+  const hasTemplate = !!event?.template_id;
+
+  // ── Template-inheritance helpers (Time + Category) ─────────────────────
+  // The waterfall used for bio/image/genres lives in resolveTier above;
+  // these two scalar fields don't fit that shape, so we compute their
+  // "inheriting from template" flags inline. Logic:
+  //   - The form value is empty (or matches the template's value), AND
+  //   - There IS a template attached, AND
+  //   - The user hasn't manually edited this field (is_human_edited false)
+  //     → the field is currently inheriting from the template.
+  //
+  // start_time on event_templates is the column the spec calls "master_time".
+  const templateTimeRaw = template?.start_time || null;
+  const templateTime = (() => {
+    if (!templateTimeRaw) return '';
+    // Normalize "HH:MM:SS" → "HH:MM" for the <input type="time"> control.
+    const [hh, mm] = String(templateTimeRaw).split(':');
+    if (!hh || !mm) return '';
+    return `${hh.padStart(2, '0')}:${mm.padStart(2, '0')}`;
+  })();
+  const templateCategory = template?.category || '';
+  const isHumanEdited = !!event?.is_human_edited;
+
+  // A field is "inheriting" if the form currently shows the template value
+  // and the row hasn't been admin-edited. Used to render the 🔗 chip.
+  const timeIsInherited     = hasTemplate && !isHumanEdited && !!templateTime && form.event_time === templateTime;
+  const categoryIsInherited = hasTemplate && !isHumanEdited && !!templateCategory && (form.category === templateCategory || form.category === '');
 
   const bioSources = {
     override: form.custom_bio,
@@ -107,13 +138,17 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
 
   // ── Save handler ──────────────────────────────────────────────────────────
   const handleSave = () => {
-    if (!form.artist_name || !form.venue_name || !form.event_date || !form.event_time) {
+    if (!form.artist_name || !form.venue_name || !form.event_date || !(form.event_time || templateTime)) {
       alert('Please fill in Artist, Venue, Date, and Time.');
       return;
     }
     const probe = new Date(`${form.event_date}T12:00:00`);
     const etOffset = probe.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? '-04:00' : '-05:00';
-    const eventDate = new Date(`${form.event_date}T${form.event_time}:00${etOffset}`).toISOString();
+    // If the form time is still empty but a template provides a master_time,
+    // fall back to it on save so the inheritance the UI shows is what the
+    // backend writes.
+    const effectiveTime = form.event_time || templateTime;
+    const eventDate = new Date(`${form.event_date}T${effectiveTime}:00${etOffset}`).toISOString();
 
     // is_custom_metadata: any override tier has content
     const isCustom = !!(form.custom_bio || form.custom_genres?.length || form.custom_vibes?.length || form.custom_image_url);
@@ -240,14 +275,25 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
               </span>
             )}
             {!hasArtist && form.artist_name && (
-              <span style={{
-                fontSize: '10px', fontWeight: 600, padding: '2px 8px',
-                borderRadius: '999px', background: 'rgba(136,136,136,0.08)',
-                color: 'var(--text-muted)', border: '1px solid var(--border)',
-                fontFamily: "'DM Sans', sans-serif",
-              }}>
-                Standalone Event
-              </span>
+              hasTemplate ? (
+                <span style={{
+                  fontSize: '10px', fontWeight: 600, padding: '2px 8px',
+                  borderRadius: '999px', background: 'rgba(59,130,246,0.08)',
+                  color: '#60A5FA', border: '1px solid rgba(59,130,246,0.20)',
+                  fontFamily: "'DM Sans', sans-serif",
+                }}>
+                  {'\uD83D\uDD17'} Template Linked
+                </span>
+              ) : (
+                <span style={{
+                  fontSize: '10px', fontWeight: 600, padding: '2px 8px',
+                  borderRadius: '999px', background: 'rgba(136,136,136,0.08)',
+                  color: 'var(--text-muted)', border: '1px solid var(--border)',
+                  fontFamily: "'DM Sans', sans-serif",
+                }}>
+                  Standalone Event
+                </span>
+              )
             )}
           </div>
           <button className="p-1 rounded-md text-brand-text-muted hover:text-brand-text" onClick={onClose}>
@@ -527,9 +573,54 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                   <input type="date" style={inputStyle} value={form.event_date} onChange={e => update('event_date', e.target.value)} />
                 </div>
                 <div>
-                  <label style={labelStyle}>Time *</label>
-                  <input type="time" style={inputStyle} value={form.event_time} onChange={e => update('event_time', e.target.value)} />
+                  <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    Time *
+                    {timeIsInherited && (
+                      <span title={`Inheriting from template "${template?.template_name || ''}"`} style={{ fontSize: '11px', color: '#60A5FA' }}>
+                        {'\uD83D\uDD17'}
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="time"
+                    style={inputStyle}
+                    // If the form has no time but the template does, default
+                    // to the template's master_time so the field reflects the
+                    // inheritance the backend will apply on save.
+                    value={form.event_time || templateTime}
+                    placeholder={templateTime || 'HH:MM'}
+                    onChange={e => update('event_time', e.target.value)}
+                  />
                 </div>
+              </div>
+
+              {/* Category — Confidence Cascade enum + template inheritance */}
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  Category
+                  {categoryIsInherited && (
+                    <span title={`Inheriting from template "${template?.template_name || ''}"`} style={{ fontSize: '11px', color: '#60A5FA' }}>
+                      {'\uD83D\uDD17'}
+                    </span>
+                  )}
+                </label>
+                <select
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                  value={form.category || ''}
+                  onChange={e => update('category', e.target.value)}
+                >
+                  <option value="">
+                    {templateCategory ? `— Template: ${templateCategory} —` : '— None (use AI inference) —'}
+                  </option>
+                  <option value="Live Music">Live Music</option>
+                  <option value="Trivia">Trivia</option>
+                  <option value="Karaoke">Karaoke</option>
+                  <option value="DJ/Dance Party">DJ/Dance Party</option>
+                  <option value="Comedy">Comedy</option>
+                  <option value="Food & Drink">Food & Drink</option>
+                  <option value="Sports">Sports</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
 
               {/* Venue */}
