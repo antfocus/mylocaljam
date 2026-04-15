@@ -43,6 +43,36 @@ export const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
 export const cleanStr = (v) => (v && v !== 'None' && v !== '') ? v : null;
 
 /**
+ * Derive an Eastern-time `HH:MM` string from a full event_date timestamp.
+ * Scrapers frequently leave the dedicated `start_time` column null while
+ * still encoding the real start inside the ISO `event_date`. Without this
+ * fallback the readiness check reports "no time" for events the hero
+ * carousel (and the row subtext) render correctly.
+ *
+ * Returns null for unparseable / missing input.
+ */
+export function extractTimeFromDate(eventDateIso) {
+  if (!eventDateIso) return null;
+  try {
+    const d = new Date(eventDateIso);
+    if (isNaN(d.getTime())) return null;
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+    const hh = parts.find(p => p.type === 'hour')?.value ?? '00';
+    const mm = parts.find(p => p.type === 'minute')?.value ?? '00';
+    // Intl sometimes emits "24" for midnight; normalize.
+    const hour = hh === '24' ? '00' : hh;
+    return `${hour}:${mm}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve one event through the full waterfall.
  *
  * @param {object} event  hydrated event row with optional joins:
@@ -76,11 +106,20 @@ export function applyWaterfall(event, opts = {}) {
       : (cleanStr(tpl?.category) || cleanStr(e.category))) ||
     'Other';
 
-  // Start-time — Midnight Exception lets template clobber scraper's 00:00.
+  // Start-time ladder.
+  //   • Human lock: event.start_time → template → event_date timestamp.
+  //   • Default:    template → event.start_time → event_date timestamp,
+  //                 with the Midnight Exception letting a template clobber
+  //                 a scraper-supplied 00:00.
+  // event_date is the last-resort tier because scrapers often leave
+  // start_time null while the real time is encoded in event_date.
   const treatEmpty = shouldTreatEventTimeAsEmpty(e);
+  const dateDerived = extractTimeFromDate(e.event_date);
   const start_time = humanEdited
-    ? (e.start_time || tpl?.start_time || null)
-    : (treatEmpty ? (tpl?.start_time || null) : (tpl?.start_time || e.start_time || null));
+    ? (e.start_time || tpl?.start_time || dateDerived || null)
+    : (treatEmpty
+        ? (tpl?.start_time || dateDerived || null)
+        : (tpl?.start_time || e.start_time || dateDerived || null));
 
   // Bio — custom_bio → (human ? event → template : template → event) → artist.
   const description =

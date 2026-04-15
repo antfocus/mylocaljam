@@ -23,24 +23,32 @@ export default function AdminSpotlightTab({
   // Accordion expansion — UI-local only; hook doesn't need to know.
   const [expandedId, setExpandedId] = useState(null);
 
+  // Normalize whitespace + case so "Mariel Bildsten" matches "Mariel  Bildsten"
+  // (double space) or trailing-space scraper output.
+  const normalizeName = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
   /**
    * Resolve an event through the shared waterfall module. We supply a
    * fallback `template` when the `event_templates` join isn't hydrated on
    * the row — so the waterfall always has the full template data.
    *
-   * Also returns a `templateMissing` flag: event claims a template_id but
-   * we can't find the template in either the join or the templates prop.
+   * Also returns two surfaced warnings:
+   *   • templateMissing — event has a template_id but no matching template.
+   *   • artistNotLinked — event has no artist_id (inheritance chain is
+   *     blind to the artist tier until an admin links via the matcher).
    */
   const resolve = (ev) => {
     const joinedTpl = ev.event_templates || null;
     const lookedUpTpl = ev.template_id ? templates.find(t => t.id === ev.template_id) : null;
     const templateMissing = !!ev.template_id && !joinedTpl && !lookedUpTpl;
 
+    const nameKey = normalizeName(ev.artist_name);
     const linkedArtist = ev.artists || (
       ev.artist_id
         ? artists.find(a => a.id === ev.artist_id)
-        : artists.find(a => a.name?.toLowerCase() === (ev.artist_name || '').toLowerCase())
+        : (nameKey ? artists.find(a => normalizeName(a.name) === nameKey) : null)
     );
+    const artistNotLinked = !ev.artist_id;
 
     const readiness = getSpotlightReadiness(ev, {
       template: joinedTpl || lookedUpTpl,
@@ -50,6 +58,7 @@ export default function AdminSpotlightTab({
     return {
       ...readiness,
       templateMissing,
+      artistNotLinked,
       linkedArtist,
       template: joinedTpl || lookedUpTpl || null,
     };
@@ -224,18 +233,15 @@ export default function AdminSpotlightTab({
                   setExpandedId(isExpanded ? null : ev.id);
                 }}
               >
-                {/* Pin/unpin star — separate button so accordion toggle doesn't fire */}
+                {/* Pin/unpin star — separate button so accordion toggle doesn't fire.
+                    The legacy "Missing Artist Image" modal is intentionally
+                    retired here: the traffic-light dot + chips already
+                    communicate readiness at a glance, and a second modal was
+                    pure friction. The admin sees the state and decides. */}
                 <button
                   data-stop
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (isPinned) { toggleSpotlightPin(ev.id); return; }
-                    // Gate on waterfall-resolved image + bio. Template-linked
-                    // events with template-only assets pass this check.
-                    if (!w.event_image || !w.description) {
-                      setSpotlightImageWarning(ev);
-                      return;
-                    }
                     toggleSpotlightPin(ev.id);
                   }}
                   className="flex items-center justify-center w-7 h-7 rounded-md text-xs font-bold border-0"
@@ -260,6 +266,14 @@ export default function AdminSpotlightTab({
                     {ev.artist_name}
                     {r.templateMissing && (
                       <span style={chipStyle('#F97316')}>Template Missing</span>
+                    )}
+                    {r.artistNotLinked && (
+                      <span
+                        style={chipStyle('#F97316')}
+                        title="This event has no artist_id — the waterfall can't pull the Artist Profile's image or bio until you link it via the Event Feed matcher."
+                      >
+                        Artist not linked
+                      </span>
                     )}
                     {r.state === 'red' && (
                       <span style={chipStyle('#EF4444')}>
