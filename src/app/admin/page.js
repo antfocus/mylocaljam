@@ -678,6 +678,7 @@ export default function AdminPage() {
           event={ev.editingEvent}
           artists={ar.artists}
           venues={ve.venues}
+          templates={et.templates}
           onClose={() => { ev.setShowEventForm(false); ev.setEditingEvent(null); }}
           onSave={saveEvent}
           adminPassword={password}

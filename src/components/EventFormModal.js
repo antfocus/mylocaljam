@@ -10,7 +10,7 @@ import { resolveTier, parentTierValue } from '@/lib/metadataWaterfall';
    Waterfall provenance: override → template → artist → scraper
    ═══════════════════════════════════════════════════════════════════════════ */
 
-export default function EventFormModal({ event, artists = [], venues = [], onClose, onSave, adminPassword, onNavigateToArtist }) {
+export default function EventFormModal({ event, artists = [], venues = [], templates = [], onClose, onSave, adminPassword, onNavigateToArtist }) {
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
@@ -38,6 +38,10 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
     // template/AI". When the user picks a value here, it counts as a manual
     // override (Verified Flip) on save.
     category:         event?.category || '',
+    // Template link — null when standalone. Admin can manually bridge a
+    // "Standalone" event to a template from the selector below; the on-change
+    // handler clobbers the 12:00 AM scraper default if still present.
+    template_id:      event?.template_id || null,
   });
   const [aiLoading, setAiLoading] = useState(false);
   const [toast, setToast] = useState(null); // { message, type: 'error' | 'success' }
@@ -55,18 +59,17 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
 
   // ── Waterfall tiers ───────────────────────────────────────────────────────
   // Override → Template → Artist Profile → Raw Scraper
-  const template = event?.event_templates || null;
-  const hasTemplate = !!event?.template_id;
+  // Resolve the selected template from the templates prop when the form has
+  // a template_id (either pre-existing or just picked from the selector).
+  // Falls back to event.event_templates for backward-compat with callers that
+  // already hydrate the join.
+  const selectedTemplate = form.template_id
+    ? (templates.find(t => t.id === form.template_id) || event?.event_templates || null)
+    : null;
+  const template = selectedTemplate;
+  const hasTemplate = !!form.template_id;
 
   // ── Template-inheritance helpers (Time + Category) ─────────────────────
-  // The waterfall used for bio/image/genres lives in resolveTier above;
-  // these two scalar fields don't fit that shape, so we compute their
-  // "inheriting from template" flags inline. Logic:
-  //   - The form value is empty (or matches the template's value), AND
-  //   - There IS a template attached, AND
-  //   - The user hasn't manually edited this field (is_human_edited false)
-  //     → the field is currently inheriting from the template.
-  //
   // start_time on event_templates is the column the spec calls "master_time".
   const templateTimeRaw = template?.start_time || null;
   const templateTime = (() => {
@@ -79,10 +82,68 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
   const templateCategory = template?.category || '';
   const isHumanEdited = !!event?.is_human_edited;
 
+  // ── The "12:00 AM Exception" ──────────────────────────────────────────
+  // Every Jersey Shore scraper we integrate with defaults missing start
+  // times to midnight ("00:00"). That's not data — it's digital silence.
+  // When a template is linked and the row hasn't been human-edited, treat
+  // "00:00" the same as empty so the template's master_time wins over the
+  // scraper default. Anything else (including "00:01" or an explicit admin
+  // edit to midnight) is respected.
+  const isMidnight = (t) => t === '00:00' || t === '00:00:00';
+  const shouldTreatTimeAsEmpty = hasTemplate && !isHumanEdited && isMidnight(form.event_time);
+  const effectiveFormTime = shouldTreatTimeAsEmpty ? '' : form.event_time;
+
   // A field is "inheriting" if the form currently shows the template value
-  // and the row hasn't been admin-edited. Used to render the 🔗 chip.
-  const timeIsInherited     = hasTemplate && !isHumanEdited && !!templateTime && form.event_time === templateTime;
+  // (or is empty / midnight-scraper-default) and the row hasn't been admin
+  // edited. Used to render the template indicator chip.
+  const timeIsInherited     = hasTemplate && !isHumanEdited && !!templateTime && (!effectiveFormTime || effectiveFormTime === templateTime);
   const categoryIsInherited = hasTemplate && !isHumanEdited && !!templateCategory && (form.category === templateCategory || form.category === '');
+
+  // Distinct template indicator — a small "T" badge. Intentionally NOT the
+  // 🔗 emoji, which is used elsewhere for source-venue hyperlinks.
+  const TemplateChip = ({ title }) => (
+    <span
+      title={title}
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        minWidth: '16px', height: '16px', padding: '0 4px',
+        borderRadius: '4px', background: 'rgba(59,130,246,0.15)',
+        border: '1px solid rgba(59,130,246,0.35)',
+        color: '#60A5FA', fontSize: '10px', fontWeight: 800,
+        fontFamily: "'DM Sans', sans-serif", lineHeight: 1,
+      }}
+    >T</span>
+  );
+
+  // ── Manual Template Link handler — force-clobber the 12:00 AM default ──
+  const applyTemplateLink = (newTemplateId) => {
+    if (!newTemplateId) {
+      // Unlink
+      setForm(f => ({ ...f, template_id: null }));
+      return;
+    }
+    const picked = templates.find(t => t.id === newTemplateId);
+    if (!picked) {
+      setForm(f => ({ ...f, template_id: newTemplateId }));
+      return;
+    }
+    // Compute the template's master_time in HH:MM form.
+    const [ph, pm] = String(picked.start_time || '').split(':');
+    const pickedTime = (ph && pm) ? `${ph.padStart(2, '0')}:${pm.padStart(2, '0')}` : '';
+
+    setForm(f => {
+      const next = { ...f, template_id: newTemplateId };
+      // Force-overwrite time if empty OR midnight (scraper default).
+      if (pickedTime && (!f.event_time || isMidnight(f.event_time))) {
+        next.event_time = pickedTime;
+      }
+      // Fill category only if blank — respect explicit admin picks.
+      if (picked.category && !f.category) {
+        next.category = picked.category;
+      }
+      return next;
+    });
+  };
 
   const bioSources = {
     override: form.custom_bio,
@@ -138,16 +199,17 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
 
   // ── Save handler ──────────────────────────────────────────────────────────
   const handleSave = () => {
-    if (!form.artist_name || !form.venue_name || !form.event_date || !(form.event_time || templateTime)) {
+    // 12:00 AM Exception: when a template is linked, midnight is treated as
+    // empty for inheritance purposes — fall through to the template's master
+    // time on save instead of persisting the scraper default.
+    const saveTimeCandidate = effectiveFormTime || templateTime;
+    if (!form.artist_name || !form.venue_name || !form.event_date || !saveTimeCandidate) {
       alert('Please fill in Artist, Venue, Date, and Time.');
       return;
     }
     const probe = new Date(`${form.event_date}T12:00:00`);
     const etOffset = probe.toLocaleString('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).includes('EDT') ? '-04:00' : '-05:00';
-    // If the form time is still empty but a template provides a master_time,
-    // fall back to it on save so the inheritance the UI shows is what the
-    // backend writes.
-    const effectiveTime = form.event_time || templateTime;
+    const effectiveTime = saveTimeCandidate;
     const eventDate = new Date(`${form.event_date}T${effectiveTime}:00${etOffset}`).toISOString();
 
     // is_custom_metadata: any override tier has content
@@ -282,7 +344,7 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                   color: '#60A5FA', border: '1px solid rgba(59,130,246,0.20)',
                   fontFamily: "'DM Sans', sans-serif",
                 }}>
-                  {'\uD83D\uDD17'} Template Linked
+                  <TemplateChip title={`Template: ${template?.template_name || ''}`} /> Template Linked
                 </span>
               ) : (
                 <span style={{
@@ -566,6 +628,32 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 Logistics
               </div>
 
+              {/* Template Selector — manual bridging for orphaned Standalone events */}
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  Linked Template
+                  {hasTemplate && <TemplateChip title="This event inherits from a template" />}
+                </label>
+                <select
+                  style={{ ...inputStyle, cursor: 'pointer' }}
+                  value={form.template_id || ''}
+                  onChange={e => applyTemplateLink(e.target.value || null)}
+                >
+                  <option value="">— Standalone (no template) —</option>
+                  {(templates || [])
+                    .slice()
+                    .sort((a, b) => (a.template_name || '').localeCompare(b.template_name || ''))
+                    .map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.template_name}{t.start_time ? ` · ${String(t.start_time).slice(0, 5)}` : ''}{t.category ? ` · ${t.category}` : ''}
+                      </option>
+                    ))}
+                </select>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', fontFamily: "'DM Sans', sans-serif" }}>
+                  Linking a template clobbers the 12:00 AM scraper default with the template&rsquo;s master time.
+                </div>
+              </div>
+
               {/* Date + Time */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
                 <div>
@@ -576,18 +664,17 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                   <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
                     Time *
                     {timeIsInherited && (
-                      <span title={`Inheriting from template "${template?.template_name || ''}"`} style={{ fontSize: '11px', color: '#60A5FA' }}>
-                        {'\uD83D\uDD17'}
-                      </span>
+                      <TemplateChip title={`Inheriting from template "${template?.template_name || ''}"`} />
                     )}
                   </label>
                   <input
                     type="time"
                     style={inputStyle}
-                    // If the form has no time but the template does, default
-                    // to the template's master_time so the field reflects the
+                    // Midnight-aware: when a template is linked and the row is
+                    // sitting on the scraper's 00:00 default, show the
+                    // template's master_time instead so the field reflects the
                     // inheritance the backend will apply on save.
-                    value={form.event_time || templateTime}
+                    value={effectiveFormTime || templateTime}
                     placeholder={templateTime || 'HH:MM'}
                     onChange={e => update('event_time', e.target.value)}
                   />
@@ -599,9 +686,7 @@ export default function EventFormModal({ event, artists = [], venues = [], onClo
                 <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
                   Category
                   {categoryIsInherited && (
-                    <span title={`Inheriting from template "${template?.template_name || ''}"`} style={{ fontSize: '11px', color: '#60A5FA' }}>
-                      {'\uD83D\uDD17'}
-                    </span>
+                    <TemplateChip title={`Inheriting from template "${template?.template_name || ''}"`} />
                   )}
                 </label>
                 <select
