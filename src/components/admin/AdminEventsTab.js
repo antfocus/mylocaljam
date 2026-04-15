@@ -171,7 +171,7 @@ export default function AdminEventsTab({
   eventsPage, setEventsPage, eventsTotalPages, eventsTotal,
   newEvents24h, eventsRecentlyAdded, setEventsRecentlyAdded,
   selectedEvents, setSelectedEvents, setEvents,
-  fetchEvents, deleteEvent, toggleFeatured, unpublishEvent, updateEventCategory, runAICategorize,
+  fetchEvents, deleteEvent, unpublishEvent, updateEventCategory, runAICategorize,
   setEditingEvent, setShowEventForm, setBulkTimeModal, setBulkTime,
   isMobile, showQueueToast, CATEGORY_OPTIONS,
   password,

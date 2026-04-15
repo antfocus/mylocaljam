@@ -102,15 +102,11 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
     } catch (err) { console.error(err); }
   }, [password, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime, eventsRecentlyAdded]);
 
-  const toggleFeatured = async (ev) => {
-    const newVal = !ev.is_featured;
-    setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, is_featured: newVal } : e));
-    await fetch('/api/admin', {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ id: ev.id, is_featured: newVal }),
-    });
-  };
+  // NOTE: `toggleFeatured` retired Phase 5 — Spotlight curation now lives
+  // exclusively in the `spotlight_events` table (see AdminSpotlightTab /
+  // useAdminSpotlight). The event-row "feature" toggle was dead code as of
+  // Phase 1 (no UI caller) and is removed here along with its is_featured
+  // writer.
 
   const updateEventCategory = async (ev, newCategory) => {
     const prev = events;
@@ -197,7 +193,6 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
     newEvents24h, setNewEvents24h,
     eventsRecentlyAdded, setEventsRecentlyAdded,
     fetchEvents,
-    toggleFeatured,
     updateEventCategory,
     runAICategorize,
     CATEGORY_OPTIONS,

@@ -214,12 +214,15 @@ export default function AdminPage() {
 
   const unpublishEvent = async (evt) => {
     const prev = ev.events;
-    ev.setEvents(p => p.map(e => e.id === evt.id ? { ...e, status: 'archived', is_featured: false } : e));
+    // NOTE: `is_featured` retired Phase 5. The server-side PUT handler now
+    // cascades a `status !== 'published'` transition into a delete on
+    // `spotlight_events`, so unpublishing also clears any active pin.
+    ev.setEvents(p => p.map(e => e.id === evt.id ? { ...e, status: 'archived' } : e));
     try {
       const res = await fetch('/api/admin', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-        body: JSON.stringify({ id: evt.id, status: 'archived', is_featured: false }),
+        body: JSON.stringify({ id: evt.id, status: 'archived' }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -349,7 +352,7 @@ export default function AdminPage() {
           selectedEvents={ev.selectedEvents} setSelectedEvents={ev.setSelectedEvents}
           setEvents={ev.setEvents}
           fetchEvents={ev.fetchEvents} deleteEvent={deleteEvent}
-          toggleFeatured={ev.toggleFeatured} unpublishEvent={unpublishEvent}
+          unpublishEvent={unpublishEvent}
           updateEventCategory={ev.updateEventCategory}
           runAICategorize={ev.runAICategorize}
           CATEGORY_OPTIONS={ev.CATEGORY_OPTIONS}

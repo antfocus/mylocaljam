@@ -129,33 +129,12 @@ export default function AdminQueuePage() {
     setActionLoading(false);
   };
 
-  const handleApproveAndFeature = async () => {
-    const sub = queue[selectedIdx];
-    if (!sub) return;
-    if (!form.artist_name || !form.venue_name || !form.event_date) {
-      alert('Please fill in Artist, Venue, and Date before approving.');
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const eventDate = form.event_time
-        ? new Date(`${form.event_date}T${form.event_time}`).toISOString()
-        : form.event_date;
-
-      await fetch('/api/admin/queue', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          submission_id: sub.id,
-          event_data: { ...form, event_date: eventDate },
-          is_featured: true,
-        }),
-      });
-      showToast(`⭐ Approved & Featured: ${form.artist_name}`);
-      advanceQueue();
-    } catch (err) { alert('Approve & Feature failed'); }
-    setActionLoading(false);
-  };
+  // NOTE: `handleApproveAndFeature` retired Phase 5 — Spotlight curation
+  // lives exclusively in the `spotlight_events` table (see Admin →
+  // Spotlight tab). The one-shot "approve + feature" flow wrote
+  // `is_featured=true` into a column that no longer drives the hero
+  // carousel, so the button was a no-op in practice. Curators now pin
+  // approved events from the Spotlight tab's date-scoped picker.
 
   const handleReject = async () => {
     const sub = queue[selectedIdx];
@@ -526,23 +505,12 @@ export default function AdminQueuePage() {
                       onClick={handleApprove}
                       disabled={actionLoading}
                       style={{
-                        flex: 2, padding: '14px', borderRadius: '10px', border: 'none',
+                        flex: 1, padding: '14px', borderRadius: '10px', border: 'none',
                         background: actionLoading ? textMuted : green, color: '#000',
                         fontWeight: 700, fontSize: '15px', cursor: actionLoading ? 'default' : 'pointer',
                       }}
                     >
                       {actionLoading ? 'Processing...' : '✓ Approve & Publish'}
-                    </button>
-                    <button
-                      onClick={handleApproveAndFeature}
-                      disabled={actionLoading}
-                      style={{
-                        flex: 1, padding: '14px', borderRadius: '10px', border: 'none',
-                        background: actionLoading ? textMuted : '#F59E0B', color: '#000',
-                        fontWeight: 700, fontSize: '14px', cursor: actionLoading ? 'default' : 'pointer',
-                      }}
-                    >
-                      ⭐ Feature
                     </button>
                   </div>
 

@@ -200,7 +200,8 @@ export async function POST(request) {
       cover: body.cover || null,
       ticket_link: body.ticket_link || null,
       recurring: body.recurring || false,
-      is_spotlight: body.is_spotlight || false,
+      // NOTE: `is_spotlight` / `is_featured` retired Phase 5 — Spotlight
+      // curation lives exclusively in the `spotlight_events` table.
       category: body.category || 'Live Music',
       triage_status: 'reviewed',
       status: body.status || 'published',
@@ -280,8 +281,9 @@ export async function PUT(request) {
     ...(body.cover !== undefined && { cover: body.cover || null }),
     ...(body.ticket_link !== undefined && { ticket_link: body.ticket_link || null }),
     ...(body.recurring !== undefined && { recurring: body.recurring }),
-    ...(body.is_spotlight !== undefined && { is_spotlight: body.is_spotlight }),
-    ...(body.is_featured !== undefined && { is_featured: body.is_featured }),
+    // `is_spotlight` / `is_featured` retired Phase 5. Silently ignored
+    // if legacy clients still send them — we don't 400 to avoid breaking
+    // in-flight deploys.
     ...(body.status !== undefined && { status: body.status }),
     ...(body.source !== undefined && { source: body.source }),
     ...(body.image_url !== undefined && { image_url: validateUrl(body.image_url) }),
@@ -379,6 +381,21 @@ export async function PUT(request) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // ── Lifecycle cascade (audit H5) ─────────────────────────────────────────
+  // When an event leaves `published` (archived / cancelled / draft), drop
+  // its `spotlight_events` pins so the hero carousel can't keep rendering
+  // a dead event. We run after the primary update so we only cascade on
+  // successful status transitions.
+  if (body.status !== undefined && body.status !== 'published') {
+    try {
+      await supabase.from('spotlight_events').delete().eq('event_id', id);
+      revalidatePath('/api/spotlight');
+    } catch (err) {
+      // Non-fatal — the event update itself already succeeded.
+      console.error('Spotlight cascade on status change failed:', err);
+    }
   }
 
   // Invalidate live feed cache after any event update

@@ -36,7 +36,7 @@ export async function POST(request) {
 
   const supabase = getAdminClient();
   const body = await request.json();
-  const { submission_id, event_data, is_featured } = body;
+  const { submission_id, event_data } = body;
 
   // Fetch the submission to get image_url, event_name, and AI classification for linking
   const { data: submission } = await supabase
@@ -65,7 +65,8 @@ export async function POST(request) {
       cover: event_data.cover || null,
       ticket_link: event_data.ticket_link || null,
       image_url: submission?.image_url || event_data.image_url || null,
-      is_featured: is_featured || false,
+      // NOTE: `is_featured` retired Phase 5 — Spotlight curation lives
+      // exclusively in the `spotlight_events` table.
       ...(eventName ? { event_title: eventName } : {}),
       ...(isFestival ? { is_festival: true } : {}),
       status: 'published',
