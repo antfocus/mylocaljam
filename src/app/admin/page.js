@@ -552,6 +552,7 @@ export default function AdminPage() {
                       genres: linkedArtist.genres ? (Array.isArray(linkedArtist.genres) ? linkedArtist.genres.join(', ') : linkedArtist.genres) : '',
                       vibes: linkedArtist.vibes ? (Array.isArray(linkedArtist.vibes) ? linkedArtist.vibes.join(', ') : linkedArtist.vibes) : '',
                       image_url: linkedArtist.image_url || '',
+                      default_category: linkedArtist.default_category || '',
                     });
                   } else {
                     ar.setArtistsSearch(ev.artist_name || '');
@@ -700,6 +701,7 @@ export default function AdminPage() {
                 genres: artist.genres ? (Array.isArray(artist.genres) ? artist.genres.join(', ') : artist.genres) : '',
                 vibes: artist.vibes ? (Array.isArray(artist.vibes) ? artist.vibes.join(', ') : artist.vibes) : '',
                 image_url: artist.image_url || '',
+                default_category: artist.default_category || '',
               });
             }
           }}

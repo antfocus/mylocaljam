@@ -108,7 +108,14 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
   const timeStr    = formatTimeRange(event.start_time);
   const isCanceled = event.status === 'cancelled' || event.status === 'canceled';
-  const showArtistSubtitle = ARTIST_SUBTITLE_CATEGORIES.includes(event.category) && eventTitle && artistName && eventTitle !== artistName;
+  // Hide the artist subtitle when it would just echo the event title.
+  // Case-insensitive + trimmed so "Jane Doe" / "jane doe " collapses cleanly.
+  const _titleKey  = eventTitle.trim().toLowerCase();
+  const _artistKey = (artistName || '').trim().toLowerCase();
+  const showArtistSubtitle = ARTIST_SUBTITLE_CATEGORIES.includes(event.category)
+    && eventTitle
+    && artistName
+    && _titleKey !== _artistKey;
 
   // Theme colors — all dynamic based on darkMode
   const cardBg      = darkMode ? '#1A1A24' : '#FFFFFF';

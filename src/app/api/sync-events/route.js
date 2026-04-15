@@ -871,7 +871,7 @@ export async function POST(request) {
     // Only enrich events categorized as Live Music (or uncategorized) — skip drink specials, trivia, etc.
     const { data: unenriched } = await supabase
       .from('events')
-      .select('id, artist_name, image_url, artist_bio, artist_id, is_human_edited, is_locked, category')
+      .select('id, artist_name, image_url, artist_bio, artist_id, is_human_edited, is_locked, category, template_id, is_category_verified, category_source')
       .eq('status', 'published')
       .not('artist_name', 'is', null)
       .gte('event_date', new Date().toISOString())
@@ -899,7 +899,7 @@ export async function POST(request) {
       // Check which are already cached
       const { data: cached } = await supabase
         .from('artists')
-        .select('id, name, image_url, bio')
+        .select('id, name, image_url, bio, default_category')
         .in('name', cleanNames.slice(0, 200));
 
       const cachedMap = {};
@@ -920,7 +920,7 @@ export async function POST(request) {
       // Reload cache (with id for FK linking) and update events
       const { data: freshCached } = await supabase
         .from('artists')
-        .select('id, name, image_url, bio')
+        .select('id, name, image_url, bio, default_category')
         .in('name', cleanNames.slice(0, 200));
 
       const freshMap = {};

@@ -129,6 +129,7 @@ export default function AdminReportsTab({
                               genres: linkedArtist.genres ? (Array.isArray(linkedArtist.genres) ? linkedArtist.genres.join(', ') : linkedArtist.genres) : '',
                               vibes: linkedArtist.vibes ? (Array.isArray(linkedArtist.vibes) ? linkedArtist.vibes.join(', ') : linkedArtist.vibes) : '',
                               image_url: linkedArtist.image_url || '',
+                              default_category: linkedArtist.default_category || '',
                             });
                           } else {
                             setActiveTab('artists');

@@ -180,6 +180,22 @@ export async function PUT(request) {
   const body = await request.json();
   const { id, old_name, ...updates } = body;
 
+  // ── Confidence Cascade: default_category enum guard ───────────────────
+  // Tier-1 bypass column. Must stay inside this enum prison or the
+  // sync-events route will write garbage categories to event rows.
+  const ALLOWED_DEFAULT_CATEGORIES = [
+    'Live Music', 'Trivia', 'Karaoke', 'DJ/Dance Party',
+    'Comedy', 'Food & Drink', 'Sports', 'Other',
+  ];
+  if (updates.default_category !== undefined && updates.default_category !== null) {
+    if (!ALLOWED_DEFAULT_CATEGORIES.includes(updates.default_category)) {
+      return NextResponse.json(
+        { error: `Invalid default_category. Must be one of: ${ALLOWED_DEFAULT_CATEGORIES.join(', ')}` },
+        { status: 400 }
+      );
+    }
+  }
+
   // Backend lock validation: strip any fields that are locked via is_human_edited
   // This prevents locked fields from being overwritten even if the frontend is bypassed
   if (id) {

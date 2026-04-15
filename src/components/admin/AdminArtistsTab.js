@@ -946,6 +946,40 @@ export default function AdminArtistsTab({
                     />
                   </MetadataField>
 
+                  {/* Default Category — Confidence Cascade Tier 1
+                      Once set, the scraper bypasses AI inference for this artist
+                      and stamps every future event with this category +
+                      is_category_verified=true. See HANDOVER.md "Confidence
+                      Cascade" architecture. */}
+                  <MetadataField label="Default Category" hasArtist={false}>
+                    <select
+                      value={artistForm.default_category || ''}
+                      onChange={e => setArtistForm(p => ({ ...p, default_category: e.target.value }))}
+                      disabled={isArtistLocked}
+                      style={{
+                        width: '100%', padding: '9px 12px', borderRadius: '8px',
+                        background: 'var(--bg-elevated)',
+                        border: artistForm.default_category ? '1px solid #E8722A' : '1px solid var(--border)',
+                        color: 'var(--text-primary)',
+                        fontFamily: "'DM Sans', sans-serif", fontSize: '14px',
+                        outline: 'none', cursor: isArtistLocked ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      <option value="">— None (use AI inference) —</option>
+                      <option value="Live Music">Live Music</option>
+                      <option value="Trivia">Trivia</option>
+                      <option value="Karaoke">Karaoke</option>
+                      <option value="DJ/Dance Party">DJ/Dance Party</option>
+                      <option value="Comedy">Comedy</option>
+                      <option value="Food & Drink">Food & Drink</option>
+                      <option value="Sports">Sports</option>
+                      <option value="Other">Other</option>
+                    </select>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', fontFamily: "'DM Sans', sans-serif", lineHeight: 1.4 }}>
+                      Locks this category for all future scraped events by this artist.
+                    </div>
+                  </MetadataField>
+
                   {/* Image */}
                   <MetadataField label="Artist Image" hasArtist={false}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
@@ -1074,6 +1108,10 @@ export default function AdminArtistsTab({
                   image_url: finalImageUrl,
                   alias_names: aliasClean,
                   field_status: newFS,
+                  // Confidence Cascade Tier 1: empty string → null (clears the
+                  // bypass); otherwise pass the enum value through. Backend
+                  // PUT route validates against the enum.
+                  default_category: artistForm.default_category ? artistForm.default_category : null,
                 };
                 const nameChanged = artistForm.name && artistForm.name.trim() !== editingArtist.name;
                 if (nameChanged) {
@@ -1440,6 +1478,7 @@ export default function AdminArtistsTab({
                           vibes: artist.vibes ? (Array.isArray(artist.vibes) ? artist.vibes.join(', ') : artist.vibes) : '',
                           image_url: artist.image_url || '',
                           alias_names: Array.isArray(artist.alias_names) ? [...artist.alias_names] : [],
+                          default_category: artist.default_category || '',
                         });
                         try {
                           const params = new URLSearchParams({ page: '1', limit: '20', sort: 'event_date', order: 'asc' });
