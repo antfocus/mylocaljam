@@ -865,7 +865,7 @@ export async function POST(request) {
   }
 
   // --- Auto-enrich new artists via Last.fm + link events → artists via artist_id ---
-  let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, eventsLinked: 0, blacklisted: 0, humanSkipped: 0, errors: [] };
+  let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, eventsLinked: 0, blacklisted: 0, humanSkipped: 0, defaultCategoryApplied: 0, errors: [] };
   try {
     // Fetch all future published LIVE MUSIC events for enrichment + artist linking
     // Only enrich events categorized as Live Music (or uncategorized) — skip drink specials, trivia, etc.
@@ -940,7 +940,7 @@ export async function POST(request) {
             const aliasArtistIds = [...new Set(aliasRows.map(a => a.artist_id))];
             const { data: aliasArtists } = await supabase
               .from('artists')
-              .select('id, name, image_url, bio')
+              .select('id, name, image_url, bio, default_category')
               .in('id', aliasArtistIds);
 
             const artistById = {};
@@ -972,11 +972,42 @@ export async function POST(request) {
         }
         // Link event → artist via FK if not already linked
         if (!ev.artist_id && artistData.id) update.artist_id = artistData.id;
+
+        // ── Confidence Cascade Tier 1: Default-Category Bypass ───────────
+        // If the matched artist has an admin-set default_category, stamp it
+        // on the event and lock it (is_category_verified=true, category_source
+        // 'artist_default'). This is the deterministic shortcut that lets the
+        // system "remember" decisions admins already made — no AI call, no
+        // triage queue.
+        //
+        // Chain of Command (highest precedence first):
+        //   1. Templates (template_id set)        → never override
+        //   2. Human edits (is_human_edited)      → never override
+        //   3. Already verified (is_cat_verified) → never override
+        //   4. Manually locked row (is_locked)    → never override
+        //   5. Artist default_category            → APPLY HERE
+        //   6. Keyword router / AI categorize     → fallback (next stage)
+        if (
+          artistData.default_category &&
+          !ev.template_id &&
+          !ev.is_human_edited &&
+          !ev.is_locked &&
+          !ev.is_category_verified &&
+          ev.category_source !== 'artist_default'
+        ) {
+          update.category = artistData.default_category;
+          update.is_category_verified = true;
+          update.category_source = 'artist_default';
+          update.category_ai_flagged_at = null;
+          update.triage_status = 'reviewed';
+        }
+
         if (Object.keys(update).length === 0) continue;
         const { error: upErr } = await supabase.from('events').update(update).eq('id', ev.id);
         if (!upErr) {
           if (update.image_url || update.artist_bio) enrichResult.eventsEnriched++;
           if (update.artist_id) enrichResult.eventsLinked++;
+          if (update.category_source === 'artist_default') enrichResult.defaultCategoryApplied++;
         }
       }
     }
@@ -1047,6 +1078,7 @@ export async function POST(request) {
       artistsLookedUp: enrichResult.artistsLookedUp,
       eventsEnriched: enrichResult.eventsEnriched,
       eventsLinked: enrichResult.eventsLinked,
+      defaultCategoryApplied: enrichResult.defaultCategoryApplied,
       blacklistedSkipped: enrichResult.blacklisted,
       humanEditedSkipped: enrichResult.humanSkipped,
       errors: enrichResult.errors.length ? enrichResult.errors : null,

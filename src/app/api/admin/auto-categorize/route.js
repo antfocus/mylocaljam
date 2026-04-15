@@ -39,7 +39,7 @@ function checkAuth(request) {
  * Prompt is strict JSON only — markdown fences and prose are stripped before
  * parsing, but temperature 0 + the "JSON only" instruction keeps drift low.
  */
-async function classifyEvent(ev, apiKey) {
+async function classifyEvent(ev, apiKey, artistContext = null) {
   const system = `You are an event-classification engine for a Jersey Shore live-events site. Categorize each event into EXACTLY ONE of these categories:
 
 ${ALLOWED_CATEGORIES.map(c => `- ${c}`).join('\n')}
@@ -57,11 +57,23 @@ Rules:
 Respond with strict JSON only — no markdown, no code fences, no commentary:
 { "category": "string", "confidence": number, "reasoning": "string" }`;
 
+  // ── Confidence Cascade Tier 2: Context Injection ─────────────────────
+  // When an event has a linked artist row but no default_category was set,
+  // inject the artist's bio + genres into the prompt. The extra context is
+  // usually enough to push confidence above the 0.85 threshold for cases
+  // that would otherwise drop into Manual Review (e.g. a generic name like
+  // "Frankie" with a known acoustic-rock bio).
+  const artistContextBlock = artistContext ? `
+
+Known Artist Context (from artists table):
+- Bio: ${(artistContext.bio || '(none)').slice(0, 400)}
+- Genres: ${Array.isArray(artistContext.genres) && artistContext.genres.length > 0 ? artistContext.genres.join(', ') : '(none)'}` : '';
+
   const user = `Title: ${ev.title || '(none)'}
 Artist: ${ev.artist_name || '(none)'}
 Venue: ${ev.venue_name || '(none)'}
 Date: ${ev.event_date || '(none)'}
-Description: ${(ev.description || ev.custom_description || '').slice(0, 500) || '(none)'}
+Description: ${(ev.description || ev.custom_description || '').slice(0, 500) || '(none)'}${artistContextBlock}
 
 Classify this event.`;
 
@@ -124,11 +136,29 @@ export async function POST(request) {
   // lets us apply the Safety filter before any LLM spend.
   const { data: events, error: fetchErr } = await supabase
     .from('events')
-    .select('id, title, artist_name, venue_name, event_date, description, custom_description, category, template_id, is_category_verified')
+    .select('id, title, artist_name, venue_name, event_date, description, custom_description, category, template_id, is_category_verified, category_source, artist_id')
     .in('id', ids);
 
   if (fetchErr) {
     return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+  }
+
+  // ── Confidence Cascade Tier 2 prefetch ────────────────────────────────
+  // Batch-load bio + genres for every linked artist on this run so we can
+  // inject context into the LLM prompt without per-event round-trips. We
+  // skip artists that have a default_category set — those events should
+  // never reach the AI in the first place (the sync-events bypass handled
+  // them) but we add an in-loop guard below as defense-in-depth.
+  const artistIds = [...new Set((events || []).map(e => e.artist_id).filter(Boolean))];
+  const artistContextMap = {};
+  if (artistIds.length > 0) {
+    const { data: artistRows } = await supabase
+      .from('artists')
+      .select('id, bio, genres, default_category')
+      .in('id', artistIds);
+    for (const a of (artistRows || [])) {
+      artistContextMap[a.id] = a;
+    }
   }
 
   const results = {
@@ -137,26 +167,56 @@ export async function POST(request) {
     flagged: 0,
     skipped_verified: 0,
     skipped_template: 0,
+    skipped_artist_default: 0,
+    context_injected: 0,
     failed: 0,
     rows: [],
   };
 
   for (const ev of (events || [])) {
     // ── G Spot §1: Safety ─────────────────────────────────────────────────
-    if (ev.is_category_verified) {
-      results.skipped_verified++;
-      results.rows.push({ id: ev.id, outcome: 'skipped_verified' });
-      continue;
-    }
+    // Chain of Command (highest precedence first):
+    //   1. Templates (template_id)               → skip
+    //   2. Already verified (is_cat_verified)    → skip
+    //   3. Inherited from artist_default         → skip
+    //   4. Linked artist with default_category   → skip (defense-in-depth;
+    //      the sync-events bypass should already have stamped this event)
+    //   5. Otherwise → AI classify, with optional context injection
     if (ev.template_id) {
       results.skipped_template++;
       results.rows.push({ id: ev.id, outcome: 'skipped_template' });
       continue;
     }
+    if (ev.is_category_verified) {
+      results.skipped_verified++;
+      results.rows.push({ id: ev.id, outcome: 'skipped_verified' });
+      continue;
+    }
+    if (ev.category_source === 'artist_default') {
+      results.skipped_artist_default++;
+      results.rows.push({ id: ev.id, outcome: 'skipped_artist_default' });
+      continue;
+    }
+    const linkedArtist = ev.artist_id ? artistContextMap[ev.artist_id] : null;
+    if (linkedArtist?.default_category) {
+      // Belt-and-suspenders: an admin set a default but the sync hadn't
+      // run yet for this event. Don't burn an LLM call — let the next
+      // sync apply the bypass.
+      results.skipped_artist_default++;
+      results.rows.push({ id: ev.id, outcome: 'skipped_artist_default_pending' });
+      continue;
+    }
 
     results.processed++;
 
-    const ai = await classifyEvent(ev, apiKey);
+    // Tier 2: inject artist context if we have it (no default_category but
+    // we do have a bio/genres to anchor the model).
+    const artistContext = linkedArtist && (linkedArtist.bio || (Array.isArray(linkedArtist.genres) && linkedArtist.genres.length > 0))
+      ? { bio: linkedArtist.bio, genres: linkedArtist.genres }
+      : null;
+    if (artistContext) results.context_injected++;
+
+    const ai = await classifyEvent(ev, apiKey, artistContext);
     if (!ai) {
       results.failed++;
       results.rows.push({ id: ev.id, outcome: 'llm_failed' });
