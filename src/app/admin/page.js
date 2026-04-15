@@ -433,7 +433,7 @@ export default function AdminPage() {
       {/* Spotlight Tab */}
       {activeTab === 'spotlight' && !loading && (
         <AdminSpotlightTab
-          artists={ar.artists} events={ev.events}
+          artists={ar.artists} events={ev.events} templates={et.templates}
           spotlightDate={sp.spotlightDate} setSpotlightDate={sp.setSpotlightDate}
           spotlightPins={sp.spotlightPins} setSpotlightPins={sp.setSpotlightPins}
           spotlightEvents={sp.spotlightEvents} spotlightLoading={sp.spotlightLoading}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 export default function useAdminSpotlight({ password, fetchAll }) {
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` };
@@ -15,78 +15,125 @@ export default function useAdminSpotlight({ password, fetchAll }) {
   const [spotlightImageWarning, setSpotlightImageWarning] = useState(null);
   const [spotlightSearch, setSpotlightSearch] = useState('');
 
-  const fetchSpotlightEvents = useCallback(async (date) => {
+  // ── Race-condition guards ──────────────────────────────────────────────────
+  // `activeFetchRef` holds the latest date the user asked for. Any in-flight
+  // fetch whose date no longer matches drops its response on the floor.
+  // `abortRef` cancels the prior AbortController when a new fetch starts.
+  const activeFetchRef = useRef(null);
+  const abortRef = useRef(null);
+
+  const fetchSpotlightEvents = useCallback(async (date, { signal } = {}) => {
     try {
-      const params = new URLSearchParams({ page: '1', limit: '500', sort: 'event_date', order: 'asc', status: 'upcoming' });
-      const res = await fetch(`/api/admin?${params}`, { headers: { Authorization: `Bearer ${password}` } });
+      // Server-side single-day Eastern filter — ~30× smaller payload than
+      // fetching 500 upcoming events and filtering client-side.
+      const params = new URLSearchParams({
+        page: '1',
+        limit: '200',
+        sort: 'event_date',
+        order: 'asc',
+        status: 'upcoming',
+        date,
+      });
+      const res = await fetch(`/api/admin?${params}`, {
+        headers: { Authorization: `Bearer ${password}` },
+        signal,
+      });
       if (!res.ok) return [];
       const data = await res.json();
       const all = data.events || (Array.isArray(data) ? data : []);
-      const filtered = all.filter(ev => {
-        if (ev.status !== 'published') return false;
-        try {
-          const evDateET = new Date(ev.event_date).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-          return evDateET === date;
-        } catch {
-          return (ev.event_date || '').slice(0, 10) === date;
-        }
-      });
-      setSpotlightEvents(filtered);
+      // Defensive: the server already date-filtered, but we also require
+      // status=published in case the endpoint's `upcoming` semantics drift.
+      const filtered = all.filter(ev => ev.status === 'published');
+      // Only commit if this is still the active date (stale-response guard).
+      if (activeFetchRef.current === date) {
+        setSpotlightEvents(filtered);
+      }
       return filtered;
     } catch (err) {
-      console.error('Failed to load spotlight events:', err);
+      if (err?.name !== 'AbortError') {
+        console.error('Failed to load spotlight events:', err);
+      }
       return [];
     }
   }, [password]);
 
   const fetchSpotlight = useCallback(async (date) => {
+    // Kill any in-flight fetch for a different date.
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch {}
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+    activeFetchRef.current = date;
+
     setSpotlightLoading(true);
     let pinIds = [];
     try {
-      const res = await fetch(`/api/spotlight?date=${date}`);
+      const res = await fetch(`/api/spotlight?date=${date}`, { signal: controller.signal });
       const data = await res.json();
       pinIds = Array.isArray(data) ? data.map(d => d.event_id) : [];
     } catch (err) {
-      console.error('Failed to load spotlight:', err);
+      if (err?.name !== 'AbortError') {
+        console.error('Failed to load spotlight:', err);
+      }
+      // If aborted mid-fetch, another fetch is already taking over.
+      if (err?.name === 'AbortError') return;
     }
-    const todayEvents = await fetchSpotlightEvents(date);
+
+    const todayEvents = await fetchSpotlightEvents(date, { signal: controller.signal });
+
+    // Stale-response guard — user may have flipped the date picker while we
+    // were awaiting. Only the winner writes state.
+    if (activeFetchRef.current !== date) return;
+
     const validEventIds = new Set(todayEvents.map(e => e.id));
     const cleanPins = pinIds.filter(id => validEventIds.has(id));
     setSpotlightPins(cleanPins);
-    setSpotlightLoading(false);
-  }, [fetchSpotlightEvents]);
 
-  const saveSpotlight = async () => {
-    const validPins = spotlightPins.filter(id => spotlightEvents.some(e => e.id === id));
-    setSpotlightPins(validPins);
-
-    await fetch('/api/spotlight', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ date: spotlightDate, event_ids: validPins }),
-    });
-
-    for (let i = 0; i < validPins.length; i++) {
-      await fetch('/api/admin', {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ id: validPins[i], spotlight_order: i, is_featured: true }),
-      });
-    }
-
-    const todayEvents = spotlightEvents;
-    for (const ev of todayEvents) {
-      if (!validPins.includes(ev.id) && ev.spotlight_order != null) {
-        await fetch('/api/admin', {
-          method: 'PUT',
+    // Persist stale-pin cleanup so we don't re-filter the same orphans every
+    // load (audit H1).
+    if (cleanPins.length !== pinIds.length) {
+      try {
+        await fetch('/api/spotlight', {
+          method: 'POST',
           headers,
-          body: JSON.stringify({ id: ev.id, spotlight_order: null, is_featured: false }),
+          body: JSON.stringify({ date, event_ids: cleanPins }),
+          signal: controller.signal,
         });
+      } catch (err) {
+        if (err?.name !== 'AbortError') {
+          console.error('Failed to persist stale-pin cleanup:', err);
+        }
       }
     }
 
-    alert(`Spotlight saved for ${spotlightDate} (${validPins.length} event${validPins.length !== 1 ? 's' : ''})`);
+    if (activeFetchRef.current === date) {
+      setSpotlightLoading(false);
+    }
+  }, [fetchSpotlightEvents, headers]);
+
+  const saveSpotlight = async () => {
+    // Capture the target date at click time — if the user changes the picker
+    // mid-save, we still commit pins to the correct date.
+    const targetDate = spotlightDate;
+    const validPins = spotlightPins.filter(id => spotlightEvents.some(e => e.id === id));
+    setSpotlightPins(validPins);
+
+    const res = await fetch('/api/spotlight', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ date: targetDate, event_ids: validPins }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert(`Failed to save Spotlight: ${err.error || res.statusText}`);
+      return;
+    }
+
+    alert(`Spotlight saved for ${targetDate} (${validPins.length} event${validPins.length !== 1 ? 's' : ''})`);
     fetchAll();
+    // Refresh against whatever date is currently selected (may have changed).
     fetchSpotlightEvents(spotlightDate);
   };
 

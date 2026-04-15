@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase';
+import { getEasternDayBounds } from '@/lib/utils';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -62,13 +63,25 @@ export async function GET(request) {
   const statusFilter = searchParams.get('status'); // 'upcoming' | 'past' | 'hidden'
   const missingTime = searchParams.get('missingTime') === 'true';
   const recentlyAdded = searchParams.get('recentlyAdded') === 'true';
+  // Strict Eastern-day date filter — used by the Spotlights admin tab so the
+  // payload is ~30× smaller than the client-side filter it replaces.
+  const dateFilter = searchParams.get('date'); // YYYY-MM-DD
+  let dateStart = null;
+  let dateEnd = null;
+  if (dateFilter && /^\d{4}-\d{2}-\d{2}$/.test(dateFilter)) {
+    try {
+      const bounds = getEasternDayBounds(dateFilter);
+      dateStart = bounds.start;
+      dateEnd = bounds.end;
+    } catch { /* bad date → ignore filter */ }
+  }
 
   const pageFrom = from;
   const pageTo = to;
 
   let query = supabase
     .from('events')
-    .select('*, venues(name, address, color), artists(name, image_url)')
+    .select('*, venues(name, address, color), artists(name, image_url, bio), event_templates(template_name, bio, image_url, category, start_time, genres)')
     .order(sort, { ascending: order })
     .range(pageFrom, pageTo);
 
@@ -97,6 +110,11 @@ export async function GET(request) {
   // Filter for missing time — uses boolean flag instead of UTC timestamp math
   if (missingTime) {
     query = query.eq('is_time_tbd', true);
+  }
+
+  // Strict single-day Eastern filter (admin Spotlights tab).
+  if (dateStart && dateEnd) {
+    query = query.gte('event_date', dateStart).lte('event_date', dateEnd);
   }
 
   const { data, error } = await query;
@@ -128,6 +146,7 @@ export async function GET(request) {
     countQuery = countQuery.gte('created_at', since);
   }
   if (missingTime) countQuery = countQuery.eq('is_time_tbd', true);
+  if (dateStart && dateEnd) countQuery = countQuery.gte('event_date', dateStart).lte('event_date', dateEnd);
   const countResult = await countQuery;
   count = countResult.count;
 

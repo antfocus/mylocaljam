@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase';
 import { getEasternDayBounds } from '@/lib/utils';
+import { applyWaterfall } from '@/lib/waterfall';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -11,7 +13,7 @@ function checkAuth(request) {
  * GET /api/spotlight?date=YYYY-MM-DD[&device_id=xxx]
  *
  * Waterfall logic to fill up to 5 spotlight slots:
- *   Tier 0: Events for tonight where is_featured = true
+ *   Tier 0: Admin-pinned events from the `spotlight_events` table (date-scoped)
  *   Tier 1: Events for tonight featuring artists the user follows (needs device_id)
  *   Tier 2: Most-saved events tonight (by favorite count across all users)
  *   Tier 3: Random events tonight between 19:00–22:00 at high-activity venues
@@ -53,20 +55,8 @@ export async function GET(request) {
     }
   } catch { /* spotlight_events table may not exist */ }
 
-  // ── Tier 0b: Fallback — Featured events (is_featured = true)
-  try {
-    const { data } = await supabase
-      .from('events')
-      .select('id, spotlight_order')
-      .eq('is_featured', true)
-      .eq('status', 'published')
-      .gte('event_date', dateStart)
-      .lte('event_date', dateEnd)
-      .order('spotlight_order', { ascending: true, nullsFirst: false })
-      .order('event_date', { ascending: true })
-      .limit(MAX_SLOTS);
-    if (data) addIds(data.map(e => e.id));
-  } catch {}
+  // Tier 0b (legacy `events.is_featured` fallback) has been retired. Spotlight
+  // curation is single-sourced from `spotlight_events` (see audit C3/M3).
 
   // ── Tier 1: Followed artists (personalized) ────────────────────────────
   if (collected.length < MAX_SLOTS && deviceId) {
@@ -175,28 +165,21 @@ export async function GET(request) {
     if (error || !hydrated || hydrated.length === 0) return NextResponse.json(fallback);
 
     const byId = Object.fromEntries(hydrated.map(e => [e.id, e]));
-    // Treat "" and "None" as null so the image waterfall keeps falling.
-    const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
-    // Title ladder:
-    //   1. event.custom_title             — manual override (column may not exist yet)
-    //   2. event_templates.template_name  — clean name from master library
-    //   3. event.event_title              — raw scraper title fallback
+    // Apply the full Data Inheritance Waterfall with Verified Lock +
+    // Midnight Exception. See `applyWaterfall` at the top of this file.
     const result = collected
       .map((id, i) => {
         const e = byId[id];
         if (!e) return null;
+        const w = applyWaterfall(e);
         return {
           event_id: id,
           ...e,
-          event_title: e.custom_title || e.event_templates?.template_name || e.event_title || '',
-          // Category ladder: template category > scraper category > 'Other'
-          category: e.event_templates?.category || e.category || 'Other',
-          // Start-time ladder: template Master Time > raw event start_time.
-          start_time: e.event_templates?.start_time || e.start_time || null,
-          // Golden Ladder (bio): custom_bio > template.bio > artists.bio > artist_bio
-          description: e.custom_bio || e.event_templates?.bio || e.artists?.bio || e.artist_bio || '',
-          // Golden Ladder (image): same priority order for the image waterfall.
-          event_image: cleanImg(e.custom_image_url) || cleanImg(e.event_templates?.image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
+          event_title: w.title,
+          category: w.category,
+          start_time: w.start_time,
+          description: w.description,
+          event_image: w.event_image,
           sort_order: i,
         };
       })
@@ -252,6 +235,12 @@ export async function POST(request) {
     }
   }
 
+  // Invalidate the hero carousel + homepage cache so the next fetch is fresh.
+  try {
+    revalidatePath('/api/spotlight');
+    revalidatePath('/');
+  } catch {}
+
   return NextResponse.json({ success: true, date, count: event_ids.length });
 }
 
@@ -280,6 +269,11 @@ export async function DELETE(request) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  try {
+    revalidatePath('/api/spotlight');
+    revalidatePath('/');
+  } catch {}
 
   return NextResponse.json({ success: true });
 }

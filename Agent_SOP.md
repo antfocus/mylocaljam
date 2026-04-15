@@ -197,3 +197,52 @@ These pre-existing locks still apply and are complemented — not replaced — b
 ### Rollout requirement
 
 Any PR that introduces a new automated classifier, enrichment job, or cron-backed data writer must cite this protocol in its description and demonstrate each of the five invariants is satisfied. PRs that fail the protocol are blocked at review, regardless of test coverage.
+
+---
+
+## 🌊 The Data Inheritance Waterfall & Chain of Command
+
+> **READ THIS BEFORE TOUCHING ANY CODE PATH THAT WRITES TO `events`, `artists`, OR THE CATEGORIZATION PIPELINE.** The rules below are load-bearing. Every sync run, every AI call, every admin save flows through this hierarchy. Violate any level and you will silently corrupt live data. These rules are NOT suggestions — they are invariants enforced across `src/app/api/sync-events/route.js`, `src/app/api/admin/auto-categorize/route.js`, `src/app/api/admin/artists/route.js`, and `src/components/EventFormModal.js`. Future agents: if you find yourself writing a code path that seems to bypass one of these levels, stop and escalate. You are almost certainly introducing a regression.
+
+### 1. The Precedence Hierarchy (Highest → Lowest)
+
+Resolution runs top-down. A higher level wins absolutely; lower levels do not get a vote if a higher level has produced a value.
+
+**Level 1 — Human Edits (`is_human_edited`, `is_locked`).**
+The ultimate lock. A field that a human has touched is immutable to every automated process downstream. The sync pipeline, the template inheritor, the AI categorizer, and the artist-default bypass must all check these flags and skip the row (or the specific field) when set. The admin PUT handler for artists already strips locked fields from incoming update payloads as defense-in-depth — do not weaken that guard. If a new writer needs to overwrite a human-edited value, the human must explicitly unlock it first via the admin UI.
+
+**Level 2 — Event Templates (`template_id`).**
+When an event is linked to a template, the template's Master Time (`start_time`), Category, Image, and Bio forcefully clobber the raw scraper payload on every sync. This is an unconditional overwrite — sync-events calls `stampMasterTime(event_date, template.start_time)` and writes `category_source = 'template'`, `is_category_verified = true`, `triage_status = 'reviewed'`. Templates exist precisely to neutralize scraper noise; do not add conditional "only if empty" guards to this block. The only thing that can beat a template is Level 1.
+
+**Level 3 — Artist Defaults (`category_source = 'artist_default'`).**
+If a linked artist has a non-null `default_category`, the event inherits it deterministically — no LLM call, no triage, no confidence threshold. The sync-events bypass stamps `category_source = 'artist_default'` and `is_category_verified = true`, and the auto-categorize route skips any row it finds at this source. This is Tier 1 of the Confidence Cascade. It exists to turn known entities (e.g. every Frankie Frogg show is Live Music) into zero-cost, zero-ambiguity classifications.
+
+**Level 4 — AI Inference (Perplexity `sonar-pro`, gated at 0.85).**
+Only reached for events that are (a) not template-linked, (b) not human-verified, (c) not sourced from an artist default. The prompt MUST inject bio + genres from the linked artist row when available (Confidence Cascade Tier 2) before falling through to a cold classification call (Tier 3). Outputs are whitelisted against `ALLOWED_CATEGORIES` (Enum Prison). A confidence below 0.85 writes `category_source = 'manual_review'` + `triage_status = 'pending'` and does NOT overwrite the existing category. AI never stamps `is_category_verified = true`. Humans do.
+
+**Level 5 — Raw Scraper Data.**
+The default floor. Used only if Levels 1–4 produced nothing. Category falls through to `'Other'`; time falls through to whatever the scraper emitted (typically `"00:00"` when missing — see the Midnight Exception below).
+
+### 2. The Midnight Exception
+
+Jersey Shore scrapers (iCal, Squarespace JSON, Eventbrite, Ticketmaster) overwhelmingly default missing start times to `"00:00"` (12:00 AM). That value is digital silence, not data. A naive truthy check (`form.event_time || templateTime`) treats `"00:00"` as valid and lets the scraper default win over the template's Master Time. This is a bug class, not a one-off.
+
+**The rule, stated precisely:** if `event.event_time === "00:00"` (or `"00:00:00"`) AND `is_human_edited === false` AND a template is linked, the system MUST treat the time as empty/null, and the template's `start_time` MUST overwrite it — on the backend during sync, in the EventFormModal during rendering, and on save.
+
+The exception is scoped to template-linked, non-human-edited rows. If a human explicitly saves `00:00` on a row, that is a legitimate midnight show and it is preserved. Implementation anchor: `isMidnight()` + `shouldTreatTimeAsEmpty` + `effectiveFormTime` in `src/components/EventFormModal.js`. Do not reintroduce `form.event_time || templateTime` anywhere in the codebase.
+
+### 3. UI Indicators
+
+The admin UI must make inheritance visible so humans can see at a glance what the automation has decided.
+
+Fields currently inheriting their value from a linked template display the **blue "T" badge** rendered by the `TemplateChip` component in `src/components/EventFormModal.js`. This chip appears next to the Time label, the Category label, and anywhere else a template-sourced value flows through. The chip is intentionally NOT the chain-link emoji (🔗) because that glyph is reserved elsewhere for source-venue hyperlinks — overloading it conflates "this field inherits from a template" with "click here to open the venue page" and confuses operators.
+
+Events that are successfully linked to a template display a **blue "Template Linked" header badge** (which itself includes a TemplateChip) in place of the gray "Standalone Event" badge. Standalone events can be manually bridged to a template via the Linked Template selector in the Logistics block of the event modal; selecting a template there triggers `applyTemplateLink`, which force-clobbers any empty or midnight `event_time` with the template's Master Time and fills a blank category with the template's category (human-set categories are preserved).
+
+### 4. Enforcement Summary for Future Agents
+
+Before writing, modifying, or reviewing any code that touches categorization, time assignment, or template/artist inheritance, confirm each of the following is true. If any answer is "no," the code is wrong.
+
+Does the writer check `is_human_edited` / `is_locked` before overwriting? Does template inheritance clobber unconditionally rather than fill-only? Does the artist-default bypass skip the AI entirely and stamp `category_source = 'artist_default'`? Does the AI path inject artist bio/genres context when available? Does the AI path refuse to write when confidence < 0.85? Does any truthy check on `event_time` treat `"00:00"` as empty when a template is linked? Do inheritance-indicator chips render as the blue "T" `TemplateChip` rather than 🔗?
+
+If you cannot answer yes to all of the above, do not merge.

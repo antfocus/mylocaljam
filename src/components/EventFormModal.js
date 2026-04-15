@@ -33,7 +33,9 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
     custom_genres:    event?.custom_genres || [],
     custom_vibes:     event?.custom_vibes || [],
     custom_image_url: event?.custom_image_url || '',
-    is_featured:      event?.is_featured || false,
+    // NOTE: `is_featured` removed — Spotlight curation now lives exclusively in
+    // the dedicated Spotlights admin tab, which writes to the `spotlight_events`
+    // table (date-scoped, single source of truth). See Agent_SOP §Spotlight.
     // Category — Confidence Cascade enum. Empty string means "inherit from
     // template/AI". When the user picks a value here, it counts as a manual
     // override (Verified Flip) on save.
@@ -222,7 +224,6 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
       artist_bio: form.custom_bio || form.artist_bio,
       event_image_url: form.custom_image_url || form.event_image_url,
       is_custom_metadata: isCustom,
-      is_featured: form.is_featured,
     };
     setToast({ message: event ? 'Event updated successfully.' : 'Event created successfully.', type: 'success' });
     setTimeout(() => onSave(payload), 600);
@@ -743,51 +744,10 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
                 <input style={inputStyle} placeholder="https://..." value={form.ticket_link} onChange={e => update('ticket_link', e.target.value)} />
               </div>
 
-              {/* Feature in Spotlight toggle */}
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '10px 0', borderTop: '1px solid var(--border)',
-              }}>
-                <div>
-                  <span style={{ ...labelStyle, marginBottom: 0 }}>Feature in Spotlight</span>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", margin: '2px 0 0' }}>
-                    Highlighted in the homepage carousel
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!form.is_featured) {
-                      // Require image + bio via the waterfall (any tier counts)
-                      const hasImage = !!imageResolved.value;
-                      const hasBio   = !!bioResolved.value;
-                      if (!hasImage || !hasBio) {
-                        const missing = [];
-                        if (!hasImage) missing.push('image');
-                        if (!hasBio) missing.push('description');
-                        setToast({ message: `Cannot feature: ${missing.join(' and ')} required.`, type: 'error' });
-                        setTimeout(() => setToast(null), 4000);
-                        return;
-                      }
-                    }
-                    update('is_featured', !form.is_featured);
-                  }}
-                  style={{
-                    width: '44px', height: '24px', borderRadius: '12px', border: 'none',
-                    background: form.is_featured ? '#FBBF24' : 'var(--border)',
-                    cursor: 'pointer', position: 'relative', transition: 'background 0.15s ease',
-                    flexShrink: 0,
-                  }}
-                >
-                  <span style={{
-                    position: 'absolute', top: '2px',
-                    left: form.is_featured ? '22px' : '2px',
-                    width: '20px', height: '20px', borderRadius: '50%',
-                    background: '#FFFFFF', transition: 'left 0.15s ease',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                  }} />
-                </button>
-              </div>
+              {/* Spotlight curation intentionally lives in the dedicated
+                  Spotlights admin tab (date-scoped pins in `spotlight_events`).
+                  The in-modal toggle was removed to eliminate the dual-source
+                  conflict documented in the Spotlight audit. */}
             </div>
           </div>
         </div>
