@@ -43,7 +43,19 @@ export default function AdminSpotlightTab({
   insertPin, reorderPins, removePin, MAX_PINS = 5,
 }) {
   const [expandedId, setExpandedId] = useState(null);
+  // Slots default to COLLAPSED. Users click to expand a slot; multiple may
+  // be open at once so side-by-side comparison doesn't require a toggle war.
+  const [expandedSlots, setExpandedSlots] = useState(() => new Set());
   const [activeId, setActiveId] = useState(null);    // currently dragged item
+
+  const toggleSlotExpanded = (eventId) => {
+    setExpandedSlots(prev => {
+      const next = new Set(prev);
+      if (next.has(eventId)) next.delete(eventId);
+      else next.add(eventId);
+      return next;
+    });
+  };
 
   // ── Sensors ──────────────────────────────────────────────────────────────
   const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } });
@@ -204,6 +216,8 @@ export default function AdminSpotlightTab({
                     onRemove={eventId ? () => removePin(eventId) : null}
                     artists={artists}
                     templates={templates}
+                    isExpanded={!!eventId && expandedSlots.has(eventId)}
+                    onToggleExpand={eventId ? () => toggleSlotExpanded(eventId) : null}
                   />
                 );
               })}
@@ -303,9 +317,14 @@ export default function AdminSpotlightTab({
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SpotlightSlot — full-width expanded card (vertical stack, always-open preview)
+// SpotlightSlot — vertical accordion card (collapsed by default)
+// Collapsed bar: rank · artist · venue · dot · expand arrow
+// Expanded body: image left, full metadata (including untruncated bio) right
 // ══════════════════════════════════════════════════════════════════════════════
-function SpotlightSlot({ id, index, event, resolve, showWarning, onRemove, artists, templates }) {
+function SpotlightSlot({
+  id, index, event, resolve, showWarning, onRemove,
+  artists, templates, isExpanded, onToggleExpand,
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isOver } = useSortable({ id });
   const baseStyle = {
     transform: CSS.Transform.toString(transform),
@@ -327,9 +346,9 @@ function SpotlightSlot({ id, index, event, resolve, showWarning, onRemove, artis
       <div ref={setNodeRef} style={{
         ...baseStyle,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '20px 16px', gap: 8,
+        padding: '14px 16px', gap: 8,
       }} {...attributes} {...listeners}>
-        <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--border)', lineHeight: 1 }}>
+        <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--border)', lineHeight: 1 }}>
           {index + 1}
         </span>
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -339,27 +358,33 @@ function SpotlightSlot({ id, index, event, resolve, showWarning, onRemove, artis
     );
   }
 
-  // ── Filled slot — always-expanded card ────────────────────────────────
+  // ── Filled slot — accordion ───────────────────────────────────────────
   const r = resolve(event);
   const color = TRAFFIC_COLORS[r.state];
   const w = r.resolved;
   const timeLabel = w.start_time
     ? (isMidnight(w.start_time) && !w.is_human_edited ? '12:00 AM (unresolved)' : w.start_time)
     : '— missing —';
+  const venueName = event.venue_name || event.venues?.name || '';
 
   return (
     <div ref={setNodeRef} style={baseStyle}>
-      {/* Top bar: drag handle · rank · artist name · chips · traffic dot · ✕ */}
+      {/* Collapsed bar — always rendered; click toggles expand */}
       <div
+        onClick={(e) => {
+          if (e.target.closest('[data-stop]')) return;
+          if (onToggleExpand) onToggleExpand();
+        }}
         style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
-          borderBottom: '1px solid var(--border)',
+          display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+          cursor: 'pointer',
         }}
       >
         {/* Drag handle */}
         <span
           {...attributes}
           {...listeners}
+          data-stop
           style={{
             cursor: 'grab', color: 'var(--text-muted)', fontSize: 16,
             touchAction: 'none', lineHeight: 1, padding: '2px 4px', flexShrink: 0,
@@ -387,31 +412,25 @@ function SpotlightSlot({ id, index, event, resolve, showWarning, onRemove, artis
           }}
         />
 
-        {/* Artist name + chips */}
+        {/* Artist + Venue (single-line) */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="font-display font-bold text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {event.artist_name || 'Unknown'}
-            </span>
-            {r.templateMissing && <span style={chipStyle('#F97316')}>Template Missing</span>}
-            {r.artistNotLinked && (
-              <span style={chipStyle('#F97316')} title="No artist_id — waterfall can't pull Artist Profile's image or bio until linked.">
-                Artist not linked
-              </span>
-            )}
-            {r.state === 'red' && <span style={chipStyle('#EF4444')}>{w.start_time ? 'Stuck at 12:00 AM' : 'No start time'}</span>}
-            {r.state === 'yellow' && !w.event_image && <span style={chipStyle('#EAB308')}>No Image</span>}
-            {r.state === 'yellow' && w.event_image && !w.description && <span style={chipStyle('#EAB308')}>No Bio</span>}
-            {w.is_human_edited && <span style={chipStyle('#60A5FA')}>Human-locked</span>}
+          <div className="font-display font-bold text-sm" style={{
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {event.artist_name || 'Unknown'}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 1 }}>
-            {event.venue_name || event.venues?.name || ''} · {formatTime(event.event_date)}
+          <div style={{
+            fontSize: 11, color: 'var(--text-secondary)', marginTop: 1,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {venueName} · {formatTime(event.event_date)}
           </div>
         </div>
 
         {/* Remove (unpin) button */}
         {onRemove && (
           <button
+            data-stop
             onClick={(e) => { e.stopPropagation(); onRemove(); }}
             onPointerDown={(e) => e.stopPropagation()}
             style={{
@@ -424,41 +443,78 @@ function SpotlightSlot({ id, index, event, resolve, showWarning, onRemove, artis
             ✕
           </button>
         )}
-      </div>
 
-      {/* Always-expanded preview: image left, metadata right */}
-      <div style={{
-        padding: '12px 16px',
-        display: 'grid',
-        gridTemplateColumns: 'minmax(140px, 180px) 1fr',
-        gap: 16,
-        alignItems: 'start',
-      }}>
-        {/* Image */}
-        <div style={{
-          aspectRatio: '4 / 3', borderRadius: 10, overflow: 'hidden',
-          background: 'var(--bg-card)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--text-muted)', fontSize: 11, textAlign: 'center', padding: 8,
+        {/* Expand/collapse chevron */}
+        <span style={{
+          color: 'var(--text-muted)', fontSize: 12, flexShrink: 0,
+          transform: isExpanded ? 'rotate(90deg)' : 'none',
+          transition: 'transform 0.15s',
         }}>
-          {w.event_image ? (
-            <img src={w.event_image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
-          ) : (
-            <span>No image across the full waterfall</span>
-          )}
-        </div>
-
-        {/* Metadata rows */}
-        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12 }}>
-          <PreviewRow label="Category" value={w.category || '— Other —'} source={sourceLabel(event, r.template, 'category')} />
-          <PreviewRow label="Start time" value={timeLabel} source={sourceLabel(event, r.template, 'start_time')} />
-          <PreviewRow label="Title" value={w.title || '—'} source={sourceLabel(event, r.template, 'title')} />
-          <PreviewRow label="Bio" value={w.description ? truncate(w.description, 180) : '—'} source={sourceLabel(event, r.template, 'bio')} multiline />
-          {r.template && (
-            <PreviewRow label="Template" value={r.template.template_name || '(unnamed)'} source="event.template_id" />
-          )}
-        </div>
+          ▸
+        </span>
       </div>
+
+      {/* Expanded body — image + full untruncated metadata */}
+      {isExpanded && (
+        <div style={{
+          padding: '0 16px 16px 16px',
+          borderTop: '1px solid var(--border)',
+          display: 'grid',
+          gridTemplateColumns: 'minmax(140px, 220px) 1fr',
+          gap: 16,
+          alignItems: 'start',
+        }}>
+          {/* Status chips row (shown only when expanded so the collapsed bar stays clean) */}
+          {(r.templateMissing || r.artistNotLinked || r.state === 'red' || r.state === 'yellow' || w.is_human_edited) && (
+            <div style={{
+              gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 6,
+              paddingTop: 12,
+            }}>
+              {r.templateMissing && <span style={chipStyle('#F97316')}>Template Missing</span>}
+              {r.artistNotLinked && (
+                <span style={chipStyle('#F97316')} title="No artist_id — waterfall can't pull Artist Profile's image or bio until linked.">
+                  Artist not linked
+                </span>
+              )}
+              {r.state === 'red' && <span style={chipStyle('#EF4444')}>{w.start_time ? 'Stuck at 12:00 AM' : 'No start time'}</span>}
+              {r.state === 'yellow' && !w.event_image && <span style={chipStyle('#EAB308')}>No Image</span>}
+              {r.state === 'yellow' && w.event_image && !w.description && <span style={chipStyle('#EAB308')}>No Bio</span>}
+              {w.is_human_edited && <span style={chipStyle('#60A5FA')}>Human-locked</span>}
+            </div>
+          )}
+
+          {/* Image */}
+          <div style={{
+            aspectRatio: '4 / 3', borderRadius: 10, overflow: 'hidden',
+            background: 'var(--bg-card)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--text-muted)', fontSize: 11, textAlign: 'center', padding: 8,
+            marginTop: 12,
+          }}>
+            {w.event_image ? (
+              <img src={w.event_image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+            ) : (
+              <span>No image across the full waterfall</span>
+            )}
+          </div>
+
+          {/* Metadata rows — bio is untruncated and wraps to full height */}
+          <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12, marginTop: 12 }}>
+            <PreviewRow label="Category" value={w.category || '— Other —'} source={sourceLabel(event, r.template, 'category')} />
+            <PreviewRow label="Start time" value={timeLabel} source={sourceLabel(event, r.template, 'start_time')} />
+            <PreviewRow label="Title" value={w.title || '—'} source={sourceLabel(event, r.template, 'title')} />
+            <PreviewRow
+              label="Bio"
+              value={w.description || '—'}
+              source={sourceLabel(event, r.template, 'bio')}
+              multiline
+            />
+            {r.template && (
+              <PreviewRow label="Template" value={r.template.template_name || '(unnamed)'} source="event.template_id" />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Warning overlay (red pulse when #5 is about to be bumped) */}
       {showWarning && (
