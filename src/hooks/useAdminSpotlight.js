@@ -2,8 +2,14 @@
 
 import { useState, useCallback, useRef } from 'react';
 
+const MAX_PINS = 5;
+
 export default function useAdminSpotlight({ password, fetchAll }) {
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` };
+  // Ref-based debounce for auto-save — cleared on every new pin mutation
+  // so rapid reorders collapse into a single POST.
+  const autoSaveTimer = useRef(null);
+  const autoSaveRollback = useRef(null);
 
   const [spotlightDate, setSpotlightDate] = useState(() => {
     const d = new Date();
@@ -128,44 +134,139 @@ export default function useAdminSpotlight({ password, fetchAll }) {
     }
   }, [fetchSpotlightEvents, headers]);
 
+  // ── Auto-save (300ms debounce, fire-and-forget with rollback) ────────────
+  // Every pin mutation calls `commitPins(newPins)` which optimistically sets
+  // state, stashes a rollback snapshot, and debounces a single POST. Rapid
+  // reorders (drag → drag → drag) collapse into one network call.
+  const commitPins = useCallback((nextPins) => {
+    setSpotlightPins(prev => {
+      // Stash rollback only on the FIRST mutation within the debounce window
+      // so we revert to the last server-confirmed state, not an intermediate.
+      if (!autoSaveRollback.current) autoSaveRollback.current = prev;
+      return nextPins;
+    });
+
+    clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      const targetDate = spotlightDate;
+      try {
+        const res = await fetch('/api/spotlight', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ date: targetDate, event_ids: nextPins }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // Success — clear rollback, background-refresh the live feed.
+        autoSaveRollback.current = null;
+        fetchAll();
+      } catch (err) {
+        console.error('Auto-save failed, rolling back:', err);
+        // Restore the last server-confirmed pin state.
+        if (autoSaveRollback.current) {
+          setSpotlightPins(autoSaveRollback.current);
+        }
+        autoSaveRollback.current = null;
+      }
+    }, 300);
+  }, [spotlightDate, headers, fetchAll]);
+
+  // ── Pin mutation helpers (all route through commitPins) ─────────────────
+
+  /**
+   * Insert-at-rank: place eventId at `index`, shifting everything below
+   * down by one. If the list is already full, Rank #5 slides out.
+   * Used by both DnD "list → slot" and the ★ star-button.
+   */
+  const insertPin = useCallback((eventId, index = 0) => {
+    setSpotlightPins(prev => {
+      // Already pinned? → treat as a reorder instead.
+      if (prev.includes(eventId)) {
+        const without = prev.filter(id => id !== eventId);
+        const clamped = Math.min(index, without.length);
+        const next = [...without.slice(0, clamped), eventId, ...without.slice(clamped)];
+        commitPins(next.slice(0, MAX_PINS));
+        return next.slice(0, MAX_PINS);
+      }
+      const clamped = Math.min(index, prev.length);
+      const next = [...prev.slice(0, clamped), eventId, ...prev.slice(clamped)];
+      // Slide-out: trim to 5 — whatever was at the end gets bumped.
+      const trimmed = next.slice(0, MAX_PINS);
+      commitPins(trimmed);
+      return trimmed;
+    });
+  }, [commitPins]);
+
+  /**
+   * Reorder within the pinned list: move `eventId` from its current
+   * position to `toIndex`. No events are added or removed.
+   */
+  const reorderPins = useCallback((fromIndex, toIndex) => {
+    setSpotlightPins(prev => {
+      if (fromIndex === toIndex) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      commitPins(next);
+      return next;
+    });
+  }, [commitPins]);
+
+  /**
+   * Remove a single pin (drag-out or ✕ button). Does NOT add anyone in
+   * its place — the list shrinks to < 5 and the empty slot shows up.
+   */
+  const removePin = useCallback((eventId) => {
+    setSpotlightPins(prev => {
+      const next = prev.filter(id => id !== eventId);
+      commitPins(next);
+      return next;
+    });
+  }, [commitPins]);
+
+  /**
+   * Star-button: if unpinned → insert at #1 (push-off). If pinned → unpin.
+   */
+  const toggleSpotlightPin = useCallback((eventId) => {
+    setSpotlightPins(prev => {
+      if (prev.includes(eventId)) {
+        const next = prev.filter(id => id !== eventId);
+        commitPins(next);
+        return next;
+      }
+      // Insert at rank #1 (index 0) with slide-out.
+      const next = [eventId, ...prev].slice(0, MAX_PINS);
+      commitPins(next);
+      return next;
+    });
+  }, [commitPins]);
+
+  // ── Legacy save / clear (still wired for header buttons) ────────────────
   const saveSpotlight = async () => {
-    // Capture the target date at click time — if the user changes the picker
-    // mid-save, we still commit pins to the correct date.
+    clearTimeout(autoSaveTimer.current);
     const targetDate = spotlightDate;
     const validPins = spotlightPins.filter(id => spotlightEvents.some(e => e.id === id));
     setSpotlightPins(validPins);
-
     const res = await fetch('/api/spotlight', {
       method: 'POST',
       headers,
       body: JSON.stringify({ date: targetDate, event_ids: validPins }),
     });
-
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       alert(`Failed to save Spotlight: ${err.error || res.statusText}`);
       return;
     }
-
-    alert(`Spotlight saved for ${targetDate} (${validPins.length} event${validPins.length !== 1 ? 's' : ''})`);
+    autoSaveRollback.current = null;
     fetchAll();
-    // Refresh against whatever date is currently selected (may have changed).
     fetchSpotlightEvents(spotlightDate);
   };
 
   const clearSpotlight = async () => {
     if (!confirm(`Clear all spotlight pins for ${spotlightDate}? The carousel will use the automatic fallback.`)) return;
+    clearTimeout(autoSaveTimer.current);
     await fetch(`/api/spotlight?date=${spotlightDate}`, { method: 'DELETE', headers });
     setSpotlightPins([]);
-  };
-
-  const toggleSpotlightPin = (eventId) => {
-    setSpotlightPins(prev => {
-      const clean = prev.filter(id => id === eventId || spotlightEvents.some(e => e.id === id));
-      if (clean.includes(eventId)) return clean.filter(id => id !== eventId);
-      if (clean.length >= 5) { alert('Maximum 5 spotlight events per day'); return clean; }
-      return [...clean, eventId];
-    });
+    autoSaveRollback.current = null;
   };
 
   return {
@@ -180,5 +281,10 @@ export default function useAdminSpotlight({ password, fetchAll }) {
     saveSpotlight,
     clearSpotlight,
     toggleSpotlightPin,
+    // DnD pin operations
+    insertPin,
+    reorderPins,
+    removePin,
+    MAX_PINS,
   };
 }

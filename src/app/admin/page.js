@@ -445,6 +445,8 @@ export default function AdminPage() {
           fetchSpotlight={sp.fetchSpotlight} fetchSpotlightEvents={sp.fetchSpotlightEvents}
           saveSpotlight={sp.saveSpotlight} clearSpotlight={sp.clearSpotlight}
           toggleSpotlightPin={sp.toggleSpotlightPin}
+          insertPin={sp.insertPin} reorderPins={sp.reorderPins}
+          removePin={sp.removePin} MAX_PINS={sp.MAX_PINS}
         />
       )}
 
