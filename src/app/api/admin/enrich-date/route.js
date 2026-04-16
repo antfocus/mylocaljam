@@ -555,7 +555,15 @@ export async function POST(request) {
       const gallery = [...(Array.isArray(ai.image_candidates) ? ai.image_candidates : [])];
       if (gallery.length < 5) {
         try {
-          const extra = await searchArtistImages(art.name, ai.kind || 'MUSICIAN');
+          // Pass venue + city context so VENUE_EVENT queries stay
+          // venue-focused and don't inherit the MUSICIAN default's
+          // "band live music" keywords. For MUSICIAN lookups the
+          // context is a no-op (the artist-name-only query outranks
+          // venue-disambiguated ones for promo shots).
+          const extra = await searchArtistImages(art.name, ai.kind || 'MUSICIAN', {
+            venue: art.venue || '',
+            city: art.city || '',
+          });
           for (const url of extra) {
             if (gallery.length >= 5) break;
             if (!gallery.includes(url)) gallery.push(url);

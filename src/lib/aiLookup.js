@@ -189,19 +189,56 @@ export function isHypeFree(bio) {
  * Serper.dev Google Image Search. Returns up to 5 hotlink-safe URLs.
  * Returns [] if SERPER_API_KEY is missing or the call fails.
  *
- * `kind` lets the caller tune the query — a MUSICIAN lookup wants "band live
- * music" added so Google ranks promo shots first; a VENUE_EVENT lookup
- * (trivia, BOGO night, karaoke, etc.) must NOT get a band-hinted query or
- * Serper will return random band photos. Defaults to MUSICIAN to preserve
- * legacy callers that don't know about the fork.
+ * `kind` lets the caller tune the query so we don't poison the search with
+ * music keywords on non-music events:
+ *
+ *   • MUSICIAN  — query is "${name} band live music". Optimized for promo
+ *                 shots / live-performance photos. When a venue or city is
+ *                 passed, they're ignored — for musicians the artist name
+ *                 alone almost always outranks a venue-disambiguated query.
+ *
+ *   • VENUE_EVENT — query is VENUE-FOCUSED. Music keywords ("band",
+ *                 "live music") are STRIPPED entirely because they poison
+ *                 the ranking for events like "Family Night" or
+ *                 "Trivia Tuesday" where the name isn't a band at all. The
+ *                 generic "restaurant bar interior" hint is also dropped
+ *                 because it over-triggered on obvious stock photos that
+ *                 didn't match the real venue. Instead we build:
+ *                    1. "${name} ${venue}"                   (when venue known)
+ *                    2. "${venue} interior"                  (when only venue)
+ *                    3. "${name}"                            (last resort)
+ *                 The venue-first variant reliably pulls photos of the
+ *                 actual room (River Rock's "Family Night", etc.) rather
+ *                 than generic pub stock.
+ *
+ * `context` (third arg) carries optional venue + city strings. Added in the
+ * 2026-04-16 "Musician Bias" fix; older callers that pass only
+ * (artistName, kind) keep working because the object defaults to {}.
  */
-export async function searchArtistImages(artistName, kind = 'MUSICIAN') {
+export async function searchArtistImages(artistName, kind = 'MUSICIAN', context = {}) {
   const serperKey = process.env.SERPER_API_KEY;
   if (!serperKey) return [];
 
-  const q = kind === 'VENUE_EVENT'
-    ? `${artistName} restaurant bar interior`
-    : `${artistName} band live music`;
+  const venue = typeof context.venue === 'string' ? context.venue.trim() : '';
+  // `city` is intentionally unused right now — empirically, Google Images
+  // ranks worse when a city is appended (it pulls tourism/landscape shots
+  // instead of venue interiors). Kept in the signature because the caller
+  // already has it and future query tweaks may want it.
+
+  let q;
+  if (kind === 'VENUE_EVENT') {
+    if (artistName && venue) {
+      q = `${artistName} ${venue}`;
+    } else if (venue) {
+      q = `${venue} interior`;
+    } else {
+      q = artistName || '';
+    }
+  } else {
+    q = `${artistName} band live music`;
+  }
+
+  if (!q.trim()) return [];
 
   try {
     const res = await fetch('https://google.serper.dev/images', {
@@ -507,9 +544,12 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
     image_source = 'perplexity';
   } else {
     try {
-      // Kind-aware Serper query — "band live music" for MUSICIAN,
-      // "restaurant bar interior" for VENUE_EVENT. See searchArtistImages.
-      const serperHits = await searchArtistImages(name, kind);
+      // Kind-aware Serper query — "band live music" for MUSICIAN;
+      // venue-focused ("${name} ${venue}" / "${venue} interior") for
+      // VENUE_EVENT so we don't contaminate the search with music
+      // keywords on non-band rows like "Family Night". See
+      // searchArtistImages for the full query-build rules.
+      const serperHits = await searchArtistImages(name, kind, { venue: venueStr, city: cityStr });
       if (serperHits.length > 0) {
         image_candidates = serperHits;
         image_url = serperHits[0];

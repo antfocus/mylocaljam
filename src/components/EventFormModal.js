@@ -753,10 +753,32 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
                   })}
                 </div>
               )}
+              {/* Why `imageUrl` binds to the raw override (form.custom_image_url),
+                  NOT to imageResolved.value:
+                    Previous binding — `imageUrl={imageResolved.value}` — caused
+                    the input to act read-only. Walkthrough:
+                      1. User highlights the URL and hits delete.
+                      2. onChange fires → update('custom_image_url', '') +
+                         update('event_image_url', '').
+                      3. Re-render: imageSources.override = '' → resolveTier
+                         falls through to template / artist / scraper.
+                      4. imageResolved.value is now the inherited tier's URL.
+                      5. Input re-displays that inherited URL. Input looks
+                         "jammed" — the user's delete was immediately undone by
+                         the waterfall's re-resolution.
+                    Fix: input binds to form.custom_image_url directly so the
+                    operator has full control — can type, delete to '', paste
+                    fresh URLs freely. The Mobile Preview still shows the
+                    inherited image via `inheritedUrl` so the visual fallback
+                    semantics are preserved. */}
               <ImagePreviewSection
-                imageUrl={imageResolved.value}
-                inheritedUrl=""
-                isInherited={false}
+                imageUrl={form.custom_image_url || ''}
+                inheritedUrl={
+                  form.custom_image_url
+                    ? ''
+                    : (imageResolved.value || '')
+                }
+                isInherited={!form.custom_image_url && !!imageResolved.value}
                 onUrlChange={v => {
                   update('custom_image_url', v);
                   update('event_image_url', v);
