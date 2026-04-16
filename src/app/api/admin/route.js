@@ -93,9 +93,24 @@ export async function GET(request) {
   }
 
   // Server-side status filtering for Event Feed views
+  //
+  // IMPORTANT: when `dateFilter` is provided (Spotlight admin tab), the
+  // `?status=upcoming` filter must NOT apply the `.gte(event_date, nowIso)`
+  // time cutoff — we need ALL of that day's published events, including
+  // ones whose start_time has already passed. Without this, an 8 PM show
+  // at 9:51 PM vanishes from the Spotlight event list, the stale-pin
+  // cleanup in useAdminSpotlight decides it's orphaned, and the cleanup
+  // POST to /api/spotlight deletes the pin from the DB. This was the root
+  // cause of 4 of 5 pins disappearing mid-evening.
+  //
+  // When `dateFilter` is absent, the Event Feed tab still gets the
+  // traditional "future only" behavior — those consumers expect it.
   const nowIso = new Date().toISOString();
   if (statusFilter === 'upcoming') {
-    query = query.eq('status', 'published').gte('event_date', nowIso);
+    query = query.eq('status', 'published');
+    if (!dateFilter) {
+      query = query.gte('event_date', nowIso);
+    }
   } else if (statusFilter === 'past') {
     query = query.eq('status', 'published').lt('event_date', nowIso);
   } else if (statusFilter === 'hidden') {
@@ -139,8 +154,12 @@ export async function GET(request) {
   // Compute count
   let count;
   let countQuery = supabase.from('events').select('id', { count: 'exact', head: true });
-  if (statusFilter === 'upcoming') countQuery = countQuery.eq('status', 'published').gte('event_date', nowIso);
-  else if (statusFilter === 'past') countQuery = countQuery.eq('status', 'published').lt('event_date', nowIso);
+  if (statusFilter === 'upcoming') {
+    countQuery = countQuery.eq('status', 'published');
+    if (!dateFilter) countQuery = countQuery.gte('event_date', nowIso);
+  } else if (statusFilter === 'past') {
+    countQuery = countQuery.eq('status', 'published').lt('event_date', nowIso);
+  }
   else if (statusFilter === 'hidden') countQuery = countQuery.neq('status', 'published');
   if (recentlyAdded) {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();

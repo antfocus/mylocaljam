@@ -90,9 +90,25 @@ export default function useAdminSpotlight({ password, fetchAll }) {
     const cleanPins = pinIds.filter(id => validEventIds.has(id));
     setSpotlightPins(cleanPins);
 
-    // Persist stale-pin cleanup so we don't re-filter the same orphans every
-    // load (audit H1).
-    if (cleanPins.length !== pinIds.length) {
+    // ── Stale-pin cleanup (audit H1, hardened post-9:51 PM incident) ─────
+    // Only persist pin-list changes when we can be sure the removed pins
+    // are genuinely orphaned (event deleted, wrong date, etc.) — NOT when
+    // they simply fell off the admin events list because their start_time
+    // passed and the `/api/admin?status=upcoming` time cutoff hid them.
+    //
+    // Rule: NEVER auto-delete pins whose spotlight_date is TODAY or later.
+    // The admin explicitly chose these events; they stay until midnight or
+    // until the admin unpins them manually from the Spotlight tab.
+    //
+    // For PAST dates we still clean up orphans — those are safe because
+    // the events list for a past day is immutable (no time cutoff drift).
+    const todayStr = (() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    })();
+    const isTodayOrFuture = date >= todayStr;
+
+    if (!isTodayOrFuture && cleanPins.length !== pinIds.length) {
       try {
         await fetch('/api/spotlight', {
           method: 'POST',
