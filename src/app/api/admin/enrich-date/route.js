@@ -25,8 +25,10 @@
  *        • event_image_url / artist_bio are ONLY written when they're
  *          currently blank on the event (and no linked artist.image_url /
  *          artists.bio is already filling them in either).
- *        • event_title and start_time are NEVER touched — those are the
- *          human-curated fields Magic Wand must not overwrite.
+ *        • event_title and event_date are NEVER touched — those are the
+ *          human-curated fields Magic Wand must not overwrite. (There is
+ *          no `start_time` column on `events`; time-of-day lives inside
+ *          event_date, which we still never write.)
  *        • `artists.is_human_edited` JSONB gets `{ bio: true, image_url: true }`
  *          for fields the AI filled — blocks future scraper overwrites.
  *        • `events.is_human_edited = true` (boolean) — blocks the
@@ -148,17 +150,26 @@ export async function POST(request) {
   // We include venue_name + venues(address) so we can thread "venue" and
   // "city" into the AI helper's prompt. We also pull the artist join so we
   // can detect "bio already present on the linked artist row" as non-missing.
+  //
   // NOTE on image columns: `event_image` is a VIRTUAL field computed by
   // applyWaterfall — it's NOT a real DB column. Selecting it silently
   // drops the whole row via PostgREST error mode. The real columns on
   // `events` are `custom_image_url`, `event_image_url`, and legacy
-  // `image_url`. event_title + start_time are pulled only so we have a
-  // readable trace during debugging — they are never written by this
-  // route (Smart Fill preserves manual edits to those fields).
+  // `image_url`.
+  //
+  // NOTE on time-of-day: the `events` table has NO `start_time` column —
+  // time is baked into `event_date` (ISO timestamp, Eastern-aware via the
+  // bounds pair below), with `is_time_tbd` flagging placeholders. The
+  // `start_time` column lives on `event_templates` only; selecting
+  // `events.start_time` raises `column events.start_time does not exist`
+  // from PostgREST and fails the whole Magic Wand run (see 2026-04-16
+  // postmortem). `event_title`, `event_date`, and `is_time_tbd` are pulled
+  // only for readable debug traces — never written by this route, which
+  // is the "preserve manual edits" invariant (enforced by omission in 5b).
   const { data: events, error: fetchErr } = await supabase
     .from('events')
     .select(`
-      id, artist_id, artist_name, event_title, start_time, venue_name,
+      id, artist_id, artist_name, event_title, event_date, is_time_tbd, venue_name,
       custom_image_url, event_image_url, image_url, artist_bio,
       is_human_edited, is_locked,
       venues(name, address),
@@ -361,7 +372,7 @@ export async function POST(request) {
       // artist upsert flaked.
     }
 
-    // ── 5b. Smart Fill write: blanks only, never touch title/start_time ─
+    // ── 5b. Smart Fill write: blanks only, never touch title/event_date ─
     // Per-event blank check — we re-evaluate each field on each event
     // because the same artist may play multiple rooms today, and one
     // venue may have a custom image while another doesn't. Writing
@@ -375,9 +386,12 @@ export async function POST(request) {
     //     "is there any image to show?" check.
     //   • artist_bio is written ONLY if both event.artist_bio and the
     //     linked artists.bio are blank.
-    //   • event_title and start_time are NEVER in the update object,
+    //   • event_title and event_date are NEVER in the update object,
     //     so Magic Wand physically cannot overwrite them. That's the
-    //     "preserve manual edits" invariant, enforced by omission.
+    //     "preserve manual edits" invariant, enforced by omission. (The
+    //     events table has no `start_time` column — time-of-day lives in
+    //     event_date, which we also omit, so the invariant holds either
+    //     way you look at it.)
     //
     // We do NOT call stripLockedFields here. Smart Fill's whole purpose
     // is to rescue rows that carry a stale boolean lock with blank data;
