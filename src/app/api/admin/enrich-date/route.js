@@ -1,7 +1,8 @@
 /**
  * POST /api/admin/enrich-date  (admin only)
- * Body: { date?: 'YYYY-MM-DD', eventId?: string }
+ * Body: { date?: 'YYYY-MM-DD', eventId?: string, preview?: boolean }
  *   — exactly one of `date` or `eventId` is required.
+ *   — `preview: true` requires `eventId` (dry-run is single-event only).
  *
  * The "Magic Wand" enrichment endpoint — Smart Fill edition. Supports two
  * input modes that share the same write-side invariants:
@@ -16,6 +17,20 @@
  *                       path the admin hits when a single card is still
  *                       yellow after a bulk run, or when they don't want
  *                       to burn Perplexity credits on the rest of the day.
+ *
+ * Preview mode (`preview: true`, eventId only):
+ *   The "AI Image Search" button inside the Edit Event modal wants to
+ *   populate the form's image field WITHOUT committing to the database —
+ *   the operator reviews the resolved image in the Mobile Preview, then
+ *   clicks the orange "Update Event" button to commit through the normal
+ *   save path. In preview mode we run the entire single-event pipeline
+ *   (candidate fetch, Force Rescue partition, blacklist bypass, byArtist
+ *   grouping, aiLookupArtist + Classification Fork) but SHORT-CIRCUIT
+ *   before the DB writes in steps 5a (artists upsert) and 5b (events
+ *   update). The AI-resolved `image_url`, `bio`, and `kind` are echoed
+ *   back in the response body for the client to populate form state.
+ *   Nothing is persisted — is_human_edited is not flipped, the artists
+ *   row is untouched, the events row is untouched.
  *
  * Given its inputs, this endpoint:
  *   1. Fetches the candidate event set (one row for eventId mode, the whole
@@ -152,7 +167,7 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { date, eventId } = body || {};
+  const { date, eventId, preview } = body || {};
 
   // Validation — exactly one mode must be supplied. We allow both to be
   // sent (single-event call from the admin UI may want to echo the
@@ -172,6 +187,17 @@ export async function POST(request) {
   if (eventId !== undefined && (typeof eventId !== 'string' || !eventId.trim())) {
     return NextResponse.json({ error: 'eventId must be a non-empty string' }, { status: 400 });
   }
+  // Preview mode is a dry-run for the "AI Image Search" button inside the
+  // Edit Event modal. It only makes sense on a single row — bulk preview
+  // would burn Perplexity credits with no way for the operator to review
+  // before commit. Reject bulk preview loudly instead of silently widening.
+  if (preview === true && !eventId) {
+    return NextResponse.json(
+      { error: 'preview mode requires `eventId` — bulk preview is not supported' },
+      { status: 400 }
+    );
+  }
+  const isPreview = preview === true;
 
   const start = Date.now();
   const supabase = getAdminClient();
@@ -190,7 +216,7 @@ export async function POST(request) {
   const isSingleEvent = !!eventId;
 
   if (isSingleEvent) {
-    console.log('[enrich-date] Processing Single Event ID:', eventId);
+    console.log('[enrich-date] Processing Single Event ID:', eventId, isPreview ? '(preview — no DB writes)' : '');
   }
 
   // ── 1. Pull the candidate event set ──────────────────────────────────
@@ -259,6 +285,7 @@ export async function POST(request) {
       ok: true,
       date: date || null,
       eventId: eventId || null,
+      preview: isPreview,
       totalEvents: 0,
       candidates: 0,
       lockedBlankFilled: 0,
@@ -268,6 +295,11 @@ export async function POST(request) {
       eventsUpdated: 0,
       updatedEventIds: [],
       rescuedEventIds: [],
+      // Preview fields — always echoed so the client can rely on a stable
+      // shape even when the AI lookup short-circuited (no candidate rows).
+      image_url: null,
+      bio: null,
+      kind: null,
       duration: '0s',
     });
   }
@@ -347,6 +379,7 @@ export async function POST(request) {
       ok: true,
       date: date || null,
       eventId: eventId || null,
+      preview: isPreview,
       totalEvents: events.length,
       candidates: 0,
       lockedBlankFilled: 0,
@@ -356,6 +389,9 @@ export async function POST(request) {
       eventsUpdated: 0,
       updatedEventIds: [],
       rescuedEventIds: [],
+      image_url: null,
+      bio: null,
+      kind: null,
       duration: ((Date.now() - start) / 1000).toFixed(2) + 's',
     });
   }
@@ -450,6 +486,11 @@ export async function POST(request) {
   const updatedEventIds = [];
   const rescuedEventIds = [];
   const errors = [];
+  // Preview result — captured from the first AI success in preview mode so
+  // we can echo it back to the modal without persisting. Preview is always
+  // single-event (validated above), so there's at most one artist in the
+  // `artists` loop and this variable holds exactly one AI result.
+  let previewResult = { image_url: null, bio: null, kind: null };
 
   for (const art of artists) {
     const ai = await aiLookupArtist({
@@ -482,6 +523,20 @@ export async function POST(request) {
     const gotImage = !!ai.image_url;
     if (!gotBio && !gotImage) continue;
     artistsEnriched++;
+
+    // Preview short-circuit — capture the AI result and skip BOTH DB
+    // writes (5a artists upsert AND 5b events update). The client uses
+    // the echoed `image_url` / `bio` / `kind` to populate form fields;
+    // nothing is persisted until the user clicks the normal save button.
+    if (isPreview) {
+      previewResult = {
+        image_url: ai.image_url || null,
+        bio: ai.bio || null,
+        kind: ai.kind || null,
+      };
+      console.log(`[enrich-date] Preview mode — no DB writes, returning AI-resolved fields (image=${gotImage}, bio=${gotBio}, kind=${ai.kind || 'UNKNOWN'}).`);
+      continue;
+    }
 
     // ── 5a. Upsert the artist row with per-field lock flags ─────────────
     // We only write fields we actually got — never overwrite existing data
@@ -637,6 +692,7 @@ export async function POST(request) {
     ok: true,
     date: date || null,
     eventId: eventId || null,
+    preview: isPreview,
     totalEvents: events.length,
     candidates: candidateEvents.length,
     lockedBlankFilled,
@@ -653,6 +709,13 @@ export async function POST(request) {
     // the same window would misattribute rows).
     updatedEventIds,
     rescuedEventIds,
+    // Preview-mode payload — in commit mode these are null (the form
+    // should re-fetch from the row on the next render); in preview mode
+    // they carry the AI-resolved fields so the modal can populate the
+    // image input and trigger the Mobile Preview without a DB round-trip.
+    image_url: previewResult.image_url,
+    bio: previewResult.bio,
+    kind: previewResult.kind,
     errors: errors.length ? errors : null,
     duration,
   });

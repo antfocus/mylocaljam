@@ -49,6 +49,15 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
   const [toast, setToast] = useState(null); // { message, type: 'error' | 'success' }
   const [aiResult, setAiResult] = useState(null);
   const [carouselIdx, setCarouselIdx] = useState(0);
+  // AI Image Search — dry-run enrich-date call from the Event Image field.
+  // This button POSTs { eventId, preview: true } to /api/admin/enrich-date
+  // and, on success, populates the form's image fields WITHOUT persisting
+  // to the database. The user reviews the new image in the existing
+  // Mobile Preview and clicks the orange "Update Event" button to commit.
+  // Separate from aiLoading (bio enhance) so the two can run independently
+  // and each surface its own spinner / error state.
+  const [imageSearching, setImageSearching] = useState(false);
+  const [imageSearchError, setImageSearchError] = useState(null);
 
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -258,6 +267,63 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
       alert('AI enhance error: ' + err.message);
     }
     setAiLoading(false);
+  };
+
+  // ── AI Image Search — dry-run enrich-date, populate form without saving ──
+  //
+  // The button next to the Event Image field POSTs the current eventId to
+  // `/api/admin/enrich-date` with `preview: true`. That tells the route to
+  // run the full single-event pipeline (Force Rescue partition, blacklist
+  // bypass, Perplexity + Serper lookup, Classification Fork) but SKIP the
+  // artists upsert and the events update. The resolved image URL comes
+  // back in the response body; we mirror it into BOTH `custom_image_url`
+  // (the override-tier column that the waterfall prefers) and
+  // `event_image_url` (the legacy scraper-tier column some readers still
+  // fall back to), matching the pattern used by ImagePreviewSection's
+  // onUrlChange callback and setCandidateAsActive below. The user then
+  // reviews the new image in the Mobile Preview and manually clicks
+  // "Update Event" to commit through the normal save path.
+  //
+  // Guards:
+  //   • event?.id is required — we're editing an existing row, not a new
+  //     one. For the "create new event" flow, the button is hidden (no
+  //     eventId exists to preview against yet).
+  //   • adminPassword is required — same Bearer auth the enrich-date
+  //     route uses elsewhere in the admin UI.
+  const handleImageSearch = async () => {
+    if (!event?.id) {
+      setImageSearchError('Save the event first before running AI search.');
+      return;
+    }
+    if (!adminPassword) {
+      setImageSearchError('Admin password missing — reload the admin page.');
+      return;
+    }
+    setImageSearching(true);
+    setImageSearchError(null);
+    try {
+      const res = await fetch('/api/admin/enrich-date', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminPassword}` },
+        body: JSON.stringify({ eventId: event.id, preview: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        setImageSearchError(data?.error || `HTTP ${res.status}`);
+        return;
+      }
+      if (data.image_url) {
+        // Mirror into both columns, matching ImagePreviewSection's onUrlChange.
+        update('custom_image_url', data.image_url);
+        update('event_image_url', data.image_url);
+      } else {
+        setImageSearchError('No image found — try a different search.');
+      }
+    } catch (err) {
+      setImageSearchError(err?.message || 'Network error');
+    } finally {
+      setImageSearching(false);
+    }
   };
 
   // ── Image carousel — read candidates from the linked artist ──────────────
@@ -529,6 +595,70 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
               hasArtist={hasArtist}
               hint="Waterfall picks the first non-empty tier. Pick a candidate below to override."
             >
+              {/* AI Image Search — dry-run preview button. Only shown when
+                  editing an existing event (needs event.id to preview). The
+                  result populates the form's image fields WITHOUT saving;
+                  the user commits via the normal "Update Event" button. */}
+              {event?.id && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  marginBottom: '8px', flexWrap: 'wrap',
+                }}>
+                  <button
+                    type="button"
+                    onClick={handleImageSearch}
+                    disabled={imageSearching}
+                    title={imageSearchError
+                      ? `Error: ${imageSearchError}`
+                      : 'Run AI web search for an image. Populates the field without saving — click Update Event to commit.'}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '6px 12px', borderRadius: '8px',
+                      background: imageSearchError
+                        ? 'rgba(239,68,68,0.10)'
+                        : 'rgba(168,85,247,0.10)',
+                      border: imageSearchError
+                        ? '1px solid rgba(239,68,68,0.30)'
+                        : '1px solid rgba(168,85,247,0.30)',
+                      color: imageSearchError ? '#F87171' : '#C084FC',
+                      fontSize: '12px', fontWeight: 700,
+                      fontFamily: "'DM Sans', sans-serif",
+                      cursor: imageSearching ? 'wait' : 'pointer',
+                      opacity: imageSearching ? 0.7 : 1,
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {imageSearching ? (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            display: 'inline-block', width: '12px', height: '12px',
+                            borderRadius: '50%',
+                            border: '2px solid rgba(192,132,252,0.25)',
+                            borderTopColor: '#C084FC',
+                            animation: 'spin 0.9s linear infinite',
+                          }}
+                        />
+                        <span>Searching…</span>
+                      </>
+                    ) : (
+                      <>
+                        <span aria-hidden="true">{imageSearchError ? '⚠' : '✨'}</span>
+                        <span>AI Image Search</span>
+                      </>
+                    )}
+                  </button>
+                  {imageSearchError && (
+                    <span style={{
+                      fontSize: '11px', color: '#F87171',
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}>
+                      {imageSearchError}
+                    </span>
+                  )}
+                </div>
+              )}
               <ImagePreviewSection
                 imageUrl={imageResolved.value}
                 inheritedUrl=""
