@@ -301,15 +301,17 @@ export async function callPerplexity(systemPrompt, userPrompt, { apiKey, model =
  *
  * Returns:
  *   {
+ *     kind,              // 'MUSICIAN' | 'VENUE_EVENT' — classification fork result
  *     bio,               // string (<=500 chars, no hype words) or null
  *     image_url,         // validated URL or null
  *     source_link,       // URL the LLM sourced the research from, or null
- *     genres,            // string[] ⊆ ALLOWED_GENRES
- *     vibes,             // string[] ⊆ ALLOWED_VIBES
- *     is_tribute,        // boolean
+ *     genres,            // string[] ⊆ ALLOWED_GENRES  ([] for VENUE_EVENT — we
+ *                        //   never tag trivia/food events with musical genres)
+ *     vibes,             // string[] ⊆ ALLOWED_VIBES   ([] for VENUE_EVENT)
+ *     is_tribute,        // boolean  (always false for VENUE_EVENT)
  *     image_candidates,  // string[] — all usable images (admin UI carousel)
  *     image_source,      // 'perplexity' | 'serper' | 'placeholder' | null
- *     needs_review,      // true if the LLM flagged the artist as unknown
+ *     needs_review,      // true if the LLM flagged the name as unknown
  *   }
  *   or null if PERPLEXITY_API_KEY is missing (caller should degrade gracefully).
  */
@@ -532,12 +534,17 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
   }
 
   return {
+    kind,
     bio,
     image_url,
     source_link: sourceLink,
     genres,
     vibes,
-    is_tribute: bioResult?.is_tribute === true,
+    // `is_tribute` only applies to MUSICIAN; for VENUE_EVENT it's always
+    // false even if the LLM mistakenly returned true (e.g. "Tribute Trivia
+    // Night"). Enforcing here rather than in the prompt because the boolean
+    // check is cheaper than a second model pass.
+    is_tribute: kind === 'MUSICIAN' ? bioResult?.is_tribute === true : false,
     image_candidates,
     image_source,
     needs_review,
