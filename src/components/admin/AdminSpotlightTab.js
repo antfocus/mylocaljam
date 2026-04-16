@@ -373,7 +373,34 @@ export default function AdminSpotlightTab({
               fontSize: 13, fontFamily: "'DM Sans', sans-serif",
               display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
             }}>
-              {lastEnrichResult.ok ? (
+              {lastEnrichResult.ok && lastEnrichResult.mode === 'single' ? (
+                // Single-event Magic Wand result banner. Deliberately
+                // terse: "Updated 1 event" or "No data found to update",
+                // plus duration, plus an optional Classification hint
+                // when the server surfaced one. No Review-Mode filter
+                // buttons here — the filter buttons are a bulk-run
+                // affordance (filter the list to N touched rows); for a
+                // single-event click the operator already knows which
+                // row they just enriched.
+                <>
+                  <span style={{ fontSize: 16 }}>
+                    {(lastEnrichResult.eventsUpdated || 0) > 0 ? '✨' : 'ℹ️'}
+                  </span>
+                  <span style={{ fontWeight: 600 }}>
+                    {(lastEnrichResult.eventsUpdated || 0) > 0
+                      ? `Updated ${lastEnrichResult.eventsUpdated} event${lastEnrichResult.eventsUpdated === 1 ? '' : 's'}`
+                      : 'No data found to update'}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    · {lastEnrichResult.artistsEnriched || 0} artist{(lastEnrichResult.artistsEnriched || 0) === 1 ? '' : 's'} · {lastEnrichResult.duration || ''}
+                  </span>
+                  {(lastEnrichResult.eventsUpdated || 0) > 0 && (
+                    <span style={{ color: 'var(--text-muted)', marginLeft: 'auto', fontSize: 11 }}>
+                      Filled fields are now locked from the scraper.
+                    </span>
+                  )}
+                </>
+              ) : lastEnrichResult.ok ? (
                 <>
                   <span style={{ fontSize: 16 }}>✨</span>
                   <span style={{ fontWeight: 600 }}>

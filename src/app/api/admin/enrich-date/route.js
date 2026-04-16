@@ -176,6 +176,23 @@ export async function POST(request) {
   const start = Date.now();
   const supabase = getAdminClient();
 
+  // Single-event mode flag — gates the "Force Rescue" semantic below.
+  // When the admin clicks ✨ on a specific card, they're asserting "I know
+  // this row is missing data; fill it." That intent overrides the "inherit
+  // from linked artists row" optimism that the bulk path uses to avoid
+  // redundant Perplexity calls. In single-event mode we look ONLY at the
+  // event's own denormalized columns (custom_image_url, event_image_url,
+  // image_url, artist_bio) when deciding whether a field is blank — so
+  // an event linked to an artists row with a bio still gets its OWN
+  // event.artist_bio filled in, instead of the route silently returning
+  // "Successful Nothing" (200 OK, 0 rows updated) because the joined
+  // artist has data the operator can't see on the card they just clicked.
+  const isSingleEvent = !!eventId;
+
+  if (isSingleEvent) {
+    console.log('[enrich-date] Processing Single Event ID:', eventId);
+  }
+
   // ── 1. Pull the candidate event set ──────────────────────────────────
   // We include venue_name + venues(address) so we can thread "venue" and
   // "city" into the AI helper's prompt. We also pull the artist join so we
@@ -265,15 +282,26 @@ export async function POST(request) {
   // the actual preserve-manual-edits enforcement lives in 5b, where we
   // only write to fields that are still blank.
   //
-  // Why we check EVERY real image column (custom_image_url,
-  // event_image_url, image_url) plus the linked artists.image_url:
-  // different code paths write to different columns historically. If any
-  // of them is populated, the event already renders an image via the
-  // waterfall, so we don't need to fill.
+  // Force Rescue (single-event mode, 2026-04-16 hotfix):
+  //   When the admin clicks ✨ on ONE specific card, we look ONLY at that
+  //   event's OWN denorm columns for the has-data check — the joined
+  //   `artists.bio` / `artists.image_url` are intentionally ignored. The
+  //   bug this fixes: a card like "Family Night" whose `artist_id`
+  //   happened to link to a populated artists row was excluded from
+  //   candidates (`hasBio = true` via the join), so the route returned
+  //   200 OK / 0 rows updated — a confusing "Successful Nothing". In
+  //   single-event mode the operator's click IS the intent signal; if
+  //   the event's OWN artist_bio or event_image_url is blank, fill it,
+  //   regardless of what a linked artist row has.
   //
-  // Similarly, bio can live on `event.artist_bio` OR inherit from the
-  // linked `artists.bio` — if either is populated, the admin has a bio
-  // to display, so the event is not a candidate.
+  // Bulk mode (date-path) unchanged:
+  //   We still check every real image column (custom_image_url,
+  //   event_image_url, image_url) plus the linked artists.image_url, and
+  //   bio can live on event.artist_bio OR inherit from artists.bio. The
+  //   inherit-check is a cost optimization — don't Perplexity-hit an
+  //   artist whose profile we already have — which makes sense when
+  //   processing a whole day, but is exactly what the single-event
+  //   click is trying to override.
   const candidateEvents = [];
   let lockedBlankFilled = 0;
   // Which candidate ids were in the "rescue" bucket at partition time — a
@@ -284,13 +312,21 @@ export async function POST(request) {
   const rescueSet = new Set();
 
   for (const ev of events) {
-    const hasImage = !!(
-      ev.custom_image_url
-      || ev.event_image_url
-      || ev.image_url
-      || ev.artists?.image_url
-    );
-    const hasBio = !!(ev.artist_bio || ev.artists?.bio);
+    // Helper: is there image data on the row? In single-event mode, look
+    // only at the event's OWN columns. In bulk mode, also consider the
+    // joined artists.image_url (so we don't over-enrich artists whose
+    // canonical profile we already have).
+    const hasImage = isSingleEvent
+      ? !!(ev.custom_image_url || ev.event_image_url || ev.image_url)
+      : !!(
+        ev.custom_image_url
+        || ev.event_image_url
+        || ev.image_url
+        || ev.artists?.image_url
+      );
+    const hasBio = isSingleEvent
+      ? !!ev.artist_bio
+      : !!(ev.artist_bio || ev.artists?.bio);
     const isMissing = !hasImage || !hasBio;
 
     if (!isMissing) continue;
@@ -340,9 +376,21 @@ export async function POST(request) {
   // we still only Perplexity-hit them once (using whichever venue we saw
   // first). The same AI result is then applied to every candidate event
   // with that artist_name.
+  //
+  // Single-event fallback: if `artist_name` is blank (common for
+  // VENUE_EVENT rows like "Family Night" or "Trivia Tuesday" where the
+  // admin only set `event_title`), we fall back to `event_title` as the
+  // AI lookup key. Without this, the operator would click ✨ on a
+  // titled-but-artist-less card and get "Successful Nothing" because
+  // the byArtist grouping silently dropped the row. The Classification
+  // Fork inside aiLookupArtist handles the "this isn't a musician" case
+  // by emitting kind === 'VENUE_EVENT' and generating a venue-style bio.
   const byArtist = new Map();  // name_lower → { name, venue, city, events: [] }
   for (const ev of candidateEvents) {
-    const raw = ev.artist_name?.trim();
+    let raw = ev.artist_name?.trim();
+    if (!raw && isSingleEvent) {
+      raw = ev.event_title?.trim() || null;
+    }
     if (!raw) continue;
     const key = raw.toLowerCase();
     if (blacklistedNames.has(key)) continue;
@@ -384,7 +432,21 @@ export async function POST(request) {
     // want to avoid burst-rate-limit on the sonar-pro endpoint.
     await new Promise(r => setTimeout(r, PERPLEXITY_THROTTLE_MS));
 
-    if (!ai) continue;
+    if (!ai) {
+      if (isSingleEvent) {
+        console.log(`[enrich-date] Classification Result: (no AI result for "${art.name}")`);
+      }
+      continue;
+    }
+    // The Classification Fork inside aiLookupArtist tags each result with
+    // a `kind` field ('MUSICIAN' | 'VENUE_EVENT') that drives the bio and
+    // image prompts. Log it for single-event mode so the operator can
+    // verify from the server logs that "Family Night" was classified
+    // correctly as VENUE_EVENT (not mis-labeled as a band with a
+    // hallucinated bio).
+    if (isSingleEvent) {
+      console.log(`[enrich-date] Classification Result: ${ai.kind || 'UNKNOWN'} (name="${art.name}", venue="${art.venue || '-'}", city="${art.city || '-'}")`);
+    }
     const gotBio = !!ai.bio;
     const gotImage = !!ai.image_url;
     if (!gotBio && !gotImage) continue;
@@ -454,12 +516,14 @@ export async function POST(request) {
     // or strand the blank venue.
     //
     // Invariants enforced here:
-    //   • event_image_url is written ONLY if every real image column
-    //     (custom_image_url, event_image_url, image_url) AND the linked
-    //     artists.image_url are all blank. That matches the waterfall's
-    //     "is there any image to show?" check.
-    //   • artist_bio is written ONLY if both event.artist_bio and the
-    //     linked artists.bio are blank.
+    //   • event_image_url is written ONLY if the event's image slot is
+    //     blank. In bulk mode that means every real image column AND the
+    //     linked artists.image_url are all blank (inherit-optimism). In
+    //     single-event mode (Force Rescue) we ignore the joined artist
+    //     entirely — if the event's own columns are blank, we fill,
+    //     which is the whole point of the ✨-click.
+    //   • artist_bio is written ONLY if event.artist_bio is blank (and
+    //     in bulk mode, also the joined artists.bio is blank).
     //   • event_title and event_date are NEVER in the update object,
     //     so Magic Wand physically cannot overwrite them. That's the
     //     "preserve manual edits" invariant, enforced by omission. (The
@@ -474,13 +538,17 @@ export async function POST(request) {
     for (const ev of art.events) {
       const update = {};
 
-      const hasImage = !!(
-        ev.custom_image_url
-        || ev.event_image_url
-        || ev.image_url
-        || ev.artists?.image_url
-      );
-      const hasBio = !!(ev.artist_bio || ev.artists?.bio);
+      const hasImage = isSingleEvent
+        ? !!(ev.custom_image_url || ev.event_image_url || ev.image_url)
+        : !!(
+          ev.custom_image_url
+          || ev.event_image_url
+          || ev.image_url
+          || ev.artists?.image_url
+        );
+      const hasBio = isSingleEvent
+        ? !!ev.artist_bio
+        : !!(ev.artist_bio || ev.artists?.bio);
 
       if (gotImage && !hasImage) {
         // Write to event_image_url — the real column. (event_image is a
@@ -526,6 +594,13 @@ export async function POST(request) {
   }
 
   const duration = ((Date.now() - start) / 1000).toFixed(2) + 's';
+
+  // Always log the final write count for single-event runs so the operator
+  // can tell from the server logs whether a "nothing changed" UI came
+  // from a 0-row write vs a downstream cache miss.
+  if (isSingleEvent) {
+    console.log(`[enrich-date] Rows actually updated: ${eventsUpdated} (event=${eventId}, candidates=${candidateEvents.length}, artistsEnriched=${artistsEnriched}, duration=${duration})`);
+  }
 
   return NextResponse.json({
     ok: true,

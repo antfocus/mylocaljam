@@ -503,13 +503,34 @@ export default function useAdminSpotlight({ password }) {
         recordError(msg);
         return;
       }
-      // Success — refresh the candidate event list so the traffic-light
-      // dot / bio / image flips immediately without the admin having to
-      // click the date picker or the bulk Auto-Fill button again.
-      // fetchSpotlightEvents doesn't touch the admin page's global
-      // `loading` flag (see the commitPins note at the top of this file),
-      // so no black-screen blink.
-      fetchSpotlightEvents(spotlightDate);
+
+      // Success — set a single-event-specific banner payload so the UI
+      // can render an unambiguous message:
+      //   • eventsUpdated > 0  → "Updated 1 event"
+      //   • eventsUpdated = 0  → "No data found to update"
+      // We reuse the same `lastEnrichResult` state the bulk flow uses
+      // (the banner component already knows how to render it), but tag
+      // it with `mode: 'single'` so the renderer can pick the short
+      // single-event message instead of the full bulk stats line.
+      setLastEnrichResult({
+        ok: true,
+        mode: 'single',
+        eventId,
+        ...data,
+      });
+
+      // Refresh the candidate event list so the traffic-light dot / bio /
+      // image flips immediately without the admin having to click the
+      // date picker or the bulk Auto-Fill button again. fetchSpotlightEvents
+      // doesn't touch the admin page's global `loading` flag (see the
+      // commitPins note at the top of this file), so no black-screen blink.
+      //
+      // We call this even on eventsUpdated === 0 so the UI re-syncs with
+      // whatever the DB currently holds — defense-in-depth against an
+      // out-of-band write by another admin tab between the click and the
+      // refresh. Cheap (~1 round-trip, single-day filter) so the extra
+      // call on a no-op is worth the invariant.
+      await fetchSpotlightEvents(spotlightDate);
     } catch (err) {
       console.error('Single-event Magic Wand error:', err);
       recordError(err?.message || 'Network error');
