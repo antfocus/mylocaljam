@@ -56,8 +56,20 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
   // Mobile Preview and clicks the orange "Update Event" button to commit.
   // Separate from aiLoading (bio enhance) so the two can run independently
   // and each surface its own spinner / error state.
+  //
+  // Top 5 Gallery state:
+  //   • `previewImages` holds the up-to-5 candidate URLs returned by the
+  //     preview API. Rendered as a horizontal thumbnail row below the
+  //     button. The operator triages them visually — event flyers are
+  //     notoriously messy on the web (wrong band, watermarks, generic
+  //     venue stock), so ONE "first guess" isn't enough.
+  //   • We intentionally do NOT auto-select the first image. The user
+  //     clicks a thumbnail, which calls update('custom_image_url', url)
+  //     and update('event_image_url', url) — driving the existing Mobile
+  //     Preview without committing to the DB.
   const [imageSearching, setImageSearching] = useState(false);
   const [imageSearchError, setImageSearchError] = useState(null);
+  const [previewImages, setPreviewImages] = useState([]);
 
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -312,18 +324,36 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
         setImageSearchError(data?.error || `HTTP ${res.status}`);
         return;
       }
-      if (data.image_url) {
-        // Mirror into both columns, matching ImagePreviewSection's onUrlChange.
-        update('custom_image_url', data.image_url);
-        update('event_image_url', data.image_url);
-      } else {
-        setImageSearchError('No image found — try a different search.');
+      // Top 5 Gallery — store the candidates, do NOT auto-select. The
+      // operator clicks a thumbnail to promote it into the image fields
+      // (see pickGalleryImage below). This is the "user agency" rule:
+      // the LLM returned 5 messy candidates, and the human still picks.
+      const gallery = Array.isArray(data.preview_images) ? data.preview_images : [];
+      // Back-compat: older responses may only include image_url. If
+      // preview_images is empty but image_url is present, treat that
+      // single URL as a 1-item gallery so the UI still renders something.
+      if (gallery.length === 0 && data.image_url) gallery.push(data.image_url);
+      setPreviewImages(gallery);
+      if (gallery.length === 0) {
+        setImageSearchError('No images found — try a different search.');
       }
     } catch (err) {
       setImageSearchError(err?.message || 'Network error');
     } finally {
       setImageSearching(false);
     }
+  };
+
+  // Promote a gallery thumbnail into the form's image fields. Mirrors
+  // ImagePreviewSection's onUrlChange pattern — writes both
+  // `custom_image_url` (override tier, preferred by the waterfall) and
+  // `event_image_url` (legacy scraper tier, kept in sync for old readers).
+  // The Mobile Preview auto-updates because it subscribes to
+  // `imageResolved.value`. Still no DB commit — that happens on
+  // "Update Event".
+  const pickGalleryImage = (url) => {
+    update('custom_image_url', url);
+    update('event_image_url', url);
   };
 
   // ── Image carousel — read candidates from the linked artist ──────────────
@@ -657,6 +687,70 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
                       {imageSearchError}
                     </span>
                   )}
+                </div>
+              )}
+              {/* Top 5 Gallery — horizontal thumbnail row. Renders after a
+                  successful AI Image Search; each thumb, on click, promotes
+                  its URL into the form's image fields (no DB write). The
+                  thumbnail matching the currently-active image gets an
+                  orange highlight ring, so the user can see at a glance
+                  which candidate is driving the Mobile Preview. */}
+              {previewImages.length > 0 && (
+                <div style={{
+                  display: 'flex', gap: '8px', marginBottom: '10px',
+                  flexWrap: 'wrap',
+                }}>
+                  {previewImages.map((url, i) => {
+                    const isActive = url === form.custom_image_url || url === imageResolved.value;
+                    return (
+                      <button
+                        type="button"
+                        key={`${url}-${i}`}
+                        onClick={() => pickGalleryImage(url)}
+                        title={isActive ? 'Currently selected' : `Use this image (candidate ${i + 1} of ${previewImages.length})`}
+                        style={{
+                          position: 'relative',
+                          width: '56px', height: '56px',
+                          padding: 0, borderRadius: '8px', overflow: 'hidden',
+                          border: isActive
+                            ? '2px solid #E8722A'
+                            : '1px solid var(--border)',
+                          boxShadow: isActive
+                            ? '0 0 0 2px rgba(232,114,42,0.22)'
+                            : 'none',
+                          background: 'var(--bg-elevated)',
+                          cursor: isActive ? 'default' : 'pointer',
+                          transition: 'all 0.15s',
+                          flex: '0 0 auto',
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`AI candidate ${i + 1}`}
+                          style={{
+                            width: '100%', height: '100%',
+                            objectFit: 'cover', display: 'block',
+                          }}
+                          onError={e => { e.currentTarget.style.opacity = 0.2; }}
+                        />
+                        {isActive && (
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              position: 'absolute', top: '2px', right: '2px',
+                              width: '14px', height: '14px', borderRadius: '50%',
+                              background: '#E8722A', color: '#fff',
+                              fontSize: '9px', fontWeight: 900,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontFamily: "'DM Sans', sans-serif",
+                              lineHeight: 1,
+                            }}
+                          >✓</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
               <ImagePreviewSection

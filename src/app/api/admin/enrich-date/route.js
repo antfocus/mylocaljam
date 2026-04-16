@@ -100,7 +100,7 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
 import { getEasternDayBounds } from '@/lib/utils';
-import { aiLookupArtist } from '@/lib/aiLookup';
+import { aiLookupArtist, searchArtistImages } from '@/lib/aiLookup';
 
 export const dynamic = 'force-dynamic';
 // Long-running — the AI rung + rate-limited external APIs can easily push
@@ -298,6 +298,7 @@ export async function POST(request) {
       // Preview fields — always echoed so the client can rely on a stable
       // shape even when the AI lookup short-circuited (no candidate rows).
       image_url: null,
+      preview_images: [],
       bio: null,
       kind: null,
       duration: '0s',
@@ -390,6 +391,7 @@ export async function POST(request) {
       updatedEventIds: [],
       rescuedEventIds: [],
       image_url: null,
+      preview_images: [],
       bio: null,
       kind: null,
       duration: ((Date.now() - start) / 1000).toFixed(2) + 's',
@@ -490,7 +492,18 @@ export async function POST(request) {
   // we can echo it back to the modal without persisting. Preview is always
   // single-event (validated above), so there's at most one artist in the
   // `artists` loop and this variable holds exactly one AI result.
-  let previewResult = { image_url: null, bio: null, kind: null };
+  //
+  // `preview_images` is the "Top 5 Gallery" payload. Event flyers on the
+  // internet are notoriously messy (wrong band, cropped, watermarked,
+  // generic venue stock), so a single guess isn't enough — the operator
+  // needs options. We build the gallery by:
+  //   1. Taking `ai.image_candidates` from aiLookupArtist (1 URL when
+  //      Perplexity succeeded, up to 5 when Serper was the source).
+  //   2. Topping up with an explicit Serper call when we're short of 5,
+  //      with de-dup so the Perplexity image stays first.
+  // The legacy `image_url` field is kept for clients that haven't migrated
+  // to the gallery yet.
+  let previewResult = { image_url: null, preview_images: [], bio: null, kind: null };
 
   for (const art of artists) {
     const ai = await aiLookupArtist({
@@ -526,15 +539,44 @@ export async function POST(request) {
 
     // Preview short-circuit — capture the AI result and skip BOTH DB
     // writes (5a artists upsert AND 5b events update). The client uses
-    // the echoed `image_url` / `bio` / `kind` to populate form fields;
-    // nothing is persisted until the user clicks the normal save button.
+    // the echoed `image_url` / `preview_images` / `bio` / `kind` to
+    // populate form fields; nothing is persisted until the user clicks
+    // the normal save button.
+    //
+    // Top 5 Gallery build:
+    //   • Seed with whatever `ai.image_candidates` already holds.
+    //   • If we're short of 5, call Serper explicitly to top up. This is
+    //     a second Serper call ONLY when Perplexity gave a single official
+    //     image (so image_candidates had length 1) — the cost is a
+    //     single extra Serper hit per preview click, well worth the UX
+    //     win of giving the operator 5 flyers to triage.
+    //   • De-dup while filling so the Perplexity image stays at index 0.
     if (isPreview) {
+      const gallery = [...(Array.isArray(ai.image_candidates) ? ai.image_candidates : [])];
+      if (gallery.length < 5) {
+        try {
+          const extra = await searchArtistImages(art.name, ai.kind || 'MUSICIAN');
+          for (const url of extra) {
+            if (gallery.length >= 5) break;
+            if (!gallery.includes(url)) gallery.push(url);
+          }
+        } catch (err) {
+          // Best-effort top-up — a Serper outage shouldn't block the
+          // preview. We still return whatever we have.
+          errors.push(`Preview gallery top-up failed: ${err?.message || err}`);
+        }
+      }
+      const trimmedGallery = gallery.slice(0, 5);
       previewResult = {
-        image_url: ai.image_url || null,
+        // Legacy single-URL field — kept for clients that predate the
+        // gallery rollout. Mirrors index 0 so "first guess" semantics
+        // still work if a caller only reads image_url.
+        image_url: trimmedGallery[0] || ai.image_url || null,
+        preview_images: trimmedGallery,
         bio: ai.bio || null,
         kind: ai.kind || null,
       };
-      console.log(`[enrich-date] Preview mode — no DB writes, returning AI-resolved fields (image=${gotImage}, bio=${gotBio}, kind=${ai.kind || 'UNKNOWN'}).`);
+      console.log(`[enrich-date] Preview mode — no DB writes, returning AI-resolved fields (image=${gotImage}, bio=${gotBio}, kind=${ai.kind || 'UNKNOWN'}, gallery=${trimmedGallery.length}).`);
       continue;
     }
 
@@ -709,11 +751,15 @@ export async function POST(request) {
     // the same window would misattribute rows).
     updatedEventIds,
     rescuedEventIds,
-    // Preview-mode payload — in commit mode these are null (the form
-    // should re-fetch from the row on the next render); in preview mode
-    // they carry the AI-resolved fields so the modal can populate the
-    // image input and trigger the Mobile Preview without a DB round-trip.
+    // Preview-mode payload — in commit mode these are null / empty (the
+    // form should re-fetch from the row on the next render); in preview
+    // mode they carry the AI-resolved fields so the modal can populate
+    // the image input and trigger the Mobile Preview without a DB
+    // round-trip. `preview_images` is the Top 5 Gallery — the modal
+    // renders each URL as a thumbnail; clicking one promotes that URL
+    // into the form's custom_image_url / event_image_url.
     image_url: previewResult.image_url,
+    preview_images: previewResult.preview_images,
     bio: previewResult.bio,
     kind: previewResult.kind,
     errors: errors.length ? errors : null,
