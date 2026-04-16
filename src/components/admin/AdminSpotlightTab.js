@@ -15,7 +15,7 @@ import {
 import {
   SortableContext,
   useSortable,
-  horizontalListSortingStrategy,
+  verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -26,8 +26,7 @@ const TRAFFIC_COLORS = {
   red:    { dot: '#EF4444', ring: 'rgba(239,68,68,0.55)',  bg: 'rgba(239,68,68,0.08)' },
 };
 
-const SLOT_W = 160;
-const SLOT_H = 100;
+// Slot dimensions removed — vertical full-width cards now.
 
 // ══════════════════════════════════════════════════════════════════════════════
 // AdminSpotlightTab — drag-and-drop curation UI
@@ -180,15 +179,14 @@ export default function AdminSpotlightTab({
           </div>
         </div>
 
-        {/* ── Slot strip (horizontal, 5 fixed slots) ─────────────────── */}
+        {/* ── Slot strip (vertical, 5 full-width cards) ────────────── */}
         <div style={{ marginBottom: 24 }}>
           <h3 className="font-display font-semibold text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
             Spotlight Slots
           </h3>
-          <SortableContext items={slotIds} strategy={horizontalListSortingStrategy}>
+          <SortableContext items={slotIds} strategy={verticalListSortingStrategy}>
             <div style={{
-              display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 8,
-              WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin',
+              display: 'flex', flexDirection: 'column', gap: 10,
             }}>
               {slotIds.map((slotId, i) => {
                 const eventId = slotId.startsWith('slot::') ? slotId.replace('slot::', '') : null;
@@ -204,6 +202,8 @@ export default function AdminSpotlightTab({
                     resolve={resolve}
                     showWarning={showWarning}
                     onRemove={eventId ? () => removePin(eventId) : null}
+                    artists={artists}
+                    templates={templates}
                   />
                 );
               })}
@@ -285,14 +285,14 @@ export default function AdminSpotlightTab({
       <DragOverlay dropAnimation={null}>
         {activeEvent ? (
           <div style={{
-            padding: '10px 14px', borderRadius: 10, background: 'var(--bg-elevated)',
+            padding: '12px 16px', borderRadius: 10, background: 'var(--bg-elevated)',
             border: '2px solid #E8722A', boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-            opacity: 0.9, maxWidth: 260, fontFamily: "'DM Sans', sans-serif",
+            opacity: 0.92, maxWidth: 360, fontFamily: "'DM Sans', sans-serif",
           }}>
-            <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {activeEvent.artist_name || 'Unknown'}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
               {activeEvent.venue_name || activeEvent.venues?.name || ''}
             </div>
           </div>
@@ -303,16 +303,13 @@ export default function AdminSpotlightTab({
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SpotlightSlot — a single droppable/sortable slot in the horizontal strip
+// SpotlightSlot — full-width expanded card (vertical stack, always-open preview)
 // ══════════════════════════════════════════════════════════════════════════════
-function SpotlightSlot({ id, index, event, resolve, showWarning, onRemove }) {
+function SpotlightSlot({ id, index, event, resolve, showWarning, onRemove, artists, templates }) {
   const { attributes, listeners, setNodeRef, transform, transition, isOver } = useSortable({ id });
-  const style = {
+  const baseStyle = {
     transform: CSS.Transform.toString(transform),
     transition,
-    minWidth: SLOT_W,
-    width: SLOT_W,
-    height: SLOT_H,
     borderRadius: 12,
     border: showWarning
       ? '2px dashed #EF4444'
@@ -321,96 +318,160 @@ function SpotlightSlot({ id, index, event, resolve, showWarning, onRemove }) {
       ? 'rgba(239,68,68,0.06)'
       : (isOver ? 'rgba(232,114,42,0.12)' : (event ? 'var(--bg-elevated)' : 'var(--bg-card)')),
     position: 'relative',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: '8px 10px',
-    cursor: event ? 'grab' : 'default',
-    flexShrink: 0,
     overflow: 'hidden',
-    transition: 'border-color 0.2s, background 0.2s',
   };
 
+  // ── Empty slot placeholder ────────────────────────────────────────────
   if (!event) {
     return (
-      <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-        <span style={{ fontSize: 24, fontWeight: 800, color: 'var(--border)', lineHeight: 1 }}>
+      <div ref={setNodeRef} style={{
+        ...baseStyle,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '20px 16px', gap: 8,
+      }} {...attributes} {...listeners}>
+        <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--border)', lineHeight: 1 }}>
           {index + 1}
         </span>
-        <span style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-          {showWarning ? 'Will be bumped' : 'Empty'}
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          {showWarning ? 'Will be bumped' : 'Empty slot — drag an event here'}
         </span>
       </div>
     );
   }
 
+  // ── Filled slot — always-expanded card ────────────────────────────────
   const r = resolve(event);
   const color = TRAFFIC_COLORS[r.state];
   const w = r.resolved;
-  const thumb = w.event_image;
+  const timeLabel = w.start_time
+    ? (isMidnight(w.start_time) && !w.is_human_edited ? '12:00 AM (unresolved)' : w.start_time)
+    : '— missing —';
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {/* Rank badge */}
-      <span style={{
-        position: 'absolute', top: 4, left: 6, fontSize: 10, fontWeight: 800, color: '#E8722A',
-        background: 'rgba(0,0,0,0.5)', borderRadius: 4, padding: '1px 4px', lineHeight: 1.2,
-      }}>
-        #{index + 1}
-      </span>
-      {/* Traffic dot */}
-      <span style={{
-        position: 'absolute', top: 6, right: 6,
-        width: 8, height: 8, borderRadius: '50%', background: color.dot,
-      }} />
-      {/* Thumbnail */}
-      {thumb ? (
-        <img
-          src={thumb} alt="" loading="lazy"
-          style={{ width: '100%', height: '50%', objectFit: 'cover', borderRadius: 6, marginBottom: 4 }}
-        />
-      ) : (
-        <div style={{
-          width: '100%', height: '50%', borderRadius: 6, marginBottom: 4,
-          background: 'var(--bg-card)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 9, color: 'var(--text-muted)',
-        }}>
-          No image
-        </div>
-      )}
-      {/* Name */}
-      <div style={{
-        fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', width: '100%',
-        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center',
-        fontFamily: "'DM Sans', sans-serif",
-      }}>
-        {event.artist_name || 'Unknown'}
-      </div>
-      {/* Remove button */}
-      {onRemove && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          onPointerDown={(e) => e.stopPropagation()}
+    <div ref={setNodeRef} style={baseStyle}>
+      {/* Top bar: drag handle · rank · artist name · chips · traffic dot · ✕ */}
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        {/* Drag handle */}
+        <span
+          {...attributes}
+          {...listeners}
           style={{
-            position: 'absolute', bottom: 2, right: 4, background: 'none', border: 'none',
-            color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: '2px 4px',
-            lineHeight: 1,
+            cursor: 'grab', color: 'var(--text-muted)', fontSize: 16,
+            touchAction: 'none', lineHeight: 1, padding: '2px 4px', flexShrink: 0,
           }}
-          title="Unpin"
+          title="Drag to reorder"
         >
-          ✕
-        </button>
-      )}
-      {/* Warning overlay */}
+          ⠿
+        </span>
+
+        {/* Rank badge */}
+        <span style={{
+          fontSize: 11, fontWeight: 800, color: '#E8722A', flexShrink: 0,
+          background: 'rgba(232,114,42,0.12)', borderRadius: 6, padding: '2px 8px',
+          fontFamily: "'DM Sans', sans-serif",
+        }}>
+          #{index + 1}
+        </span>
+
+        {/* Traffic dot */}
+        <span
+          title={r.reasons.length ? r.reasons.join(' · ') : 'Ready to feature'}
+          style={{
+            display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+            background: color.dot, flexShrink: 0,
+          }}
+        />
+
+        {/* Artist name + chips */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="font-display font-bold text-sm" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {event.artist_name || 'Unknown'}
+            </span>
+            {r.templateMissing && <span style={chipStyle('#F97316')}>Template Missing</span>}
+            {r.artistNotLinked && (
+              <span style={chipStyle('#F97316')} title="No artist_id — waterfall can't pull Artist Profile's image or bio until linked.">
+                Artist not linked
+              </span>
+            )}
+            {r.state === 'red' && <span style={chipStyle('#EF4444')}>{w.start_time ? 'Stuck at 12:00 AM' : 'No start time'}</span>}
+            {r.state === 'yellow' && !w.event_image && <span style={chipStyle('#EAB308')}>No Image</span>}
+            {r.state === 'yellow' && w.event_image && !w.description && <span style={chipStyle('#EAB308')}>No Bio</span>}
+            {w.is_human_edited && <span style={chipStyle('#60A5FA')}>Human-locked</span>}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 1 }}>
+            {event.venue_name || event.venues?.name || ''} · {formatTime(event.event_date)}
+          </div>
+        </div>
+
+        {/* Remove (unpin) button */}
+        {onRemove && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card)', border: '1px solid var(--border)',
+              color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: '4px 8px',
+              borderRadius: 6, lineHeight: 1, flexShrink: 0,
+            }}
+            title="Unpin from spotlight"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      {/* Always-expanded preview: image left, metadata right */}
+      <div style={{
+        padding: '12px 16px',
+        display: 'grid',
+        gridTemplateColumns: 'minmax(140px, 180px) 1fr',
+        gap: 16,
+        alignItems: 'start',
+      }}>
+        {/* Image */}
+        <div style={{
+          aspectRatio: '4 / 3', borderRadius: 10, overflow: 'hidden',
+          background: 'var(--bg-card)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: 'var(--text-muted)', fontSize: 11, textAlign: 'center', padding: 8,
+        }}>
+          {w.event_image ? (
+            <img src={w.event_image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+          ) : (
+            <span>No image across the full waterfall</span>
+          )}
+        </div>
+
+        {/* Metadata rows */}
+        <div style={{ fontFamily: "'DM Sans', sans-serif", fontSize: 12 }}>
+          <PreviewRow label="Category" value={w.category || '— Other —'} source={sourceLabel(event, r.template, 'category')} />
+          <PreviewRow label="Start time" value={timeLabel} source={sourceLabel(event, r.template, 'start_time')} />
+          <PreviewRow label="Title" value={w.title || '—'} source={sourceLabel(event, r.template, 'title')} />
+          <PreviewRow label="Bio" value={w.description ? truncate(w.description, 180) : '—'} source={sourceLabel(event, r.template, 'bio')} multiline />
+          {r.template && (
+            <PreviewRow label="Template" value={r.template.template_name || '(unnamed)'} source="event.template_id" />
+          )}
+        </div>
+      </div>
+
+      {/* Warning overlay (red pulse when #5 is about to be bumped) */}
       {showWarning && (
         <div style={{
           position: 'absolute', inset: 0, borderRadius: 10,
           background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center',
           justifyContent: 'center', pointerEvents: 'none',
         }}>
-          <span style={{ fontSize: 9, fontWeight: 700, color: '#EF4444', background: 'rgba(0,0,0,0.6)', borderRadius: 4, padding: '2px 6px' }}>
-            Will be bumped
+          <span style={{
+            fontSize: 12, fontWeight: 700, color: '#EF4444',
+            background: 'rgba(0,0,0,0.65)', borderRadius: 6, padding: '4px 12px',
+          }}>
+            Will be bumped off
           </span>
         </div>
       )}
