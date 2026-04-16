@@ -61,6 +61,19 @@ export default function AdminSpotlightTab({
   const [expandedSlots, setExpandedSlots] = useState(() => new Set());
   const [activeId, setActiveId] = useState(null);    // currently dragged item
 
+  // ── Review Mode — banner-driven filter ──────────────────────────────────
+  // When the admin clicks "N events" or "M locked" in the post-enrich
+  // banner, we narrow the candidate list to just the ids that run touched.
+  // `type` is cosmetic — it drives the chip color and "Showing N updated"
+  // header label — the actual filter is whatever's in `ids`.
+  //
+  // Cleared automatically when the date changes (the ids belong to the
+  // run, not to the date) or when the user clicks ✕ on the filter chip.
+  // We intentionally DON'T clear on a new enrich run — the new
+  // `lastEnrichResult` just updates the counts; the operator has to
+  // opt-in to filter again via another click.
+  const [bannerFilter, setBannerFilter] = useState(null);  // { type: 'updated'|'rescued', ids: string[] } | null
+
   const toggleSlotExpanded = (eventId) => {
     setExpandedSlots(prev => {
       const next = new Set(prev);
@@ -113,18 +126,26 @@ export default function AdminSpotlightTab({
   }, [spotlightPins, MAX_PINS]);
 
   // ── Candidate list (un-pinned events) ────────────────────────────────────
+  // Filters compose in this order: pin-exclusion → search → bannerFilter.
+  // bannerFilter is last so the admin can still search inside a Review-Mode
+  // slice (e.g. "show just the 11 rescues, then type to find one by venue").
+  const bannerFilterIdSet = useMemo(
+    () => bannerFilter ? new Set(bannerFilter.ids) : null,
+    [bannerFilter]
+  );
   const candidates = useMemo(() => {
     const pinSet = new Set(spotlightPins);
     return spotlightEvents
       .filter(ev => {
         if (pinSet.has(ev.id)) return false;
+        if (bannerFilterIdSet && !bannerFilterIdSet.has(ev.id)) return false;
         if (!spotlightSearch.trim()) return true;
         const q = spotlightSearch.trim().toLowerCase();
         const artist = (ev.artist_name || '').toLowerCase();
         const venue = (ev.venue_name || ev.venues?.name || '').toLowerCase();
         return artist.includes(q) || venue.includes(q);
       });
-  }, [spotlightEvents, spotlightPins, spotlightSearch]);
+  }, [spotlightEvents, spotlightPins, spotlightSearch, bannerFilterIdSet]);
 
   // ── Is the strip full? (drives the #5 "warning" border) ─────────────────
   const stripFull = spotlightPins.length >= MAX_PINS;
@@ -345,16 +366,68 @@ export default function AdminSpotlightTab({
                 <>
                   <span style={{ fontSize: 16 }}>✨</span>
                   <span style={{ fontWeight: 600 }}>
-                    Enriched {lastEnrichResult.eventsUpdated || 0} of {lastEnrichResult.candidates || 0} events
+                    Enriched{' '}
+                    {/* Clickable "N events" — filters the candidate list to
+                        only the ids this run actually updated. Falls back
+                        to a plain span if the backend didn't return ids
+                        (pre-Review-Mode deploys). Toggles off on a second
+                        click so the admin can pop back to the full list. */}
+                    {Array.isArray(lastEnrichResult.updatedEventIds) && lastEnrichResult.updatedEventIds.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setBannerFilter(prev =>
+                          prev?.type === 'updated' ? null : { type: 'updated', ids: lastEnrichResult.updatedEventIds }
+                        )}
+                        style={{
+                          background: bannerFilter?.type === 'updated' ? 'rgba(34,197,94,0.22)' : 'transparent',
+                          border: '1px solid rgba(34,197,94,0.45)',
+                          color: 'inherit', cursor: 'pointer',
+                          padding: '1px 6px', borderRadius: 6,
+                          fontWeight: 700, fontSize: 13, fontFamily: 'inherit',
+                        }}
+                        title="Click to show only the events this run updated"
+                      >
+                        {lastEnrichResult.eventsUpdated || 0} events
+                      </button>
+                    ) : (
+                      <>{lastEnrichResult.eventsUpdated || 0} events</>
+                    )}
+                    {' '}of {lastEnrichResult.candidates || 0} events
                   </span>
                   <span style={{ color: 'var(--text-muted)' }}>
                     · {lastEnrichResult.artistsEnriched || 0} artists · {lastEnrichResult.duration || ''}
-                    {lastEnrichResult.lockedBlankFilled
-                      ? ` · ${lastEnrichResult.lockedBlankFilled} locked (blank-filled)`
-                      : (lastEnrichResult.lockedSkipped
-                          ? ` · ${lastEnrichResult.lockedSkipped} locked (skipped)`
-                          : '')}
+                    {lastEnrichResult.lockedBlankFilled ? ' · ' : ''}
                   </span>
+                  {/* Clickable "M locked (blank-filled)" — same pattern as
+                      the events count but filters to the rescue subset. */}
+                  {lastEnrichResult.lockedBlankFilled ? (
+                    Array.isArray(lastEnrichResult.rescuedEventIds) && lastEnrichResult.rescuedEventIds.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setBannerFilter(prev =>
+                          prev?.type === 'rescued' ? null : { type: 'rescued', ids: lastEnrichResult.rescuedEventIds }
+                        )}
+                        style={{
+                          background: bannerFilter?.type === 'rescued' ? 'rgba(96,165,250,0.22)' : 'transparent',
+                          border: '1px solid rgba(96,165,250,0.45)',
+                          color: 'var(--text-muted)', cursor: 'pointer',
+                          padding: '1px 6px', borderRadius: 6,
+                          fontWeight: 700, fontSize: 12, fontFamily: 'inherit',
+                        }}
+                        title="Click to show only the locked-blank rows this run rescued"
+                      >
+                        {lastEnrichResult.lockedBlankFilled} locked (blank-filled)
+                      </button>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        {lastEnrichResult.lockedBlankFilled} locked (blank-filled)
+                      </span>
+                    )
+                  ) : (lastEnrichResult.lockedSkipped ? (
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      {lastEnrichResult.lockedSkipped} locked (skipped)
+                    </span>
+                  ) : null)}
                   <span style={{ color: 'var(--text-muted)', marginLeft: 'auto', fontSize: 11 }}>
                     Filled fields are now locked from the scraper.
                   </span>
@@ -375,7 +448,15 @@ export default function AdminSpotlightTab({
             <input
               type="date"
               value={spotlightDate}
-              onChange={(e) => { const d = e.target.value; setSpotlightDate(d); fetchSpotlight(d); }}
+              onChange={(e) => {
+                const d = e.target.value;
+                setSpotlightDate(d);
+                fetchSpotlight(d);
+                // Review-Mode filter ids belong to the previous run on the
+                // previous date — drop it so the new date shows its full
+                // candidate list rather than an empty slice.
+                setBannerFilter(null);
+              }}
               style={{
                 padding: '8px 12px', background: 'var(--bg-card)', border: '1px solid var(--border)',
                 borderRadius: '8px', color: 'var(--text-primary)', fontFamily: "'DM Sans', sans-serif", fontSize: '14px',
@@ -488,6 +569,37 @@ export default function AdminSpotlightTab({
           </span>
         </div>
 
+        {/* Review-Mode filter chip — surfaces the active bannerFilter so
+            the admin always knows when the list is sliced, and gives them
+            a one-click escape hatch without scrolling back to the banner. */}
+        {bannerFilter && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+            padding: '6px 10px', marginBottom: 8, borderRadius: 6,
+            background: bannerFilter.type === 'rescued'
+              ? 'rgba(96,165,250,0.10)'
+              : 'rgba(34,197,94,0.10)',
+            border: bannerFilter.type === 'rescued'
+              ? '1px solid rgba(96,165,250,0.35)'
+              : '1px solid rgba(34,197,94,0.35)',
+            fontSize: 12, color: 'var(--text-secondary)',
+          }}>
+            <span>
+              Review Mode: showing {candidates.length} {bannerFilter.type === 'rescued' ? 'rescued' : 'updated'} row{candidates.length === 1 ? '' : 's'} from the last Auto-Fill run
+            </span>
+            <button
+              type="button"
+              onClick={() => setBannerFilter(null)}
+              style={{
+                marginLeft: 'auto', background: 'none', border: 'none',
+                color: 'var(--text-muted)', cursor: 'pointer',
+                fontSize: 12, padding: '2px 6px',
+              }}
+              title="Clear the filter and show all candidates"
+            >✕ Clear filter</button>
+          </div>
+        )}
+
         {spotlightLoading && (
           <p className="text-center py-6" style={{ color: 'var(--text-muted)' }}>Loading…</p>
         )}
@@ -503,6 +615,17 @@ export default function AdminSpotlightTab({
               ? (isMidnight(w.start_time) && !w.is_human_edited ? '12:00 AM (unresolved)' : w.start_time)
               : '— missing —';
 
+            // "Just updated" visual signal — any row whose updated_at
+            // timestamp is inside a 10-minute sliding window. We prefer
+            // this over a one-shot "came back in the enrich response"
+            // signal because it also catches manual PUTs from the admin
+            // modal, so a human curating the row right after Auto-Fill
+            // gets the same recency cue. The window is computed per
+            // render, not memoized, so the badge fades on its own as
+            // the clock advances past the cutoff.
+            const updatedAtMs = ev.updated_at ? new Date(ev.updated_at).getTime() : 0;
+            const justUpdated = updatedAtMs > 0 && (Date.now() - updatedAtMs) < 10 * 60 * 1000;
+
             return (
               <DraggableEventCard
                 key={ev.id}
@@ -516,6 +639,7 @@ export default function AdminSpotlightTab({
                 timeLabel={timeLabel}
                 w={w}
                 r={r}
+                justUpdated={justUpdated}
               />
             );
           })}
@@ -816,7 +940,7 @@ function SpotlightSlot({
 // ══════════════════════════════════════════════════════════════════════════════
 // DraggableEventCard — a card in the candidate list that can be dragged to a slot
 // ══════════════════════════════════════════════════════════════════════════════
-function DraggableEventCard({ id, ev, resolve, isExpanded, onToggleExpand, onPin, color, timeLabel, w, r }) {
+function DraggableEventCard({ id, ev, resolve, isExpanded, onToggleExpand, onPin, color, timeLabel, w, r, justUpdated = false }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
     id,
     // This item lives outside the SortableContext — we only need it to be
@@ -897,6 +1021,12 @@ function DraggableEventCard({ id, ev, resolve, isExpanded, onToggleExpand, onPin
               {r.state === 'yellow' && !w.event_image && <span style={chipStyle('#EAB308')}>Warning: No Image</span>}
               {r.state === 'yellow' && w.event_image && !w.description && <span style={chipStyle('#EAB308')}>Warning: No Bio</span>}
               {w.is_human_edited && <span style={chipStyle('#60A5FA')}>Human-locked</span>}
+              {justUpdated && (
+                <span
+                  style={chipStyle('#22C55E')}
+                  title={`Updated ${ev.updated_at ? new Date(ev.updated_at).toLocaleTimeString() : 'recently'} — fades after 10 min`}
+                >✨ Just updated</span>
+              )}
             </div>
             <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
               {ev.venue_name || ev.venues?.name} · {formatTime(ev.event_date)}
@@ -935,7 +1065,13 @@ function DraggableEventCard({ id, ev, resolve, isExpanded, onToggleExpand, onPin
               <PreviewRow label="Category" value={w.category || '— Other —'} source={sourceLabel(ev, r.template, 'category')} />
               <PreviewRow label="Start time" value={timeLabel} source={sourceLabel(ev, r.template, 'start_time')} />
               <PreviewRow label="Title" value={w.title || '—'} source={sourceLabel(ev, r.template, 'title')} />
-              <PreviewRow label="Bio" value={w.description ? truncate(w.description, 180) : '—'} source={sourceLabel(ev, r.template, 'bio')} multiline />
+              <PreviewRow
+                label="Bio"
+                value={w.description || '—'}
+                source={sourceLabel(ev, r.template, 'bio')}
+                multiline
+                clampLines={6}
+              />
               {r.template && (
                 <PreviewRow label="Template" value={r.template.template_name || '(unnamed)'} source="event.template_id" />
               )}
@@ -1034,7 +1170,31 @@ function sourceLabel(event, template, field) {
   }
 }
 
-function PreviewRow({ label, value, source, multiline }) {
+// PreviewRow — expandable multi-line field with optional line-clamp.
+//
+// When `clampLines` is passed and the caller's value is a string longer
+// than one line, we render with `-webkit-line-clamp` and surface a
+// "See more" / "See less" toggle. Reasons to use line-clamp over a
+// char-count truncate (which is what we did pre-Review Mode):
+//   • Line-based clamp respects reading flow. Old char-truncate produced
+//     mid-word cut-offs like "mint oil drizzl…" on AI-generated VENUE_EVENT
+//     bios, which hid meaningful detail with no affordance to expand.
+//   • `-webkit-line-clamp` is universally supported in the browsers this
+//     admin UI targets (latest Chrome/Safari/Firefox). Fallback behavior
+//     on un-supported engines is "show full text" — safe degradation.
+//   • Per-card state means expanding one bio doesn't rearrange the whole
+//     candidate list, which would be jarring during a review sweep.
+function PreviewRow({ label, value, source, multiline, clampLines }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const stringValue = typeof value === 'string' ? value : '';
+  // Heuristic: only offer See more if there's enough text to plausibly
+  // exceed `clampLines`. Assumes ~60 chars/line at the current font size
+  // and grid column; conservative enough that false negatives (hiding
+  // the toggle when a very short bio happens to wrap 7 times) are rare.
+  const maybeOverflows = clampLines && stringValue.length > clampLines * 60;
+  const shouldClamp = clampLines && !expanded;
+
   return (
     <div style={{
       display: 'grid', gridTemplateColumns: '80px 1fr auto', gap: '8px',
@@ -1042,14 +1202,32 @@ function PreviewRow({ label, value, source, multiline }) {
       alignItems: multiline ? 'start' : 'center',
     }}>
       <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{label}</span>
-      <span style={{
-        color: 'var(--text-primary)',
-        whiteSpace: multiline ? 'normal' : 'nowrap',
-        overflow: multiline ? 'visible' : 'hidden',
-        textOverflow: multiline ? 'clip' : 'ellipsis',
-        fontFamily: multiline ? "'DM Sans', sans-serif" : 'inherit',
-        lineHeight: multiline ? 1.4 : 'inherit',
-      }}>{value}</span>
+      <div style={{ minWidth: 0 }}>
+        <span style={{
+          color: 'var(--text-primary)',
+          whiteSpace: multiline ? 'normal' : 'nowrap',
+          overflow: shouldClamp ? 'hidden' : (multiline ? 'visible' : 'hidden'),
+          textOverflow: multiline ? 'clip' : 'ellipsis',
+          fontFamily: multiline ? "'DM Sans', sans-serif" : 'inherit',
+          lineHeight: multiline ? 1.4 : 'inherit',
+          display: shouldClamp ? '-webkit-box' : 'block',
+          WebkitBoxOrient: shouldClamp ? 'vertical' : undefined,
+          WebkitLineClamp: shouldClamp ? clampLines : undefined,
+        }}>{value}</span>
+        {maybeOverflows && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setExpanded(x => !x); }}
+            style={{
+              marginTop: 4, background: 'none', border: 'none', padding: 0,
+              color: 'var(--text-muted)', cursor: 'pointer', fontSize: 11,
+              textDecoration: 'underline',
+            }}
+          >
+            {expanded ? 'See less' : 'See more'}
+          </button>
+        )}
+      </div>
       <span style={{ color: 'var(--text-muted)', fontSize: '10px', fontStyle: 'italic' }}>{source}</span>
     </div>
   );

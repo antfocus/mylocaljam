@@ -219,6 +219,12 @@ export async function POST(request) {
   // to display, so the event is not a candidate.
   const candidateEvents = [];
   let lockedBlankFilled = 0;
+  // Which candidate ids were in the "rescue" bucket at partition time — a
+  // superset of the ones we'll actually successfully write to. Kept as a
+  // Set so the write loop can O(1) check whether an updated row counts as
+  // a rescue win for the response payload (used by Review Mode in the
+  // admin UI to filter the event list to "only rescues from this run").
+  const rescueSet = new Set();
 
   for (const ev of events) {
     const hasImage = !!(
@@ -237,6 +243,7 @@ export async function POST(request) {
     // as fillable even on locked rows.
     if (ev.is_human_edited === true || ev.is_locked === true) {
       lockedBlankFilled++;
+      rescueSet.add(ev.id);
     }
 
     candidateEvents.push(ev);
@@ -296,6 +303,13 @@ export async function POST(request) {
   // ── 5. Run each artist through the strict AI helper ───────────────────
   let artistsEnriched = 0;
   let eventsUpdated = 0;
+  // Parallel id trackers — used by the admin UI's Review Mode to filter
+  // the event list to "just the rows this run touched". `updatedEventIds`
+  // is every event.id that got a successful UPDATE; `rescuedEventIds` is
+  // the subset that were rescue candidates (locked-blank pre-write) AND
+  // got updated. Arrays (not Sets) so they serialize cleanly as JSON.
+  const updatedEventIds = [];
+  const rescuedEventIds = [];
   const errors = [];
 
   for (const art of artists) {
@@ -445,6 +459,8 @@ export async function POST(request) {
         errors.push(`Event ${ev.id}: ${updateErr.message}`);
       } else {
         eventsUpdated++;
+        updatedEventIds.push(ev.id);
+        if (rescueSet.has(ev.id)) rescuedEventIds.push(ev.id);
       }
     }
   }
@@ -463,6 +479,13 @@ export async function POST(request) {
     uniqueArtists,
     artistsEnriched,
     eventsUpdated,
+    // Review Mode — the admin UI banner makes these counts clickable to
+    // filter the candidate list to "only rows this run touched". The ids
+    // are the ONLY source of truth for that filter; don't derive it from
+    // `updated_at` windows on the client (clock skew + other writes in
+    // the same window would misattribute rows).
+    updatedEventIds,
+    rescuedEventIds,
     errors: errors.length ? errors : null,
     duration,
   });

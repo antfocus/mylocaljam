@@ -404,19 +404,41 @@ export async function DELETE(request) {
   }
 
   // Legacy: convert-to-special (keep for backward compat)
-  if (action === 'convert-to-special') {
+  // Scoped to the same upcoming-published set used everywhere else in this
+  // handler. The old implementation used an unscoped .ilike('artist_name',
+  // artist.name) which reached into past rows and future rows at other
+  // dates — exact shape of the 2026-04-14 "7:12 PM Ghost" that falsely
+  // locked 5 April 21 rows. See HANDOVER 2026-04-16 postmortem.
+  if (action === 'convert-to-special' && eventCount > 0) {
+    const eventIds = linkedEvents.map(e => e.id);
     await supabase
       .from('events')
       .update({ category: 'Drink/Food Special', artist_name: null, artist_bio: null, is_human_edited: true })
-      .ilike('artist_name', artist.name);
+      .in('id', eventIds);
   }
 
-  // Nuclear cleanup: also mark ALL events with this artist_name as human-edited
-  // so the enrichment step never tries to re-create the artist from event data
-  await supabase
-    .from('events')
-    .update({ artist_id: null, is_human_edited: true })
-    .ilike('artist_name', artist.name);
+  // Cleanup sweep — flip the lock on every linked upcoming event so the
+  // scraper/enrichment pipeline can't immediately re-recreate the deleted
+  // artist profile from tomorrow's sync. SCOPED to `eventIds` (the upcoming
+  // published set from linkedEvents above) rather than the fuzzy
+  // `.ilike('artist_name', artist.name)` it used to use. The old shape was
+  // the smoking gun for the 7:12 PM Ghost (2026-04-14) — an artist delete
+  // would stamp `is_human_edited=true` on past events AND on future events
+  // at unrelated dates that happened to share a fuzzy-matching name. With
+  // the scoped set:
+  //   • Today + future: lock flipped correctly (these ids are already the
+  //     upcoming-published rows linkedEvents returned).
+  //   • Past: untouched — archived history stays as-is.
+  //   • Other venues / other dates matching by name coincidence: untouched
+  //     unless they're also upcoming-published-linked (which is the whole
+  //     point — that's when they'd be legitimately affected).
+  if (eventCount > 0) {
+    const eventIds = linkedEvents.map(e => e.id);
+    await supabase
+      .from('events')
+      .update({ artist_id: null, is_human_edited: true })
+      .in('id', eventIds);
+  }
 
   // Add to ignored_artists blacklist so the scraper never re-creates this profile
   await supabase
