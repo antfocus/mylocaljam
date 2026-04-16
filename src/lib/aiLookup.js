@@ -8,9 +8,20 @@
  *      MusicBrainz/Discogs/Last.fm all return null
  *   3. Magic Wand bulk enrich → /api/admin/enrich-date
  *
- * Prompt contract (STRICT — matches product spec 2026-04-15):
+ * Prompt contract (STRICT — matches product spec 2026-04-16):
  *
- *   Bio:
+ *   CLASSIFICATION FORK — the name on an "event" row in our DB isn't always
+ *   a musician. Venues list things like "Trivia Night", "BOGO Burger",
+ *   "Karaoke Tuesday", or "Taco & Margarita Night" in the same `artist_name`
+ *   slot. Before writing anything, the LLM must decide:
+ *     • MUSICIAN     — band, solo artist, DJ, tribute act.
+ *     • VENUE_EVENT  — trivia, karaoke, food/drink special, recurring theme
+ *                      night, comedy night, open mic, etc.
+ *   The rules for bio and image BOTH fork on this decision. We propagate the
+ *   decision back as `kind` on the return object so callers can behave
+ *   differently (e.g. skip musical-genre tagging on venue events).
+ *
+ *   Bio (MUSICIAN branch):
  *     • Max 500 characters (hard cap, enforced both in prompt AND client-side
  *       post-trim — the LLM sometimes overshoots; we never write >500 chars).
  *     • Focus strictly on musical style, genre, and range.
@@ -20,15 +31,35 @@
  *     • NO generic filler ("Come out for a night of music", "Don't miss...").
  *     • Tone: neutral, informative, professional.
  *
- *   Image:
+ *   Bio (VENUE_EVENT branch):
+ *     • Max 500 characters (same hard cap, same client-side trim).
+ *     • Describe THE ACTIVITY, the venue atmosphere, and what attendees can
+ *       expect (e.g. trivia format, food special details, karaoke vibe).
+ *     • Keep it informative and punchy.
+ *     • DO NOT invent musical genres for food/trivia/drink events.
+ *     • Same banned hype-word list and same "no call-to-action filler" rule
+ *       apply — this is still listings copy, not marketing.
+ *
+ *   Image (MUSICIAN branch):
  *     • Prefer official promotional image: artist website, primary social.
  *     • High-res direct image URLs only (.jpg/.jpeg/.png/.webp).
- *     • If Perplexity can't find one confidently, we fall back to Serper
- *       (Google Images) — same hotlink-safe filter as before.
+ *
+ *   Image (VENUE_EVENT branch):
+ *     • Prefer a high-quality photo of the venue's interior, the specific
+ *       food/drink item, or a lifestyle shot matching the event vibe.
+ *     • NO clip-art, stock icons, or generic silhouettes.
+ *     • High-res direct image URLs only.
+ *
+ *   If Perplexity can't return a confident image URL, we fall back to Serper
+ *   (Google Images) with a kind-aware query — MUSICIAN queries still use
+ *   "band live music"; VENUE_EVENT queries use the event name plus a generic
+ *   "restaurant bar interior" hint to avoid hotlinking band stock art onto a
+ *   burger night.
  *
  *   Output:
- *     { bio, image_url, source_link, is_tribute } on Pass 1.
- *     genres + vibes come from a separate Pass 2 so admin UI shape is preserved.
+ *     { kind, bio, image_url, source_link, is_tribute } on Pass 1.
+ *     genres + vibes come from a separate Pass 2 — SKIPPED entirely when
+ *     kind === 'VENUE_EVENT' so we never tag a trivia night as "Jazz / Chill".
  *
  * Why ONE place, not three prompt copies: the tone contract (no marketing
  * hyperbole, 500-char cap, banned-word list, context framing) CANNOT be
@@ -157,10 +188,20 @@ export function isHypeFree(bio) {
 /**
  * Serper.dev Google Image Search. Returns up to 5 hotlink-safe URLs.
  * Returns [] if SERPER_API_KEY is missing or the call fails.
+ *
+ * `kind` lets the caller tune the query — a MUSICIAN lookup wants "band live
+ * music" added so Google ranks promo shots first; a VENUE_EVENT lookup
+ * (trivia, BOGO night, karaoke, etc.) must NOT get a band-hinted query or
+ * Serper will return random band photos. Defaults to MUSICIAN to preserve
+ * legacy callers that don't know about the fork.
  */
-export async function searchArtistImages(artistName) {
+export async function searchArtistImages(artistName, kind = 'MUSICIAN') {
   const serperKey = process.env.SERPER_API_KEY;
   if (!serperKey) return [];
+
+  const q = kind === 'VENUE_EVENT'
+    ? `${artistName} restaurant bar interior`
+    : `${artistName} band live music`;
 
   try {
     const res = await fetch('https://google.serper.dev/images', {
@@ -170,7 +211,7 @@ export async function searchArtistImages(artistName) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        q: `${artistName} band live music`,
+        q,
         num: 10,
       }),
     });
@@ -281,52 +322,125 @@ export async function aiLookupArtist({ artistName, venue, city, autoMode = false
   const venueStr = (venue && typeof venue === 'string') ? venue.trim() : '';
   const cityStr = (city && typeof city === 'string') ? city.trim() : '';
 
-  // ── Pass 1: Bio + image_url + source_link (STRICT spec) ───────────────
+  // ── Pass 1: Classify + Bio + image_url + source_link (STRICT spec) ────
   //
   // The system prompt is deliberately verbose and repetitive about the
   // constraints. LLMs drift when rules are stated once; stating them twice
-  // (once in BIO RULES, once in OUTPUT) reliably keeps sonar-pro on tone.
-  const bioSystemPrompt = `You are a professional music writer producing neutral, factual bios for a local live-music listings site. Follow these rules STRICTLY.
+  // (once under each branch, once in OUTPUT) reliably keeps sonar-pro on
+  // tone. The FORK at the top is load-bearing: without it, the LLM happily
+  // writes fictional "blues-rock quartet" bios for "Trivia Night" entries.
+  const bioSystemPrompt = `You are a professional listings writer for a local live-music and nightlife site. Follow these rules STRICTLY.
 
-BIO RULES:
-- Maximum 500 characters (count every character including spaces and punctuation).
-- Focus STRICTLY on the artist's musical style, genre, and range — what kind of music they play, their instrumentation, their sound.
-- DO NOT list past venues, tour history, award history, or any places the band has performed. Not even one example.
-- AVOID hype words: "legendary", "world-class", "amazing", "soul-stirring", "incredible", "electrifying", "unforgettable", "mind-blowing", "jaw-dropping". Never use promotional adjectives.
-- DO NOT use generic filler sentences such as "Come out for a night of music" or "Don't miss this show" or "You won't want to miss…". Never address the reader or call them to action.
-- Tone: neutral, informative, professional — like an encyclopedia entry, not marketing copy.
-- Write 1–3 complete sentences. End on a period. If you would exceed 500 characters, rewrite shorter rather than truncating mid-sentence.
-- If the data is insufficient to confidently identify the artist, return exactly: "NEEDS_MANUAL_REVIEW" for bio.
+═══════════════════════════════════════════════════════
+STEP 1 — CATEGORIZATION (do this FIRST, before writing anything):
+═══════════════════════════════════════════════════════
+Analyze the provided name and decide which of these two categories it belongs to:
 
-IMAGE RULES:
-- Find the most likely OFFICIAL promotional image for this specific artist/band.
-- Prefer high-resolution sources: the artist's official website, their primary social-media profile banner, or a press kit photo.
-- The URL must point DIRECTLY to an image file (e.g. .jpg, .jpeg, .png, .webp). Not a webpage.
-- If you cannot find a confident direct image URL, return null for image_url. Do not guess.
+- MUSICIAN: a band, solo artist, DJ, duo, tribute act, or other live-music performer.
+    Examples: "The Nerds", "Bruce Springsteen", "DJ Shadow", "Elton John Tribute".
 
-SOURCE LINK:
-- Return the web page you used to source the bio/image (artist website, Wikipedia, primary social). Null if none.
+- VENUE_EVENT: a recurring or themed venue activity that is NOT a specific performer.
+    Examples: "Trivia Night", "Karaoke Tuesday", "BOGO Burger", "Taco & Margarita Night",
+    "Open Mic", "Comedy Night", "Happy Hour", "Paint and Sip", "Brunch Bingo".
 
-OUTPUT — respond with valid JSON ONLY, no markdown, no code fences, no commentary:
-{ "bio": "string or NEEDS_MANUAL_REVIEW", "image_url": "string or null", "source_link": "string or null", "is_tribute": boolean }`;
+If the name clearly refers to a person or band playing music, it is MUSICIAN.
+If the name describes an activity, food/drink special, or theme night, it is VENUE_EVENT.
+If ambiguous, use the venue and city context to decide. When still unsure, default to
+MUSICIAN only if the name reads like a proper noun for a performer; otherwise VENUE_EVENT.
+
+Set the output field "kind" to exactly "MUSICIAN" or "VENUE_EVENT".
+
+═══════════════════════════════════════════════════════
+STEP 2 — CONDITIONAL WRITING RULES
+═══════════════════════════════════════════════════════
+
+IF kind === "MUSICIAN":
+  BIO RULES (MUSICIAN):
+  - Maximum 500 characters (count every character including spaces and punctuation).
+  - Focus STRICTLY on the artist's musical style, genre, vocal range, and instrumentation — what kind of music they play and how they sound.
+  - DO NOT list past venues, tour history, award history, or any places the band has performed. Not even one example.
+  - AVOID hype words: "legendary", "world-class", "amazing", "soul-stirring", "incredible", "electrifying", "unforgettable", "mind-blowing", "jaw-dropping". Never use promotional adjectives.
+  - DO NOT use generic filler sentences such as "Come out for a night of music" or "Don't miss this show" or "You won't want to miss…". Never address the reader or call them to action.
+  - Tone: neutral, informative, professional — like an encyclopedia entry, not marketing copy.
+  - Write 1–3 complete sentences. End on a period. If you would exceed 500 characters, rewrite shorter rather than truncating mid-sentence.
+  - If the data is insufficient to confidently identify the artist, return exactly: "NEEDS_MANUAL_REVIEW" for bio.
+
+IF kind === "VENUE_EVENT":
+  BIO RULES (VENUE_EVENT):
+  - Maximum 500 characters (same hard cap).
+  - Describe THE ACTIVITY, the venue's atmosphere, and what attendees can expect (e.g. trivia format and prize structure, karaoke vibe, food/drink special details, comedy lineup style).
+  - Keep it informative and punchy. 1–3 complete sentences. End on a period.
+  - DO NOT invent musical genres, vocal ranges, or performer details for food/trivia/drink events. This event has no "sound".
+  - Same banned hype-word list applies: "legendary", "world-class", "amazing", "soul-stirring", "incredible", "electrifying", "unforgettable", "mind-blowing", "jaw-dropping".
+  - Same no-call-to-action rule: DO NOT write "Come out…", "Don't miss…", or address the reader.
+  - Tone: neutral, informative, professional — a listings description, not marketing copy.
+  - If the data is insufficient to describe the event meaningfully, return exactly: "NEEDS_MANUAL_REVIEW" for bio.
+
+═══════════════════════════════════════════════════════
+STEP 3 — CONDITIONAL IMAGE RULES
+═══════════════════════════════════════════════════════
+
+IF kind === "MUSICIAN":
+  - Find the most likely OFFICIAL promotional image for this specific artist/band.
+  - Prefer high-resolution sources: the artist's official website, their primary social-media profile banner, or a press kit photo.
+  - The URL must point DIRECTLY to an image file (.jpg, .jpeg, .png, .webp). Not a webpage.
+  - If you cannot find a confident direct image URL, return null for image_url. Do not guess.
+
+IF kind === "VENUE_EVENT":
+  - Find a high-quality photo of EITHER:
+      (a) the venue's interior matching the event's atmosphere, OR
+      (b) the specific food/drink item featured in the event, OR
+      (c) a generic but high-quality lifestyle photo matching the event vibe
+          (e.g. a real photo of a trivia night crowd, a photographed burger
+          for a burger special, a candid karaoke shot).
+  - Prefer the venue's own website or social media if they have a real photo.
+  - DO NOT return clip-art, cartoon icons, generic silhouettes, stock vector
+    illustrations, or Shutterstock-style watermarked thumbnails.
+  - High-res direct image URLs only (.jpg, .jpeg, .png, .webp). Not a webpage.
+  - If you cannot find a confident direct image URL, return null for image_url.
+
+═══════════════════════════════════════════════════════
+STEP 4 — SOURCE LINK
+═══════════════════════════════════════════════════════
+Return the web page you used to source the bio/image (artist website, venue website, Wikipedia, primary social). Null if none.
+
+═══════════════════════════════════════════════════════
+STEP 5 — OUTPUT
+═══════════════════════════════════════════════════════
+Respond with valid JSON ONLY, no markdown, no code fences, no commentary:
+{ "kind": "MUSICIAN" or "VENUE_EVENT", "bio": "string or NEEDS_MANUAL_REVIEW", "image_url": "string or null", "source_link": "string or null", "is_tribute": boolean }
+
+"is_tribute" only applies when kind === "MUSICIAN". For VENUE_EVENT, always set is_tribute to false.`;
 
   const contextLines = [
-    `Artist: "${name}"`,
-    venueStr ? `Playing at: ${venueStr}` : '',
+    `Name: "${name}"`,
+    venueStr ? `Listed at venue: ${venueStr}` : '',
     cityStr ? `Location: ${cityStr}` : '',
   ].filter(Boolean).join('\n');
 
-  const bioUserPrompt = `Research this artist for a local live-music listing.
+  const bioUserPrompt = `Research this listing for a local live-music and nightlife site.
 
 ${contextLines}
 
-Use the venue and location context above to disambiguate generic band names. If the artist appears to be a local act tied to the Jersey Shore region, research accordingly; if they are a nationally known act, search broadly.
+First, classify this name as either MUSICIAN or VENUE_EVENT per the CATEGORIZATION step in the system prompt. The venue/location context above is especially useful when the name alone is ambiguous — e.g. "Bingo" at a restaurant is a VENUE_EVENT; "Bingo Players" at a club is a MUSICIAN.
 
-Return the strict JSON object defined in the system prompt. Obey every BIO RULE and IMAGE RULE.`;
+Then apply the conditional BIO RULES and IMAGE RULES for the chosen kind. If the name is MUSICIAN and appears to be a local act tied to the Jersey Shore region, research accordingly; if they are a nationally known act, search broadly.
+
+Return the strict JSON object defined in STEP 5. Obey every rule for the chosen branch.`;
 
   const bioResult = await callPerplexity(bioSystemPrompt, bioUserPrompt, { apiKey });
 
+  // Normalize the classification decision. Anything the LLM doesn't clearly
+  // emit as "VENUE_EVENT" falls back to MUSICIAN — that's the legacy path
+  // and is the safer default when the classifier itself fails (the MUSICIAN
+  // bio rules are stricter and catch more hype-copy).
+  const rawKind = typeof bioResult?.kind === 'string' ? bioResult.kind.trim().toUpperCase() : '';
+  const kind = rawKind === 'VENUE_EVENT' ? 'VENUE_EVENT' : 'MUSICIAN';
+
   // ── Pass 2: Genre & Vibe Tagger ───────────────────────────────────────
+  // SKIPPED for VENUE_EVENT — we don't tag trivia nights as "Jazz / Chill".
+  // Downstream code should treat `genres: []` + `vibes: []` on a VENUE_EVENT
+  // result as "no musical classification applies", not as "unknown genre".
   const rawBio = typeof bioResult?.bio === 'string' ? bioResult.bio : '';
   const bioText = rawBio === 'NEEDS_MANUAL_REVIEW' ? '' : rawBio;
 
@@ -342,7 +456,7 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
 
   const tagUserPrompt = `Artist: "${name}"\nBio: "${bioText}"\n\nCategorize using ONLY the allowed lists.`;
 
-  const tagResult = bioText
+  const tagResult = (bioText && kind === 'MUSICIAN')
     ? await callPerplexity(tagSystemPrompt, tagUserPrompt, { apiKey })
     : null;
 
@@ -391,7 +505,9 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
     image_source = 'perplexity';
   } else {
     try {
-      const serperHits = await searchArtistImages(name);
+      // Kind-aware Serper query — "band live music" for MUSICIAN,
+      // "restaurant bar interior" for VENUE_EVENT. See searchArtistImages.
+      const serperHits = await searchArtistImages(name, kind);
       if (serperHits.length > 0) {
         image_candidates = serperHits;
         image_url = serperHits[0];

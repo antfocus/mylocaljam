@@ -98,15 +98,33 @@ export async function GET(request) {
   // One round-trip pulls the data we need to classify quality tiers without
   // pre-hydrating the full waterfall. The later full-embed fetch still runs
   // for display rendering.
+  //
+  // IMPORTANT: `event_image` is a VIRTUAL column computed by `applyWaterfall`
+  // at render time — it does NOT exist in the `events` table. The real image
+  // sources on the row are `custom_image_url`, `event_image_url`, and the
+  // legacy `image_url`. Selecting the non-existent `event_image` returns a
+  // PostgREST error, which silently drops to `data === null` and leaves
+  // `tonight = []`. That was the root cause of every future date returning
+  // 0 suggested slots: the autopilot only runs if `tonight.length > 0`
+  // (see the guard below), and Tier 0 pins are the only thing that survived.
+  // Today's date "worked" any time there was at least one admin pin, masking
+  // the bug — unpinned future dates always returned [].
+  //
+  // Also: we destructure `error` now and log it. The old `const { data } = ...`
+  // pattern swallowed PostgREST errors as silent nulls, which is exactly how
+  // this regression hid in production. If a column name drifts again, the log
+  // line will surface it instead of a mystery empty carousel.
   let tonight = [];
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('events')
       .select(`
         id,
         artist_id,
         artist_name,
-        event_image,
+        custom_image_url,
+        event_image_url,
+        image_url,
         event_date,
         artists(name, image_url),
         venues(photo_url),
@@ -115,6 +133,9 @@ export async function GET(request) {
       .eq('status', 'published')
       .gte('event_date', dateStart)
       .lte('event_date', dateEnd);
+    if (error) {
+      console.warn('[spotlight] tonight fetch error:', error.message);
+    }
     tonight = Array.isArray(data) ? data : [];
   } catch (err) {
     console.warn('[spotlight] tonight fetch failed:', err.message);
@@ -152,13 +173,27 @@ export async function GET(request) {
       // favorites table may not exist — tier ranking degrades to start-time.
     }
 
-    // Classify into quality tier:
-    //   1 = event_image OR artists.image_url (the hero image we actually want)
-    //   2 = venues.photo_url (venue photo as visual anchor)
-    //   3 = event_templates.image_url (generic category/template stock)
+    // Classify into quality tier. The image sources MUST match the columns
+    // `applyWaterfall` considers (src/lib/waterfall.js) — `event_image` is a
+    // COMPUTED virtual field and is never on the row. Real hero-quality
+    // sources, in waterfall priority order:
+    //     custom_image_url  (admin override)
+    //     event_image_url   (scraper / admin)
+    //     image_url         (legacy scraper column)
+    //     artists.image_url (artist profile)
+    //
+    //   1 = any hero image source (the admin's "Ready" Green Badge matches
+    //       this set — see AdminSpotlightTab `missingMetadataCount`).
+    //   2 = only a venues.photo_url — workable visual anchor, not a hero.
+    //   3 = only an event_templates.image_url — category stock art.
     //  99 = nothing usable — skip entirely.
     const classify = (e) => {
-      if (e.event_image || e.artists?.image_url) return 1;
+      if (
+        e.custom_image_url ||
+        e.event_image_url ||
+        e.image_url ||
+        e.artists?.image_url
+      ) return 1;
       if (e.venues?.photo_url) return 2;
       if (e.event_templates?.image_url) return 3;
       return 99;
