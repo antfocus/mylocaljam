@@ -200,12 +200,17 @@ export async function GET(request) {
   // /api/events/route.js and the client-side fetch in page.js.
   // IMPORTANT: Do NOT select `event_image` (virtual) or `events.start_time`
   // (doesn't exist as a column). The start_time join comes from event_templates.
-  const selectColumns = `
-    *,
-    venues(name, address, color, photo_url, latitude, longitude, venue_type, tags),
-    artists(name, bio, genres, vibes, is_tribute, image_url),
-    event_templates(template_name, bio, image_url, category, start_time, genres)
-  `;
+  // IMPORTANT: Single-line string — newlines in template literals get URL-
+  // encoded (%0A) and break PostgREST's parser.
+  //
+  // The `!fk_events_template_id` hint tells PostgREST exactly which FK
+  // constraint to traverse for the event_templates join. Without this hint,
+  // PostgREST relies on auto-detection from its schema cache, which fails
+  // when the cache hasn't reloaded after the FK migration (NOTIFY pgrst
+  // doesn't always stick on local/staging instances). The hint syntax
+  // bypasses the cache entirely — works regardless of reload state.
+  // Ref: https://postgrest.org/en/stable/references/api/resource_embedding.html
+  const selectColumns = '*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates!fk_events_template_id(template_name, bio, image_url, category, start_time, genres)';
 
   // ── Search: build the ILIKE filter ──────────────────────────────────────
   // When q is provided, construct an OR filter across the searchable columns.

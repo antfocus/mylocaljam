@@ -768,142 +768,36 @@ export default function HomePage() {
   const [bottomSheet, setBottomSheet] = useState(null); // { type: 'venue'|'artist', name, entityId? }
   const [artistProfile, setArtistProfile] = useState(null); // artist name string or null
 
-  // ── Fetch from Supabase ──────────────────────────────────────────────────────
-  // Server-side date filtering: accepts an optional dateFloor (YYYY-MM-DD).
-  // When omitted, defaults to today so the initial mount load is fast.
-  const fetchEvents = useCallback(async (dateFloor) => {
-    try {
-      const now = new Date();
-      const pad = n => String(n).padStart(2, '0');
-      const todayLocal = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-      // Never fetch events before today, even if dateFloor is in the past
-      const floor = (dateFloor && dateFloor >= todayLocal) ? dateFloor : todayLocal;
+  // ── Pagination state ─────────────────────────────────────────────────────────
+  const [currentPage,  setCurrentPage]  = useState(1);
+  const [hasMore,      setHasMore]      = useState(false);
+  const [loadingMore,  setLoadingMore]  = useState(false);
+  const [totalEvents,  setTotalEvents]  = useState(0);
+  const PAGE_SIZE = 20;
+  // Sentinel ref for IntersectionObserver infinite scroll
+  const sentinelRef = useRef(null);
+  // Track the latest fetch request to avoid stale responses
+  const fetchIdRef = useRef(0);
 
-      // Trim 4: .limit(40) caps the fetch for fast paint.
-      // Using select('*') for broad compatibility; revisit with explicit columns after schema audit.
-      const { data, error } = await supabase
-        .from('events')
-        .select('*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates(template_name, bio, image_url, category, start_time, genres)')
-        .gte('event_date', floor)
-        .eq('status', 'published')
-        .order('event_date', { ascending: true })
-        .limit(80);
-      if (error) throw error;
-
-      // Treat "" and "None" as null so the image waterfall keeps falling
-      const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
-
-      const mapped = (data || []).map(e => {
-        // Start-time ladder: template Master Time wins over raw start_time;
-        // if both are empty, fall through to the existing event_date extraction
-        // and (further down) title-regex fallback.
-        let extractedStartTime = e.event_templates?.start_time || e.start_time || (() => {
-          if (e.event_date && e.event_date.includes('T')) {
-            const d = new Date(e.event_date);
-            // Use Eastern time, not UTC, so times display correctly
-            const parts = d.toLocaleTimeString('en-US', {
-              hour: 'numeric', minute: '2-digit', hour12: false,
-              timeZone: 'America/New_York',
-            }).split(':');
-            const h = String(parseInt(parts[0])).padStart(2, '0');
-            const m = parts[1];
-            return `${h}:${m}`;
-          }
-          return null;
-        })();
-
-        // If time is midnight (00:00), try to extract from the event title
-        // e.g. "Every Tuesday 8pm - Close" → "20:00"
-        if (extractedStartTime === '00:00' || extractedStartTime === '24:00') {
-          const title = e.artist_name || e.name || '';
-          const tm = title.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
-          if (tm) {
-            let hr = parseInt(tm[1]);
-            const mn = tm[2] ? parseInt(tm[2]) : 0;
-            const per = tm[3].toLowerCase();
-            if (per === 'pm' && hr !== 12) hr += 12;
-            if (per === 'am' && hr === 12) hr = 0;
-            extractedStartTime = `${String(hr).padStart(2,'0')}:${String(mn).padStart(2,'0')}`;
-          }
-        }
-
-        return {
-          ...e,
-          name:       decodeEntities(e.artists?.name || e.artist_name  || e.name  || ''),
-          // Title ladder:
-          //   1. custom_title                   — manual override (column may not exist yet)
-          //   2. event_templates.template_name  — clean name from master library
-          //   3. event_title                    — raw scraper title fallback
-          event_title: e.custom_title || e.event_templates?.template_name || e.event_title || null,
-          // Category ladder: template category > scraper category > 'Other'
-          category:   e.event_templates?.category || e.category || 'Other',
-          venue:      e.venues?.name || e.venue_name || e.venue || '',
-          date: (() => {
-            const raw = e.event_date || '';
-            if (!raw) return '';
-            if (raw.includes('T')) {
-              const d = new Date(raw);
-              return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-            }
-            return raw.substring(0, 10);
-          })(),
-          start_time:    extractedStartTime,
-          // Hierarchy of Truth (bio):
-          //   1. event.custom_bio            — manual admin override
-          //   2. event_templates.bio         — AI-enriched template bio (recurring show)
-          //   3. artists.bio                 — curated band bio
-          //   4. event.artist_bio            — raw scraper description fallback
-          description:   e.custom_bio || e.event_templates?.bio || e.artists?.bio || e.artist_bio || '',
-          artist_genres: e.custom_genres?.length ? e.custom_genres : (e.genre ? [e.genre] : (e.artists?.genres || [])),
-          artist_vibes:  e.custom_vibes?.length ? e.custom_vibes : (e.vibe ? [e.vibe] : (e.artists?.vibes || [])),
-          is_tribute:    e.artists?.is_tribute || false,
-          // Image waterfall:
-          //   1. custom_image_url            — manual admin override
-          //   2. event_templates.image_url   — AI-enriched template image
-          //   3. event_image_url / image_url — per-event scraper flyer (kept so specific posters still show)
-          //   4. artists.image_url           — band photo fallback
-          //   cleanImg treats "" and "None" as null so the waterfall keeps falling
-          event_image:   cleanImg(e.custom_image_url) || cleanImg(e.event_templates?.image_url) || cleanImg(e.event_image_url) || cleanImg(e.image_url) || null,
-          artist_image:  cleanImg(e.artists?.image_url) || null,
-          venue_type:    e.venues?.venue_type || null,
-          venue_tags:    e.venues?.tags || [],
-          venue_name:    e.venues?.name    || e.venue_name    || '',
-          venue_address: e.venues?.address || '',
-          venue_color:   e.venues?.color   || getVenueColor(e.venues?.name || e.venue_name),
-          venue_photo:   e.venues?.photo_url || null,
-          venue_lat:     e.venues?.latitude  || null,
-          venue_lng:     e.venues?.longitude || null,
-        };
-      });
-
-      setEvents(mapped);
-    } catch (err) {
-      console.error('Error fetching events:', err);
-    }
-    setLoading(false);
-  }, []);
-
-  const [spotlightData, setSpotlightData] = useState([]);
-
-  // Initial mount — fetch from today
-  useEffect(() => { fetchEvents(); }, [fetchEvents]);
-
-  // Server-side date filtering: re-fetch when user changes dateKey or pickedDate.
-  // Computes the correct date floor and asks Supabase for events starting there.
-  useEffect(() => {
-    // Skip the very first render — the mount effect above handles that
+  // ── Compute server-side params from current filter state ──────────────────
+  // Memoized so the fetch effect only re-fires when actual params change.
+  const serverParams = useMemo(() => {
     const pad = n => String(n).padStart(2, '0');
     const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
     const today = new Date();
-    let floor = fmt(today); // default: today
+    const todayFmt = fmt(today);
+    let dateFrom = todayFmt;
+    let dateTo = null;
 
     switch (dateKey) {
       case 'today':
-        floor = fmt(today);
+        dateFrom = todayFmt;
+        dateTo = todayFmt;
         break;
       case 'tomorrow': {
         const t = new Date(today); t.setDate(t.getDate() + 1);
-        floor = fmt(t);
+        dateFrom = fmt(t);
+        dateTo = fmt(t);
         break;
       }
       case 'weekend': {
@@ -912,19 +806,94 @@ export default function HomePage() {
         else if (day === 6) { d.setDate(d.getDate() - 1); }
         else if (day === 0) { d.setDate(d.getDate() - 2); }
         else { d.setDate(d.getDate() + (5 - day)); }
-        floor = fmt(d);
+        const fri = fmt(d);
+        dateFrom = todayFmt > fri ? todayFmt : fri;
+        const sun = new Date(d); sun.setDate(d.getDate() + 2);
+        dateTo = fmt(sun);
         break;
       }
       case 'pick':
-        if (pickedDate) floor = pickedDate;
+        if (pickedDate) { dateFrom = pickedDate; dateTo = pickedDate; }
         break;
       default: // 'all'
-        floor = fmt(today);
+        dateFrom = todayFmt;
+        dateTo = null;
         break;
     }
 
-    fetchEvents(floor);
-  }, [dateKey, pickedDate, fetchEvents]);
+    return { dateFrom, dateTo, q: debouncedSearch.trim() || null };
+  }, [dateKey, pickedDate, debouncedSearch]);
+
+  // ── Fetch from /api/events/search ────────────────────────────────────────────
+  // Replaces the old direct Supabase client fetch. The server now handles:
+  //   • Text search (trigram ILIKE via pg_trgm indexes)
+  //   • Date range filtering (Eastern-aware)
+  //   • The full Metadata Waterfall (applyWaterfall)
+  //   • Pagination via .range()
+  // Client still handles: distance filter, shortcut pills, sort order.
+  const fetchEvents = useCallback(async (page = 1, append = false) => {
+    const fetchId = ++fetchIdRef.current;
+    if (page === 1) setLoading(true);
+    else setLoadingMore(true);
+
+    try {
+      const params = new URLSearchParams();
+      params.set('page', String(page));
+      params.set('limit', String(PAGE_SIZE));
+      if (serverParams.dateFrom) params.set('date_from', serverParams.dateFrom);
+      if (serverParams.dateTo) params.set('date_to', serverParams.dateTo);
+      if (serverParams.q) params.set('q', serverParams.q);
+
+      const res = await fetch(`/api/events/search?${params.toString()}`);
+      if (!res.ok) throw new Error(`Search API returned ${res.status}`);
+      const json = await res.json();
+
+      // Guard against stale responses from superseded requests
+      if (fetchId !== fetchIdRef.current) return;
+
+      const incoming = json.data || [];
+      if (append) {
+        setEvents(prev => [...prev, ...incoming]);
+      } else {
+        setEvents(incoming);
+      }
+      setCurrentPage(json.page);
+      setHasMore(json.hasMore);
+      setTotalEvents(json.total);
+    } catch (err) {
+      console.error('Error fetching events:', err);
+    }
+    if (page === 1) setLoading(false);
+    else setLoadingMore(false);
+  }, [serverParams]);
+
+  const [spotlightData, setSpotlightData] = useState([]);
+
+  // ── Initial mount + re-fetch when server params change ──────────────────────
+  // Reset to page 1 whenever search, date filter, or dateKey changes.
+  useEffect(() => {
+    setCurrentPage(1);
+    setHasMore(false);
+    fetchEvents(1, false);
+  }, [fetchEvents]);
+
+  // ── Load more (next page) ─────────────────────────────────────────────────
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore) return;
+    fetchEvents(currentPage + 1, true);
+  }, [loadingMore, hasMore, currentPage, fetchEvents]);
+
+  // ── IntersectionObserver for infinite scroll ──────────────────────────────
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMore(); },
+      { rootMargin: '400px' }   // trigger 400px before sentinel is visible
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loadMore]);
   useEffect(() => { rehydrateReminders(); }, []);
 
   // ── Fetch dynamic shortcut pills from Supabase ────────────────────────────
@@ -1349,42 +1318,19 @@ export default function HomePage() {
   })();
 
   // ── Filtered events ──────────────────────────────────────────────────────────
+  // Date filtering and text search are now handled SERVER-SIDE by /api/events/search.
+  // Client-side filters that remain: venue multi-select, distance, shortcut pills,
+  // artist-name filter, and sort order. These operate on the already-paginated
+  // server response.
   const filteredEvents = useMemo(() => {
     let list = [...events];
 
-    switch (dateKey) {
-      case 'today':   list = list.filter(e => e.date === todayStr); break;
-      case 'tomorrow':list = list.filter(e => e.date === tomorrowStr); break;
-      case 'weekend': {
-        const weekendStart = todayStr > fridayStr ? todayStr : fridayStr;
-        list = list.filter(e => e.date >= weekendStart && e.date <= sundayStr);
-        break;
-      }
-      case 'pick':
-        if (pickedDate) { list = list.filter(e => e.date === pickedDate); }
-        else { list = list.filter(e => e.date >= todayStr); }
-        break;
-      default:
-        list = list.filter(e => e.date >= todayStr);
-        break;
-    }
-
     if (activeVenues.length > 0) list = list.filter(e => activeVenues.includes(e.venue));
 
-    // Artist filter
+    // Artist filter (separate from search — this is the dedicated artist name filter)
     if (artistSearch.trim()) {
       const aq = normalizeVenue(artistSearch);
       list = list.filter(e => normalizeVenue(e.name).includes(aq));
-    }
-
-    if (debouncedSearch.trim()) {
-      const q = normalizeVenue(debouncedSearch);
-      list = list.filter(e =>
-        normalizeVenue(e.name).includes(q) ||
-        normalizeVenue(e.venue).includes(q) ||
-        normalizeVenue(e.genre ?? '').includes(q) ||
-        normalizeVenue(e.event_title ?? '').includes(q)
-      );
     }
 
     // Distance filter: Haversine from user location to venue coordinates
@@ -1406,11 +1352,9 @@ export default function HomePage() {
         const cfg = pill.filter_config || {};
         switch (pill.filter_type) {
           case 'trending': {
-            // Show events from the top 25% busiest venues (by upcoming event count)
             const venueCounts = {};
             list.forEach(e => { venueCounts[e.venue] = (venueCounts[e.venue] || 0) + 1; });
             const counts = Object.values(venueCounts).sort((a, b) => b - a);
-            // Threshold = count at the 25th percentile, minimum 8
             const threshold = Math.max(counts[Math.floor(counts.length * 0.25)] || 1, 8);
             const hotVenues = new Set(Object.entries(venueCounts).filter(([, c]) => c >= threshold).map(([v]) => v));
             list = list.filter(e => hotVenues.has(e.venue));
@@ -1496,7 +1440,7 @@ export default function HomePage() {
     });
 
     return list;
-  }, [events, dateKey, pickedDate, activeVenues, artistSearch, debouncedSearch, milesRadius, locationCoords, activeShortcut, dbPills, todayStr, tomorrowStr, fridayStr, sundayStr]);
+  }, [events, activeVenues, artistSearch, milesRadius, locationCoords, activeShortcut, dbPills]);
 
   const groupedEvents = useMemo(() => groupEventsByDate(filteredEvents), [filteredEvents]);
 
@@ -3020,6 +2964,20 @@ export default function HomePage() {
                     </div>
                   </div>
                 ))}
+
+                {/* ── Infinite scroll sentinel + loading indicator ──────── */}
+                {loadingMore && (
+                  <div style={{ textAlign: 'center', padding: '24px 0', color: t.textMuted, fontSize: '14px' }}>
+                    Loading more events…
+                  </div>
+                )}
+                {!hasMore && events.length > 0 && !loading && (
+                  <div style={{ textAlign: 'center', padding: '24px 0 32px', color: t.textSubtle, fontSize: '13px' }}>
+                    Showing all {totalEvents} events
+                  </div>
+                )}
+                {/* Invisible sentinel — IntersectionObserver triggers loadMore when this enters the viewport */}
+                <div ref={sentinelRef} style={{ height: '1px' }} />
               </div>
             )}
           </div>
@@ -3056,7 +3014,7 @@ export default function HomePage() {
               homeScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               document.activeElement?.blur();
               clearAllFilters();
-              fetchEvents(); // force fresh pull even if dateKey was already 'all'
+              fetchEvents(1, false); // force fresh pull even if dateKey was already 'all'
             } else {
               if (tab.key === 'saved') handleSetSavedSegment('events');
               setActiveTab(tab.key);
