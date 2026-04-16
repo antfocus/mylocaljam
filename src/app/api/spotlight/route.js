@@ -24,15 +24,34 @@ function checkAuth(request) {
 /**
  * GET /api/spotlight?date=YYYY-MM-DD[&device_id=xxx]
  *
- * Waterfall logic to fill up to 5 spotlight slots:
- *   Tier 0: Admin-pinned events from the `spotlight_events` table (date-scoped)
- *   Tier 1: Events for tonight featuring artists the user follows (needs device_id)
- *   Tier 2: Most-saved events tonight (by favorite count across all users)
- *   Tier 3: Random events tonight between 19:00–22:00 at high-activity venues
+ * Quality-First Waterfall — fills up to 5 spotlight slots:
+ *   Tier 0 (sacred):    Admin-pinned events from `spotlight_events` (date-scoped).
+ *                       Always respected, in the admin's chosen order.
+ *   Tier 1 (hero):      Events with a hero-quality image — either an
+ *                       `events.event_image` or a linked `artists.image_url`.
+ *                       Ranked by favorite count (descending), then by start time.
+ *   Tier 2 (venue):     Events with a `venues.photo_url` only (no hero image).
+ *                       Still visually workable. Same within-tier ranking.
+ *   Tier 3 (template):  Events with only a generic `event_templates.image_url`
+ *                       (category-level stock art). Last resort.
+ *   No-image events are SKIPPED entirely — we'd rather show fewer slots than a
+ *   blank carousel card.
+ *
+ * De-dupe: the same artist never appears twice in the 5 slots. Manual pins
+ * seed the seen-set (so a pin for Artist X blocks the autopilot from adding
+ * another Artist X gig), but manual pins themselves are not blocked by the
+ * de-dup — if the admin explicitly pinned two Artist X shows, we respect that.
+ *
+ * NOTE: the `device_id` param is accepted for backward compatibility but the
+ * personalization tier (followed artists) has been removed in favor of a
+ * single image-quality ranking. Restore it as a within-Tier-1 boost if that
+ * behavior is wanted back.
  */
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const date = searchParams.get('date');
+  // deviceId accepted for backward compat — currently unused.
+  // eslint-disable-next-line no-unused-vars
   const deviceId = searchParams.get('device_id') || null;
 
   if (!date) {
@@ -41,127 +60,127 @@ export async function GET(request) {
 
   const supabase = getAdminClient();
   const MAX_SLOTS = 5;
-  const collected = [];         // array of event IDs in priority order
-  const seen = new Set();       // dedup
-
-  const addIds = (ids) => {
-    for (const id of ids) {
-      if (seen.has(id) || collected.length >= MAX_SLOTS) continue;
-      seen.add(id);
-      collected.push(id);
-    }
-  };
+  const collected = [];          // event IDs in priority order
+  const seen = new Set();        // dedup by event ID
+  const seenArtists = new Set(); // dedup by artist (across tiers)
 
   // Eastern-aware UTC boundaries (handles EDT/EST automatically)
-  const { start: dateStart, end: dateEnd, nextDateStr } = getEasternDayBounds(date);
+  const { start: dateStart, end: dateEnd } = getEasternDayBounds(date);
 
-  // ── Tier 0: Admin-pinned spotlight events from spotlight_events table
+  // De-dup key for artists: prefer FK, fall back to normalized name so we
+  // still catch duplicates on scraped-but-unlinked events.
+  const artistKey = (e) => {
+    if (!e) return null;
+    if (e.artist_id) return `id:${e.artist_id}`;
+    const n = normalizeName(e.artist_name);
+    return n ? `name:${n}` : null;
+  };
+
+  // ── Tier 0: Admin-pinned (sacred) ──────────────────────────────────────
+  let pinIds = [];
   try {
     const { data: pins } = await supabase
       .from('spotlight_events')
       .select('event_id, sort_order')
       .eq('spotlight_date', date)
       .order('sort_order', { ascending: true });
-    if (pins && pins.length > 0) {
-      addIds(pins.map(p => p.event_id));
-    }
+    if (pins && pins.length > 0) pinIds = pins.map(p => p.event_id);
   } catch { /* spotlight_events table may not exist */ }
 
-  // Tier 0b (legacy `events.is_featured` fallback) has been retired. Spotlight
-  // curation is single-sourced from `spotlight_events` (see audit C3/M3).
-
-  // ── Tier 1: Followed artists (personalized) ────────────────────────────
-  if (collected.length < MAX_SLOTS && deviceId) {
-    try {
-      // Get artist names this device follows
-      const { data: follows } = await supabase
-        .from('follows')
-        .select('entity_name')
-        .eq('device_id', deviceId)
-        .eq('entity_type', 'artist');
-
-      if (follows && follows.length > 0) {
-        const artistNames = follows.map(f => f.entity_name);
-        const { data } = await supabase
-          .from('events')
-          .select('id')
-          .eq('status', 'published')
-          .gte('event_date', dateStart)
-          .lte('event_date', dateEnd)
-          .in('artist_name', artistNames)
-          .order('event_date', { ascending: true })
-          .limit(MAX_SLOTS);
-        if (data) addIds(data.map(e => e.id));
-      }
-    } catch {}
+  // ── Fetch tonight's events with lean image-source embeds ───────────────
+  // One round-trip pulls the data we need to classify quality tiers without
+  // pre-hydrating the full waterfall. The later full-embed fetch still runs
+  // for display rendering.
+  let tonight = [];
+  try {
+    const { data } = await supabase
+      .from('events')
+      .select(`
+        id,
+        artist_id,
+        artist_name,
+        event_image,
+        event_date,
+        artists(name, image_url),
+        venues(photo_url),
+        event_templates(image_url)
+      `)
+      .eq('status', 'published')
+      .gte('event_date', dateStart)
+      .lte('event_date', dateEnd);
+    tonight = Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.warn('[spotlight] tonight fetch failed:', err.message);
   }
 
-  // ── Tier 2: Most-saved events tonight (community hype) ─────────────────
-  if (collected.length < MAX_SLOTS) {
+  const tonightById = Object.fromEntries(tonight.map(e => [e.id, e]));
+
+  // Seed Tier 0 — preserve admin ordering, cap at MAX_SLOTS. Seed the
+  // seenArtists set so the autopilot below can't repeat the pinned artists.
+  for (const id of pinIds) {
+    if (collected.length >= MAX_SLOTS) break;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    collected.push(id);
+    const k = artistKey(tonightById[id]);
+    if (k) seenArtists.add(k);
+  }
+
+  // ── Autopilot (Tiers 1–3) — runs only if Tier 0 didn't fill 5 ─────────
+  if (collected.length < MAX_SLOTS && tonight.length > 0) {
+    // Favorite counts — used as the within-tier ranker. Pulled in one bulk
+    // call across all of tonight's events and aggregated in memory.
+    const favCount = {};
     try {
-      // Get all tonight's published event IDs
-      const { data: tonightEvents } = await supabase
-        .from('events')
-        .select('id')
-        .eq('status', 'published')
-        .gte('event_date', dateStart)
-        .lte('event_date', dateEnd);
-
-      if (tonightEvents && tonightEvents.length > 0) {
-        const tonightIds = tonightEvents.map(e => e.id);
-
-        // Count favorites per event from the favorites table
-        // If no favorites table exists, we'll catch the error and skip
-        const { data: favCounts } = await supabase
-          .from('favorites')
-          .select('event_id')
-          .in('event_id', tonightIds);
-
-        if (favCounts && favCounts.length > 0) {
-          // Count occurrences
-          const countMap = {};
-          favCounts.forEach(f => {
-            countMap[f.event_id] = (countMap[f.event_id] || 0) + 1;
-          });
-
-          // Sort by count descending
-          const sorted = Object.entries(countMap)
-            .sort(([, a], [, b]) => b - a)
-            .map(([id]) => id);
-          addIds(sorted);
+      const { data: favs } = await supabase
+        .from('favorites')
+        .select('event_id')
+        .in('event_id', tonight.map(e => e.id));
+      if (favs) {
+        for (const f of favs) {
+          favCount[f.event_id] = (favCount[f.event_id] || 0) + 1;
         }
       }
     } catch {
-      // favorites table might not exist — skip
+      // favorites table may not exist — tier ranking degrades to start-time.
     }
-  }
 
-  // ── Tier 3: Random evening events at popular venues ────────────────────
-  if (collected.length < MAX_SLOTS) {
-    try {
-      // Get events tonight between 7pm–10pm Eastern (offset-aware)
-      const { offsetHours: oh } = getEasternDayBounds(date);
-      const eveningStart = `${date}T${String(19 + oh).padStart(2, '0')}:00:00Z`;  // 7pm ET in UTC
-      const eveningEnd   = `${nextDateStr}T${String(22 + oh - 24).padStart(2, '0')}:00:00Z`;  // 10pm ET in UTC
+    // Classify into quality tier:
+    //   1 = event_image OR artists.image_url (the hero image we actually want)
+    //   2 = venues.photo_url (venue photo as visual anchor)
+    //   3 = event_templates.image_url (generic category/template stock)
+    //  99 = nothing usable — skip entirely.
+    const classify = (e) => {
+      if (e.event_image || e.artists?.image_url) return 1;
+      if (e.venues?.photo_url) return 2;
+      if (e.event_templates?.image_url) return 3;
+      return 99;
+    };
 
-      const { data } = await supabase
-        .from('events')
-        .select('id')
-        .eq('status', 'published')
-        .gte('event_date', eveningStart)
-        .lte('event_date', eveningEnd)
-        .order('event_date', { ascending: true })
-        .limit(20);
+    const candidates = tonight
+      .filter(e => !seen.has(e.id))
+      .map(e => ({ e, tier: classify(e), favs: favCount[e.id] || 0 }))
+      .filter(c => c.tier < 99)
+      // Primary sort:  tier (1 → 2 → 3).
+      // Secondary:     favorite count desc (community hype within the tier).
+      // Tertiary:      event_date asc (earlier shows win on ties).
+      .sort((a, b) => {
+        if (a.tier !== b.tier) return a.tier - b.tier;
+        if (a.favs !== b.favs) return b.favs - a.favs;
+        const da = a.e.event_date || '';
+        const db = b.e.event_date || '';
+        return da.localeCompare(db);
+      });
 
-      if (data && data.length > 0) {
-        // Shuffle and pick
-        const shuffled = data
-          .map(e => e.id)
-          .filter(id => !seen.has(id))
-          .sort(() => Math.random() - 0.5);
-        addIds(shuffled);
-      }
-    } catch {}
+    for (const { e } of candidates) {
+      if (collected.length >= MAX_SLOTS) break;
+      const k = artistKey(e);
+      // Artist de-dup: skip if this artist is already represented.
+      if (k && seenArtists.has(k)) continue;
+      seen.add(e.id);
+      if (k) seenArtists.add(k);
+      collected.push(e.id);
+    }
   }
 
   if (collected.length === 0) return NextResponse.json([]);
@@ -171,7 +190,7 @@ export async function GET(request) {
   try {
     const { data: hydrated, error } = await supabase
       .from('events')
-      .select('*, venues(name, address, color, latitude, longitude, venue_type, tags), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url, category, start_time, genres)')
+      .select('*, venues(name, address, color, latitude, longitude, venue_type, tags, photo_url), artists(name, bio, image_url, genres, vibes, is_tribute), event_templates(template_name, bio, image_url, category, start_time, genres)')
       .in('id', collected);
 
     if (error || !hydrated || hydrated.length === 0) return NextResponse.json(fallback);

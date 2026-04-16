@@ -4,7 +4,16 @@ import { useState, useCallback, useRef } from 'react';
 
 const MAX_PINS = 5;
 
-export default function useAdminSpotlight({ password, fetchAll }) {
+// NOTE: intentionally does NOT depend on the parent's `fetchAll`. Calling
+// `fetchAll()` after an auto-save causes the admin page's global `loading`
+// flag to flip, which unmounts the entire spotlight tab and produces a
+// ~1s "black screen blink" after every drop. After a pin mutation we do
+// NOT need to refetch global admin state — the pin list is already correct
+// locally (optimistic update), and the candidate event list is unaffected.
+// The public hero is invalidated server-side via `revalidatePath` in the
+// /api/spotlight POST handler, so visitors see the change without us
+// refetching anything client-side.
+export default function useAdminSpotlight({ password }) {
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` };
   // Ref-based debounce for auto-save — cleared on every new pin mutation
   // so rapid reorders collapse into a single POST.
@@ -156,9 +165,17 @@ export default function useAdminSpotlight({ password, fetchAll }) {
           body: JSON.stringify({ date: targetDate, event_ids: nextPins }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // Success — clear rollback, background-refresh the live feed.
+        // Success — clear rollback.
+        //
+        // IMPORTANT: we deliberately do NOT call the parent's `fetchAll()`
+        // here. Doing so flipped the admin page's global `loading` flag,
+        // which unmounted the spotlight tab (it's gated behind
+        // `activeTab === 'spotlight' && !loading` in admin/page.js) and
+        // produced a ~1s black-screen blink after every drop. The public
+        // hero gets invalidated server-side via `revalidatePath` in the
+        // POST handler, and our local state is already correct, so there's
+        // nothing to refetch client-side.
         autoSaveRollback.current = null;
-        fetchAll();
       } catch (err) {
         console.error('Auto-save failed, rolling back:', err);
         // Restore the last server-confirmed pin state.
@@ -168,7 +185,7 @@ export default function useAdminSpotlight({ password, fetchAll }) {
         autoSaveRollback.current = null;
       }
     }, 300);
-  }, [spotlightDate, headers, fetchAll]);
+  }, [spotlightDate, headers]);
 
   // ── Pin mutation helpers (all route through commitPins) ─────────────────
 
@@ -257,7 +274,9 @@ export default function useAdminSpotlight({ password, fetchAll }) {
       return;
     }
     autoSaveRollback.current = null;
-    fetchAll();
+    // Deliberately do NOT call `fetchAll()` — see note above `commitPins`.
+    // The candidate-event list is refreshed via `fetchSpotlightEvents`,
+    // which does NOT touch the admin page's global `loading` state.
     fetchSpotlightEvents(spotlightDate);
   };
 

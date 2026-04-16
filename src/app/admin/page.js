@@ -142,7 +142,12 @@ export default function AdminPage() {
   const q = useAdminQueue({ password, venues: ve.venues, setVenues: ve.setVenues, fetchAll, supabase, toTitleCase, showQueueToast, authenticated });
   const tr = useAdminTriage({ password, showQueueToast });
   const ar = useAdminArtists({ password });
-  const sp = useAdminSpotlight({ password, fetchAll });
+  // Spotlight hook intentionally does NOT receive `fetchAll` — calling it
+  // after an auto-save flipped the global `loading` flag (see line 437
+  // render gate) and unmounted the spotlight tab, producing a visible
+  // black-screen blink after every drop. Hook maintains its own state
+  // optimistically; the public hero is invalidated server-side.
+  const sp = useAdminSpotlight({ password });
   const fe = useAdminFestivals();
 
   // ── Auto-fetch when session is restored from sessionStorage ──
