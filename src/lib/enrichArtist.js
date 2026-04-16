@@ -27,6 +27,8 @@ const DISCOGS_BASE = 'https://api.discogs.com';
 const DISCOGS_TOKEN = process.env.DISCOGS_TOKEN || 'cOcmOipnhRjrBntDWBTnUVKGgTLaqxYJGOQVbmsp';
 const LASTFM_BASE = 'https://ws.audioscrobbler.com/2.0/';
 
+import { buildLockSafeRecord, isFieldLocked } from './writeGuards';
+
 // Cache TTL — skip re-enriching artists looked up within 7 days
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -292,10 +294,15 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
   // Locked artist — never touch
   if (cached?.is_locked) return cached;
 
-  // Determine which fields are locked (human-edited)
-  const locks = cached?.is_human_edited || {};
-  const bioLocked = !!locks.bio;
-  const imageLocked = !!locks.image_url;
+  // Determine which fields are locked (human-edited). `isFieldLocked` handles
+  // both the JSONB-per-field shape used historically in the artists table
+  // AND the boolean end-to-end shape used by the events table. Previously
+  // this block inlined a bare `cached.is_human_edited || {}` which silently
+  // failed when `is_human_edited === true` (boolean), leaving imageLocked
+  // false and letting the post-enrichment upsert stomp the photo. See the
+  // 7:12 PM Mariel Bildsten wipe postmortem.
+  const bioLocked = isFieldLocked(cached, 'bio');
+  const imageLocked = isFieldLocked(cached, 'image_url');
 
   // Fresh cache — skip enrichment
   if (cached?.bio && cached?.image_url) {
@@ -390,11 +397,19 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
     record.genres = genresFromTags;
   }
 
+  // Verified-Lock write gate. Even though we already skipped locked fields
+  // when *building* `record` above (the `!imageLocked ? { image_url: ... }`
+  // ternaries), `buildLockSafeRecord` is the belt-and-suspenders guarantee
+  // that no locked column can slip through, regardless of how the record
+  // was assembled. Mandatory defense in depth for any future contributor
+  // who adds a new field to the record without wiring per-field checks.
+  const safeRecord = buildLockSafeRecord(cached, record);
+
   await supabase
     .from('artists')
-    .upsert(record, { onConflict: 'name' });
+    .upsert(safeRecord, { onConflict: 'name' });
 
-  return { ...cached, ...record };
+  return { ...cached, ...safeRecord };
 }
 
 /**

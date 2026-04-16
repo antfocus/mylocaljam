@@ -10,6 +10,8 @@
  * Last.fm API docs: https://www.last.fm/api/show/artist.getInfo
  */
 
+import { buildLockSafeRecord } from './writeGuards';
+
 const LASTFM_BASE = 'https://ws.audioscrobbler.com/2.0/';
 
 // How long to consider a cached artist "fresh" (7 days)
@@ -212,12 +214,19 @@ export async function enrichWithLastfm(artistName, supabase, { blacklist } = {})
   }
 
   // --- 3. Upsert into artists cache ---
+  // Verified-Lock write gate: strip any field from the record that is
+  // locked on the cached row. Protects against the enrichment path
+  // overwriting a human-curated photo/bio with Last.fm's "star" default
+  // or with null when Last.fm returns nothing. See 7:12 PM Mariel wipe
+  // postmortem + src/lib/writeGuards.js for schema notes.
+  const safeRecord = buildLockSafeRecord(cached, record);
+
   await supabase
     .from('artists')
-    .upsert(record, { onConflict: 'name' });
+    .upsert(safeRecord, { onConflict: 'name' });
 
   // Return the record (may have null fields if artist wasn't found)
-  return record;
+  return safeRecord;
 }
 
 /**

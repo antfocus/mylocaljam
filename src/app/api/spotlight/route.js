@@ -4,6 +4,18 @@ import { getAdminClient } from '@/lib/supabase';
 import { getEasternDayBounds } from '@/lib/utils';
 import { applyWaterfall, normalizeName } from '@/lib/waterfall';
 
+// ── Cache guards ────────────────────────────────────────────────────────────
+// The public hero polls this route by date. Without these exports:
+//   • Next.js's Data Cache can capture the inner Supabase `fetch` responses
+//     and keep replaying a stale answer even after the DB updates.
+//   • Vercel's Full Route Cache can hold a successful GET response at the
+//     edge for the life of the date string (24h in the worst case).
+// Both were implicated in the 7:12 PM Mariel "Heisenbug": the image resolved
+// correctly for hours, then silently reverted to a stale cached response.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
   return authHeader === `Bearer ${process.env.ADMIN_PASSWORD}`;

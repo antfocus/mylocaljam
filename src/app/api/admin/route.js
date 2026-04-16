@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase';
 import { getEasternDayBounds } from '@/lib/utils';
+import { stripLockedFields } from '@/lib/writeGuards';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -373,9 +374,40 @@ export async function PUT(request) {
     }
   }
 
+  // ── Verified-Lock write gate ─────────────────────────────────────────────
+  // If the row is already human-edited, strip any field from `updates` that
+  // would overwrite a locked value. This protects against automation
+  // (enrichment crons, auto-categorize, sync-events) calling this PUT with
+  // stale or null payloads and wiping admin-curated fields. A caller that
+  // explicitly wants to overwrite a lock must POST an `is_human_edited`
+  // JSONB with the field set to `false` (see stripLockedFields opts).
+  //
+  // We DO NOT strip if the caller is setting `is_human_edited: true` from
+  // a manual admin save — in that case the write is itself the act of
+  // locking, and the lock hasn't taken effect yet on the existing row.
+  let safeUpdates = updates;
+  try {
+    const { data: existing } = await supabase
+      .from('events')
+      .select('is_human_edited')
+      .eq('id', id)
+      .single();
+    if (existing) {
+      safeUpdates = stripLockedFields(existing, updates, {
+        allowUnlock: (body.is_human_edited && typeof body.is_human_edited === 'object')
+          ? body.is_human_edited
+          : null,
+      });
+    }
+  } catch (err) {
+    // Non-fatal — fall back to unguarded update rather than dropping the
+    // write entirely. Logged for postmortem visibility.
+    console.warn('Verified-Lock pre-read failed (update proceeding):', err.message);
+  }
+
   const { data, error } = await supabase
     .from('events')
-    .update(updates)
+    .update(safeUpdates)
     .eq('id', id)
     .select();
 
@@ -383,14 +415,30 @@ export async function PUT(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // ── Lifecycle cascade (audit H5) ─────────────────────────────────────────
-  // When an event leaves `published` (archived / cancelled / draft), drop
-  // its `spotlight_events` pins so the hero carousel can't keep rendering
-  // a dead event. We run after the primary update so we only cascade on
-  // successful status transitions.
-  if (body.status !== undefined && body.status !== 'published') {
+  // ── Lifecycle cascade (audit H5, softened post-7:12 PM incident) ─────────
+  // When an event is explicitly DELETED (status 'cancelled' or hard-delete
+  // endpoints), drop its `spotlight_events` pins so the hero can't render
+  // a dead row. But DO NOT cascade on transient status transitions that
+  // happen during the event's spotlight window — archiving at 7:12 PM
+  // while the show is live would yank Mariel off the hero mid-gig.
+  //
+  // Rule: only cascade when the new status is a terminal/destructive one
+  // AND the pin's `spotlight_date` is strictly before today (Eastern).
+  // Same-day pins are respected until the day rolls over — curators can
+  // still clear them manually from the Spotlight tab.
+  const DESTRUCTIVE_STATUSES = new Set(['cancelled', 'deleted', 'spam']);
+  if (body.status !== undefined && DESTRUCTIVE_STATUSES.has(body.status)) {
     try {
-      await supabase.from('spotlight_events').delete().eq('event_id', id);
+      // Compute today's Eastern date string (YYYY-MM-DD). Pins dated today
+      // or later survive; older pins get cleaned up.
+      const todayET = new Date().toLocaleDateString('en-CA', {
+        timeZone: 'America/New_York',
+      });
+      await supabase
+        .from('spotlight_events')
+        .delete()
+        .eq('event_id', id)
+        .lt('spotlight_date', todayET);
       revalidatePath('/api/spotlight');
     } catch (err) {
       // Non-fatal — the event update itself already succeeded.
