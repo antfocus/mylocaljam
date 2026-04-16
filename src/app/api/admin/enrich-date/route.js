@@ -361,14 +361,39 @@ export async function POST(request) {
   }
 
   // ── 3. Load blacklist so we never re-enrich a deleted/ignored artist ─
+  //
+  // Blacklist Paradox (2026-04-16 hotfix):
+  //   In bulk mode the blacklist is a guard against wasting Perplexity
+  //   credits on artists the admin already deleted — the scraper may
+  //   re-ingest the name, but we don't want the next bulk Auto-Fill run
+  //   to resurrect the bio/image we just tossed.
+  //
+  //   But in single-event mode, the admin has EXPLICITLY clicked ✨ on a
+  //   specific row. That click is an absolute override: it overrides the
+  //   `is_human_edited` lock (via Force Rescue above) AND the blacklist.
+  //   The canonical bug: admin deletes an "artist" that was actually a
+  //   VENUE_EVENT (e.g. "Family Night") via "Delete Artist, Keep Events"
+  //   → the name lands in `ignored_artists` → later the admin clicks ✨
+  //   on one of the kept events to fill in a proper venue-style bio →
+  //   the byArtist grouping silently drops the row because the name is
+  //   on the blacklist → "Successful Nothing" (1-second 200 OK, no writes).
+  //
+  //   Fix: in single-event mode, skip the blacklist fetch entirely AND
+  //   bypass the `.has()` check below. Skipping the fetch saves a
+  //   round-trip; bypassing the check is the actual semantic guarantee.
+  //   The operator's click is the intent; trust them.
   let blacklistedNames = new Set();
-  try {
-    const { data: bl } = await supabase
-      .from('ignored_artists')
-      .select('name_lower')
-      .limit(5000);
-    blacklistedNames = new Set((bl || []).map(b => b.name_lower));
-  } catch { /* table may not exist */ }
+  if (isSingleEvent) {
+    console.log('[enrich-date] Blacklist bypassed for single-event click (admin override).');
+  } else {
+    try {
+      const { data: bl } = await supabase
+        .from('ignored_artists')
+        .select('name_lower')
+        .limit(5000);
+      blacklistedNames = new Set((bl || []).map(b => b.name_lower));
+    } catch { /* table may not exist */ }
+  }
 
   // ── 4. Group candidates by lowercased artist name ─────────────────────
   // Keep the FIRST event's venue + derived city as the research context for
@@ -393,7 +418,13 @@ export async function POST(request) {
     }
     if (!raw) continue;
     const key = raw.toLowerCase();
-    if (blacklistedNames.has(key)) continue;
+    // Blacklist check — SKIPPED in single-event mode (see Blacklist
+    // Paradox comment at step 3). The blacklistedNames Set is empty in
+    // single-event mode anyway (we don't fetch), but we still gate this
+    // explicitly on `isSingleEvent` so the intent is readable at the
+    // call site and a future maintainer who moves the fetch back won't
+    // silently re-introduce the paradox.
+    if (!isSingleEvent && blacklistedNames.has(key)) continue;
 
     if (!byArtist.has(key)) {
       const venueName = ev.venues?.name || ev.venue_name || null;
