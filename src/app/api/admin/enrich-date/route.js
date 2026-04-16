@@ -362,12 +362,28 @@ export async function POST(request) {
       : !!(ev.artist_bio || ev.artists?.bio);
     const isMissing = !hasImage || !hasBio;
 
-    if (!isMissing) continue;
+    // Preview Short-Circuit Bypass (2026-04-16 hotfix):
+    //   In preview mode EVERY event falls through to the AI pipeline
+    //   regardless of current bio/image state. The ✨ button in the
+    //   Edit Event modal is an EXPLICIT admin request to re-run the
+    //   lookup — even on a row that already has a bio and image.
+    //   The old partition skip (hasImage && hasBio → continue) returned
+    //   the route in ~178ms with ZERO [IMAGE DEBUG] output, because we
+    //   never reached the AI loop that emits those logs. The whole
+    //   point of the preview flow is to give the operator alternative
+    //   image candidates; a full row is still a valid candidate for
+    //   re-imaging.
+    //
+    //   In commit mode (bulk OR single-event wand) the skip still
+    //   matters — we don't want to waste Perplexity credits on rows
+    //   that are already full, and Smart Fill's blank-only write rule
+    //   would make any such write a no-op anyway.
+    if (!isPreview && !isMissing) continue;
 
-    // Count the rescue cases: rows that would have been skipped by the
-    // old logic but are now eligible because Smart Fill treats blanks
-    // as fillable even on locked rows.
-    if (ev.is_human_edited === true || ev.is_locked === true) {
+    // Rescue counters — only meaningful in commit mode where we'll
+    // actually write. In preview mode these stay 0 because no write is
+    // attributed to a rescue; we're showing options, not persisting.
+    if (!isPreview && (ev.is_human_edited === true || ev.is_locked === true)) {
       lockedBlankFilled++;
       rescueSet.add(ev.id);
     }
@@ -448,21 +464,42 @@ export async function POST(request) {
   // the byArtist grouping silently dropped the row. The Classification
   // Fork inside aiLookupArtist handles the "this isn't a musician" case
   // by emitting kind === 'VENUE_EVENT' and generating a venue-style bio.
+  //
+  // Preview fallback chain (2026-04-16 hotfix — part of the Short-Circuit
+  // Bypass that keeps `if (!raw) continue` from dropping a ✨-clicked row
+  // whose artist_name AND event_title are both blank):
+  //   artist_name → event_title → venue_name → venues.name → '(untitled event)'
+  // Preview mode is the ONLY place we allow a placeholder like
+  // '(untitled event)'; it exists so the AI pipeline still runs and the
+  // Serper top-up can build a gallery from the venue context. The
+  // placeholder never reaches a DB write because preview short-circuits
+  // before 5a/5b — it only feeds into the image search query.
   const byArtist = new Map();  // name_lower → { name, venue, city, events: [] }
   for (const ev of candidateEvents) {
     let raw = ev.artist_name?.trim();
-    if (!raw && isSingleEvent) {
-      raw = ev.event_title?.trim() || null;
+    if (!raw && (isSingleEvent || isPreview)) {
+      raw = ev.event_title?.trim()
+        || ev.venue_name?.trim()
+        || ev.venues?.name?.trim()
+        || null;
     }
+    // Last-resort placeholder — preview mode ONLY. Lets the AI pipeline
+    // run against venue/city context even when every name-ish field on
+    // the row is blank, so the ✨ button always returns SOMETHING rather
+    // than "Successful Nothing". Commit mode still `continue`s because
+    // we'd have nothing to key the artists upsert off of.
+    if (!raw && isPreview) raw = '(untitled event)';
     if (!raw) continue;
     const key = raw.toLowerCase();
-    // Blacklist check — SKIPPED in single-event mode (see Blacklist
-    // Paradox comment at step 3). The blacklistedNames Set is empty in
-    // single-event mode anyway (we don't fetch), but we still gate this
-    // explicitly on `isSingleEvent` so the intent is readable at the
-    // call site and a future maintainer who moves the fetch back won't
-    // silently re-introduce the paradox.
-    if (!isSingleEvent && blacklistedNames.has(key)) continue;
+    // Blacklist check — SKIPPED in single-event mode AND preview mode
+    // (see Blacklist Paradox comment at step 3). The blacklistedNames Set
+    // is empty in single-event mode anyway (we don't fetch), but we still
+    // gate this explicitly on `!isSingleEvent && !isPreview` so the
+    // intent is readable at the call site and a future maintainer who
+    // moves the fetch back won't silently re-introduce the paradox. In
+    // preview mode specifically, the operator's explicit ✨-click IS the
+    // override — we never drop a preview candidate via blacklist.
+    if (!isSingleEvent && !isPreview && blacklistedNames.has(key)) continue;
 
     if (!byArtist.has(key)) {
       const venueName = ev.venues?.name || ev.venue_name || null;
@@ -517,56 +554,57 @@ export async function POST(request) {
     // want to avoid burst-rate-limit on the sonar-pro endpoint.
     await new Promise(r => setTimeout(r, PERPLEXITY_THROTTLE_MS));
 
-    if (!ai) {
-      if (isSingleEvent) {
-        console.log(`[enrich-date] Classification Result: (no AI result for "${art.name}")`);
-      }
-      continue;
-    }
-    // The Classification Fork inside aiLookupArtist tags each result with
-    // a `kind` field ('MUSICIAN' | 'VENUE_EVENT') that drives the bio and
-    // image prompts. Log it for single-event mode so the operator can
-    // verify from the server logs that "Family Night" was classified
-    // correctly as VENUE_EVENT (not mis-labeled as a band with a
-    // hallucinated bio).
-    if (isSingleEvent) {
-      console.log(`[enrich-date] Classification Result: ${ai.kind || 'UNKNOWN'} (name="${art.name}", venue="${art.venue || '-'}", city="${art.city || '-'}")`);
-    }
-    const gotBio = !!ai.bio;
-    const gotImage = !!ai.image_url;
-    if (!gotBio && !gotImage) continue;
-    artistsEnriched++;
+    // `ai` may be null here (Perplexity quota, network blip, strict prompt
+    // rejection) — EVERY subsequent access uses optional chaining so the
+    // preview short-circuit below can still build a Serper-only gallery
+    // for the operator. The commit path falls back to its own `if (!ai)
+    // continue` after the preview block, so commit semantics are unchanged.
+    const gotBio = !!ai?.bio;
+    const gotImage = !!ai?.image_url;
 
-    // Preview short-circuit — capture the AI result and skip BOTH DB
-    // writes (5a artists upsert AND 5b events update). The client uses
-    // the echoed `image_url` / `preview_images` / `bio` / `kind` to
-    // populate form fields; nothing is persisted until the user clicks
-    // the normal save button.
+    // Preview short-circuit — runs BEFORE the `!ai` / `!gotBio && !gotImage`
+    // continues because an operator who clicked the ✨ button wants image
+    // options even when Perplexity came back empty. In that case we fall
+    // through to the Serper top-up, which queries on artist_name + venue
+    // context and can populate the Top 5 Gallery from web image search
+    // alone. This is the final link in the Short-Circuit Bypass chain
+    // (2026-04-16 hotfix): partition included the row → byArtist grouped
+    // it even if all name fields were blank → here we run the AI pipeline
+    // and ALWAYS emit a gallery, even on an empty AI response.
+    //
+    // Preview never writes to the DB — the artists upsert (5a) and events
+    // update (5b) are both after the `continue` below, so this block is a
+    // pure read-path. The client uses the echoed `image_url` /
+    // `preview_images` / `bio` / `kind` to populate form fields; nothing
+    // is persisted until the user clicks the normal save button.
     //
     // Top 5 Gallery build:
-    //   • Seed with whatever `ai.image_candidates` already holds.
+    //   • Seed with whatever `ai?.image_candidates` already holds (empty
+    //     when ai is null).
     //   • If we're short of 5, call Serper explicitly to top up. This is
-    //     a second Serper call ONLY when Perplexity gave a single official
-    //     image (so image_candidates had length 1) — the cost is a
-    //     single extra Serper hit per preview click, well worth the UX
-    //     win of giving the operator 5 flyers to triage.
+    //     the whole-gallery-from-Serper path when Perplexity returned
+    //     nothing, AND the single-extra-hit path when Perplexity gave an
+    //     official image (so image_candidates had length 1).
     //   • De-dup while filling so the Perplexity image stays at index 0.
     if (isPreview) {
       // Diagnostic log — confirms from the server logs which classification
       // branch the AI hit for this preview. Paired with searchArtistImages'
       // own "[IMAGE DEBUG] Final Serper Search Query used" log so we can
       // watch the full decision chain end-to-end (Family Night → kind →
-      // Serper query → results).
-      console.log(`[IMAGE DEBUG] Event Kind Classified as: ${ai.kind || 'None'}`);
-      const gallery = [...(Array.isArray(ai.image_candidates) ? ai.image_candidates : [])];
+      // Serper query → results). Logs 'None' when ai itself is null.
+      console.log(`[IMAGE DEBUG] Event Kind Classified as: ${ai?.kind || 'None'}`);
+      const gallery = [...(Array.isArray(ai?.image_candidates) ? ai.image_candidates : [])];
       if (gallery.length < 5) {
         try {
           // Pass venue + city context so VENUE_EVENT queries stay
           // venue-focused and don't inherit the MUSICIAN default's
           // "band live music" keywords. For MUSICIAN lookups the
           // context is a no-op (the artist-name-only query outranks
-          // venue-disambiguated ones for promo shots).
-          const extra = await searchArtistImages(art.name, ai.kind || 'MUSICIAN', {
+          // venue-disambiguated ones for promo shots). When `ai` is
+          // null (Perplexity failed) we default to 'MUSICIAN' kind —
+          // searchArtistImages falls back gracefully on a pure name
+          // query which is the right generic behavior.
+          const extra = await searchArtistImages(art.name, ai?.kind || 'MUSICIAN', {
             venue: art.venue || '',
             city: art.city || '',
           });
@@ -585,14 +623,36 @@ export async function POST(request) {
         // Legacy single-URL field — kept for clients that predate the
         // gallery rollout. Mirrors index 0 so "first guess" semantics
         // still work if a caller only reads image_url.
-        image_url: trimmedGallery[0] || ai.image_url || null,
+        image_url: trimmedGallery[0] || ai?.image_url || null,
         preview_images: trimmedGallery,
-        bio: ai.bio || null,
-        kind: ai.kind || null,
+        bio: ai?.bio || null,
+        kind: ai?.kind || null,
       };
-      console.log(`[enrich-date] Preview mode — no DB writes, returning AI-resolved fields (image=${gotImage}, bio=${gotBio}, kind=${ai.kind || 'UNKNOWN'}, gallery=${trimmedGallery.length}).`);
+      console.log(`[enrich-date] Preview mode — no DB writes, returning AI-resolved fields (image=${gotImage}, bio=${gotBio}, kind=${ai?.kind || 'UNKNOWN'}, gallery=${trimmedGallery.length}).`);
       continue;
     }
+
+    // Commit-mode gate — preview has already `continue`d above, so from
+    // here down we can treat `ai` as required. Both guards kept from the
+    // pre-restructure code: (1) null AI means nothing to upsert; (2) an
+    // AI response with neither bio nor image would be a wasted write.
+    if (!ai) {
+      if (isSingleEvent) {
+        console.log(`[enrich-date] Classification Result: (no AI result for "${art.name}")`);
+      }
+      continue;
+    }
+    // The Classification Fork inside aiLookupArtist tags each result with
+    // a `kind` field ('MUSICIAN' | 'VENUE_EVENT') that drives the bio and
+    // image prompts. Log it for single-event mode so the operator can
+    // verify from the server logs that "Family Night" was classified
+    // correctly as VENUE_EVENT (not mis-labeled as a band with a
+    // hallucinated bio).
+    if (isSingleEvent) {
+      console.log(`[enrich-date] Classification Result: ${ai.kind || 'UNKNOWN'} (name="${art.name}", venue="${art.venue || '-'}", city="${art.city || '-'}")`);
+    }
+    if (!gotBio && !gotImage) continue;
+    artistsEnriched++;
 
     // ── 5a. Upsert the artist row with per-field lock flags ─────────────
     // We only write fields we actually got — never overwrite existing data
