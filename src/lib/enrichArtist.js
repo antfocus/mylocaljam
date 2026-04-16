@@ -28,6 +28,7 @@ const DISCOGS_TOKEN = process.env.DISCOGS_TOKEN || 'cOcmOipnhRjrBntDWBTnUVKGgTLa
 const LASTFM_BASE = 'https://ws.audioscrobbler.com/2.0/';
 
 import { buildLockSafeRecord, isFieldLocked } from './writeGuards';
+import { aiLookupArtist } from './aiLookup';
 
 // Cache TTL — skip re-enriching artists looked up within 7 days
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -353,12 +354,52 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
   }
   console.log(`[enrich] ${name}: Final image → ${imageUrl ? `${imageSource}: ${imageUrl.substring(0, 80)}...` : 'NONE'}`);
 
-  const bio = (!bioLocked && !cached?.bio) ? (lastfm?.bio || null) : (cached?.bio || null);
+  let bio = (!bioLocked && !cached?.bio) ? (lastfm?.bio || null) : (cached?.bio || null);
   // Track bio source: if we just pulled a new bio from Last.fm, record it
   if (!bioLocked && !cached?.bio && lastfm?.bio) {
     bioSource = 'Last.fm';
   }
   const tags = lastfm?.tags || cached?.tags || null;
+
+  // ── 3b. AI Fallback (Perplexity) ──────────────────────────────────────
+  // Final rung of the waterfall. Fires only when MusicBrainz + Discogs +
+  // Last.fm have ALL missed — common for hyperlocal Jersey Shore bands
+  // that never made it onto the big-three databases. The call is gated by
+  // PERPLEXITY_API_KEY; envs without the key degrade gracefully (aiLookup
+  // returns null and this block becomes a no-op).
+  //
+  // Fields filled by the AI rung are marked locked (bio/image_url keys
+  // flipped to true on the JSONB `is_human_edited` map) so:
+  //   • The cron scraper won't re-clobber them next run.
+  //   • The next enrichArtist call for the same artist short-circuits at
+  //     the `isFieldLocked` check above and skips the external waterfall.
+  // This also prevents re-billing Perplexity for artists we already
+  // filled — critical given we run enrichArtist twice daily across the
+  // full catalog.
+  //
+  // `autoMode: true` tells aiLookupArtist to refuse placeholder images —
+  // we'd rather leave the image field null than stamp random Unsplash art
+  // onto a real artist. Real Serper hits (image_source === 'serper') pass.
+  let aiBioFilled = false;
+  let aiImageFilled = false;
+  const bioStillMissing = !bioLocked && !bio;
+  const imageStillMissing = !imageLocked && !imageUrl;
+  if (bioStillMissing || imageStillMissing) {
+    const ai = await aiLookupArtist({ artistName: name, autoMode: true });
+    if (ai) {
+      if (bioStillMissing && ai.bio) {
+        bio = ai.bio;
+        bioSource = 'AI (Perplexity)';
+        aiBioFilled = true;
+      }
+      if (imageStillMissing && ai.image_url && ai.image_source === 'serper') {
+        imageUrl = ai.image_url;
+        imageSource = 'AI (Serper)';
+        aiImageFilled = true;
+      }
+    }
+    console.log(`[enrich] ${name}: AI fallback → bio ${aiBioFilled ? '✓' : '✗'} · image ${aiImageFilled ? '✓' : '✗'}`);
+  }
 
   // Convert tags → genres (top 3, capitalized)
   const genresFromTags = tags
@@ -395,6 +436,23 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
   // Only set genres if artist doesn't already have curated ones
   if (genresFromTags?.length > 0 && (!cached?.genres || cached.genres.length === 0)) {
     record.genres = genresFromTags;
+  }
+
+  // ── 5b. Merge AI lock flags into is_human_edited (JSONB per-field) ────
+  // When the AI rung actually filled a value, flip its lock key on so
+  // writeGuards (and the main scraper's split-protected query) treat it
+  // as admin-locked from now on. We do NOT touch fields the AI didn't
+  // fill — leave cached locks intact. If `cached.is_human_edited` is the
+  // boolean `true` (end-to-end lock), we don't overwrite it with an
+  // object; the row is already maximally locked.
+  if (aiBioFilled || aiImageFilled) {
+    const existing = cached?.is_human_edited;
+    if (existing !== true) {
+      const base = (existing && typeof existing === 'object') ? { ...existing } : {};
+      if (aiBioFilled) base.bio = true;
+      if (aiImageFilled) base.image_url = true;
+      record.is_human_edited = base;
+    }
   }
 
   // Verified-Lock write gate. Even though we already skipped locked fields

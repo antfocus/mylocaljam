@@ -36,6 +36,7 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
+import { stripLockedFields } from '@/lib/writeGuards';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,9 +62,14 @@ export async function POST(request) {
   const supabase = getAdminClient();
 
   // --- 1. Get all unique artist names from unenriched events ---
+  // Pulls `is_human_edited` and `is_locked` so the writeGuards pass below
+  // can skip locked events entirely and strip per-field locked keys from
+  // the update payload. Pre-fix, this query omitted those columns and the
+  // update loop clobbered admin-edited bios/images on every run — the
+  // primary source of the 7:12 PM Mariel Bildsten wipe.
   const { data: events, error: fetchErr } = await supabase
     .from('events')
-    .select('id, artist_name, image_url, artist_bio')
+    .select('id, artist_name, image_url, artist_bio, is_human_edited, is_locked')
     .eq('status', 'published')
     .not('artist_name', 'is', null)
     .or('image_url.is.null,artist_bio.is.null')
@@ -152,10 +158,20 @@ export async function POST(request) {
   }
 
   // --- 4. Update events with enriched data ---
+  //
+  // VERIFIED-LOCK GATE (added post-7:12-PM-incident):
+  //   1. Skip rows where `is_locked === true` — end-to-end admin lock.
+  //   2. Run every candidate update through `stripLockedFields` so any
+  //      per-field JSONB lock on `is_human_edited` is honored. This is
+  //      the same pattern used in enrichArtist.js:406 for the artists
+  //      table; we were the only remaining write path that bypassed it.
   let enriched = 0;
   let skipped = 0;
+  let locked = 0;
 
   for (const ev of events) {
+    if (ev.is_locked === true) { locked++; continue; }
+
     const artistData = freshMap[ev.artist_name.trim().toLowerCase()];
     if (!artistData) { skipped++; continue; }
 
@@ -165,9 +181,16 @@ export async function POST(request) {
 
     if (Object.keys(update).length === 0) { skipped++; continue; }
 
+    // Belt-and-suspenders: even though the column list above gates on
+    // `!ev.image_url && artistData.image_url`, a future bug (stale cache,
+    // race with another writer) could still try to overwrite a manually-
+    // set value. `stripLockedFields` will drop any key whose lock is set.
+    const safeUpdate = stripLockedFields(ev, update);
+    if (Object.keys(safeUpdate).length === 0) { locked++; continue; }
+
     const { error: updateErr } = await supabase
       .from('events')
-      .update(update)
+      .update(safeUpdate)
       .eq('id', ev.id);
 
     if (updateErr) {
@@ -186,6 +209,7 @@ export async function POST(request) {
     artistsRemaining: Math.max(0, uncachedNames.length - ARTIST_LIMIT),
     eventsEnriched: enriched,
     eventsSkipped: skipped,
+    eventsLockedSkipped: locked,
     errors: errors.length ? errors : null,
   });
 }

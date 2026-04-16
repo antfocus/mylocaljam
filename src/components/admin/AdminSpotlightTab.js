@@ -36,12 +36,24 @@ export default function AdminSpotlightTab({
   artists, events, templates = [],
   spotlightDate, setSpotlightDate,
   spotlightPins, setSpotlightPins,
+  // Projected Spotlight — map of { [event_id]: 'manual' | 'suggested' }.
+  // When absent (older callers), every pin falls back to 'manual' so the
+  // UI renders identically to pre-Projected behavior.
+  spotlightSources = {},
   spotlightEvents, spotlightLoading,
   spotlightSearch, setSpotlightSearch,
   setSpotlightImageWarning,
   fetchSpotlight, fetchSpotlightEvents,
   saveSpotlight, clearSpotlight, toggleSpotlightPin,
   insertPin, reorderPins, removePin, MAX_PINS = 5,
+  // Magic Wand — bulk AI enrichment (POST /api/admin/enrich-date).
+  // When the user clicks ✨ Auto-Fill, every event on spotlightDate that
+  // is missing bio/image AND isn't admin-locked runs through the full
+  // MusicBrainz → Discogs → Last.fm → Perplexity waterfall, and the
+  // resulting fields are written back AND locked.
+  enrichCurrentDate,
+  enriching = false,
+  lastEnrichResult = null,
 }) {
   const [expandedId, setExpandedId] = useState(null);
   // Slots default to COLLAPSED. Users click to expand a slot; multiple may
@@ -119,6 +131,30 @@ export default function AdminSpotlightTab({
   // True when dragging an unpinned card toward the full strip.
   const isDraggingFromList = activeId && !spotlightPins.includes(activeId);
 
+  // Any suggested (autopilot) pins in the current strip? Drives a one-line
+  // explainer banner so the admin understands why some slots look DRAFT-y.
+  const hasSuggestedPins = useMemo(
+    () => spotlightPins.some(id => spotlightSources[id] === 'suggested'),
+    [spotlightPins, spotlightSources]
+  );
+
+  // Count of events on the current date that are candidates for the Magic
+  // Wand — missing bio/image AND not admin-locked. Drives the button's
+  // disabled state and badge. Mirrors the server-side filter in
+  // /api/admin/enrich-date so the client count matches what the server
+  // will actually process; any drift here just cosmetically mis-badges,
+  // it can't cause wrong writes (server owns the authoritative filter).
+  const missingMetadataCount = useMemo(() => {
+    let count = 0;
+    for (const ev of spotlightEvents) {
+      if (ev.is_human_edited === true || ev.is_locked === true) continue;
+      const hasImage = !!(ev.event_image || ev.image_url || ev.artists?.image_url);
+      const hasBio = !!(ev.artist_bio || ev.artists?.bio);
+      if (!hasImage || !hasBio) count++;
+    }
+    return count;
+  }, [spotlightEvents]);
+
   // ── Drag handlers ────────────────────────────────────────────────────────
   const handleDragStart = ({ active }) => setActiveId(active.id);
 
@@ -186,6 +222,59 @@ export default function AdminSpotlightTab({
           <div className="flex items-center justify-between">
             <h2 className="font-display font-bold text-lg">Tonight's Spotlight</h2>
             <div className="flex items-center gap-2">
+              {/* Magic Wand — bulk AI enrichment for every event on the
+                  currently-selected date that's missing bio/image AND
+                  isn't admin-locked. Disabled when nothing needs filling,
+                  or while a run is in flight. Badge shows the live
+                  candidate count so the admin knows how much work the
+                  click will do before committing. */}
+              <button
+                className="px-3 py-2 rounded-lg text-sm font-semibold"
+                style={{
+                  background: missingMetadataCount > 0 && !enriching
+                    ? 'linear-gradient(135deg, #8B5CF6 0%, #E8722A 100%)'
+                    : 'var(--bg-elevated)',
+                  color: missingMetadataCount > 0 && !enriching ? '#FFF' : 'var(--text-muted)',
+                  opacity: missingMetadataCount === 0 && !enriching ? 0.5 : 1,
+                  cursor: missingMetadataCount === 0 || enriching ? 'not-allowed' : 'pointer',
+                  border: 'none',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+                onClick={() => {
+                  if (missingMetadataCount === 0 || enriching) return;
+                  if (enrichCurrentDate) enrichCurrentDate();
+                }}
+                disabled={missingMetadataCount === 0 || enriching}
+                title={
+                  missingMetadataCount === 0
+                    ? 'Every event on this date already has bio + image'
+                    : `Run AI enrichment on ${missingMetadataCount} event${missingMetadataCount === 1 ? '' : 's'} missing metadata`
+                }
+              >
+                {enriching ? (
+                  <>
+                    <span style={{
+                      display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
+                      border: '2px solid rgba(255,255,255,0.4)',
+                      borderTopColor: '#FFF',
+                      animation: 'spin 0.8s linear infinite',
+                    }} />
+                    Enriching…
+                  </>
+                ) : (
+                  <>
+                    <span>✨</span>
+                    Auto-Fill
+                    {missingMetadataCount > 0 && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 800,
+                        background: 'rgba(255,255,255,0.25)',
+                        borderRadius: 999, padding: '1px 6px',
+                      }}>{missingMetadataCount}</span>
+                    )}
+                  </>
+                )}
+              </button>
               <button
                 className="px-3 py-2 rounded-lg text-sm font-medium"
                 style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
@@ -195,6 +284,46 @@ export default function AdminSpotlightTab({
               </button>
             </div>
           </div>
+
+          {/* Magic Wand result banner — persists until the next run. */}
+          {lastEnrichResult && (
+            <div style={{
+              padding: '10px 14px', borderRadius: 8,
+              background: lastEnrichResult.ok
+                ? 'rgba(34,197,94,0.08)'
+                : 'rgba(239,68,68,0.08)',
+              border: lastEnrichResult.ok
+                ? '1px solid rgba(34,197,94,0.25)'
+                : '1px solid rgba(239,68,68,0.35)',
+              color: lastEnrichResult.ok ? '#22C55E' : '#EF4444',
+              fontSize: 13, fontFamily: "'DM Sans', sans-serif",
+              display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+            }}>
+              {lastEnrichResult.ok ? (
+                <>
+                  <span style={{ fontSize: 16 }}>✨</span>
+                  <span style={{ fontWeight: 600 }}>
+                    Enriched {lastEnrichResult.eventsUpdated || 0} of {lastEnrichResult.candidates || 0} events
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    · {lastEnrichResult.artistsEnriched || 0} artists · {lastEnrichResult.duration || ''}
+                    {lastEnrichResult.lockedSkipped ? ` · ${lastEnrichResult.lockedSkipped} locked (skipped)` : ''}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)', marginLeft: 'auto', fontSize: 11 }}>
+                    Filled fields are now locked from the scraper.
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>⚠</span>
+                  <span style={{ fontWeight: 600 }}>Auto-Fill failed:</span>
+                  <span>{lastEnrichResult.error || 'Unknown error'}</span>
+                </>
+              )}
+            </div>
+          )}
+          {/* Spinner keyframes — inlined so we don't depend on the page's CSS. */}
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           <div className="flex items-center gap-3 flex-wrap">
             <label className="font-display font-semibold text-sm" style={{ color: 'var(--text-secondary)' }}>Date:</label>
             <input
@@ -207,7 +336,15 @@ export default function AdminSpotlightTab({
               }}
             />
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              {spotlightPins.length === 0 ? 'No pins — using auto fallback' : `${spotlightPins.length}/${MAX_PINS} pinned · auto-saved`}
+              {spotlightPins.length === 0
+                ? 'No pins — using auto fallback'
+                : (() => {
+                    const manualCount = spotlightPins.filter(id => spotlightSources[id] !== 'suggested').length;
+                    const draftCount = spotlightPins.length - manualCount;
+                    if (draftCount === 0) return `${spotlightPins.length}/${MAX_PINS} pinned · auto-saved`;
+                    if (manualCount === 0) return `${draftCount}/${MAX_PINS} draft (Smart Curator)`;
+                    return `${manualCount} pinned · ${draftCount} draft`;
+                  })()}
             </span>
             {/* Traffic-light legend */}
             <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
@@ -220,9 +357,21 @@ export default function AdminSpotlightTab({
 
         {/* ── Slot strip (vertical, 5 full-width cards) ────────────── */}
         <div style={{ marginBottom: 24 }}>
-          <h3 className="font-display font-semibold text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-            Spotlight Slots
-          </h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <h3 className="font-display font-semibold text-sm" style={{ color: 'var(--text-secondary)', margin: 0 }}>
+              Spotlight Slots
+            </h3>
+            {hasSuggestedPins && (
+              <span style={{
+                fontSize: 11, color: '#60A5FA', fontWeight: 600,
+                background: 'rgba(96,165,250,0.10)', border: '1px solid rgba(96,165,250,0.25)',
+                borderRadius: 6, padding: '3px 8px',
+                fontFamily: "'DM Sans', sans-serif",
+              }}>
+                Draft — auto-selected by the Smart Curator. Edit any slot to commit.
+              </span>
+            )}
+          </div>
           <SortableContext items={slotIds} strategy={verticalListSortingStrategy}>
             <div style={{
               display: 'flex', flexDirection: 'column', gap: 10,
@@ -235,6 +384,10 @@ export default function AdminSpotlightTab({
                 const ev = eventId ? evById[eventId] : null;
                 const isLast = i === MAX_PINS - 1;
                 const showWarning = isLast && stripFull && isDraggingFromList;
+                // Suggested = autopilot pick (not yet committed to
+                // spotlight_events). The slot renders DRAFT chrome until
+                // the admin touches it — any mutation auto-promotes.
+                const isSuggested = !!eventId && spotlightSources[eventId] === 'suggested';
                 return (
                   <SpotlightSlot
                     key={slotId}
@@ -248,6 +401,7 @@ export default function AdminSpotlightTab({
                     templates={templates}
                     isExpanded={!!eventId && expandedSlots.has(eventId)}
                     onToggleExpand={eventId ? () => toggleSlotExpanded(eventId) : null}
+                    isSuggested={isSuggested}
                   />
                 );
               })}
@@ -354,18 +508,35 @@ export default function AdminSpotlightTab({
 function SpotlightSlot({
   id, index, event, resolve, showWarning, onRemove,
   artists, templates, isExpanded, onToggleExpand,
+  // Projected Spotlight — when true, the slot was filled by the autopilot
+  // (Tiers 1–3 of the Quality-First Waterfall) and hasn't been committed
+  // to the spotlight_events table yet. Renders dashed blue-gray chrome
+  // and a DRAFT badge so the admin can tell at a glance which slots are
+  // suggestions vs hard pins.
+  isSuggested = false,
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isOver } = useSortable({ id });
+  // Border precedence (highest priority wins):
+  //   1. Bump warning (red dashed) — #5 about to be pushed off
+  //   2. Filled + suggested (blue-gray dashed) — DRAFT autopilot pick
+  //   3. Filled + manual (solid orange) — committed admin pin
+  //   4. Empty placeholder (gray dashed)
+  const fillBorder = event
+    ? (isSuggested ? '2px dashed #60A5FA' : '2px solid #E8722A66')
+    : '2px dashed var(--border)';
+  const fillBackground = event
+    ? (isSuggested ? 'rgba(96,165,250,0.05)' : 'var(--bg-elevated)')
+    : 'var(--bg-card)';
   const baseStyle = {
     transform: CSS.Transform.toString(transform),
     transition,
     borderRadius: 12,
     border: showWarning
       ? '2px dashed #EF4444'
-      : (event ? '2px solid #E8722A66' : '2px dashed var(--border)'),
+      : fillBorder,
     background: showWarning
       ? 'rgba(239,68,68,0.06)'
-      : (isOver ? 'rgba(232,114,42,0.12)' : (event ? 'var(--bg-elevated)' : 'var(--bg-card)')),
+      : (isOver ? 'rgba(232,114,42,0.12)' : fillBackground),
     position: 'relative',
     overflow: 'hidden',
   };
@@ -426,14 +597,36 @@ function SpotlightSlot({
           ⠿
         </span>
 
-        {/* Rank badge */}
+        {/* Rank badge — orange for manual pins, muted blue for suggestions
+            so the visual weight matches the border treatment above. */}
         <span style={{
-          fontSize: 11, fontWeight: 800, color: '#E8722A', flexShrink: 0,
-          background: 'rgba(232,114,42,0.12)', borderRadius: 6, padding: '2px 8px',
+          fontSize: 11, fontWeight: 800,
+          color: isSuggested ? '#60A5FA' : '#E8722A',
+          flexShrink: 0,
+          background: isSuggested ? 'rgba(96,165,250,0.12)' : 'rgba(232,114,42,0.12)',
+          borderRadius: 6, padding: '2px 8px',
           fontFamily: "'DM Sans', sans-serif",
         }}>
           #{index + 1}
         </span>
+
+        {/* DRAFT badge — only on suggested slots. Sits adjacent to the rank
+            so the admin knows exactly which slot is tentative without
+            having to read the color-coded border. */}
+        {isSuggested && (
+          <span
+            title="Auto-selected by the Smart Curator. Edit to commit."
+            style={{
+              fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: '#60A5FA',
+              background: 'rgba(96,165,250,0.10)',
+              border: '1px solid rgba(96,165,250,0.30)',
+              borderRadius: 4, padding: '1px 5px', flexShrink: 0,
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            DRAFT
+          </span>
+        )}
 
         {/* Traffic dot */}
         <span

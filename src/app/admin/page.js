@@ -444,6 +444,7 @@ export default function AdminPage() {
           artists={ar.artists} events={ev.events} templates={et.templates}
           spotlightDate={sp.spotlightDate} setSpotlightDate={sp.setSpotlightDate}
           spotlightPins={sp.spotlightPins} setSpotlightPins={sp.setSpotlightPins}
+          spotlightSources={sp.spotlightSources}
           spotlightEvents={sp.spotlightEvents} spotlightLoading={sp.spotlightLoading}
           spotlightSearch={sp.spotlightSearch} setSpotlightSearch={sp.setSpotlightSearch}
           setSpotlightImageWarning={sp.setSpotlightImageWarning}
@@ -452,6 +453,9 @@ export default function AdminPage() {
           toggleSpotlightPin={sp.toggleSpotlightPin}
           insertPin={sp.insertPin} reorderPins={sp.reorderPins}
           removePin={sp.removePin} MAX_PINS={sp.MAX_PINS}
+          enrichCurrentDate={sp.enrichCurrentDate}
+          enriching={sp.enriching}
+          lastEnrichResult={sp.lastEnrichResult}
         />
       )}
 

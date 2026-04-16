@@ -87,6 +87,13 @@ export async function GET(request) {
     if (pins && pins.length > 0) pinIds = pins.map(p => p.event_id);
   } catch { /* spotlight_events table may not exist */ }
 
+  // Set of IDs that came from the admin-pin table. Used downstream to tag
+  // each result with `source: 'manual' | 'suggested'` so the admin UI can
+  // render autopilot picks as editable drafts (dashed border, DRAFT badge)
+  // vs hard-committed manual pins (solid outline). Public consumers can
+  // safely ignore the field.
+  const pinIdSet = new Set(pinIds);
+
   // ── Fetch tonight's events with lean image-source embeds ───────────────
   // One round-trip pulls the data we need to classify quality tiers without
   // pre-hydrating the full waterfall. The later full-embed fetch still runs
@@ -185,7 +192,11 @@ export async function GET(request) {
 
   if (collected.length === 0) return NextResponse.json([]);
 
-  const fallback = collected.map((id, i) => ({ event_id: id, sort_order: i }));
+  const fallback = collected.map((id, i) => ({
+    event_id: id,
+    sort_order: i,
+    source: pinIdSet.has(id) ? 'manual' : 'suggested',
+  }));
 
   try {
     const { data: hydrated, error } = await supabase
@@ -268,6 +279,12 @@ export async function GET(request) {
           start_time: w.start_time,
           description: w.description,
           event_image: w.event_image,
+          // 'manual' = came from spotlight_events admin pin table (Tier 0).
+          // 'suggested' = filled by the Quality-First autopilot (Tiers 1–3).
+          // Public consumers can ignore this field; the admin UI uses it to
+          // render Suggested slots as editable DRAFT cards that auto-promote
+          // to 'manual' on any user mutation.
+          source: pinIdSet.has(id) ? 'manual' : 'suggested',
           sort_order: i,
         };
       })

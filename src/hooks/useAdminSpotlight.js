@@ -19,16 +19,34 @@ export default function useAdminSpotlight({ password }) {
   // so rapid reorders collapse into a single POST.
   const autoSaveTimer = useRef(null);
   const autoSaveRollback = useRef(null);
+  // Parallel rollback for the sources map — restored alongside the pin
+  // list if the auto-save POST fails, so a failed save can't leave us
+  // with a pins/sources mismatch (e.g. a DRAFT card showing solid).
+  const autoSaveSourcesRollback = useRef(null);
 
   const [spotlightDate, setSpotlightDate] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   });
   const [spotlightPins, setSpotlightPins] = useState([]);
+  // ── Projected Spotlight — source tracking ───────────────────────────────
+  // Map of { [event_id]: 'manual' | 'suggested' } that shadows `spotlightPins`.
+  // Populated from the /api/spotlight GET response. Any mutation through
+  // `commitPins` flips every current pin to 'manual' (auto-promote on touch),
+  // because every save persists to the `spotlight_events` table — which has
+  // no concept of a "draft" row, so after the POST they are all manual by
+  // definition. The admin UI uses this to render dashed DRAFT cards for
+  // suggested autopilot picks vs solid cards for manual pins.
+  const [spotlightSources, setSpotlightSources] = useState({});
   const [spotlightEvents, setSpotlightEvents] = useState([]);
   const [spotlightLoading, setSpotlightLoading] = useState(false);
   const [spotlightImageWarning, setSpotlightImageWarning] = useState(null);
   const [spotlightSearch, setSpotlightSearch] = useState('');
+  // Magic Wand — bulk AI enrichment for the currently-selected date.
+  // `enriching` drives the button spinner; `lastEnrichResult` is the
+  // server's response object (totals + errors) for the toast banner.
+  const [enriching, setEnriching] = useState(false);
+  const [lastEnrichResult, setLastEnrichResult] = useState(null);
 
   // ── Race-condition guards ──────────────────────────────────────────────────
   // `activeFetchRef` holds the latest date the user asked for. Any in-flight
@@ -83,10 +101,19 @@ export default function useAdminSpotlight({ password }) {
 
     setSpotlightLoading(true);
     let pinIds = [];
+    let sourceMap = {};
     try {
       const res = await fetch(`/api/spotlight?date=${date}`, { signal: controller.signal });
       const data = await res.json();
-      pinIds = Array.isArray(data) ? data.map(d => d.event_id) : [];
+      if (Array.isArray(data)) {
+        pinIds = data.map(d => d.event_id);
+        // Build the parallel source map so the UI can paint DRAFT cards for
+        // autopilot picks without re-fetching. The API defaults to 'manual'
+        // when absent (older deploys) — safe fallback keeps the old UX.
+        sourceMap = Object.fromEntries(
+          data.map(d => [d.event_id, d.source || 'manual'])
+        );
+      }
     } catch (err) {
       if (err?.name !== 'AbortError') {
         console.error('Failed to load spotlight:', err);
@@ -104,6 +131,12 @@ export default function useAdminSpotlight({ password }) {
     const validEventIds = new Set(todayEvents.map(e => e.id));
     const cleanPins = pinIds.filter(id => validEventIds.has(id));
     setSpotlightPins(cleanPins);
+    // Project only the sources that survived the validEventIds filter so
+    // `spotlightSources` never carries a ghost key for an event that isn't
+    // actually tonight's.
+    setSpotlightSources(
+      Object.fromEntries(cleanPins.map(id => [id, sourceMap[id] || 'manual']))
+    );
 
     // ── Stale-pin cleanup (audit H1, hardened post-9:51 PM incident) ─────
     // Only persist pin-list changes when we can be sure the removed pins
@@ -154,6 +187,39 @@ export default function useAdminSpotlight({ password }) {
       if (!autoSaveRollback.current) autoSaveRollback.current = prev;
       return nextPins;
     });
+    // Stash the sources rollback at the same gate so both refs move in
+    // lockstep — without this, a rolled-back pin list could pair with a
+    // post-promotion sources map and show solid cards for events that
+    // were actually still drafts.
+    setSpotlightSources(prev => {
+      if (!autoSaveSourcesRollback.current) autoSaveSourcesRollback.current = prev;
+      return prev;
+    });
+
+    // ── Promote-on-touch ─────────────────────────────────────────────────
+    // Any mutation — drag, reorder, remove, star — means the admin has
+    // taken ownership of the slate. We flip every pin in the new list to
+    // 'manual' so the DRAFT visuals disappear immediately (optimistic).
+    // This matches reality: the impending POST persists all IDs into
+    // `spotlight_events`, which the GET will then return as 'manual' on
+    // the next fetch anyway. Doing it optimistically here avoids a round-
+    // trip blink where the card re-paints from dashed → solid after save.
+    setSpotlightSources(prev => {
+      const next = {};
+      for (const id of nextPins) next[id] = 'manual';
+      // If the pin set didn't actually change identity-wise we can keep
+      // the previous object reference — cheap short-circuit for the
+      // common "reorder only" path where the set of IDs is identical.
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (
+        prevKeys.length === nextKeys.length &&
+        prevKeys.every(k => next[k] === prev[k])
+      ) {
+        return prev;
+      }
+      return next;
+    });
 
     clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(async () => {
@@ -176,13 +242,20 @@ export default function useAdminSpotlight({ password }) {
         // POST handler, and our local state is already correct, so there's
         // nothing to refetch client-side.
         autoSaveRollback.current = null;
+        autoSaveSourcesRollback.current = null;
       } catch (err) {
         console.error('Auto-save failed, rolling back:', err);
-        // Restore the last server-confirmed pin state.
+        // Restore the last server-confirmed pin state AND the matching
+        // source map so the DRAFT badges reappear on the pins that had
+        // them before the user's failed attempt.
         if (autoSaveRollback.current) {
           setSpotlightPins(autoSaveRollback.current);
         }
+        if (autoSaveSourcesRollback.current) {
+          setSpotlightSources(autoSaveSourcesRollback.current);
+        }
         autoSaveRollback.current = null;
+        autoSaveSourcesRollback.current = null;
       }
     }, 300);
   }, [spotlightDate, headers]);
@@ -273,7 +346,12 @@ export default function useAdminSpotlight({ password }) {
       alert(`Failed to save Spotlight: ${err.error || res.statusText}`);
       return;
     }
+    // Manual save explicitly commits the current slate → every pin is
+    // manual from here on. Mirror the promote-on-touch logic from
+    // `commitPins` so the DRAFT badges don't linger after Save.
+    setSpotlightSources(Object.fromEntries(validPins.map(id => [id, 'manual'])));
     autoSaveRollback.current = null;
+    autoSaveSourcesRollback.current = null;
     // Deliberately do NOT call `fetchAll()` — see note above `commitPins`.
     // The candidate-event list is refreshed via `fetchSpotlightEvents`,
     // which does NOT touch the admin page's global `loading` state.
@@ -285,12 +363,54 @@ export default function useAdminSpotlight({ password }) {
     clearTimeout(autoSaveTimer.current);
     await fetch(`/api/spotlight?date=${spotlightDate}`, { method: 'DELETE', headers });
     setSpotlightPins([]);
+    setSpotlightSources({});
     autoSaveRollback.current = null;
+    autoSaveSourcesRollback.current = null;
   };
+
+  // ── Magic Wand — bulk AI enrichment for the current spotlightDate ────
+  // POSTs to /api/admin/enrich-date which walks every published event on
+  // the target date, filters to those missing bio/image (and not locked),
+  // runs the enrichArtist waterfall (MusicBrainz → Discogs → Last.fm →
+  // Perplexity AI fallback), writes bio/image back to the events table,
+  // and flips `events.is_human_edited = true` so the next scraper cron
+  // can't re-clobber. After the call, refreshes the candidate-event list
+  // so the admin immediately sees the filled traffic-light dots.
+  const enrichCurrentDate = useCallback(async () => {
+    if (enriching) return;
+    setEnriching(true);
+    setLastEnrichResult(null);
+    try {
+      const res = await fetch('/api/admin/enrich-date', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ date: spotlightDate }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const msg = data?.error || `HTTP ${res.status}`;
+        setLastEnrichResult({ ok: false, error: msg });
+        console.error('Magic Wand enrichment failed:', msg);
+        return;
+      }
+      setLastEnrichResult({ ok: true, ...data });
+      // Refresh the candidate list so newly-filled bios/images light up
+      // the green dots immediately. Does NOT touch the admin page's
+      // global `loading` flag — safe from the black-screen-blink issue.
+      fetchSpotlightEvents(spotlightDate);
+    } catch (err) {
+      console.error('Magic Wand enrichment error:', err);
+      setLastEnrichResult({ ok: false, error: err?.message || 'Network error' });
+    } finally {
+      setEnriching(false);
+    }
+  }, [enriching, spotlightDate, headers, fetchSpotlightEvents]);
 
   return {
     spotlightDate, setSpotlightDate,
     spotlightPins, setSpotlightPins,
+    // Projected Spotlight — parallel source map: { id: 'manual' | 'suggested' }
+    spotlightSources,
     spotlightEvents, setSpotlightEvents,
     spotlightLoading,
     spotlightImageWarning, setSpotlightImageWarning,
@@ -305,5 +425,9 @@ export default function useAdminSpotlight({ password }) {
     reorderPins,
     removePin,
     MAX_PINS,
+    // Magic Wand
+    enrichCurrentDate,
+    enriching,
+    lastEnrichResult,
   };
 }
