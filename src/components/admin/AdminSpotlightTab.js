@@ -307,7 +307,11 @@ export default function AdminSpotlightTab({
                   </span>
                   <span style={{ color: 'var(--text-muted)' }}>
                     · {lastEnrichResult.artistsEnriched || 0} artists · {lastEnrichResult.duration || ''}
-                    {lastEnrichResult.lockedSkipped ? ` · ${lastEnrichResult.lockedSkipped} locked (skipped)` : ''}
+                    {lastEnrichResult.lockedBlankFilled
+                      ? ` · ${lastEnrichResult.lockedBlankFilled} locked (blank-filled)`
+                      : (lastEnrichResult.lockedSkipped
+                          ? ` · ${lastEnrichResult.lockedSkipped} locked (skipped)`
+                          : '')}
                   </span>
                   <span style={{ color: 'var(--text-muted)', marginLeft: 'auto', fontSize: 11 }}>
                     Filled fields are now locked from the scraper.
