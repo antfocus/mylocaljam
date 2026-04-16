@@ -10,7 +10,8 @@ import {
   TouchSensor,
   useSensor,
   useSensors,
-  closestCenter,
+  rectIntersection,
+  pointerWithin,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -86,9 +87,15 @@ export default function AdminSpotlightTab({
     return m;
   }, [spotlightEvents]);
 
-  // Padded to MAX_PINS — null entries render as empty slots.
+  // Padded to MAX_PINS — filled slots use the RAW event UUID as the
+  // sortable ID (no `slot::` prefix). This is critical: it means
+  // `active.id` from @dnd-kit is always an event UUID whether the drag
+  // originated in the candidate list or in a pinned slot, so the
+  // `spotlightPins.includes(active.id)` check in handleDragEnd behaves
+  // consistently for both cases. Empty slots keep their `empty::N`
+  // placeholder so we can still address them as drop targets.
   const slotIds = useMemo(() => {
-    const s = spotlightPins.map(id => `slot::${id}`);
+    const s = [...spotlightPins];
     while (s.length < MAX_PINS) s.push(`empty::${s.length}`);
     return s;
   }, [spotlightPins, MAX_PINS]);
@@ -121,9 +128,14 @@ export default function AdminSpotlightTab({
 
     const draggedId = active.id;
     const isPinned = spotlightPins.includes(draggedId);
-    const overSlotIndex = over?.id ? parseSlotIndex(over.id, spotlightPins) : null;
+    const overSlotIndex = resolveSlotIndex(over?.id, spotlightPins);
 
-    // ── Case 1: dropped outside any slot → unpin if pinned
+    // ── Self-drop guard (drag slot #3 and drop on itself → no-op)
+    if (over && active.id === over.id) return;
+
+    // ── Case 1: dropped outside any slot
+    //   • If dragged a pinned slot → unpin it (drag-out gesture)
+    //   • If dragged a candidate   → cancel (no pin added)
     if (overSlotIndex === null) {
       if (isPinned) removePin(draggedId);
       return;
@@ -132,7 +144,10 @@ export default function AdminSpotlightTab({
     // ── Case 2: internal reorder (already pinned, dropped on a slot)
     if (isPinned) {
       const fromIndex = spotlightPins.indexOf(draggedId);
-      if (fromIndex !== overSlotIndex) reorderPins(fromIndex, overSlotIndex);
+      // Clamp target index to the current pin count for reorders so a
+      // drop on an `empty::N` slot past the end lands at the end.
+      const toIndex = Math.min(overSlotIndex, spotlightPins.length - 1);
+      if (fromIndex !== toIndex && fromIndex !== -1) reorderPins(fromIndex, toIndex);
       return;
     }
 
@@ -145,10 +160,22 @@ export default function AdminSpotlightTab({
   // Derive the active event for the drag overlay
   const activeEvent = activeId ? evById[activeId] : null;
 
+  // ── Collision detection ──────────────────────────────────────────────────
+  // `closestCenter` measures centers, which made Slot #1 hard to hit from
+  // external drags whose DragOverlay rect sits below the pointer. Prefer
+  // `pointerWithin` (uses the pointer coords directly — the whole slot row
+  // is a valid drop target once the pointer enters it), falling back to
+  // `rectIntersection` so grazing drags still register.
+  const collisionDetection = (args) => {
+    const pointerHits = pointerWithin(args);
+    if (pointerHits.length > 0) return pointerHits;
+    return rectIntersection(args);
+  };
+
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
@@ -201,7 +228,10 @@ export default function AdminSpotlightTab({
               display: 'flex', flexDirection: 'column', gap: 10,
             }}>
               {slotIds.map((slotId, i) => {
-                const eventId = slotId.startsWith('slot::') ? slotId.replace('slot::', '') : null;
+                // slotId is either a raw event UUID (filled slot) or
+                // `empty::N` (empty placeholder). The `startsWith('empty::')`
+                // check is the canonical discriminator now.
+                const eventId = slotId.startsWith('empty::') ? null : slotId;
                 const ev = eventId ? evById[eventId] : null;
                 const isLast = i === MAX_PINS - 1;
                 const showWarning = isLast && stripFull && isDraggingFromList;
@@ -341,13 +371,15 @@ function SpotlightSlot({
   };
 
   // ── Empty slot placeholder ────────────────────────────────────────────
+  // Drop target ONLY — no listeners/attributes spread. The user can drop an
+  // event here, but can't pick up an empty placeholder and drag it around.
   if (!event) {
     return (
       <div ref={setNodeRef} style={{
         ...baseStyle,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: '14px 16px', gap: 8,
-      }} {...attributes} {...listeners}>
+      }}>
         <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--border)', lineHeight: 1 }}>
           {index + 1}
         </span>
@@ -674,22 +706,26 @@ function DraggableEventCard({ id, ev, resolve, isExpanded, onToggleExpand, onPin
 // ══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Parse a slot droppable ID into a numeric index in the pin array.
- * IDs are `slot::uuid` (filled) or `empty::N` (empty). Returns the
- * index in the strip (0–4), or null if the ID doesn't belong to the strip.
+ * Resolve a droppable's `over.id` into a slot index (0..MAX_PINS-1).
+ *
+ * Two ID shapes show up on the spotlight strip:
+ *   • A raw event UUID — meaning the pointer is over a FILLED slot; its
+ *     position is `pins.indexOf(uuid)`.
+ *   • `empty::N` — meaning the pointer is over an empty placeholder slot;
+ *     its position is N.
+ *
+ * Anything else (null, or an event UUID from the candidate list whose card
+ * happened to be the nearest droppable) returns null — the caller treats
+ * that as "not over a slot" and either cancels or unpins.
  */
-function parseSlotIndex(overId, pins) {
+function resolveSlotIndex(overId, pins) {
   if (typeof overId !== 'string') return null;
-  if (overId.startsWith('slot::')) {
-    const eventId = overId.replace('slot::', '');
-    const idx = pins.indexOf(eventId);
-    return idx >= 0 ? idx : null;
-  }
   if (overId.startsWith('empty::')) {
-    const n = parseInt(overId.replace('empty::', ''), 10);
-    return isNaN(n) ? null : n;
+    const n = parseInt(overId.slice('empty::'.length), 10);
+    return Number.isNaN(n) ? null : n;
   }
-  return null;
+  const idx = pins.indexOf(overId);
+  return idx >= 0 ? idx : null;
 }
 
 function chipStyle(color) {
