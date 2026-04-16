@@ -1,10 +1,25 @@
 /**
  * POST /api/admin/enrich-date  (admin only)
- * Body: { date: 'YYYY-MM-DD' }
+ * Body: { date?: 'YYYY-MM-DD', eventId?: string }
+ *   — exactly one of `date` or `eventId` is required.
  *
- * The "Magic Wand" bulk enrichment endpoint — Smart Fill edition.
- * Given a calendar date, it:
- *   1. Finds every published event on that date (Eastern-aware bounds).
+ * The "Magic Wand" enrichment endpoint — Smart Fill edition. Supports two
+ * input modes that share the same write-side invariants:
+ *
+ *   • `date` (bulk)   — walk every published event on that Eastern calendar
+ *                       day and rescue any missing bios/images.
+ *   • `eventId` (one) — targeted single-row Magic Wand triggered from the
+ *                       ✨ button on a DraggableEventCard. Skips the day
+ *                       bounds fetch and processes only that one row, but
+ *                       runs identical partition + Classification Fork +
+ *                       blank-only write logic. This is the "quick-action"
+ *                       path the admin hits when a single card is still
+ *                       yellow after a bulk run, or when they don't want
+ *                       to burn Perplexity credits on the rest of the day.
+ *
+ * Given its inputs, this endpoint:
+ *   1. Fetches the candidate event set (one row for eventId mode, the whole
+ *      day for date mode).
  *   2. SMART FILL — filters to events missing bio OR image, INCLUDING rows
  *      that carry a stale `is_human_edited=true` lock. The old behavior
  *      skipped any locked row unconditionally, which stranded rows that
@@ -137,16 +152,31 @@ export async function POST(request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
-  const { date } = body || {};
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return NextResponse.json({ error: 'date (YYYY-MM-DD) is required' }, { status: 400 });
+  const { date, eventId } = body || {};
+
+  // Validation — exactly one mode must be supplied. We allow both to be
+  // sent (single-event call from the admin UI may want to echo the
+  // originating `date` for diagnostics) but require at least `eventId` or
+  // a valid date string. The format check on `date` stays strict so a
+  // mistyped "2026-4-16" fails loudly instead of silently widening the
+  // day bounds.
+  if (!eventId && !date) {
+    return NextResponse.json(
+      { error: 'Either `date` (YYYY-MM-DD) or `eventId` is required' },
+      { status: 400 }
+    );
+  }
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json({ error: 'date must be YYYY-MM-DD' }, { status: 400 });
+  }
+  if (eventId !== undefined && (typeof eventId !== 'string' || !eventId.trim())) {
+    return NextResponse.json({ error: 'eventId must be a non-empty string' }, { status: 400 });
   }
 
   const start = Date.now();
   const supabase = getAdminClient();
-  const { start: dateStart, end: dateEnd } = getEasternDayBounds(date);
 
-  // ── 1. Pull every published event on this Eastern calendar day ────────
+  // ── 1. Pull the candidate event set ──────────────────────────────────
   // We include venue_name + venues(address) so we can thread "venue" and
   // "city" into the AI helper's prompt. We also pull the artist join so we
   // can detect "bio already present on the linked artist row" as non-missing.
@@ -166,18 +196,42 @@ export async function POST(request) {
   // postmortem). `event_title`, `event_date`, and `is_time_tbd` are pulled
   // only for readable debug traces — never written by this route, which
   // is the "preserve manual edits" invariant (enforced by omission in 5b).
-  const { data: events, error: fetchErr } = await supabase
-    .from('events')
-    .select(`
-      id, artist_id, artist_name, event_title, event_date, is_time_tbd, venue_name,
-      custom_image_url, event_image_url, image_url, artist_bio,
-      is_human_edited, is_locked,
-      venues(name, address),
-      artists(id, name, bio, image_url, is_human_edited)
-    `)
-    .eq('status', 'published')
-    .gte('event_date', dateStart)
-    .lte('event_date', dateEnd);
+  //
+  // TWO FETCH MODES:
+  //   • eventId → exact match on a single row. We still gate on
+  //     status='published' so a soft-deleted row that slipped into the
+  //     admin UI (shouldn't happen, but defense-in-depth) can't be
+  //     enriched back into visibility.
+  //   • date    → Eastern-day bounds span. Same select, larger set.
+  const selectCols = `
+    id, artist_id, artist_name, event_title, event_date, is_time_tbd, venue_name,
+    custom_image_url, event_image_url, image_url, artist_bio,
+    is_human_edited, is_locked,
+    venues(name, address),
+    artists(id, name, bio, image_url, is_human_edited)
+  `;
+
+  let events, fetchErr;
+  if (eventId) {
+    // Single-event Magic Wand. Skip getEasternDayBounds entirely — we're
+    // target-fetching by PK, so the day-boundary context is irrelevant.
+    // Everything downstream (Smart Fill partition, byArtist dedupe,
+    // Classification Fork via aiLookupArtist, blank-only writes) runs
+    // identically; it just happens to iterate over a 1-row candidate set.
+    ({ data: events, error: fetchErr } = await supabase
+      .from('events')
+      .select(selectCols)
+      .eq('status', 'published')
+      .eq('id', eventId));
+  } else {
+    const { start: dateStart, end: dateEnd } = getEasternDayBounds(date);
+    ({ data: events, error: fetchErr } = await supabase
+      .from('events')
+      .select(selectCols)
+      .eq('status', 'published')
+      .gte('event_date', dateStart)
+      .lte('event_date', dateEnd));
+  }
 
   if (fetchErr) {
     return NextResponse.json({ error: fetchErr.message }, { status: 500 });
@@ -186,7 +240,8 @@ export async function POST(request) {
   if (!events?.length) {
     return NextResponse.json({
       ok: true,
-      date,
+      date: date || null,
+      eventId: eventId || null,
       totalEvents: 0,
       candidates: 0,
       lockedBlankFilled: 0,
@@ -194,6 +249,8 @@ export async function POST(request) {
       uniqueArtists: 0,
       artistsEnriched: 0,
       eventsUpdated: 0,
+      updatedEventIds: [],
+      rescuedEventIds: [],
       duration: '0s',
     });
   }
@@ -252,7 +309,8 @@ export async function POST(request) {
   if (candidateEvents.length === 0) {
     return NextResponse.json({
       ok: true,
-      date,
+      date: date || null,
+      eventId: eventId || null,
       totalEvents: events.length,
       candidates: 0,
       lockedBlankFilled: 0,
@@ -260,6 +318,8 @@ export async function POST(request) {
       uniqueArtists: 0,
       artistsEnriched: 0,
       eventsUpdated: 0,
+      updatedEventIds: [],
+      rescuedEventIds: [],
       duration: ((Date.now() - start) / 1000).toFixed(2) + 's',
     });
   }
@@ -469,7 +529,8 @@ export async function POST(request) {
 
   return NextResponse.json({
     ok: true,
-    date,
+    date: date || null,
+    eventId: eventId || null,
     totalEvents: events.length,
     candidates: candidateEvents.length,
     lockedBlankFilled,

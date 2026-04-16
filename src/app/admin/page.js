@@ -456,6 +456,9 @@ export default function AdminPage() {
           enrichCurrentDate={sp.enrichCurrentDate}
           enriching={sp.enriching}
           lastEnrichResult={sp.lastEnrichResult}
+          enrichSingleEvent={sp.enrichSingleEvent}
+          enrichingEventIds={sp.enrichingEventIds}
+          singleEnrichErrors={sp.singleEnrichErrors}
         />
       )}
 

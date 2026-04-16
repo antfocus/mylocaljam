@@ -48,6 +48,25 @@ export default function useAdminSpotlight({ password }) {
   const [enriching, setEnriching] = useState(false);
   const [lastEnrichResult, setLastEnrichResult] = useState(null);
 
+  // Single-Event Magic Wand — per-card quick-action state.
+  //
+  //   • `enrichingEventIds` — a Set of event ids with an in-flight
+  //     single-event POST. Rendered in the UI as a spinner overlaid on
+  //     the ✨ button for that specific card so the operator knows which
+  //     row is currently being processed. Set-valued (not a boolean)
+  //     because multiple cards can be enriched in parallel — each click
+  //     is independent.
+  //
+  //   • `singleEnrichErrors` — a plain object ({ [eventId]: 'msg' })
+  //     that surfaces the most recent failure for a given card. Auto-
+  //     cleared after 6s via setTimeout so a long-past error doesn't
+  //     linger indefinitely, and cleared immediately when the user
+  //     re-clicks ✨ on that card. Not a Map because we want cheap
+  //     object-spread updates in React state without referencing a
+  //     hoisted helper.
+  const [enrichingEventIds, setEnrichingEventIds] = useState(() => new Set());
+  const [singleEnrichErrors, setSingleEnrichErrors] = useState({});
+
   // ── Race-condition guards ──────────────────────────────────────────────────
   // `activeFetchRef` holds the latest date the user asked for. Any in-flight
   // fetch whose date no longer matches drops its response on the floor.
@@ -406,6 +425,99 @@ export default function useAdminSpotlight({ password }) {
     }
   }, [enriching, spotlightDate, headers, fetchSpotlightEvents]);
 
+  // ── Single-Event Magic Wand (✨ button on an individual card) ─────────
+  // POSTs to /api/admin/enrich-date with `{ eventId }` instead of `{ date }`.
+  // The backend takes the single-event branch, skipping the day-bounds
+  // fetch and processing ONLY that row, while honoring the same Smart Fill
+  // rules (blank-only writes, never touch event_title/event_date, respect
+  // the Classification Fork via aiLookupArtist) as the bulk path.
+  //
+  // Why we don't reuse enrichCurrentDate: the bulk flow shows the banner
+  // and sets lastEnrichResult, which is the right UX for a multi-event run.
+  // A single-card click should be quiet — a spinner on that one button,
+  // a silent refresh on success, a localized error tooltip on failure.
+  // Touching the shared banner state from here would stomp on the banner
+  // that's still showing the last bulk run's results.
+  const enrichSingleEvent = useCallback(async (eventId) => {
+    if (!eventId) return;
+
+    // Functional update + early-return flag so we never double-fire when
+    // the same button is clicked twice rapidly. Reading state directly
+    // would be a stale-closure footgun; the updater's `prev` argument is
+    // guaranteed fresh.
+    let alreadyPending = false;
+    setEnrichingEventIds(prev => {
+      if (prev.has(eventId)) {
+        alreadyPending = true;
+        return prev;
+      }
+      const next = new Set(prev);
+      next.add(eventId);
+      return next;
+    });
+    if (alreadyPending) return;
+
+    // Clear any previous error on this specific card — clicking ✨ again
+    // is an intentional retry; the old error shouldn't persist past it.
+    setSingleEnrichErrors(prev => {
+      if (!(eventId in prev)) return prev;
+      const next = { ...prev };
+      delete next[eventId];
+      return next;
+    });
+
+    const popFromPending = () => {
+      setEnrichingEventIds(prev => {
+        if (!prev.has(eventId)) return prev;
+        const next = new Set(prev);
+        next.delete(eventId);
+        return next;
+      });
+    };
+
+    const recordError = (msg) => {
+      setSingleEnrichErrors(prev => ({ ...prev, [eventId]: msg }));
+      // Auto-fade the error after 6s so stale failures don't clutter the
+      // UI. If the user re-clicks before then, the clear at the top of
+      // the next call wipes it anyway.
+      setTimeout(() => {
+        setSingleEnrichErrors(prev => {
+          if (prev[eventId] !== msg) return prev;
+          const next = { ...prev };
+          delete next[eventId];
+          return next;
+        });
+      }, 6000);
+    };
+
+    try {
+      const res = await fetch('/api/admin/enrich-date', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ eventId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.ok === false) {
+        const msg = data?.error || `HTTP ${res.status}`;
+        console.error('Single-event Magic Wand failed:', msg);
+        recordError(msg);
+        return;
+      }
+      // Success — refresh the candidate event list so the traffic-light
+      // dot / bio / image flips immediately without the admin having to
+      // click the date picker or the bulk Auto-Fill button again.
+      // fetchSpotlightEvents doesn't touch the admin page's global
+      // `loading` flag (see the commitPins note at the top of this file),
+      // so no black-screen blink.
+      fetchSpotlightEvents(spotlightDate);
+    } catch (err) {
+      console.error('Single-event Magic Wand error:', err);
+      recordError(err?.message || 'Network error');
+    } finally {
+      popFromPending();
+    }
+  }, [headers, fetchSpotlightEvents, spotlightDate]);
+
   return {
     spotlightDate, setSpotlightDate,
     spotlightPins, setSpotlightPins,
@@ -429,5 +541,9 @@ export default function useAdminSpotlight({ password }) {
     enrichCurrentDate,
     enriching,
     lastEnrichResult,
+    // Single-Event Magic Wand — per-card quick action
+    enrichSingleEvent,
+    enrichingEventIds,
+    singleEnrichErrors,
   };
 }

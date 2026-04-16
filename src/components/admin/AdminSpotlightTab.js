@@ -54,6 +54,17 @@ export default function AdminSpotlightTab({
   enrichCurrentDate,
   enriching = false,
   lastEnrichResult = null,
+  // Single-Event Magic Wand — per-card quick action. The ✨ button on
+  // each DraggableEventCard POSTs `{ eventId }` to /api/admin/enrich-date,
+  // which takes the single-event branch (no day-bounds fetch). The hook
+  // tracks which cards have an in-flight request via `enrichingEventIds`
+  // (a Set) and the most recent per-card error via `singleEnrichErrors`
+  // (an object keyed by event id). Props default to no-op shapes so a
+  // caller that forgets to thread them renders the button as disabled
+  // rather than crashing on `.has()`.
+  enrichSingleEvent,
+  enrichingEventIds = new Set(),
+  singleEnrichErrors = {},
 }) {
   const [expandedId, setExpandedId] = useState(null);
   // Slots default to COLLAPSED. Users click to expand a slot; multiple may
@@ -626,6 +637,16 @@ export default function AdminSpotlightTab({
             const updatedAtMs = ev.updated_at ? new Date(ev.updated_at).getTime() : 0;
             const justUpdated = updatedAtMs > 0 && (Date.now() - updatedAtMs) < 10 * 60 * 1000;
 
+            // Single-Event Magic Wand — per-card pending + error state.
+            // The ✨ button is disabled when this card is already in-flight
+            // AND when the card has no artist_name (nothing for the AI
+            // helper to look up). The error string, if present, is
+            // surfaced via the button's title tooltip and a red tint.
+            const singleEnriching = enrichingEventIds?.has
+              ? enrichingEventIds.has(ev.id)
+              : false;
+            const singleError = singleEnrichErrors?.[ev.id] || null;
+
             return (
               <DraggableEventCard
                 key={ev.id}
@@ -640,6 +661,11 @@ export default function AdminSpotlightTab({
                 w={w}
                 r={r}
                 justUpdated={justUpdated}
+                onEnrichSingle={
+                  enrichSingleEvent ? () => enrichSingleEvent(ev.id) : null
+                }
+                singleEnriching={singleEnriching}
+                singleEnrichError={singleError}
               />
             );
           })}
@@ -940,7 +966,17 @@ function SpotlightSlot({
 // ══════════════════════════════════════════════════════════════════════════════
 // DraggableEventCard — a card in the candidate list that can be dragged to a slot
 // ══════════════════════════════════════════════════════════════════════════════
-function DraggableEventCard({ id, ev, resolve, isExpanded, onToggleExpand, onPin, color, timeLabel, w, r, justUpdated = false }) {
+function DraggableEventCard({
+  id, ev, resolve, isExpanded, onToggleExpand, onPin,
+  color, timeLabel, w, r,
+  justUpdated = false,
+  // Single-Event Magic Wand wiring — all optional. When `onEnrichSingle`
+  // is null (parent didn't pass it), the ✨ button is hidden entirely so
+  // older callers get the pre-Magic-Wand layout back without a dead icon.
+  onEnrichSingle = null,
+  singleEnriching = false,
+  singleEnrichError = null,
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({
     id,
     // This item lives outside the SortableContext — we only need it to be
@@ -1001,6 +1037,70 @@ function DraggableEventCard({ id, ev, resolve, isExpanded, onToggleExpand, onPin
           >
             ☆
           </button>
+
+          {/* Single-Event Magic Wand — quick-action ✨ button. Sits
+              directly after the pin star so the trio "drag · pin · wand"
+              forms a consistent action row. Rendered only when the parent
+              supplied an `onEnrichSingle` handler — older callers without
+              the single-event wiring see the pre-wand layout unchanged.
+              Disabled state gets a 'wait' cursor; error state tints red
+              and surfaces the message via the title tooltip so hover-ing
+              a failed card reveals exactly what went wrong without
+              opening devtools. */}
+          {onEnrichSingle && (
+            <button
+              data-stop
+              onClick={(e) => {
+                e.stopPropagation();
+                if (singleEnriching || !ev.artist_name) return;
+                onEnrichSingle();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              disabled={singleEnriching || !ev.artist_name}
+              className="flex items-center justify-center w-7 h-7 rounded-md text-xs border-0"
+              style={{
+                background: singleEnrichError
+                  ? 'rgba(239,68,68,0.12)'
+                  : 'var(--bg-elevated)',
+                color: singleEnrichError ? '#EF4444' : 'var(--text-muted)',
+                cursor: singleEnriching
+                  ? 'wait'
+                  : (ev.artist_name ? 'pointer' : 'not-allowed'),
+                transition: 'background 0.15s, color 0.15s',
+                position: 'relative',
+              }}
+              onMouseEnter={(e) => {
+                if (!singleEnriching && !singleEnrichError && ev.artist_name) {
+                  e.currentTarget.style.background = 'rgba(139,92,246,0.18)';
+                  e.currentTarget.style.color = '#C4B5FD';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!singleEnriching && !singleEnrichError) {
+                  e.currentTarget.style.background = 'var(--bg-elevated)';
+                  e.currentTarget.style.color = 'var(--text-muted)';
+                }
+              }}
+              title={
+                singleEnrichError
+                  ? `Error: ${singleEnrichError}`
+                  : singleEnriching
+                    ? 'Auto-filling this event…'
+                    : !ev.artist_name
+                      ? 'No artist name — nothing for Magic Wand to look up'
+                      : 'Auto-fill bio/image for this event'
+              }
+            >
+              {singleEnriching ? (
+                <span style={{
+                  display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+                  border: '2px solid rgba(148,163,184,0.35)',
+                  borderTopColor: 'var(--text-secondary)',
+                  animation: 'spin 0.8s linear infinite',
+                }} />
+              ) : singleEnrichError ? '⚠' : '✨'}
+            </button>
+          )}
 
           {/* Traffic-light dot */}
           <span
