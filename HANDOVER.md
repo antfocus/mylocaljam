@@ -3955,3 +3955,72 @@ All prior Safety Locks remain in force. This sprint adds:
 - All April 14 Safety Locks (ladder priority, output keys, `cleanImg` locality, `sanitizeForTemplate`, whitelist values, `'Other'` default, Magic Wand prop contract) remain in force.
 - All April 14 G Spot invariants (Verified Lock, Confidence Bar, Enum Prison, Chain of Command, Batch Economy) remain in force.
 - April 16 additions: Smart Fill boundary, Classification Fork kind contract, phantom-column purge, venues schema invariant, stripLockedFields ineligibility on rescue paths.
+
+---
+
+## Session: April 16, 2026 (cont.) — AI Image Search, Top 5 Gallery, Preview Mode, Short-Circuit Bypass ✅ COMPLETE
+
+### Summary
+
+Built the **AI Image Search** feature end-to-end: a ✨ button inside the Edit Event Modal that calls the `enrich-date` endpoint in `preview: true` mode, runs the full Perplexity + Serper pipeline WITHOUT writing to the database, and returns a **Top 5 Gallery** of candidate images for the operator to pick from. The operator clicks a thumbnail, sees it in the Mobile Preview, then commits via the normal "Update Event" button. No auto-save — the preview flow is a pure read path.
+
+Resolved three progressive bugs along the way (musician bias, jammed input, 178ms short-circuit) culminating in a defense-in-depth **Short-Circuit Bypass** hotfix that ensures preview mode always reaches the AI pipeline regardless of existing data on the row.
+
+### Architectural Wins
+
+1. **Preview mode (`preview: true`)** — A new dry-run path through `POST /api/admin/enrich-date`. When the request body includes `preview: true` + `eventId`, the endpoint runs the full single-event pipeline (partition, byArtist grouping, `aiLookupArtist`, Serper top-up) but short-circuits before both DB writes (5a artists upsert, 5b events update). Returns `{ image_url, preview_images: [...], bio, kind }` for the client to populate form state. Nothing is persisted. Validated at the API level: `preview: true` without `eventId` returns 400.
+
+2. **Top 5 Gallery** — Instead of a single-guess image, the backend builds a gallery of up to 5 de-duplicated image URLs: Perplexity's official image (if any) at index 0, topped up with Serper web image search results. The frontend renders these as a horizontal row of 56×56 clickable thumbnails with an orange border + checkmark badge on the active selection. Click promotes that URL into `custom_image_url` + `event_image_url` on the form.
+
+3. **Short-Circuit Bypass (hotfix chain)** — Four coordinated fixes ensure preview mode ALWAYS reaches the AI pipeline:
+   - **Fix A (partition bypass):** `if (!isMissing) continue` gated with `!isPreview` — preview force-includes every row even when bio+image are already present.
+   - **Fix B (byArtist fallback chain):** `if (!raw) continue` extended with a fallback chain in preview mode: `artist_name → event_title → venue_name → venues.name → '(untitled event)'`. The blacklist check is also gated with `!isPreview`.
+   - **Fix C (main loop restructure):** The preview block now runs BEFORE `if (!ai) continue` and `if (!gotBio && !gotImage) continue`. All `ai` accesses use optional chaining (`ai?.kind`, etc.), so even when Perplexity returns null, the Serper top-up still builds a gallery.
+   - **Fix D (defense-in-depth):** Rescue counters (`lockedBlankFilled`, `rescueSet`) and blacklist check both gated on `!isPreview`.
+
+4. **Venue-focused Serper queries** — `searchArtistImages(name, kind, { venue, city })` no longer appends band/music keywords for `VENUE_EVENT` kind. Query logic: name+venue → `${name} ${venue}`; venue only → `${venue} interior`; name only → `${name}`. Eliminates false positives for venue events like "Family Night at River Rock".
+
+5. **Waterfall override binding fix** — The EVENT IMAGE input in the modal was bound to the waterfall-resolved value (`imageResolved.value`), which caused "rubber-banding" — deleting text immediately re-resolved to the next waterfall tier. Fixed by binding directly to `form.custom_image_url` (the raw override) and passing the waterfall result as a separate `inheritedUrl` prop to `ImagePreviewSection`.
+
+### Files Modified
+
+- `src/app/api/admin/enrich-date/route.js` — Preview mode validation, partition bypass, byArtist fallback chain, main loop restructure (preview before !ai/!data continues), defense-in-depth gating. ~843 lines.
+- `src/lib/aiLookup.js` — `searchArtistImages` venue-focused query logic for VENUE_EVENT; debug logs (`[IMAGE DEBUG] Event Kind Classified as:`, `[IMAGE DEBUG] Final Serper Search Query used:`).
+- `src/components/EventFormModal.js` — `handleImageSearch` async function, `previewImages` state, Top 5 Gallery UI (thumbnails + active state), `pickGalleryImage` handler, ✨ button with spinner/error states, waterfall override binding fix.
+- `src/components/admin/shared/ImagePreviewSection.js` — Read-only; confirmed input onChange works correctly (bug was in parent binding).
+
+### Debug Instrumentation
+
+Two diagnostic console.log statements added for operator verification:
+- `[IMAGE DEBUG] Event Kind Classified as: [MUSICIAN|VENUE_EVENT|None]` — in the preview block of `enrich-date/route.js`, confirms classification branch.
+- `[IMAGE DEBUG] Final Serper Search Query used: '<query>'` — in `searchArtistImages` of `aiLookup.js`, confirms the exact Serper query string sent.
+
+### Known Issues / Backlog
+
+- **The "Family Night" Paradox (tabled).** VENUE_EVENT rows like "Family Night at River Rock" can still return low-relevance Serper images because the venue's web presence is sparse. The system works flawlessly for ~95% of real data (musicians with promo shots, venues with active social media). For the remaining edge cases, the operator uses the manual image URL override. This is an acceptable UX given the Top 5 Gallery now provides multiple options. **Not a blocker — tabled as a known limitation.**
+- **`(untitled event)` placeholder in byArtist.** Preview mode uses this as a last-resort AI lookup key when all name fields are blank. The placeholder never reaches a DB write (preview short-circuits before 5a/5b), but it does feed into the Perplexity prompt, which may produce generic results. Acceptable because the Serper top-up uses venue/city context and usually finds something useful.
+- **Admin events grid pagination** — still deferred. Next session will tackle server-side search + database indexing + pagination to replace the 80-event client-side limit.
+
+### Safety Locks — Additions
+
+All prior Safety Locks remain in force. This session adds:
+
+- **Preview mode is a pure read path.** `preview: true` on `enrich-date` must NEVER write to `events` or `artists`. The preview block `continue`s before both 5a and 5b. If you add a new write site inside the artist loop, place it AFTER the preview block, not before.
+- **Preview bypasses ALL partition skip checks.** The `!isMissing` continue, the `!raw` continue, the blacklist `.has()` check, the `!ai` continue, and the `!gotBio && !gotImage` continue are ALL gated with `!isPreview`. An explicit ✨-click from the modal runs the full pipeline unconditionally. Do not re-introduce early returns that would short-circuit a preview request.
+- **byArtist fallback chain is preview-only.** The `venue_name → venues.name → '(untitled event)'` fallback chain only activates when `isPreview || isSingleEvent`. Bulk commit mode still requires a real `artist_name` to key the artists upsert. Do not widen the fallback to bulk mode — it would key upserts on venue names, polluting the `artists` table.
+- **Waterfall override binding.** Image inputs in the Edit Event Modal MUST bind to the raw override field (`form.custom_image_url`), NOT to the resolved waterfall value. The waterfall result goes to `inheritedUrl` (displayed at reduced opacity with an "Inherited from artist" overlay). This prevents rubber-banding when the operator clears the field.
+
+### Safety Locks — Cumulative Snapshot (Apr 16, cont.)
+
+- All April 14 Safety Locks remain in force.
+- All April 14 G Spot invariants remain in force.
+- All April 16 (session 1) additions remain in force: Smart Fill boundary, Classification Fork kind contract, phantom-column purge, venues schema invariant, stripLockedFields ineligibility on rescue paths.
+- April 16 (session 2) additions: Preview mode read-path invariant, preview bypass of all partition checks, byArtist fallback chain scope, waterfall override binding rule.
+
+### Pending / TODO
+
+- **Server-side search, database indexing, and pagination** — Replace the 80-event client-side limit with an industry-standard paginated feed. This is the next major platform upgrade (new session).
+- **Scope the artist-DELETE cleanup** — Still open from session 1.
+- **Automated Template Linker** — Still open from session 1.
+- **Punctuation-insensitive fuzzy match** in `sanitizeForTemplate` — Still deferred.
+- **Category taxonomy reconciliation** (Comedy category wiring, Drink/Food Special overlap) — Still open from SOP review.

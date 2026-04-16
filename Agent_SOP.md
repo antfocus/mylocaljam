@@ -28,6 +28,9 @@ These are load-bearing rules enforced in code across `src/app/api/sync-events/ro
 8. **Ladder output keys.** Flatten-points emit `event_title`, `category`, `start_time`, `description`, `event_image`. Do not rename to `bio` / `image_url` / `title` at the boundary — the UI components read the former set and will render blanks if the keys drift.
 9. **`cleanImg` locality.** `/api/events/route.js` and `/api/spotlight/route.js` each define their own local `cleanImg`. Do not promote to a shared helper without auditing the three frontend copies (`page.js`, `event/[id]/page.js`, `EventCardV2.js`).
 10. **Magic Wand prop contract.** `AdminEventsTab` requires `setActiveTab`, `setEditingTemplate`, `setTemplateForm` from its parent. A future admin refactor must preserve this prop surface, or the handler silently no-ops.
+11. **Preview mode is a pure read path (April 16, 2026).** `preview: true` on `POST /api/admin/enrich-date` must NEVER write to `events` or `artists`. The preview block `continue`s before both the artists upsert (5a) and the events update (5b). If you add a new write site inside the artist loop, place it AFTER the preview block. Preview bypasses ALL partition skip checks (`!isMissing`, `!raw`, blacklist, `!ai`, `!gotBio && !gotImage`) — an explicit ✨-click runs the full pipeline unconditionally.
+12. **byArtist fallback chain is preview/single-event only (April 16, 2026).** The fallback `artist_name → event_title → venue_name → venues.name → '(untitled event)'` only activates when `isPreview || isSingleEvent`. Bulk commit mode requires a real `artist_name`. Do not widen to bulk — it would key upserts on venue names and pollute the `artists` table.
+13. **Waterfall override binding (April 16, 2026).** Image inputs in the Edit Event Modal MUST bind to the raw override field (`form.custom_image_url`), NOT to the resolved waterfall value. The waterfall result goes to `inheritedUrl` on `ImagePreviewSection`. Binding to the resolved value causes rubber-banding when the operator clears the field.
 
 For the full cross-cutting reference (chain of command, midnight exception, UI chips) see "The Data Inheritance Waterfall & Chain of Command" section later in this file. For the cumulative on-disk record of what every invariant is pinned to, see the "Safety Locks" entries in the April 5, April 6, April 14, and April 16 sessions of `HANDOVER.md`.
 
@@ -184,6 +187,32 @@ When you see a rescue:
 3. **If the rescue count spikes suddenly (e.g. > 5 on a single date), investigate the write site.** Likely suspects are listed in the Exorcised Bugs section. Run `scripts/investigate-lock-2026-04-21.sql` against the date in question — the tight-cluster verdict will identify a bulk writer if one exists.
 4. **Never disable Smart Fill to "protect" a lock.** The lock was almost certainly set incorrectly in the first place. The fix is always upstream: scope the offending writer to respect date + status + human intent.
 
+### Preview mode — AI Image Search (April 16, 2026)
+
+The Edit Event Modal's ✨ "AI Image Search" button calls `POST /api/admin/enrich-date` with `{ eventId, preview: true }`. This runs the full single-event pipeline (partition, byArtist grouping, `aiLookupArtist` + Classification Fork, Serper gallery top-up) but **short-circuits before both DB writes**. The response includes:
+
+| Field | Type | Description |
+|---|---|---|
+| `image_url` | string or null | Legacy single-URL field (mirrors gallery index 0) |
+| `preview_images` | string[] | Top 5 Gallery — up to 5 de-duplicated image URLs |
+| `bio` | string or null | AI-resolved bio (not persisted) |
+| `kind` | string or null | Classification Fork result: `'MUSICIAN'` or `'VENUE_EVENT'` |
+
+**How the Top 5 Gallery is built:**
+1. Seed with `ai.image_candidates` from `aiLookupArtist` (1 URL when Perplexity succeeded, 0 when it didn't).
+2. Top up with an explicit `searchArtistImages` call when short of 5, using the venue-focused query for VENUE_EVENT kind.
+3. De-duplicate while filling; Perplexity image stays at index 0.
+4. Cap at 5.
+
+**Short-Circuit Bypass rules.** Preview mode bypasses EVERY partition skip check in the pipeline:
+- The `!isMissing` partition filter is gated with `!isPreview` — rows with full bio+image are still included.
+- The `!raw` byArtist check uses a fallback chain: `artist_name → event_title → venue_name → venues.name → '(untitled event)'`.
+- The blacklist check is gated with `!isPreview` — blacklisted names are not dropped.
+- The preview block runs BEFORE `if (!ai) continue` and `if (!gotBio && !gotImage) continue` — even a null Perplexity response triggers the Serper gallery build.
+- Rescue counters (`lockedBlankFilled`, `rescueSet`) are gated with `!isPreview` and stay at 0.
+
+**What happens on the client:** The modal renders the gallery as a horizontal row of 56×56 thumbnails. Clicking one promotes that URL into `custom_image_url` + `event_image_url` on the form. The operator sees the image in the Mobile Preview, then clicks "Update Event" to commit through the normal save path. Nothing is persisted until that save.
+
 ### Boundaries you must respect
 
 If you are adding a new bulk-enrichment endpoint that needs to do anything like Smart Fill:
@@ -192,6 +221,7 @@ If you are adding a new bulk-enrichment endpoint that needs to do anything like 
 - **Never put `event_title` or `start_time` in the update object.** This is the preserve-manual-edits invariant. Enforce by physical omission, not by a strip filter.
 - **Write locks intentionally, not as side effects.** `is_human_edited = true` is a semantic "this row was curated" statement. Never set it as part of a cleanup or unlink flow without a matching admin save action.
 - **Report a rescue counter.** If your path can fill blanks on locked rows, surface `lockedBlankFilled` (or a path-specific equivalent) so operators can tell when the bug-detection signal fires.
+- **Preview mode must remain a pure read path.** If you add a new write site inside the artist loop of `enrich-date`, place it AFTER the `if (isPreview) { ... continue; }` block. The preview block's `continue` is the write-prevention boundary.
 
 ---
 
@@ -220,7 +250,7 @@ The Perplexity `sonar-pro` prompt in `src/lib/aiLookup.js` is structured as an e
 - **`kind` is the switch, not the `artist_name`.** Do not re-classify the target by pattern-matching the name yourself — Perplexity has far better context (it sees venue, city, and the classification task framing). Trust the returned `kind`.
 - **Pass-2 genre tagger is gated to `MUSICIAN`.** The helper only invokes the genre-label pass when `kind === 'MUSICIAN' && bioText`. Do not lift that gate — a genre label on a trivia night pollutes filter rows on the public feed.
 - **`is_tribute` is forced to `false` on `VENUE_EVENT`.** The tribute-artist UI flag must not light up on a karaoke row.
-- **Serper fallback query is kind-aware.** `searchArtistImages(name, kind = 'MUSICIAN')` appends `"${name} band live music"` for MUSICIAN and `"${name} restaurant bar interior"` for VENUE_EVENT. Hotlink-safe filtering is unchanged. If you need to call Serper from a new code path, thread `kind` through or the default MUSICIAN query will run on venue events.
+- **Serper fallback query is kind-aware (updated April 16, 2026).** `searchArtistImages(name, kind = 'MUSICIAN', { venue, city })` builds venue-focused queries for VENUE_EVENT: `${name} ${venue}` when both are available, `${venue} interior` when only venue is set, `${name}` alone as fallback. For MUSICIAN it uses `${name} band live music` (no venue context needed — promo shots outrank venue-disambiguated results). The old VENUE_EVENT query appended "restaurant bar interior" which polluted results for non-restaurant venues; the new logic strips all music/restaurant keywords for VENUE_EVENT. If you need to call Serper from a new code path, thread `kind` + venue/city context through.
 - **Unrecognized `kind` defaults to MUSICIAN.** `aiLookup.js` normalizes with `rawKind === 'VENUE_EVENT' ? 'VENUE_EVENT' : 'MUSICIAN'`. The safe-default direction is deliberate — running a musician workflow on a venue event once is recoverable; running a venue workflow on a musician would strand their genre tags.
 
 ### When to disable Classification Fork behavior
@@ -291,7 +321,8 @@ The Spotlight tab result banner now surfaces `lockedBlankFilled` when nonzero, r
 ### Still-open
 
 - **Punctuation-insensitive `sanitizeForTemplate`.** Titles like `"Open Mic Night!"` vs `"Open Mic Night"` still slip through. Deferred until a real regression is observed. Eyeball Magic Wand output.
-- **Admin events grid pagination.** Row counts are climbing; pagination is still deferred.
+- **Admin events grid pagination.** Row counts are climbing; pagination is still deferred. Next session will replace the 80-event client-side limit with server-side search + database indexing + pagination.
+- **"Family Night" Paradox (tabled April 16, 2026).** VENUE_EVENT rows with sparse venue web presence can return low-relevance Serper images. The system works for ~95% of real data; the remaining edge cases use the manual image URL override. The Top 5 Gallery mitigates this by giving the operator multiple options. Not a blocker.
 
 ---
 
@@ -302,15 +333,20 @@ The Spotlight tab result banner now surfaces `lockedBlankFilled` when nonzero, r
 - **Automated Template Linker.** A background process that scans newly-scraped events against existing `event_templates` rows by (Venue × Title prefix / alias match) and pre-links them by writing `template_id`. Eliminates most Linking Station "No Match" work on the next-day admin review. Suggested entry point: a tail step in `src/app/api/sync-events/route.js` after the per-venue upsert completes — call `findCandidateTemplate({ venue_id, raw_title })` per upserted event. Invariants: (a) never clobber an admin-set `template_id`, (b) the existing Magic Wand template-cloning path (Workflow 1, Step 2) must still work when the linker declines a match, (c) respect the G Spot Confidence Bar — sub-0.85 match confidence should NOT write.
 - **Scope the artist-DELETE cleanup (blocker before the next admin delete ships).** See Exorcised Bugs above for the fix.
 
+### Added April 16, 2026 (session 2)
+
+- **Server-Side Search, Database Indexing, and Pagination.** Replace the 80-event client-side limit with an industry-standard paginated feed. This is the next major platform upgrade.
+
 ### Carried over
 
 - Extract `<MetadataEditor>` (the "Twin Editor" from the April 6 roadmap).
 - Punctuation-insensitive fuzzy match in `sanitizeForTemplate`.
-- Admin pagination on the events grid.
+- Admin pagination on the events grid (subsumed by Server-Side Search above).
 - User submissions moderation workflow (`AdminSubmissionsTab`).
 - Report / flag triage workflow (`AdminReportsTab`).
 - Spotlight curation workflow (`AdminSpotlightTab`) — or an explicit "out of scope for agents" note.
 - Cancellation handling — set `status: 'cancelled'`, do not delete.
+- Category taxonomy reconciliation (Comedy wiring, Drink/Food Special overlap).
 
 ---
 
