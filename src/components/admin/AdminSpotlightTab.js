@@ -518,14 +518,21 @@ function SpotlightSlot({
   const { attributes, listeners, setNodeRef, transform, transition, isOver } = useSortable({ id });
   // Border precedence (highest priority wins):
   //   1. Bump warning (red dashed) — #5 about to be pushed off
-  //   2. Filled + suggested (blue-gray dashed) — DRAFT autopilot pick
+  //   2. Filled + suggested (Muted Solid: standard dark border + faint blue tint)
   //   3. Filled + manual (solid orange) — committed admin pin
   //   4. Empty placeholder (gray dashed)
+  //
+  // Muted Solid design (2026-04-16): suggested slots previously rendered a
+  // 2px dashed blue border, which made 5 stacked drafts feel noisy and
+  // sketch-y. We now match the standard unpinned/row border (var(--border),
+  // solid) and rely on a very faint blue background tint + the DRAFT pill +
+  // the muted-blue rank number to signal "autopilot pick". The goal is for
+  // the stack to read as calm and professional, not provisional.
   const fillBorder = event
-    ? (isSuggested ? '2px dashed #60A5FA' : '2px solid #E8722A66')
+    ? (isSuggested ? '2px solid var(--border)' : '2px solid #E8722A66')
     : '2px dashed var(--border)';
   const fillBackground = event
-    ? (isSuggested ? 'rgba(96,165,250,0.05)' : 'var(--bg-elevated)')
+    ? (isSuggested ? 'rgba(59,130,246,0.06)' : 'var(--bg-elevated)')
     : 'var(--bg-card)';
   const baseStyle = {
     transform: CSS.Transform.toString(transform),
