@@ -139,20 +139,55 @@ export default function AdminSpotlightTab({
   );
 
   // Count of events on the current date that are candidates for the Magic
-  // Wand — missing bio/image AND not admin-locked. Drives the button's
-  // disabled state and badge. Mirrors the server-side filter in
-  // /api/admin/enrich-date so the client count matches what the server
-  // will actually process; any drift here just cosmetically mis-badges,
-  // it can't cause wrong writes (server owns the authoritative filter).
-  const missingMetadataCount = useMemo(() => {
-    let count = 0;
+  // Wand — Smart Fill edition. Mirrors the server-side filter in
+  // /api/admin/enrich-date (see that route's Step 2 loop) so the badge
+  // matches what the POST will actually process.
+  //
+  // Two rules that have to stay in lockstep with the backend:
+  //
+  //   1. NO lock-skip. Rows carrying a stale `is_human_edited=true` or
+  //      `is_locked=true` with blank bio/image are "Rescue" candidates
+  //      — the 7:12 PM Ghost (2026-04-14) falsely locked ~5 rows on
+  //      2026-04-21 with empty columns; Smart Fill's whole point is to
+  //      refill the blanks without clobbering locked NON-blank fields.
+  //      Skipping locked rows here is what caused the badge to show 6
+  //      instead of the correct 11 after yesterday's backend update.
+  //
+  //   2. Real image columns only. `ev.event_image` is a VIRTUAL field
+  //      added by applyWaterfall() in src/lib/waterfall.js — it is NOT
+  //      hydrated on rows fetched from /api/admin. The real columns on
+  //      `events` are `custom_image_url`, `event_image_url`, and legacy
+  //      `image_url`; plus the joined `artists.image_url` for bio/image
+  //      that's already filled one table over. Reading the phantom
+  //      column always returns undefined, which made every row look
+  //      image-less and was a second cause of the old count drift.
+  //
+  // Any cosmetic drift still can't cause wrong writes — the server owns
+  // the authoritative filter — but "button says 6, server processes 11"
+  // is exactly the kind of trust-corroding mismatch that sends an admin
+  // into the DB to hand-fix things. Keep these two rules in sync with
+  // enrich-date/route.js step 2 whenever either side changes.
+  //
+  // `rescueCount` is the locked-blank subset of `missingMetadataCount`
+  // — same semantics as the server's `lockedBlankFilled` return field.
+  // Exposed as a derived value so the banner/tooltip can split "N fresh
+  // + M rescue" for the operator without recomputing the loop.
+  const { missingMetadataCount, rescueCount } = useMemo(() => {
+    let total = 0;
+    let rescue = 0;
     for (const ev of spotlightEvents) {
-      if (ev.is_human_edited === true || ev.is_locked === true) continue;
-      const hasImage = !!(ev.event_image || ev.image_url || ev.artists?.image_url);
+      const hasImage = !!(
+        ev.custom_image_url ||
+        ev.event_image_url ||
+        ev.image_url ||
+        ev.artists?.image_url
+      );
       const hasBio = !!(ev.artist_bio || ev.artists?.bio);
-      if (!hasImage || !hasBio) count++;
+      if (hasImage && hasBio) continue;
+      total++;
+      if (ev.is_human_edited === true || ev.is_locked === true) rescue++;
     }
-    return count;
+    return { missingMetadataCount: total, rescueCount: rescue };
   }, [spotlightEvents]);
 
   // ── Drag handlers ────────────────────────────────────────────────────────
@@ -266,11 +301,18 @@ export default function AdminSpotlightTab({
                     <span>✨</span>
                     Auto-Fill
                     {missingMetadataCount > 0 && (
-                      <span style={{
-                        fontSize: 10, fontWeight: 800,
-                        background: 'rgba(255,255,255,0.25)',
-                        borderRadius: 999, padding: '1px 6px',
-                      }}>{missingMetadataCount}</span>
+                      <span
+                        style={{
+                          fontSize: 10, fontWeight: 800,
+                          background: 'rgba(255,255,255,0.25)',
+                          borderRadius: 999, padding: '1px 6px',
+                        }}
+                        title={
+                          rescueCount > 0
+                            ? `${missingMetadataCount - rescueCount} fresh + ${rescueCount} rescue = ${missingMetadataCount} to fill`
+                            : `${missingMetadataCount} to fill`
+                        }
+                      >{missingMetadataCount}</span>
                     )}
                   </>
                 )}

@@ -3840,3 +3840,118 @@ All future automation — specifically AI-powered classification and enrichment 
 - `src/components/admin/AdminArtistsTab.js` — alias tag input + Ignore row button
 - `src/components/admin/AdminArtistModals.js` — Ignore Selected bulk button
 - `src/app/admin/page.js` — wired `setArtists` + `setArtistToast` through to modals
+
+---
+
+## Session: April 16, 2026 — Smart Fill, Classification Fork, Muted Solid Drafts, 7:12 PM Ghost Exorcised ✅ DEPLOYED
+
+### Headline
+
+Four things shipped this sprint:
+
+1. **Smart Fill** on the Magic Wand — the enrich-date endpoint now rescues rows that carry a stale `is_human_edited = true` lock but have blank image or bio fields. Before today those rows were stranded forever. The April 21, 2026 button now jumps from 6 → 11 eligible artists.
+2. **Classification Fork** in `aiLookup.js` — the Perplexity prompt now classifies the target as `MUSICIAN` or `VENUE_EVENT` on its first step and branches the rest of the write path. Things like "Trivia Night" or "BOGO Burger" no longer get fake band bios, fake genre tags, or musician-styled Serper images.
+3. **Muted Solid draft slots** in Spotlight — the dashed blue border is gone. Projected slots now sit behind a 2px solid border + a faint 6%-opacity blue tint, with the DRAFT pill and the muted blue rank number carrying the visual weight.
+4. **The 7:12 PM Ghost** — an artist-DELETE cleanup path was flipping `is_human_edited = true` on every future-dated event matching the deleted artist's name with no date or status filter. We've identified the write site (`src/app/api/admin/artists/route.js:416-419`); the Smart Fill rescue now makes the stranded rows drain automatically, but scoping that DELETE is a must-fix before the next admin delete ships.
+
+### 1. Smart Fill (Magic Wand Rescue)
+
+`POST /api/admin/enrich-date` is no longer a "skip anything locked" endpoint. The Smart Fill rule:
+
+- **Filter:** any published event missing an image OR bio is a candidate — regardless of its `is_human_edited` / `is_locked` state. The lock is reinterpreted from "skip row entirely" to "don't clobber populated fields."
+- **Write:** each writable field is re-checked on a per-event basis against every real image column (`custom_image_url`, `event_image_url`, legacy `image_url`) plus the joined `artists.image_url`, and against `artist_bio` plus the joined `artists.bio`. The AI only writes into columns that are all blank.
+- **Preserve manual edits:** `event_title` and `start_time` are never in the `update` object. Ever. The preserve-manual-edits invariant is enforced by physical omission, not by a strip filter.
+- **No `stripLockedFields` on this path.** The guard would strip our writes on exactly the rogue-locked rows Smart Fill is designed to rescue, defeating the feature. The per-field blank-only pre-check is the replacement safety net.
+- **Response shape.** Added `lockedBlankFilled` — a count of locked rows Smart Fill rescued. The legacy `lockedSkipped` key is still present for back-compat and is always `0` now (Smart Fill skips nothing).
+
+**Consumer update.** `AdminSpotlightTab.js` result banner now prefers the new `lockedBlankFilled` signal and displays "· N locked (blank-filled)", falling back to the legacy "· N locked (skipped)" string if a server has not yet rolled out.
+
+### 2. Classification Fork (`src/lib/aiLookup.js`)
+
+The Perplexity `sonar-pro` bio prompt now runs a 5-step decision tree:
+
+1. **Categorize** the target into `MUSICIAN` or `VENUE_EVENT`.
+2. **Conditional writing rules** — MUSICIAN gets a band-shaped bio (members, style, vibe). VENUE_EVENT gets a room-shaped description (what the event is, who it's for, what to expect at the venue). No fake discographies, no "touring nationally" hype on a trivia night.
+3. **Conditional image rules** — MUSICIAN looks for live-performance photos; VENUE_EVENT looks for interior / vibe / ambience shots of the room.
+4. **Source link** — both branches still return a source URL when available.
+5. **Output** — strict JSON contract, kind is carried back to the caller.
+
+**Implementation details:**
+
+- The prompt template makes the conditional branches explicit (`If MUSICIAN: ... If VENUE_EVENT: ...`) rather than a single generic instruction. Perplexity follows the branch conditional much more reliably than a wishy-washy "tailor the bio to the type of event."
+- `kind` is normalized at the caller: `const kind = rawKind === 'VENUE_EVENT' ? 'VENUE_EVENT' : 'MUSICIAN'`. Anything the model returns outside the two tokens falls through to `MUSICIAN` as the safe default (we'd rather run a musician workflow on a venue event once than the reverse).
+- **Pass-2 genre tagger is skipped** when `kind === 'VENUE_EVENT'`. The helper guards with `(bioText && kind === 'MUSICIAN') ? await callPerplexity(...) : null` so VENUE_EVENT rows never get a genre label written back.
+- **Serper fallback is kind-aware.** `searchArtistImages(name, kind = 'MUSICIAN')` now appends context-appropriate keywords: `"${name} band live music"` for MUSICIAN, `"${name} restaurant bar interior"` for VENUE_EVENT. Hotlink-safe filtering is unchanged.
+- **Returned object** carries `kind` and forces `is_tribute: false` on the VENUE_EVENT branch so the tribute-artist UI flag can't accidentally light up on a trivia night.
+
+### 3. Muted Solid Drafts (`AdminSpotlightTab.js`)
+
+New design vocabulary for Projected / Suggested Spotlight slots:
+
+- **`fillBorder`** — `2px solid var(--border)` (was `2px dashed #60A5FA`). Matches the standard unpinned slot border so Suggested rows no longer visually scream "under construction."
+- **`fillBackground`** — `rgba(59,130,246,0.06)` (was `rgba(96,165,250,0.05)`). A faint 6%-opacity blue tint that reads as a subtle status cue without competing with the pinned slots.
+- **DRAFT pill** and **muted blue rank number** stay unchanged — they are now the primary draft-state indicators. The bump warning and manual-pin chip are preserved.
+
+The dashed-border pattern is retired elsewhere in the admin UI too; keep any new Spotlight-adjacent affordances on the Muted Solid vocabulary (solid border + faint tint + pill) unless you have a specific reason to diverge.
+
+### 4. The 7:12 PM Ghost — Exorcised
+
+**Root cause.** `src/app/api/admin/artists/route.js:416-419` contains an unscoped cleanup step on the artist DELETE handler:
+
+```js
+.update({ artist_id: null, is_human_edited: true })
+.ilike('artist_name', artist.name)
+```
+
+No date filter. No `status = 'published'` filter. Deleting any artist whose name is shared by future events (e.g. "Frankie") flips `is_human_edited = true` on ALL of those future rows. On 2026-04-14 at ~19:12 ET someone deleted a test artist whose name collided with 4 real April-21 events (Frankie, Al Holmes, Stan Steele, Karaoke), all of which showed up in the UI as "Human-locked" without any admin save.
+
+**Forensic evidence** is captured in two ready-to-run scripts:
+
+- `scripts/investigate-lock-2026-04-21.sql` — 4 queries (per-row state, updated_at cluster by minute, linked artist JSONB lock shape, venue-link trait) and a mapping of each result pattern to its likely write site.
+- `scripts/investigate-lock-2026-04-21.mjs` — Node version that uses the service-role key from `.env.local` and prints the same four sections with a "tight cluster / loose cluster / spread" verdict at the end.
+
+**Mitigation status.** Smart Fill (§1) now rescues rogue-locked rows with blank data automatically, so the live feed is no longer visibly affected. But the underlying DELETE bug is still unscoped in production — see the Safety Locks and Pending sections below for the required fix.
+
+### 5. Phantom Columns Purged
+
+Two virtual / nonexistent references were silently eating data:
+
+- **`event_image`** — a VIRTUAL field produced by `applyWaterfall` in `src/lib/waterfall.js`. It is NOT a column on the `events` table. Selecting it in PostgREST drops the whole row in error mode; writing to it is a silent no-op. Purged from:
+  - `src/app/api/spotlight/route.js` — SELECT now lists `custom_image_url, event_image_url, image_url`. The PostgREST `error` is now destructured and logged via `console.warn`. `classify()` was rewritten to mirror `applyWaterfall` priority exactly (Tier 1 real image columns → Tier 2 `venues.photo_url` → Tier 3 `event_templates.image_url` → 99 nothing).
+  - `src/app/api/admin/enrich-date/route.js` — SELECT and WRITE both reference `event_image_url` now.
+- **`venues.updated_at`** — the `venues` table has no `updated_at` column. Any diagnostic that needs a timestamp on the venue link must use `v.created_at` or thread through the event's own `updated_at`. `scripts/investigate-lock-2026-04-21.sql/.mjs` were revised after the Supabase SQL editor surfaced `ERROR: 42703: column v.updated_at does not exist`.
+
+### Files Modified
+
+- `src/app/api/admin/enrich-date/route.js` — Smart Fill filter + write + docstring + response shape
+- `src/app/api/spotlight/route.js` — phantom-column purge + silent-error warn + classify() rewrite
+- `src/lib/aiLookup.js` — Classification Fork prompt + kind-aware Serper + Pass-2 gate
+- `src/components/admin/AdminSpotlightTab.js` — Muted Solid draft vocabulary + new `lockedBlankFilled` banner signal
+
+### Files Created
+
+- `scripts/investigate-lock-2026-04-21.sql` — forensic SQL, safe to run in the Supabase editor
+- `scripts/investigate-lock-2026-04-21.mjs` — forensic Node version (service-role key via `.env.local`)
+
+### Safety Locks — Additions
+
+All prior Safety Locks remain in force. This sprint adds:
+
+- **Smart Fill boundary.** `POST /api/admin/enrich-date` may bypass the row-level `is_human_edited = true` / `is_locked = true` lock ONLY WHEN the target field is currently blank, where "blank" means every real image column (`custom_image_url`, `event_image_url`, legacy `image_url`) AND the joined `artists.image_url` are all falsy (for the image ladder), or both `event.artist_bio` and the joined `artists.bio` are falsy (for the bio ladder). Writes to `event_title` or `start_time` are forbidden; the endpoint must never include those keys in its `update` object. Fork this invariant into any future "rescue" endpoint.
+- **Classification Fork kind contract.** `aiLookupArtist()` returns `{ kind: 'MUSICIAN' | 'VENUE_EVENT', ... }`. Any downstream caller that plans to feed the result into the Artists-tab genre pipeline, the tribute-artist UI, or any "band-shaped" visualization MUST gate on `kind === 'MUSICIAN'`. The Pass-2 genre tagger in `aiLookup.js` is already gated; do not weaken it.
+- **No phantom columns on events.** `event_image` is a virtual waterfall field only. The real image columns are `custom_image_url`, `event_image_url`, and legacy `image_url`. Do not SELECT, WRITE, or lock against `event_image`.
+- **`venues` schema invariant.** The `venues` table has no `updated_at` column. Diagnostics that need a link timestamp must use `v.created_at` or the event's own `updated_at`.
+- **`stripLockedFields` is ineligible on Smart Fill paths.** The guard is correct for per-event admin saves and per-artist enrichment (it still runs in `src/app/api/admin/route.js` and `src/app/api/enrich-artists/route.js`), but it cannot be applied to any endpoint that is designed to rescue rows with a stale boolean lock — it would strip the rescue write and defeat the feature. If you add a new rescue endpoint, replicate the per-field blank-only pre-check instead.
+
+### Pending / TODO
+
+- **Scope the artist-DELETE cleanup (BLOCKER before the next admin delete ships).** `src/app/api/admin/artists/route.js:416-419` must add `.eq('status', 'published')` AND a future-date filter (e.g. `.gte('event_date', nowEasternDayStart())`) before the unscoped `.update({ artist_id: null, is_human_edited: true })`. Alternatively, split the path: the `is_human_edited = true` flip should NEVER be applied as a side effect of an artist DELETE — only the `artist_id = null` side of the cleanup is semantically correct. Recommended fix: drop `is_human_edited: true` from that update entirely and rely on the admin save path to set locks intentionally.
+- **Automated Template Linker (NEW ROADMAP ITEM).** Build a background process that scans newly-scraped events against existing `event_templates` rows by (Venue × Title prefix / alias match) and pre-links them. Eliminates most Linking Station "No Match" work on the next-day admin review. Suggested entry point: a tail step in `src/app/api/sync-events/route.js` that runs `findCandidateTemplate({ venue_id, raw_title })` per upserted event and writes `template_id` when a high-confidence match exists. Invariants: (a) never clobber an admin-set `template_id`, (b) the existing Magic Wand template-cloning path must still work when the linker declines a match, (c) respect the Confidence Bar — sub-0.85 matches should NOT write.
+- **Punctuation-insensitive fuzzy match** in `sanitizeForTemplate` — still deferred from April 14.
+- **Admin pagination on the events grid** — still deferred from April 6.
+
+### Safety Locks — Cumulative Snapshot (Apr 16)
+
+- All April 14 Safety Locks (ladder priority, output keys, `cleanImg` locality, `sanitizeForTemplate`, whitelist values, `'Other'` default, Magic Wand prop contract) remain in force.
+- All April 14 G Spot invariants (Verified Lock, Confidence Bar, Enum Prison, Chain of Command, Batch Economy) remain in force.
+- April 16 additions: Smart Fill boundary, Classification Fork kind contract, phantom-column purge, venues schema invariant, stripLockedFields ineligibility on rescue paths.

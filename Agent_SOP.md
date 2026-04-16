@@ -1,4 +1,4 @@
-> **⚠️ DRAFT — NOT FINAL.** This is the pre-review draft of the Agent SOP. Four architectural blockers are unresolved (category taxonomy reconciliation, Comedy category wiring, start_time ladder omission, Safety Locks absent). See the "Reviewer Notes" appendix at the end of this file. Finalize before an agent consumes this as authoritative.
+> **⚠️ DRAFT — NOT FINAL.** This is the pre-review draft of the Agent SOP. Two original blockers are now resolved as of April 16, 2026 (Safety Locks inlined as §0; start_time ladder added to the Appendix). Two remain open: category taxonomy reconciliation and Comedy category wiring. See the "Reviewer Notes" appendix at the end of this file. Finalize before an agent consumes this as authoritative.
 
 # 🤖 myLocalJam: AI Agent Standard Operating Procedure (SOP)
 
@@ -9,6 +9,27 @@ You are the **Event Operations Manager** for myLocalJam, an automated platform t
 Your primary objective is to maintain a pristine, accurate, and professional public event feed by managing the Admin Dashboard. You do this by creating master templates, linking raw scraper data, enforcing strict data categorization rules, and building robust scraping pipelines.
 
 **The Golden Rule:** You are a "Quality Controller" and "System Architect." Let the automated scraper and auto-sorter do the heavy lifting. You only intervene to correct anomalies (like missing templates or messy scraper data) or to add new venues using established architectural patterns.
+
+---
+
+## 🛡️ §0. ARCHITECTURAL INVARIANTS — SAFETY LOCKS (DO NOT MODIFY)
+
+These are load-bearing rules enforced in code across `src/app/api/sync-events/route.js`, `src/app/api/admin/route.js`, `src/app/api/admin/artists/route.js`, `src/app/api/admin/enrich-date/route.js`, `src/lib/aiLookup.js`, `src/lib/waterfall.js`, `src/lib/writeGuards.js`, and `src/components/EventFormModal.js`. If you are writing a code path that seems to bypass any of these, stop and escalate — you are almost certainly introducing a regression.
+
+**Locks you must respect on every write:**
+
+1. **`is_human_edited` / `is_locked` as "don't clobber", not "skip row."** A `true` value on these flags means automated processes may not overwrite populated fields. It does NOT mean "skip the row entirely" — blank fields on a locked row are fillable via the Smart Fill path below. The PUT handler in `src/app/api/admin/artists/route.js` additionally strips any incoming field whose per-field JSONB lock is set unless the same request explicitly unlocks it. Do not weaken that guard.
+2. **Smart Fill boundary (Magic Wand).** `POST /api/admin/enrich-date` may write to `event_image_url` and `artist_bio` on a row with `is_human_edited = true` ONLY WHEN those fields are currently blank (see Workflow 5). It is forbidden from touching `event_title` or `start_time` on any row, locked or not — these are the human-logistics fields. Any other endpoint that rescues locked rows must replicate the per-field blank-only pre-check instead of calling `stripLockedFields`.
+3. **Classification Fork kind contract.** `aiLookupArtist()` returns `{ kind: 'MUSICIAN' | 'VENUE_EVENT', ... }`. Do not feed a `VENUE_EVENT` result into the Artists-tab genre pipeline, the tribute-artist UI, or any band-shaped visualization. The Pass-2 genre tagger in `aiLookup.js` is already gated to `kind === 'MUSICIAN'`; preserve that gate.
+4. **No phantom columns on events.** `event_image` is a VIRTUAL field produced by `applyWaterfall` in `src/lib/waterfall.js` — it is NOT a DB column. Do not SELECT it (PostgREST drops the row in error mode) and do not WRITE to it (silent no-op). The real image columns on `events` are `custom_image_url`, `event_image_url`, and legacy `image_url`. Any diagnostic SQL that needs a venue-link timestamp must use `v.created_at` — `venues.updated_at` does not exist.
+5. **Metadata Waterfall priority.** Resolution is `Admin Override → Template → Linked Artist → Raw Scraper`. A higher tier wins absolutely; a lower tier does not get a vote when a higher tier has produced a value. The 5-field ladder (Title, Category, Start Time, Description, Image) is canonical — see the Triple Crown appendix.
+6. **Midnight Exception.** Treat `"00:00"` / `"00:00:00"` as digital silence on template-linked, non-human-edited rows. The template's `start_time` MUST overwrite it on the backend during sync, in the EventFormModal during rendering, and on save. See §2 in "The Data Inheritance Waterfall & Chain of Command" below.
+7. **Category whitelist.** `ARTIST_SUBTITLE_CATEGORIES = ['Live Music', 'Comedy']` is defined locally in each card file (`SiteEventCard.js`, `EventCardV2.js`). Adding a category that legitimately carries an artist name requires editing both files. The ladder's terminal fallback is `'Other'`, not `'Live Music'`.
+8. **Ladder output keys.** Flatten-points emit `event_title`, `category`, `start_time`, `description`, `event_image`. Do not rename to `bio` / `image_url` / `title` at the boundary — the UI components read the former set and will render blanks if the keys drift.
+9. **`cleanImg` locality.** `/api/events/route.js` and `/api/spotlight/route.js` each define their own local `cleanImg`. Do not promote to a shared helper without auditing the three frontend copies (`page.js`, `event/[id]/page.js`, `EventCardV2.js`).
+10. **Magic Wand prop contract.** `AdminEventsTab` requires `setActiveTab`, `setEditingTemplate`, `setTemplateForm` from its parent. A future admin refactor must preserve this prop surface, or the handler silently no-ops.
+
+For the full cross-cutting reference (chain of command, midnight exception, UI chips) see "The Data Inheritance Waterfall & Chain of Command" section later in this file. For the cumulative on-disk record of what every invariant is pinned to, see the "Safety Locks" entries in the April 5, April 6, April 14, and April 16 sessions of `HANDOVER.md`.
 
 ---
 
@@ -125,36 +146,191 @@ Once the scraper is built:
 
 ---
 
+## ✨ WORKFLOW 5: Magic Wand (Smart Fill) — Operation & Rescue Signals
+
+*Trigger: You clicked the ✨ Magic Wand button on a Spotlight date, OR you are reviewing the post-run banner in the Spotlight admin tab.*
+
+### What Smart Fill does
+
+`POST /api/admin/enrich-date` runs the strict `aiLookupArtist` helper on every unique artist that appears in the day's candidate set, then writes the result back onto matching events. As of April 16, 2026 it operates under the **Smart Fill** contract, not the old "skip anything locked" contract.
+
+**The filter rule.** An event is a candidate if it is missing an image OR a bio — regardless of its lock state. Locked rows with blanks are not stranded. Specifically, "missing an image" means every real image column (`custom_image_url`, `event_image_url`, legacy `image_url`) AND the joined `artists.image_url` are all falsy. "Missing a bio" means both `events.artist_bio` and the joined `artists.bio` are falsy.
+
+**The write rule.** Per-event, per-field blank check. The AI only writes into columns that are currently blank. This is the replacement safety net for `stripLockedFields`, which is NOT called on this path (it would strip the rescue write on exactly the rogue-locked rows Smart Fill is designed to rescue).
+
+**What Smart Fill will never do.** Overwrite `event_title` or `start_time`. These fields are physically absent from the update object — the preserve-manual-edits invariant is enforced by omission, not by a filter.
+
+### Reading the result banner
+
+After a Magic Wand run, the Spotlight tab surfaces a result banner with these fields:
+
+| Signal | What it means | Action |
+|---|---|---|
+| `eventsUpdated` | Rows we wrote fresh data onto | Expected; no action |
+| `candidates` | Rows that were missing image or bio | Expected; no action |
+| `artistsEnriched` | Unique artists who got any new AI data | Expected; no action |
+| `lockedBlankFilled` (NEW) | Of those candidates, how many carried a stale `is_human_edited = true` AND Smart Fill rescued them with blank-only writes | **Rescue signal — investigate if nonzero** |
+| `lockedSkipped` | Kept in the response for back-compat with older clients. Always `0` under Smart Fill | Ignore |
+| `errors[]` | Any per-row or per-artist error | Act on these |
+
+### The Rescue Signal: what to do when `lockedBlankFilled > 0`
+
+A nonzero `lockedBlankFilled` means the endpoint just wrote to rows that had `is_human_edited = true` but blank `event_image_url` / `artist_bio`. That combination is almost always a symptom of a write-site bug somewhere upstream — a manual save would have populated the field it flipped the lock for. The canonical historical example is **the 7:12 PM Ghost** (see §"Exorcised Bugs" below).
+
+When you see a rescue:
+
+1. **Do not override.** The Smart Fill write is correct — a blank field on a "locked" row is garbage data, not intent.
+2. **Spot-check the affected rows in the Events tab.** If the AI bio or image is wrong for the artist, use the normal admin edit flow to correct it. The `is_human_edited = true` flag stays set (Smart Fill re-stamps it on write), so the scraper cron will not clobber your correction on the next sync.
+3. **If the rescue count spikes suddenly (e.g. > 5 on a single date), investigate the write site.** Likely suspects are listed in the Exorcised Bugs section. Run `scripts/investigate-lock-2026-04-21.sql` against the date in question — the tight-cluster verdict will identify a bulk writer if one exists.
+4. **Never disable Smart Fill to "protect" a lock.** The lock was almost certainly set incorrectly in the first place. The fix is always upstream: scope the offending writer to respect date + status + human intent.
+
+### Boundaries you must respect
+
+If you are adding a new bulk-enrichment endpoint that needs to do anything like Smart Fill:
+
+- **Replicate the per-field blank check.** Do not call `stripLockedFields`. That guard is correct for per-event admin saves and per-artist enrichment, and it still runs in `src/app/api/admin/route.js` and `src/app/api/enrich-artists/route.js`. It is WRONG for rescue paths.
+- **Never put `event_title` or `start_time` in the update object.** This is the preserve-manual-edits invariant. Enforce by physical omission, not by a strip filter.
+- **Write locks intentionally, not as side effects.** `is_human_edited = true` is a semantic "this row was curated" statement. Never set it as part of a cleanup or unlink flow without a matching admin save action.
+- **Report a rescue counter.** If your path can fill blanks on locked rows, surface `lockedBlankFilled` (or a path-specific equivalent) so operators can tell when the bug-detection signal fires.
+
+---
+
+## 🪪 WORKFLOW 6: Classification Fork (Musician vs. Venue Event) — When the AI Looks Up an Artist
+
+*Trigger: Any time `aiLookupArtist()` is invoked — from the Artists tab "Run AI Enrichment" button, from the Magic Wand, or from any new path that calls `src/lib/aiLookup.js`.*
+
+### Why the fork exists
+
+Many scrapers ingest "events" whose `artist_name` is actually a venue activity: `Trivia Night`, `BOGO Burger`, `Karaoke 8pm every Tuesday`, `Spring Wine Dinner`. Before April 16, 2026 the AI helper would dutifully write a fake band bio and pull Serper musician photos for these, which then poisoned the feed via the Metadata Waterfall's artist tier.
+
+The Classification Fork runs classification FIRST and branches the entire write path on the outcome.
+
+### The 5-step prompt contract
+
+The Perplexity `sonar-pro` prompt in `src/lib/aiLookup.js` is structured as an explicit decision tree — the steps are numbered in the prompt so the model follows the branch reliably:
+
+1. **Categorize.** Return `kind: "MUSICIAN" | "VENUE_EVENT"`. MUSICIAN = a named performer, band, DJ, or comedian. VENUE_EVENT = an activity, special, trivia, karaoke, food/drink event, or themed night hosted by the venue.
+2. **Conditional Writing Rules.** If MUSICIAN, write a band-shaped bio (members, style, regional context). If VENUE_EVENT, write a room-shaped description (what the event is, who it's for, what to expect). No fake discographies, no touring hype on a trivia night.
+3. **Conditional Image Rules.** If MUSICIAN, look for live-performance or promo photos. If VENUE_EVENT, look for interior / ambience shots of the room.
+4. **Source link.** Both branches return a source URL when available.
+5. **Output.** Strict JSON. The `kind` is carried back to every caller.
+
+### Downstream rules you must follow
+
+- **`kind` is the switch, not the `artist_name`.** Do not re-classify the target by pattern-matching the name yourself — Perplexity has far better context (it sees venue, city, and the classification task framing). Trust the returned `kind`.
+- **Pass-2 genre tagger is gated to `MUSICIAN`.** The helper only invokes the genre-label pass when `kind === 'MUSICIAN' && bioText`. Do not lift that gate — a genre label on a trivia night pollutes filter rows on the public feed.
+- **`is_tribute` is forced to `false` on `VENUE_EVENT`.** The tribute-artist UI flag must not light up on a karaoke row.
+- **Serper fallback query is kind-aware.** `searchArtistImages(name, kind = 'MUSICIAN')` appends `"${name} band live music"` for MUSICIAN and `"${name} restaurant bar interior"` for VENUE_EVENT. Hotlink-safe filtering is unchanged. If you need to call Serper from a new code path, thread `kind` through or the default MUSICIAN query will run on venue events.
+- **Unrecognized `kind` defaults to MUSICIAN.** `aiLookup.js` normalizes with `rawKind === 'VENUE_EVENT' ? 'VENUE_EVENT' : 'MUSICIAN'`. The safe-default direction is deliberate — running a musician workflow on a venue event once is recoverable; running a venue workflow on a musician would strand their genre tags.
+
+### When to disable Classification Fork behavior
+
+Never, as a normal operator action. If you need a venue event treated as a musician for a specific row (e.g. a "Trivia with DJ X" billing where the DJ is a real artist), use the admin override — set `custom_bio` / `custom_image_url` / `custom_genres` on the event row. That wins the Metadata Waterfall without touching the artist-level data.
+
+---
+
 ## 📖 APPENDIX: The "Triple Crown" Data Resolution Rules
 
 For your situational awareness, the live feed resolves what the user sees using this exact logic. Do not fight the system; use it.
 
-- **Title:** `Admin Custom Title` → `Template Name` → `Raw Scraper Title`
+- **Title:** `Admin Custom Title` → `Template Name` → `Raw Scraper Title` → `''`
 - **Category:** `Template Category` → `Raw Scraper Category` → `Default: 'Other'`
-- **Description:** `Admin Custom Bio` → `Template Bio` → `Artist Profile Bio` → `Raw Scraper Bio`
-- **Image:** `Admin Custom Image` → `Template Image` → `Artist Profile Image` → `Venue Photo`
+- **Start Time:** `Admin Custom Start Time` → `Template Start Time` → `Raw Scraper Start Time` (with `event_date` / title-regex fallbacks; the Midnight Exception applies — `"00:00"` on a template-linked non-human-edited row is treated as empty so the template time wins)
+- **Description:** `Admin Custom Bio` → `Template Bio` → `Artist Profile Bio` (the FK-joined `artists.bio`, affects all future events by that artist) → `Raw Scraper Bio` (the denormalized `events.artist_bio` snapshot on this row)
+- **Image:** `Admin Custom Image` → `Template Image` → `Artist Profile Image` → `Venue Photo` (`venues.photo_url`)
 
-If you want a template to shine through, leave the Admin Custom fields blank.
+If you want a template to shine through, leave the Admin Custom fields blank. Note that editing `artists.bio` affects EVERY future event by that artist; editing `events.artist_bio` only affects the one row.
+
+---
+
+## 🎨 APPENDIX: UI Conventions for Admin Curation
+
+These visual conventions are load-bearing — changing them without updating the operator's mental model causes misreads.
+
+### Spotlight draft slots — "Muted Solid" (April 16, 2026)
+
+Projected / Suggested Spotlight slots use the **Muted Solid** vocabulary:
+
+- **Border:** `2px solid var(--border)`. Matches the standard unpinned slot. No dashed borders.
+- **Background:** `rgba(59,130,246,0.06)` — a 6%-opacity blue tint. Subtle enough to read as a status cue without competing with pinned slots.
+- **DRAFT pill:** small pill badge, primary draft-state indicator.
+- **Muted blue rank number:** secondary indicator.
+- **Bump warning + manual-pin chip:** preserved.
+
+Rationale: the old dashed-blue border read as "under construction" and visually dominated the row. Muted Solid makes the draft state a calm-but-visible hint; the pill and rank number carry the weight. Apply this vocabulary to any new Spotlight-adjacent affordances unless you have a specific reason to diverge.
+
+### Inheritance indicator — blue "T" `TemplateChip`
+
+Fields that inherit from a linked template display the blue "T" chip rendered by the `TemplateChip` component in `src/components/EventFormModal.js`. This chip appears next to the Time label, the Category label, and anywhere else a template-sourced value flows through. It is intentionally NOT the chain-link emoji (🔗) because that glyph is reserved for source-venue hyperlinks elsewhere — overloading the two conflates "this field inherits from a template" with "click here to open the venue page."
+
+### Metadata Waterfall provenance badges
+
+The `MetadataField` component in `src/components/admin/shared/MetadataField.js` renders a colored provenance badge + Reset (undo-arrow) button for every waterfall-driven field. Colors:
+
+- **Orange** — Admin Override (`custom_*`)
+- **Blue** — Template
+- **Purple** — Artist Profile
+- **Gray** — Raw Scraper
+
+If you add a new waterfall-driven field, reuse this component. Do not invent a new badge color.
+
+### Magic Wand result banner — rescue signal (April 16, 2026)
+
+The Spotlight tab result banner now surfaces `lockedBlankFilled` when nonzero, rendered as "· N locked (blank-filled)". This is the Rescue Signal documented in Workflow 5. The legacy "· N locked (skipped)" string still renders when the server returns the old `lockedSkipped` field and no `lockedBlankFilled` — that is the back-compat path and should not appear under the current server.
+
+---
+
+## 🪦 APPENDIX: Known Issues & Exorcised Bugs
+
+### Exorcised ✅
+
+- **The 7:12 PM Ghost (April 14, 2026 — mitigated April 16).** Unscoped `.update({ artist_id: null, is_human_edited: true }).ilike('artist_name', name)` in the artist-DELETE cleanup at `src/app/api/admin/artists/route.js:416-419` was flipping `is_human_edited = true` on ALL future-dated published events matching the deleted artist's name. Symptom: operators saw rows as "Human-locked" they had never saved. On 2026-04-21 the affected rows were Spring Wine Dinner, Al Holmes, Frankie, Karaoke 8pm every, Stan Steele (4 of 5 confirmed). **Mitigation:** Smart Fill (Workflow 5) now rescues these rows automatically. **Required fix (still open — see Roadmap):** scope that DELETE cleanup to `.eq('status', 'published')` and `.gte('event_date', nowEasternDayStart())`, OR simpler — remove the `is_human_edited: true` side of the cleanup entirely and only null the FK. Forensic scripts: `scripts/investigate-lock-2026-04-21.sql` / `.mjs`.
+- **Phantom column `event_image`.** Virtual field produced by `applyWaterfall` only. Selecting it silently dropped rows via PostgREST error mode; writing it was a silent no-op. Purged from `/api/spotlight/route.js` and `/api/admin/enrich-date/route.js`. Do not reintroduce.
+- **Phantom column `venues.updated_at`.** Does not exist in the schema. Replaced with `v.created_at` in the forensic SQL. Do not reintroduce.
+
+### Still-open
+
+- **Punctuation-insensitive `sanitizeForTemplate`.** Titles like `"Open Mic Night!"` vs `"Open Mic Night"` still slip through. Deferred until a real regression is observed. Eyeball Magic Wand output.
+- **Admin events grid pagination.** Row counts are climbing; pagination is still deferred.
+
+---
+
+## 🗺️ APPENDIX: Roadmap
+
+### Added April 16, 2026
+
+- **Automated Template Linker.** A background process that scans newly-scraped events against existing `event_templates` rows by (Venue × Title prefix / alias match) and pre-links them by writing `template_id`. Eliminates most Linking Station "No Match" work on the next-day admin review. Suggested entry point: a tail step in `src/app/api/sync-events/route.js` after the per-venue upsert completes — call `findCandidateTemplate({ venue_id, raw_title })` per upserted event. Invariants: (a) never clobber an admin-set `template_id`, (b) the existing Magic Wand template-cloning path (Workflow 1, Step 2) must still work when the linker declines a match, (c) respect the G Spot Confidence Bar — sub-0.85 match confidence should NOT write.
+- **Scope the artist-DELETE cleanup (blocker before the next admin delete ships).** See Exorcised Bugs above for the fix.
+
+### Carried over
+
+- Extract `<MetadataEditor>` (the "Twin Editor" from the April 6 roadmap).
+- Punctuation-insensitive fuzzy match in `sanitizeForTemplate`.
+- Admin pagination on the events grid.
+- User submissions moderation workflow (`AdminSubmissionsTab`).
+- Report / flag triage workflow (`AdminReportsTab`).
+- Spotlight curation workflow (`AdminSpotlightTab`) — or an explicit "out of scope for agents" note.
+- Cancellation handling — set `status: 'cancelled'`, do not delete.
 
 ---
 
 ## 🔍 REVIEWER NOTES (for finalization — delete before publishing)
 
-The following items were flagged in Senior Systems Architect review on April 14, 2026. They must be reconciled before this SOP is authoritative.
+The following items were flagged in Senior Systems Architect review on April 14, 2026. They must be reconciled before this SOP is authoritative. Two blockers have been closed as of April 16, 2026.
 
 ### Blockers (must resolve)
 
-1. **Category taxonomy vs. `CATEGORY_OPTIONS`:** Group B names need to match the admin dropdown constant exactly. `'Drink/Food Special'` and `'Food & Drink'` overlap — pick one. Either align SOP to code or code to SOP.
-2. **`'Comedy'` category wiring:** The whitelist admits `'Comedy'`, but `CATEGORY_OPTIONS` and `CATEGORY_CONFIG` (both `SiteEventCard.js` and `EventCardV2.js`) need a Comedy entry with distinct color/emoji before agents can categorize anything as Comedy.
-3. **`start_time` ladder missing from appendix:** Triple Crown covers 5 fields in `HANDOVER.md` (Title, Category, Start Time, Description, Image). Appendix currently shows 4. Add: `Start Time: Admin Custom Start Time → Template Start Time → Raw Scraper Start Time (+ event_date / title regex fallbacks)`.
-4. **Safety Locks absent:** Add a §0 "Architectural Invariants (Do Not Modify)" section that inlines or references the `HANDOVER.md` Safety Lock list (ladder priority order, output key names, `cleanImg` locality, sanitizer presence, `'Other'` default, Magic Wand prop contract, etc.).
+1. **Category taxonomy vs. `CATEGORY_OPTIONS`:** Group B names need to match the admin dropdown constant exactly. `'Drink/Food Special'` and `'Food & Drink'` overlap — pick one. Either align SOP to code or code to SOP. **Status: OPEN.**
+2. **`'Comedy'` category wiring:** The whitelist admits `'Comedy'`, but `CATEGORY_OPTIONS` and `CATEGORY_CONFIG` (both `SiteEventCard.js` and `EventCardV2.js`) need a Comedy entry with distinct color/emoji before agents can categorize anything as Comedy. **Status: OPEN.**
+3. **`start_time` ladder missing from appendix:** ~~Triple Crown covers 5 fields in `HANDOVER.md` (Title, Category, Start Time, Description, Image). Appendix currently shows 4.~~ **Status: RESOLVED (April 16, 2026).** Start Time ladder added to the Triple Crown appendix with the Midnight Exception caveat.
+4. **Safety Locks absent:** ~~Add a §0 "Architectural Invariants (Do Not Modify)" section that inlines or references the `HANDOVER.md` Safety Lock list (ladder priority order, output key names, `cleanImg` locality, sanitizer presence, `'Other'` default, Magic Wand prop contract, etc.).~~ **Status: RESOLVED (April 16, 2026).** §0 added at the top of this file with 10 invariants, including the new Smart Fill boundary, Classification Fork kind contract, phantom-column purge, and venues schema invariant.
 
 ### Drift / accuracy (should fix)
 
 5. **Scraper payload field names** — actual scrapers emit `event_date` / `start_time`, not `date` / `time`. Also list `artist_name` for music-category scrapers, plus `source`, `end_time`, `cover`, `ticket_link` where applicable.
-6. **`is_human_edited` / `is_locked` locks** — SOP should at minimum say "If a field has `is_locked: true`, do not overwrite via `custom_*` without first unlocking."
+6. **`is_human_edited` / `is_locked` locks** — ~~SOP should at minimum say "If a field has `is_locked: true`, do not overwrite via `custom_*` without first unlocking."~~ **Status: RESOLVED (April 16, 2026).** §0 rule 1 now explicitly frames the locks as "don't clobber populated fields, not skip row entirely" and points to the Smart Fill rescue behavior (Workflow 5) for the blank-field case. Workflow 5 documents how `lockedBlankFilled` surfaces a rescue signal.
 7. **"Delete & Keep Events" behavior claim** — verify Scraper Blacklist table and automatic `'Other'` recategorization are actually implemented before the SOP commits agents to that flow.
-8. **Description ladder rungs** — distinguish `e.artists?.bio` (FK-joined, affects all future events by that artist) from `e.artist_bio` (denormalized snapshot on the event row). Agents need to know editing one doesn't change the other.
+8. **Description ladder rungs** — ~~distinguish `e.artists?.bio` (FK-joined, affects all future events by that artist) from `e.artist_bio` (denormalized snapshot on the event row).~~ **Status: RESOLVED (April 16, 2026).** Triple Crown appendix now spells this out inline on the Description row.
 9. **Magic Wand sanitizer scope** — case-insensitive + trim only. Punctuation variants ("Open Mic Night!" vs "Open Mic Night") still slip through. Agents must eyeball bio/image after Magic Wand.
 
 ### Missing workflows (nice to have)
@@ -190,9 +366,12 @@ When building or modifying automated data handlers, the Agent must prioritize **
 ### Sacrosanct locks (existing, reinforced)
 
 These pre-existing locks still apply and are complemented — not replaced — by the G Spot protocol:
-- `is_human_edited` (JSONB field map on `artists`) — per-field lock. PUT handler in `src/app/api/admin/artists/route.js` strips any incoming field that is locked unless the same request explicitly unlocks it.
-- `is_locked` (boolean on `artists`) — Master Lock. When `true`, AI enrichment skips the row entirely.
+- `is_human_edited` on `artists` (JSONB field map) — per-field lock. PUT handler in `src/app/api/admin/artists/route.js` strips any incoming field that is locked unless the same request explicitly unlocks it.
+- `is_human_edited` on `events` (boolean) — row-level lock. Interpreted as "don't clobber populated fields," not "skip row entirely." Smart Fill (Workflow 5) may write to BLANK image/bio fields on such rows; it must never write to `event_title` or `start_time`.
+- `is_locked` on `artists` (boolean) — Master Lock. When `true`, AI enrichment skips the row entirely.
 - Admin "save" stamps `metadata_source: 'manual'` automatically; AI writes stamp `'ai_generated'`. Never overwrite `'manual'` with `'ai_generated'`.
+- **Classification Fork kind gate.** `aiLookupArtist()` returns `kind: 'MUSICIAN' | 'VENUE_EVENT'`. The Pass-2 genre tagger and the tribute-artist flag are gated to MUSICIAN. Do not lift the gate.
+- **`stripLockedFields` applicability.** The guard is correct for per-event admin saves (`src/app/api/admin/route.js`) and per-artist enrichment (`src/app/api/enrich-artists/route.js`). It is WRONG for rescue paths like Smart Fill, where the rescue target is precisely the rogue-locked row with blank data — it would strip the rescue write. Any new rescue endpoint must replicate the per-field blank-only pre-check instead.
 
 ### Rollout requirement
 
