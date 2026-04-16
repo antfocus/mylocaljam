@@ -238,6 +238,16 @@ export async function searchArtistImages(artistName, kind = 'MUSICIAN', context 
     q = `${artistName} band live music`;
   }
 
+  // Diagnostic log — emits the EXACT string we're about to hand Serper.
+  // Paired with the route's "[IMAGE DEBUG] Event Kind Classified as" log
+  // so the operator can confirm end-to-end that a VENUE_EVENT really is
+  // getting a venue-focused query (no "band" / "live music" leaks) and
+  // not the MUSICIAN default. Logged BEFORE the trim-and-bail check
+  // because an empty query is itself a debuggable state — seeing
+  // "''" in the logs tells the operator neither a name nor a venue made
+  // it through, which is the real bug we want visibility on.
+  console.log(`[IMAGE DEBUG] Final Serper Search Query used: '${q}'`);
+
   if (!q.trim()) return [];
 
   try {

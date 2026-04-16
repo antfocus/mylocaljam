@@ -552,6 +552,12 @@ export async function POST(request) {
     //     win of giving the operator 5 flyers to triage.
     //   • De-dup while filling so the Perplexity image stays at index 0.
     if (isPreview) {
+      // Diagnostic log — confirms from the server logs which classification
+      // branch the AI hit for this preview. Paired with searchArtistImages'
+      // own "[IMAGE DEBUG] Final Serper Search Query used" log so we can
+      // watch the full decision chain end-to-end (Family Night → kind →
+      // Serper query → results).
+      console.log(`[IMAGE DEBUG] Event Kind Classified as: ${ai.kind || 'None'}`);
       const gallery = [...(Array.isArray(ai.image_candidates) ? ai.image_candidates : [])];
       if (gallery.length < 5) {
         try {
