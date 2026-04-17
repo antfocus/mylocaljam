@@ -217,13 +217,27 @@ function mapEvent(ev, venueMap, defaultTimes) {
 // Convert "6:00 PM" → "18:00"
 function convertTo24h(timeStr) {
   if (!timeStr) return '00:00';
-  const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!match) return '00:00';
-  let [, h, m, period] = match;
-  h = parseInt(h);
-  if (period.toUpperCase() === 'PM' && h !== 12) h += 12;
-  if (period.toUpperCase() === 'AM' && h === 12) h = 0;
-  return `${String(h).padStart(2, '0')}:${m}`;
+
+  // Already in 24-hour HH:MM format (e.g. "18:00" from Gemini OCR)
+  const match24 = timeStr.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const h = parseInt(match24[1]);
+    if (h >= 0 && h <= 23) {
+      return `${String(h).padStart(2, '0')}:${match24[2]}`;
+    }
+  }
+
+  // 12-hour AM/PM format (e.g. "6:00 PM" from other scrapers)
+  const match12 = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (match12) {
+    let [, h, m, period] = match12;
+    h = parseInt(h);
+    if (period.toUpperCase() === 'PM' && h !== 12) h += 12;
+    if (period.toUpperCase() === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+
+  return '00:00';
 }
 
 export async function POST(request) {
@@ -497,7 +511,7 @@ export async function POST(request) {
   let communityDupeCount = 0;
   try {
     // Collect unique venue+date pairs from this sync batch
-    const venueDates = [...new Set(validEvents.map(ev => `${ev.venue_id}|${ev.event_date?.slice(0, 10)}`))];;
+    const venueDates = [...new Set(validEvents.map(ev => `${ev.venue_id}|${ev.event_date?.slice(0, 10)}`))];
     if (venueDates.length > 0) {
       // Fetch community-submitted events for those venue+date combos
       const venueIds = [...new Set(validEvents.map(ev => ev.venue_id).filter(Boolean))];
