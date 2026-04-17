@@ -469,6 +469,7 @@ export default function AdminPage() {
           scraperHealth={ve.scraperHealth} venuesFilter={ve.venuesFilter}
           setVenuesFilter={ve.setVenuesFilter}
           forceSyncing={ve.forceSyncing} handleForceSync={ve.handleForceSync}
+          updateVenueDefaultTime={ve.updateVenueDefaultTime}
         />
       )}
 
