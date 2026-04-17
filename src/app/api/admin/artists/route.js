@@ -198,8 +198,14 @@ export async function PUT(request) {
     }
   }
 
-  // Backend lock validation: strip any fields that are locked via is_human_edited
-  // This prevents locked fields from being overwritten even if the frontend is bypassed
+  // Backend lock validation: when an admin explicitly saves via the modal,
+  // their edits should always win — update the is_human_edited locks to
+  // reflect the fields they're touching, rather than stripping those fields.
+  //
+  // The locks exist to protect against *automated* overwrites (sync pipeline,
+  // AI enrich), not manual admin saves. The frontend sends field_status (UI
+  // state tracker) but the lock column is is_human_edited — we bridge the
+  // gap by locking any field the admin explicitly provides in the payload.
   if (id) {
     const { data: existing } = await supabase
       .from('artists')
@@ -207,22 +213,18 @@ export async function PUT(request) {
       .eq('id', id)
       .single();
 
-    if (existing?.is_human_edited && typeof existing.is_human_edited === 'object') {
-      const locks = existing.is_human_edited;
-      const lockableFields = ['name', 'bio', 'genres', 'vibes', 'image_url'];
-      for (const field of lockableFields) {
-        // If the field is locked in the DB and the incoming update isn't explicitly unlocking it,
-        // strip it from the update payload
-        if (locks[field] && updates[field] !== undefined) {
-          // Allow the update if is_human_edited is also being sent and the field is being unlocked
-          const incomingLocks = updates.is_human_edited;
-          const isUnlocking = incomingLocks && typeof incomingLocks === 'object' && !incomingLocks[field];
-          if (!isUnlocking) {
-            delete updates[field];
-          }
-        }
+    const currentLocks = (existing?.is_human_edited && typeof existing.is_human_edited === 'object')
+      ? { ...existing.is_human_edited }
+      : {};
+    const lockableFields = ['name', 'bio', 'genres', 'vibes', 'image_url'];
+    for (const field of lockableFields) {
+      if (updates[field] !== undefined) {
+        // Admin is explicitly setting this field — lock it so the sync
+        // pipeline won't overwrite it later.
+        currentLocks[field] = true;
       }
     }
+    updates.is_human_edited = currentLocks;
   }
 
   // If name was changed, save the old name as an alias in BOTH stores so
