@@ -385,10 +385,11 @@ export async function DELETE(request) {
     return NextResponse.json({ error: 'Missing artist id' }, { status: 400 });
   }
 
-  // Get the artist record
+  // Get the full artist record — we need bio/image to bake into events
+  // before deleting, so orphaned events don't lose their inherited metadata.
   const { data: artist, error: fetchErr } = await supabase
     .from('artists')
-    .select('name')
+    .select('name, bio, image_url')
     .eq('id', id)
     .single();
 
@@ -422,19 +423,43 @@ export async function DELETE(request) {
     }
   }
 
-  // Option B: Delete artist, keep events as "Other / Special Event"
+  // Option B: Delete artist, keep events live (unlink only).
+  // Bake the artist's bio/image into each event so the waterfall doesn't
+  // lose them when the artist row is deleted. Preserve the event's existing
+  // category instead of force-overwriting to 'Other / Special Event'.
   if (action === 'unlink-events') {
     if (eventCount > 0) {
       const eventIds = linkedEvents.map(e => e.id);
-      await supabase
+
+      // Fetch the full event rows so we can selectively bake only what's
+      // needed (don't clobber event-level data that already exists).
+      const { data: fullEvents } = await supabase
         .from('events')
-        .update({
-          category: 'Other / Special Event',
-          artist_id: null,
-          artist_bio: null,
-          is_human_edited: true,
-        })
+        .select('id, artist_bio, event_image_url, custom_image_url, custom_bio, image_url')
         .in('id', eventIds);
+
+      if (fullEvents) {
+        for (const ev of fullEvents) {
+          const patch = {
+            artist_id: null,
+            is_human_edited: true,
+          };
+          // Bake artist bio → event.artist_bio if the event doesn't already
+          // have its own bio at a higher tier (custom_bio).
+          if (artist.bio && !ev.custom_bio && !ev.artist_bio) {
+            patch.artist_bio = artist.bio;
+          }
+          // Bake artist image → event.event_image_url if the event doesn't
+          // already have its own image at a higher tier.
+          if (artist.image_url && !ev.custom_image_url && !ev.event_image_url && !ev.image_url) {
+            patch.event_image_url = artist.image_url;
+          }
+          await supabase
+            .from('events')
+            .update(patch)
+            .eq('id', ev.id);
+        }
+      }
     }
   }
 
