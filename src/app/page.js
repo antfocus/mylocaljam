@@ -476,6 +476,12 @@ export default function HomePage() {
       }
     }
 
+    // Deduplicate: remove festival entries that match an existing artist name
+    // (event templates often set event_title to the artist name, causing duplicates)
+    for (const [key] of festivalSet) {
+      if (artistSet.has(key)) festivalSet.delete(key);
+    }
+
     const results = [];
     // Festivals first (most specific), then venues, then artists
     for (const [, display] of festivalSet) {
