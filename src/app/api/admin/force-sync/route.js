@@ -38,6 +38,14 @@ import { scrapeCrabsClaw } from '@/lib/scrapers/crabsClaw';
 import { scrapeWaterStreet } from '@/lib/scrapers/waterStreet';
 import { scrapeCrossroads } from '@/lib/scrapers/crossroads';
 import { scrapeEventideGrille } from '@/lib/scrapers/eventideGrille';
+import { scrapeTriumphBrewing } from '@/lib/scrapers/triumphBrewing';
+import { scrapeBlackSwan } from '@/lib/scrapers/blackSwan';
+import { scrapeAlgonquinArts } from '@/lib/scrapers/algonquinArts';
+import { scrapeTimMcLoones } from '@/lib/scrapers/timMcLoones';
+import { scrapeMjsRestaurant } from '@/lib/scrapers/mjsRestaurant';
+import { scrapePaganosUva } from '@/lib/scrapers/paganosUva';
+import { scrapeCaptainsInn } from '@/lib/scrapers/captainsInn';
+import { scrapeCharleysOceanGrill } from '@/lib/scrapers/charleysOceanGrill';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -79,6 +87,14 @@ const SCRAPER_MAP = {
   WaterStreet: scrapeWaterStreet,
   Crossroads: scrapeCrossroads,
   EventideGrille: scrapeEventideGrille,
+  TriumphBrewing: scrapeTriumphBrewing,
+  BlackSwan: scrapeBlackSwan,
+  AlgonquinArts: scrapeAlgonquinArts,
+  TimMcLoones: scrapeTimMcLoones,
+  MjsRestaurant: scrapeMjsRestaurant,
+  PaganosUva: scrapePaganosUva,
+  CaptainsInn: scrapeCaptainsInn,
+  CharleysOcean: scrapeCharleysOceanGrill,
 };
 
 // Platform metadata for scraper_health (mirrors VENUE_REGISTRY in sync-events/route.js)
@@ -94,7 +110,11 @@ const PLATFORM_MAP = {
   Jamians: 'Squarespace', TheCabin: 'Squarespace', TheVogel: 'HTML Scrape',
   SunHarbor: 'Squarespace', BumRogers: 'BentoBox/Wix', TheColumns: 'WordPress',
   TheRoost: 'HTML Scrape', DealLakeBar: 'Squarespace', CrabsClaw: 'RestaurantPassion',
-  WaterStreet: 'Squarespace', Crossroads: 'Eventbrite API', EventideGrille: 'Image Poster',
+  WaterStreet: 'Squarespace', Crossroads: 'Eventbrite API', EventideGrille: 'Vision OCR (Gemini)',
+  TriumphBrewing: 'WordPress HTML', BlackSwan: 'Squarespace',
+  AlgonquinArts: 'PHP HTML (proxy)', TimMcLoones: 'Ticketbud HTML (proxy)',
+  MjsRestaurant: 'Vision OCR (Gemini)', PaganosUva: 'Vision OCR (Gemini)',
+  CaptainsInn: 'Vision OCR (Gemini)', CharleysOcean: 'Vision OCR (Gemini)',
 };
 
 function checkAuth(request) {
