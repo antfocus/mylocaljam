@@ -2169,8 +2169,8 @@ export default function HomePage() {
                   transition: 'all 0.2s ease',
                 }}>
                   <button onClick={() => setActiveFilterCard(activeFilterCard === 'when' ? null : 'when')} style={{
-                    display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
-                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
+                    display: 'flex', alignItems: 'center', width: '100%', padding: '14px 16px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px', minHeight: '44px',
                   }}>
                     {/* Material: calendar_month */}
                     <svg width="16" height="16" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z" fill={dateKey !== 'all' ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151')} /></svg>
@@ -2333,8 +2333,8 @@ export default function HomePage() {
                   transition: 'all 0.2s ease',
                 }}>
                   <button onClick={() => setActiveFilterCard(activeFilterCard === 'distance' ? null : 'distance')} style={{
-                    display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
-                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
+                    display: 'flex', alignItems: 'center', width: '100%', padding: '14px 16px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px', minHeight: '44px',
                   }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={locationCoords ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151')} /></svg>
                     <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: locationCoords ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151'), lineHeight: 1 }}>Location</span>
@@ -2481,8 +2481,8 @@ export default function HomePage() {
                   transition: 'all 0.2s ease',
                 }}>
                   <button onClick={() => setActiveFilterCard(activeFilterCard === 'venue' ? null : 'venue')} style={{
-                    display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
-                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
+                    display: 'flex', alignItems: 'center', width: '100%', padding: '14px 16px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px', minHeight: '44px',
                   }}>
                     {/* Material: storefront */}
                     <svg width="16" height="16" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z" fill={activeVenues.length > 0 ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151')} /></svg>
