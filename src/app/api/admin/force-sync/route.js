@@ -127,15 +127,59 @@ function decodeHtmlEntities(str) {
     .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
 }
 
+// Convert any time string to "HH:MM" 24-hour format.
+// Handles: "18:00", "18:00:00", "18:00-21:30", "6:00 PM", "6:00-9:30 PM",
+//          "6 PM", "6PM", "1800", Supabase TIME "18:00:00+00", etc.
 function convertTo24h(timeStr) {
   if (!timeStr) return '00:00';
-  const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!match) return '00:00';
-  let [, h, m, period] = match;
-  h = parseInt(h);
-  if (period.toUpperCase() === 'PM' && h !== 12) h += 12;
-  if (period.toUpperCase() === 'AM' && h === 12) h = 0;
-  return `${String(h).padStart(2, '0')}:${m}`;
+
+  // Clean up: trim whitespace and remove timezone suffixes from DB TIME values
+  const cleaned = timeStr.trim().replace(/[+-]\d{2}(:\d{2})?$/, '').trim();
+
+  // 1a. Time RANGE with AM/PM — "6:00-9:30 PM", "6-9:30 PM", "2:00 PM-5:00 PM"
+  //     Extract only the START time; the period applies to the start if only one is given
+  const matchRange = cleaned.match(/^(\d{1,2})(?::(\d{2}))?\s*(?:AM|PM)?\s*[-–]\s*\d{1,2}(?::\d{2})?\s*(AM|PM)/i);
+  if (matchRange) {
+    let h = parseInt(matchRange[1]);
+    const m = matchRange[2] || '00';
+    const period = matchRange[3].toUpperCase();
+    if (period === 'PM' && h !== 12) h += 12;
+    if (period === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+
+  // 1b. Single 12-hour AM/PM — "6:00 PM", "6PM", "6 PM", "12:30 AM"
+  const match12 = cleaned.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i);
+  if (match12) {
+    let h = parseInt(match12[1]);
+    const m = match12[2] || '00';
+    const period = match12[3].toUpperCase();
+    if (period === 'PM' && h !== 12) h += 12;
+    if (period === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+
+  // 2. 24-hour HH:MM or HH:MM:SS (with optional range, seconds, etc.)
+  //    Matches: "18:00", "18:00:00", "18:00-21:30", "9:30"
+  const match24 = cleaned.match(/^(\d{1,2}):(\d{2})/);
+  if (match24) {
+    const h = parseInt(match24[1]);
+    if (h >= 0 && h <= 23) {
+      return `${String(h).padStart(2, '0')}:${match24[2]}`;
+    }
+  }
+
+  // 3. Military-ish "1800" or "0930" (no colon, 3-4 digits)
+  const matchMil = cleaned.match(/^(\d{1,2})(\d{2})$/);
+  if (matchMil) {
+    const h = parseInt(matchMil[1]);
+    if (h >= 0 && h <= 23) {
+      return `${String(h).padStart(2, '0')}:${matchMil[2]}`;
+    }
+  }
+
+  console.warn(`[convertTo24h] Unrecognized time format: "${timeStr}"`);
+  return '00:00';
 }
 
 function extractTimeFromTitle(title) {
