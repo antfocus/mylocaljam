@@ -1647,7 +1647,7 @@ export default function HomePage() {
                 fontSize: '12px', fontWeight: 600,
                 color: t.text,
                 fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
-                overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px',
+                overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: 1,
               }}>
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{searchQuery.trim()}</span>
                 <span
@@ -1668,6 +1668,7 @@ export default function HomePage() {
                 fontSize: '12px', fontWeight: 500,
                 color: darkMode ? 'rgba(255, 255, 255, 0.7)' : '#4B5563',
                 fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+                overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0,
                 transition: 'color 0.2s ease',
               }}>
                 Search / Filters
