@@ -1,10 +1,16 @@
 'use client';
 
+import { useState } from 'react';
+
 export default function AdminVenuesTab({
   events, venues,
   scraperHealth, venuesFilter, setVenuesFilter,
   forceSyncing, handleForceSync,
+  updateVenueDefaultTime,
 }) {
+        // Build a lookup from venue name → venue record (for default_start_time)
+        const venueByName = {};
+        (venues || []).forEach(v => { venueByName[v.name?.toLowerCase()] = v; });
         // Platform colors for read-only badges (auto-populated from VENUE_REGISTRY in sync route)
         const PLATFORM_COLORS = {
           'WordPress': '#21759B', 'WordPress AJAX': '#21759B', 'Squarespace': '#5B8A72',
@@ -145,7 +151,42 @@ export default function AdminVenuesTab({
                       )}
                     </div>
 
-                    {/* Platform badge — editable dropdown */}
+                    {/* Default start time — inline editor */}
+                    {(() => {
+                      const matchedVenue = venueByName[s.venue_name?.toLowerCase()];
+                      if (!matchedVenue) return null;
+                      const currentTime = matchedVenue.default_start_time
+                        ? String(matchedVenue.default_start_time).slice(0, 5)
+                        : '';
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
+                          <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", fontWeight: 600, letterSpacing: '0.3px' }}>
+                            DEFAULT
+                          </span>
+                          <input
+                            type="time"
+                            defaultValue={currentTime}
+                            onBlur={(e) => {
+                              const newVal = e.target.value;
+                              const oldVal = currentTime;
+                              if (newVal !== oldVal) {
+                                updateVenueDefaultTime(matchedVenue.id, newVal);
+                              }
+                            }}
+                            style={{
+                              width: '90px', padding: '3px 6px', borderRadius: '6px',
+                              fontSize: '11px', fontWeight: 600,
+                              fontFamily: "'DM Sans', sans-serif",
+                              background: currentTime ? 'rgba(34,197,94,0.1)' : 'var(--bg-elevated)',
+                              color: currentTime ? '#22c55e' : 'var(--text-muted)',
+                              border: `1px solid ${currentTime ? 'rgba(34,197,94,0.3)' : 'var(--border)'}`,
+                              outline: 'none', cursor: 'pointer',
+                            }}
+                          />
+                        </div>
+                      );
+                    })()}
+
                     {/* Platform badge — read-only, auto-populated from sync */}
                     <span style={{
                       padding: '3px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 700,

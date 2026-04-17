@@ -11,6 +11,7 @@
  *   2. Template      — event.event_templates.*              (master library)
  *   3. Event/Scraper — event.event_title / event_image_url / start_time / …
  *   4. Artist        — event.artists.bio / image_url
+ *   5. Venue Default — event.venues.default_start_time      (time only)
  *
  * Two cross-cutting rules modify the ladder:
  *   • Verified Lock (is_human_edited): if true, the Event tier beats Template
@@ -96,6 +97,7 @@ export function extractTimeFromDate(eventDateIso) {
  * @param {object|null} [opts.template]  fallback template when the join isn't
  *   hydrated; looked up client-side via `event.template_id`.
  * @param {object|null} [opts.artist]    fallback artist row; same idea.
+ * @param {object|null} [opts.venue]     fallback venue row for default_start_time.
  * @returns {{ title, category, start_time, description, event_image,
  *            is_human_edited, template, artist }}
  */
@@ -103,6 +105,7 @@ export function applyWaterfall(event, opts = {}) {
   const e = event || {};
   const tpl = e.event_templates || opts.template || null;
   const artist = e.artists || opts.artist || null;
+  const venue = e.venues || opts.venue || null;
   const humanEdited = !!e.is_human_edited;
 
   // Title — custom → (human ? event → template : template → event).
@@ -121,19 +124,45 @@ export function applyWaterfall(event, opts = {}) {
     'Other';
 
   // Start-time ladder.
-  //   • Human lock: event.start_time → template → event_date timestamp.
-  //   • Default:    template → event.start_time → event_date timestamp,
+  //   • Human lock: event.start_time → template → event_date → venue default.
+  //   • Default:    template → event.start_time → event_date → venue default,
   //                 with the Midnight Exception letting a template clobber
   //                 a scraper-supplied 00:00.
-  // event_date is the last-resort tier because scrapers often leave
+  // event_date is a mid-tier fallback because scrapers often leave
   // start_time null while the real time is encoded in event_date.
+  // Venue default_start_time is the last resort — covers OCR events
+  // where no time was parsed but the venue has a consistent showtime.
   const treatEmpty = shouldTreatEventTimeAsEmpty(e);
-  const dateDerived = extractTimeFromDate(e.event_date);
+  const dateDerivedRaw = extractTimeFromDate(e.event_date);
+  // Midnight from event_date means "no real time encoded" — let it fall
+  // through to venue default rather than displaying 12:00 AM.
+  const dateDerived = (dateDerivedRaw && !isMidnight(dateDerivedRaw))
+    ? dateDerivedRaw
+    : null;
+  // Parse venue default time — handles "20:00:00", "20:00", "8:00 PM" etc.
+  const venueTime = (() => {
+    const raw = venue?.default_start_time;
+    if (!raw) return null;
+    const s = String(raw).trim();
+    // Already HH:MM or HH:MM:SS → take first 5 chars
+    if (/^\d{2}:\d{2}/.test(s)) return s.slice(0, 5);
+    // 12-hour format like "8:00 PM"
+    const m = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+    if (m) {
+      let hr = parseInt(m[1]);
+      const mn = m[2];
+      const per = m[3].toLowerCase();
+      if (per === 'pm' && hr !== 12) hr += 12;
+      if (per === 'am' && hr === 12) hr = 0;
+      return `${String(hr).padStart(2, '0')}:${mn}`;
+    }
+    return null;
+  })();
   const start_time = humanEdited
-    ? (e.start_time || tpl?.start_time || dateDerived || null)
+    ? (e.start_time || tpl?.start_time || dateDerived || venueTime || null)
     : (treatEmpty
-        ? (tpl?.start_time || dateDerived || null)
-        : (tpl?.start_time || e.start_time || dateDerived || null));
+        ? (tpl?.start_time || dateDerived || venueTime || null)
+        : (tpl?.start_time || e.start_time || dateDerived || venueTime || null));
 
   // Bio — custom_bio → (human ? event → template : template → event) → artist.
   const description =

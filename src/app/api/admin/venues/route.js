@@ -53,3 +53,46 @@ export async function POST(request) {
 
   return NextResponse.json(venue);
 }
+
+/**
+ * PUT /api/admin/venues
+ * Update a venue's settings (currently: default_start_time).
+ * Body: { id: UUID, default_start_time: "HH:MM" | null }
+ */
+export async function PUT(request) {
+  if (!checkAuth(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+
+  const { id, default_start_time } = body;
+  if (!id) {
+    return NextResponse.json({ error: 'Venue id is required' }, { status: 400 });
+  }
+
+  // Validate time format if provided
+  if (default_start_time && !/^\d{2}:\d{2}(:\d{2})?$/.test(default_start_time)) {
+    return NextResponse.json({ error: 'Invalid time format. Use HH:MM' }, { status: 400 });
+  }
+
+  const supabase = getAdminClient();
+
+  const { data: venue, error } = await supabase
+    .from('venues')
+    .update({ default_start_time: default_start_time || null })
+    .eq('id', id)
+    .select('id, name, default_start_time')
+    .single();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json(venue);
+}
