@@ -1233,6 +1233,12 @@ UPDATE venues SET latitude = ?, longitude = ? WHERE name = '?';
 - **Fix needed:** Run `git add` and `git commit` from the user's terminal to catch git up with what's deployed. Do NOT use `cd /Users/anthony/mylocaljam` — the user's terminal is already in the `mylocaljam` directory. Just use `git add` and `git commit` directly.
 - **Prevention:** Future sessions should omit the `cd` prefix from git commands since the user's terminal is already in the project directory.
 
+### Do NOT deploy via GitHub MCP API — use local git push
+- **Problem (April 17, 2026):** Using the GitHub MCP `push_files` / `create_or_update_file` tools creates commits directly on GitHub that bypass the local git history. This causes the local repo and remote to diverge, leading to merge conflicts, stash failures, and lock file issues when the user later tries to `git pull`.
+- **Rule:** Always make code changes to the local files (in the mounted workspace folder), then have the user run `git add`, `git commit`, and `git push` from their terminal. This keeps a single linear history with no divergence.
+- **Fallback exception:** The GitHub MCP push is acceptable for tiny emergency hotfixes, but the user MUST run `git pull` immediately after to sync their local repo before any further local work.
+- **Large files:** Files over ~100KB (like HANDOVER.md at 299KB) cannot be pushed via the GitHub API at all — they must go through local git.
+
 ---
 
 ## Session: March 15, 2026 — Submission Flow, Admin Queue, Filter Cleanup
