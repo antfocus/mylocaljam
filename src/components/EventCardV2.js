@@ -288,7 +288,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             )}
           </div>
 
-          {/* Save (plus circle) button */}
+          {/* Ticket stub save button */}
           <div ref={bookmarkRef} style={{ flexShrink: 0 }}>
             <button
               className="save-btn"
@@ -308,25 +308,20 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 width: '44px', height: '44px',
                 padding: 0,
+                transition: 'transform 0.2s ease',
               }}
             >
               <svg
                 className={isFavorited ? 'save-pop' : ''}
                 width="26" height="26" viewBox="0 0 24 24"
-                fill="none"
-                stroke={isFavorited ? '#E8722A' : (darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)')}
-                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
                 style={{ transition: 'all 0.2s ease' }}
               >
-                <circle cx="12" cy="12" r="11" />
-                {!isFavorited && (
-                  <>
-                    <line x1="12" y1="8" x2="12" y2="16" />
-                    <line x1="8" y1="12" x2="16" y2="12" />
-                  </>
-                )}
-                {isFavorited && (
-                  <polyline points="7.5 12 10.5 15 16.5 9" fill="none" stroke="#E8722A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                {isFavorited ? (
+                  /* Filled ticket — solid orange */
+                  <path d="M22 10V6a2 2 0 00-2-2H4a2 2 0 00-2 2v4a2 2 0 100 4v4a2 2 0 002 2h16a2 2 0 002-2v-4a2 2 0 100-4z" fill="#E8722A" />
+                ) : (
+                  /* Outlined ticket — ghost stub */
+                  <path d="M22 10V6a2 2 0 00-2-2H4a2 2 0 00-2 2v4a2 2 0 100 4v4a2 2 0 002 2h16a2 2 0 002-2v-4a2 2 0 100-4zm-2-1.46a4 4 0 000 6.92V18H4v-2.54a4 4 0 000-6.92V6h16v2.54z" fill={darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'} />
                 )}
               </svg>
             </button>
@@ -920,8 +915,8 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
           transition: opacity 0.25s ease, transform 0.25s ease;
         }
         @media (hover: hover) {
-          .save-btn:hover svg {
-            stroke: #E8722A !important;
+          .save-btn:hover svg path {
+            fill: #E8722A !important;
           }
           .share-btn-detail:hover {
             opacity: 0.75;
