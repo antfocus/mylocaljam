@@ -151,6 +151,26 @@ export async function POST(request) {
     return NextResponse.json({ error: deleteErr.message }, { status: 500 });
   }
 
+  // Step E: Clear stale denormalized images on merged events so the waterfall
+  // falls through to the master artist's (now authoritative) image.
+  // Only clears event_image_url (scraper/AI snapshot) — never touches
+  // custom_image_url (admin override, higher tier).
+  let staleImagesCleaned = 0;
+  try {
+    const { data: cleaned } = await supabase
+      .from('events')
+      .update({ event_image_url: null })
+      .eq('artist_id', masterId)
+      .not('event_image_url', 'is', null)
+      .select('id');
+    staleImagesCleaned = cleaned?.length || 0;
+    if (staleImagesCleaned > 0) {
+      console.log(`[Merge] Cleared stale event_image_url on ${staleImagesCleaned} events for master artist ${master.name}`);
+    }
+  } catch (err) {
+    console.warn('[Merge] Stale image cleanup failed (non-fatal):', err.message);
+  }
+
   revalidatePath('/');
   revalidatePath('/api/events');
   revalidatePath('/api/events/search');
@@ -161,5 +181,6 @@ export async function POST(request) {
     master: master.name,
     merged: duplicates.map(d => d.name),
     eventsTransferred: totalEventsTransferred,
+    staleImagesCleaned,
   });
 }

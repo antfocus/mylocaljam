@@ -209,6 +209,19 @@ export async function extractEventsFromFlyer(imageUrl, { venueName, year, month 
     }))
     .filter(e => e.date); // Drop events where we couldn't get a date
 
-  console.log(`[VisionOCR] Extracted ${validated.length} events from flyer`);
-  return validated;
+  // Deduplicate OCR extractions — flyers often list artists in a summary
+  // section (ALL CAPS, no times) AND a detailed section (mixed case, with times).
+  // Key by normalized (date + artist), prefer the entry that has a valid time.
+  const deduped = new Map();
+  for (const e of validated) {
+    const key = `${e.date}-${e.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+    const existing = deduped.get(key);
+    if (!existing || (!existing.time && e.time)) {
+      deduped.set(key, e);
+    }
+  }
+
+  const results = [...deduped.values()];
+  console.log(`[VisionOCR] Extracted ${validated.length} events, ${validated.length - results.length} OCR duplicates removed, returning ${results.length}`);
+  return results;
 }

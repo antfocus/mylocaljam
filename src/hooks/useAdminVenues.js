@@ -13,11 +13,30 @@ export default function useAdminVenues({ password, showQueueToast }) {
     try {
       const { data, error } = await supabase
         .from('venues')
-        .select('id, name')
+        .select('id, name, default_start_time')
         .order('name');
       if (!error && data) setVenues(data);
     } catch (err) { console.error('Failed to load venues:', err); }
   }, []);
+
+  const updateVenueDefaultTime = useCallback(async (venueId, time) => {
+    try {
+      const res = await fetch('/api/admin/venues', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+        body: JSON.stringify({ id: venueId, default_start_time: time || null }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setVenues(prev => prev.map(v => v.id === venueId ? { ...v, default_start_time: time || null } : v));
+        showQueueToast(`Default start time ${time ? 'set to ' + time : 'cleared'}`);
+      } else {
+        showQueueToast(`Failed to update: ${data.error}`);
+      }
+    } catch (err) {
+      showQueueToast(`Error updating default time: ${err.message}`);
+    }
+  }, [password, showQueueToast]);
 
   const fetchScraperHealth = useCallback(async () => {
     try {
@@ -57,5 +76,6 @@ export default function useAdminVenues({ password, showQueueToast }) {
     fetchVenues,
     fetchScraperHealth,
     handleForceSync,
+    updateVenueDefaultTime,
   };
 }
