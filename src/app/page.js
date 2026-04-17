@@ -468,18 +468,21 @@ export default function HomePage() {
         const key = venue.toLowerCase();
         if (key.includes(q) && !venueSet.has(key)) venueSet.set(key, venue);
       }
-      // Festivals: from event_title (deduplicated, normalized to catch variants like "sea.hear.now" vs "Sea Hear Now")
-      const festival = (e.event_title ?? '').trim();
-      if (festival) {
-        const key = normalizeVenue(festival);
-        if (key.includes(q) && !festivalSet.has(key)) festivalSet.set(key, festival);
+      // Event titles: only treat as "festival" if it contains event-type keywords;
+      // otherwise it's just an artist name from an event template → add to artistSet
+      const eventTitle = (e.event_title ?? '').trim();
+      if (eventTitle) {
+        const key = normalizeVenue(eventTitle);
+        if (key.includes(q)) {
+          if (EVENT_TITLE_RE.test(eventTitle)) {
+            // Actual festival/event name
+            if (!festivalSet.has(key)) festivalSet.set(key, eventTitle);
+          } else {
+            // Artist name used as event title (from template) — add to artist list
+            if (!artistSet.has(key)) artistSet.set(key, eventTitle);
+          }
+        }
       }
-    }
-
-    // Deduplicate: remove festival entries that match an existing artist name
-    // (event templates often set event_title to the artist name, causing duplicates)
-    for (const [key] of festivalSet) {
-      if (artistSet.has(key)) festivalSet.delete(key);
     }
 
     const results = [];
