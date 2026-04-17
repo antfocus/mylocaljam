@@ -30,6 +30,24 @@ const VENUE = 'Palmetto';
 const PAGE_URL = 'https://www.palmettoasburypark.com/music';
 
 /**
+ * Day-of-week time fallback map.
+ *
+ * Palmetto's flyer uses section headers like "Fridays at 9 PM" and
+ * "Saturdays at 9 PM" — Gemini sometimes extracts the artist but
+ * misses the time from the header. This map provides a fallback
+ * based on the day of the week the event falls on.
+ *
+ * Update these if Palmetto changes their recurring schedule.
+ *   0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+ */
+const DAY_OF_WEEK_DEFAULT_TIMES = {
+  0: '13:00', // Sundays at 1 PM
+  3: '20:00', // Wednesdays at 8 PM
+  5: '21:00', // Fridays at 9 PM
+  6: '21:00', // Saturdays at 9 PM
+};
+
+/**
  * Month names for matching poster images by month context.
  */
 const MONTH_NAMES = [
@@ -157,18 +175,33 @@ export async function scrapePalmetto() {
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const events = extracted
       .filter(e => e.date && e.date >= todayStr)
-      .map(e => ({
-        title: e.artist,
-        venue: VENUE,
-        date: e.date,
-        time: e.time || null,
-        description: null,
-        ticket_url: null,
-        price: null,
-        source_url: PAGE_URL,
-        external_id: `palmetto-${e.date}-${e.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
-        image_url: null,
-      }));
+      .map(e => {
+        let time = e.time || null;
+
+        // Day-of-week fallback: if Gemini didn't extract a time,
+        // use the known recurring schedule for that day
+        if (!time) {
+          const dayOfWeek = new Date(e.date + 'T12:00:00').getDay();
+          const fallback = DAY_OF_WEEK_DEFAULT_TIMES[dayOfWeek];
+          if (fallback) {
+            console.log(`[Palmetto] Using day-of-week fallback for "${e.artist}" on ${e.date} (day ${dayOfWeek}) → ${fallback}`);
+            time = fallback;
+          }
+        }
+
+        return {
+          title: e.artist,
+          venue: VENUE,
+          date: e.date,
+          time,
+          description: null,
+          ticket_url: null,
+          price: null,
+          source_url: PAGE_URL,
+          external_id: `palmetto-${e.date}-${e.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
+          image_url: null,
+        };
+      });
 
     console.log(`[Palmetto] Found ${events.length} upcoming events`);
     return { events, error: null };
