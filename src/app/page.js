@@ -1542,9 +1542,10 @@ export default function HomePage() {
     setDateKey('all');
     setPickedDate('');
     setActiveVenues([]);
-    setMilesRadius(profileRadiusRef.current); // reset to profile default, not null
+    setMilesRadius(null);               // truly clear — any distance
     setArtistSearch('');
     setSearchQuery('');
+    setDebouncedSearch('');              // skip the 300ms debounce for immediate re-fetch
     // NOTE: does NOT close the panel — user stays in filter view to start over
     setActiveFilterCard(null);
     setVenueSearch('');
@@ -2635,16 +2636,19 @@ export default function HomePage() {
                   borderTop: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
                   borderRadius: '0 0 12px 12px',
                 }}>
-                  {/* Clear All — ghost button, left side */}
+                  {/* Clear All — outlined button, left side */}
                   <button onClick={clearAllFilters} style={{
                     display: 'flex', alignItems: 'center', gap: '5px',
-                    padding: '10px 12px', borderRadius: '10px',
-                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    padding: '10px 16px', borderRadius: '10px',
+                    background: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                    border: `1px solid ${darkMode ? 'rgba(255,255,255,0.15)' : '#D1D5DB'}`,
+                    cursor: 'pointer',
                     fontSize: '13px', fontWeight: 600,
-                    color: hasActiveFilters ? (darkMode ? '#D0D0E0' : '#374151') : (darkMode ? '#8C8CA4' : '#6B7280'),
+                    color: darkMode ? '#D0D0E0' : '#374151',
                     fontFamily: "'DM Sans', sans-serif",
-                    transition: 'color 0.15s ease',
+                    transition: 'background 0.15s ease, border-color 0.15s ease',
                     whiteSpace: 'nowrap', flexShrink: 0,
+                    minHeight: '44px',
                   }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                       <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor" />
