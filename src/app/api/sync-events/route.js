@@ -490,6 +490,48 @@ export async function POST(request) {
     return true;
   });
 
+  // ── Community-submission dedup: drop scraped events that duplicate a
+  //    human-submitted row at the same venue + date + artist (case-insensitive).
+  //    Community submissions have external_id = NULL and is_human_edited = true,
+  //    so they never collide on the external_id upsert — we must catch them here.
+  let communityDupeCount = 0;
+  try {
+    // Collect unique venue+date pairs from this sync batch
+    const venueDates = [...new Set(validEvents.map(ev => `${ev.venue_id}|${ev.event_date?.slice(0, 10)}`))];;
+    if (venueDates.length > 0) {
+      // Fetch community-submitted events for those venue+date combos
+      const venueIds = [...new Set(validEvents.map(ev => ev.venue_id).filter(Boolean))];
+      const minDate = validEvents.reduce((min, ev) => ev.event_date?.slice(0, 10) < min ? ev.event_date.slice(0, 10) : min, '9999-12-31');
+      const maxDate = validEvents.reduce((max, ev) => ev.event_date?.slice(0, 10) > max ? ev.event_date.slice(0, 10) : max, '0000-01-01');
+      const { data: communityRows } = await supabase
+        .from('events')
+        .select('venue_id, event_date, artist_name')
+        .in('venue_id', venueIds)
+        .gte('event_date', minDate)
+        .lte('event_date', maxDate + 'T23:59:59')
+        .eq('is_human_edited', true)
+        .is('external_id', null);
+      if (communityRows?.length) {
+        // Build a Set of normalized keys for fast lookup
+        const communityKeys = new Set(
+          communityRows.map(r => `${r.venue_id}|${r.event_date?.slice(0, 10)}|${(r.artist_name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`)
+        );
+        const before = validEvents.length;
+        const filtered = validEvents.filter(ev => {
+          const key = `${ev.venue_id}|${ev.event_date?.slice(0, 10)}|${(ev.artist_name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+          return !communityKeys.has(key);
+        });
+        communityDupeCount = before - filtered.length;
+        if (communityDupeCount > 0) {
+          console.log(`[Sync] Dropped ${communityDupeCount} scraped events that duplicate community submissions`);
+          validEvents.splice(0, validEvents.length, ...filtered);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Sync] Community-dedup check failed (non-fatal):', err.message);
+  }
+
   // ── Smart upsert: protect manually-edited events from scraper overwrites ──
   // Load external_ids of manually-edited events so we can skip overwriting their fields
   const allExtIds = validEvents.map(ev => ev.external_id).filter(Boolean);
