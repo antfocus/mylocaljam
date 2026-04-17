@@ -415,6 +415,75 @@ Any PR that introduces a new automated classifier, enrichment job, or cron-backe
 
 ---
 
+## 🗄️ DATABASE & DEPLOYMENT RULES (Added April 16, 2026 — Session 3)
+
+These rules were established after a production incident where a botched deployment caused the site to show 0 events. They are mandatory for all future database and deployment work.
+
+### Rule 1: PostgREST Explicit Join Hints (MANDATORY)
+
+Whenever two tables are connected by foreign keys, all PostgREST/Supabase `.select()` queries that join those tables **MUST** use explicit FK hint syntax:
+
+```javascript
+// ✅ CORRECT — explicit hint tells PostgREST exactly which FK to traverse
+.select('*, event_templates!fk_events_template_id(template_name, bio, category, start_time)')
+
+// ❌ WRONG — relies on PostgREST schema cache auto-detection, which fails when:
+//   - Multiple FKs exist between the same tables (ghost/duplicate constraints)
+//   - The schema cache hasn't reloaded after a migration
+//   - NOTIFY pgrst doesn't stick on the instance
+.select('*, event_templates(template_name, bio, category, start_time)')
+```
+
+**Why:** PostgREST auto-detects FK paths from its schema cache. If two FKs point from the same column to the same table (e.g., after a manual DB repair creates a duplicate), PostgREST throws "more than one relationship was found" and the query returns an error. The explicit hint (`table!fk_name(*)`) bypasses the cache entirely and works regardless of cache state or duplicate constraints.
+
+**Scope:** This applies to ALL Supabase `.select()` calls that embed related tables — not just the search route. Any new route or query that joins tables via FK must use the hint syntax.
+
+### Rule 2: No Direct Production Schema Changes (MANDATORY)
+
+All database schema changes — including adding/dropping columns, constraints, indexes, or extensions — **MUST** follow this path:
+
+1. Write a migration file in `supabase/migrations/`
+2. Test the migration against the **Staging** Supabase instance first
+3. Verify application code works with the schema change on staging (run test suite)
+4. Deploy to production only after staging validation passes
+
+**Never** use the Supabase Dashboard SQL Editor or Table Editor to make structural changes directly on the production database. Manual mutations create schema drift that is invisible to version control and can produce ghost constraints, duplicate FKs, or missing columns that are extremely difficult to diagnose.
+
+**Exception:** Read-only diagnostic queries (SELECT, EXPLAIN) are fine to run against production for debugging purposes.
+
+### Rule 3: PostgREST Schema Cache Troubleshooting Protocol
+
+If PostgREST returns stale schema errors after a migration (e.g., "Could not find a relationship" or "more than one relationship"), follow this escalation path:
+
+**Level 1 — Standard reload (often insufficient):**
+```sql
+NOTIFY pgrst, 'reload schema';
+```
+
+**Level 2 — DDL comment change (forces event-trigger-based reload):**
+```sql
+-- Pick any constraint on any table and change its comment. The DDL change
+-- triggers PostgREST's event-trigger-based reload, which is more reliable
+-- than the NOTIFY channel.
+COMMENT ON CONSTRAINT fk_events_template_id ON events IS 'FK reload trigger - updated YYYY-MM-DD';
+```
+
+**Level 3 — Combined nuclear reload:**
+```sql
+-- 1. DDL change to trigger event-trigger reload
+COMMENT ON CONSTRAINT fk_events_template_id ON events IS 'FK reload trigger - updated YYYY-MM-DD';
+
+-- 2. Function-based notify (belt)
+SELECT pg_notify('pgrst', 'reload schema');
+
+-- 3. Raw NOTIFY (suspenders)
+NOTIFY pgrst, 'reload schema';
+```
+
+**Why Level 1 alone is unreliable:** The `NOTIFY pgrst` channel requires PostgREST to be actively listening at the moment the notification fires. On Supabase-hosted instances, the PostgREST process may not pick up the notification reliably (especially after restarts or on instances with connection pooling). DDL changes (ALTER, COMMENT, CREATE) trigger PostgREST's built-in event trigger (`pgrst_ddl_watch`), which is a fundamentally different and more reliable mechanism.
+
+---
+
 ## 🌊 The Data Inheritance Waterfall & Chain of Command
 
 > **READ THIS BEFORE TOUCHING ANY CODE PATH THAT WRITES TO `events`, `artists`, OR THE CATEGORIZATION PIPELINE.** The rules below are load-bearing. Every sync run, every AI call, every admin save flows through this hierarchy. Violate any level and you will silently corrupt live data. These rules are NOT suggestions — they are invariants enforced across `src/app/api/sync-events/route.js`, `src/app/api/admin/auto-categorize/route.js`, `src/app/api/admin/artists/route.js`, and `src/components/EventFormModal.js`. Future agents: if you find yourself writing a code path that seems to bypass one of these levels, stop and escalate. You are almost certainly introducing a regression.
