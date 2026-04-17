@@ -119,18 +119,16 @@ function parseEventsFromHTML(html) {
         .trim()
         .slice(0, 500) || null;
 
-      // Event page URL — Google Calendar links appear after the event page link
-      // Each event has ~1 event page link followed by 1 Google Calendar link
+      // Event page URL — try to match by index, but the mapping is unreliable
+      // when fetching multiple months (URL order can differ between pages).
       const eventUrl = eventUrls[gcalIndex] || VENUE_URL;
 
-      // Build slug from event URL for external ID
-      const slug = eventUrl
-        .replace(/^.*\/event\//, '')
-        .replace(/\/$/, '')
-        .replace(/[^a-zA-Z0-9-]/g, '')
-        .slice(0, 60);
-
-      const externalId = `triumphbrewing-${dateStr}-${slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`;
+      // Build external_id from date + normalized title (both from the GCal
+      // link, which is stable). This replaces the old slug-based approach
+      // that caused massive duplication when URL ordering drifted between
+      // the current-month and next-month pages.
+      const titleSlug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 60);
+      const externalId = `triumphbrewing-${dateStr}-${titleSlug}`;
 
       events.push({
         title,
