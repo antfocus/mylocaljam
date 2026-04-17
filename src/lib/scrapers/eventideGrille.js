@@ -154,6 +154,10 @@ export async function scrapeEventideGrille() {
     });
 
     console.log(`[EventideGrille] Gemini extracted ${extracted.length} events`);
+    // Debug: log raw Gemini output to diagnose time extraction
+    for (const e of extracted.slice(0, 3)) {
+      console.log(`[EventideGrille] RAW: artist="${e.artist}" date="${e.date}" time="${e.time}" (type=${typeof e.time})`);
+    }
 
     // Convert to standard scraper output format
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
