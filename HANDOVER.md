@@ -1,1 +1,1 @@
-file:/tmp/final_handover_content.txt
+PLACEHOLDER_CONTENT_TO_BE_REPLACED
