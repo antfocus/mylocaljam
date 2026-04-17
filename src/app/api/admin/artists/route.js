@@ -302,6 +302,36 @@ export async function PUT(request) {
       .eq('artist_id', id);
   }
 
+  // ── Clear stale scraper images on linked events when admin sets an
+  //    artist image. Without this, the legacy `image_url` and
+  //    `event_image_url` columns (waterfall tiers 3–4) override the
+  //    artist photo (tier 5) and the admin's work never shows up on the
+  //    Spotlight or event cards. Same pattern as the merge endpoint.
+  //    Only clears scraper-level columns — never touches `custom_image_url`
+  //    (admin override, highest tier).
+  if (updates.image_url) {
+    try {
+      const imgClear = {};
+      // Only null out columns that actually have values
+      const { data: staleEvents } = await supabase
+        .from('events')
+        .select('id, event_image_url, image_url')
+        .eq('artist_id', id)
+        .or('event_image_url.not.is.null,image_url.not.is.null');
+
+      if (staleEvents && staleEvents.length > 0) {
+        await supabase
+          .from('events')
+          .update({ event_image_url: null, image_url: null })
+          .eq('artist_id', id)
+          .or('event_image_url.not.is.null,image_url.not.is.null');
+        console.log(`[Artist PUT] Cleared stale scraper images on ${staleEvents.length} events for artist ${id}`);
+      }
+    } catch (imgErr) {
+      console.warn('[Artist PUT] Stale image cleanup failed (non-fatal):', imgErr.message);
+    }
+  }
+
   // ── Mirror alias_names into the artist_aliases reverse-FK table ──────────
   // The sync pipeline matches incoming scraper names via artist_aliases.alias_lower
   // (see src/app/api/sync-events/route.js ~line 808). To make the manually-
