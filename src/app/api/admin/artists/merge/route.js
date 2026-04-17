@@ -153,6 +153,8 @@ export async function POST(request) {
 
   revalidatePath('/');
   revalidatePath('/api/events');
+  revalidatePath('/api/events/search');
+  revalidatePath('/api/spotlight');
 
   return NextResponse.json({
     success: true,

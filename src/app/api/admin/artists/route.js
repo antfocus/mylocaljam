@@ -166,6 +166,8 @@ export async function POST(request) {
 
   revalidatePath('/');
   revalidatePath('/api/events');
+  revalidatePath('/api/events/search');
+  revalidatePath('/api/spotlight');
 
   return NextResponse.json(data[0]);
 }
@@ -326,6 +328,7 @@ export async function PUT(request) {
   // Invalidate live feed cache so artist changes reflect immediately
   revalidatePath('/');
   revalidatePath('/api/events');
+  revalidatePath('/api/events/search');
   revalidatePath('/api/spotlight');
 
   return NextResponse.json(data[0]);
@@ -460,6 +463,8 @@ export async function DELETE(request) {
 
   revalidatePath('/');
   revalidatePath('/api/events');
+  revalidatePath('/api/events/search');
+  revalidatePath('/api/spotlight');
 
   return NextResponse.json({ success: true, action: action || 'delete', eventsAffected: eventCount });
 }
