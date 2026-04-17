@@ -3306,6 +3306,9 @@ export default function HomePage() {
               document.activeElement?.blur();
               clearAllFilters();
               fetchEvents(1, false); // force fresh pull even if dateKey was already 'all'
+            } else if ((tab.key === 'saved' || tab.key === 'profile') && activeTab === tab.key) {
+              // Already on My Jam or Profile — bounce back to Home
+              setActiveTab('home');
             } else {
               if (tab.key === 'saved') handleSetSavedSegment('events');
               setActiveTab(tab.key);
