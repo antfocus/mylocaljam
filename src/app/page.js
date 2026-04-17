@@ -106,7 +106,23 @@ const MATERIAL_ICON_PATHS = {
   policy: 'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z',
   park: 'M17 12h2L12 2 5 12h2l-4 6h7v4h4v-4h7l-4-6z',
   celebration: 'M2 22l14-5-9-9-5 14zm12.53-9.47l5.59-5.59c.49-.49 1.28-.49 1.77 0l.59.59 1.06-1.06-.59-.59c-1.07-1.07-2.82-1.07-3.89 0l-5.59 5.59 1.06 1.06zm-4.47-5.65l-.59.59 1.06 1.06.59-.59c1.07-1.07 1.07-2.82 0-3.89l-.59-.59-1.06 1.06.59.59c.48.49.48 1.28 0 1.77z',
+  nightlife: 'M21 5V3H3v2l8 9v5H6v2h12v-2h-5v-5l8-9zM7.43 7L5.66 5h12.69l-1.78 2H7.43z',
+  pets: 'M4.5 9.5m-2.5 0a2.5 2.5 0 105 0 2.5 2.5 0 10-5 0M9 5.5m-2.5 0a2.5 2.5 0 105 0 2.5 2.5 0 10-5 0M15 5.5m-2.5 0a2.5 2.5 0 105 0 2.5 2.5 0 10-5 0M19.5 9.5m-2.5 0a2.5 2.5 0 105 0 2.5 2.5 0 10-5 0M17.34 14.86c-.87-1.02-1.6-1.89-2.48-2.91-.46-.54-1.17-.95-1.87-.95h-2c-.69 0-1.39.41-1.86.95-.87 1.02-1.6 1.89-2.48 2.91-1.31 1.31-2.92 2.76-2.62 4.79.29 1.02 1.02 2.0 2.09 2.35 1.17.38 2.42-.13 3.4-.84l.51-.38a1.998 1.998 0 012.96 0l.51.38c.98.71 2.23 1.22 3.4.84 1.07-.35 1.8-1.33 2.09-2.35.3-2.03-1.31-3.48-2.62-4.79z',
+  outdoor_grill: 'M17 22c1.66 0 3-1.34 3-3s-1.34-3-3-3c-1.3 0-2.4.84-2.82 2H9.14l1.99-3.06c.29.04.58.06.87.06 3.87 0 7-3.13 7-7 0-.84-.15-1.65-.41-2.4l-1.53.63c.17.56.26 1.15.26 1.77 0 2.93-2.07 5.37-4.82 5.93L14.72 13H21V3H3v10h3.28l2.22 3.42-3.05 4.7c-.34.52-.15 1.22.42 1.52.19.1.39.15.59.15.38 0 .75-.19.96-.52L9.28 19h4.9c.42 1.16 1.52 2 2.82 2zM5 5h14v6H5V5z',
+  deck: 'M22 9L12 2 2 9h9v13h2V9h9zM4.5 11L2 22h3l1.5-7.5L4.5 11zm15 0l-2 3.5L19 22h3l-2.5-11z',
 };
+
+// ── Hardcoded shortcut pills (replaces DB-driven dbPills for these categories) ──
+const SHORTCUT_PILLS = [
+  { id: 'live-music',   label: 'Live Music',   icon: 'music_note',    filter_type: 'keyword', filter_config: { terms: ['live music'] } },
+  { id: 'happy-hour',   label: 'Happy Hour',   icon: 'sports_bar',    filter_type: 'keyword', filter_config: { terms: ['happy hour'] } },
+  { id: 'nightlife',    label: 'Nightlife',    icon: 'nightlife',     filter_type: 'time',    filter_config: { after_hour: 21 } },
+  { id: 'breweries',    label: 'Breweries',    icon: 'sports_bar',    filter_type: 'venue_type', filter_config: { venue_types: ['Brewery', 'Brewpub'] } },
+  { id: 'karaoke',      label: 'Karaoke',      icon: 'karaoke_mic',   filter_type: 'keyword', filter_config: { terms: ['karaoke'] } },
+  { id: 'trivia',       label: 'Trivia',       icon: 'quiz',          filter_type: 'keyword', filter_config: { terms: ['trivia', 'quiz'] } },
+  { id: 'outdoor',      label: 'Outdoor',      icon: 'deck',          filter_type: 'venue_tag', filter_config: { tags: ['Outdoor', 'Outdoor Seating', 'Patio', 'Rooftop'] } },
+  { id: 'dog-friendly', label: 'Dog Friendly', icon: 'pets',          filter_type: 'venue_tag', filter_config: { tags: ['Dog Friendly', 'Pet Friendly'] } },
+];
 
 // ── Haversine distance (miles) between two lat/lng points ──────────────────
 function haversineDistance(lat1, lng1, lat2, lng2) {
@@ -408,6 +424,8 @@ export default function HomePage() {
   const datePickRef = useRef(null);
   const savedDatePickRef = useRef(null);
   const datePickOpenVal = useRef('');       // value when picker opened — guards iOS auto-fire
+  const [showCalendar, setShowCalendar] = useState(false);  // custom calendar grid visibility
+  const [calViewDate, setCalViewDate] = useState(() => new Date()); // month being viewed (not selected)
   const savedDatePickOpenVal = useRef('');
   const searchInputRef = useRef(null);
   const pendingSearchFocus = useRef(false);    // fallback for tab-switch focus
@@ -1345,9 +1363,9 @@ export default function HomePage() {
       });
     }
 
-    // Shortcut pill filter
+    // Shortcut pill filter — check both DB pills and hardcoded SHORTCUT_PILLS
     if (activeShortcut) {
-      const pill = dbPills.find(p => p.id === activeShortcut);
+      const pill = dbPills.find(p => p.id === activeShortcut) || SHORTCUT_PILLS.find(p => p.id === activeShortcut);
       if (pill) {
         const cfg = pill.filter_config || {};
         switch (pill.filter_type) {
@@ -1400,6 +1418,22 @@ export default function HomePage() {
                 return hr < cfg.before_hour;
               });
             }
+            if (cfg.after_hour) {
+              list = list.filter(e => {
+                if (!e.start_time) return false;
+                const hr = parseInt(e.start_time.split(':')[0], 10);
+                return hr >= cfg.after_hour;
+              });
+            }
+            break;
+          }
+          case 'venue_tag': {
+            const tags = (cfg.tags || []).map(t => t.toLowerCase());
+            list = list.filter(e => {
+              const vt = (e.venue_tags || []).map(t => t.toLowerCase());
+              const vType = (e.venue_type || '').toLowerCase();
+              return tags.some(t => vt.includes(t) || vType.includes(t));
+            });
             break;
           }
           case 'vibes': {
@@ -1502,8 +1536,8 @@ export default function HomePage() {
   }
 
   const radiusIsOverridden = milesRadius !== profileRadiusRef.current;
-  const hasActiveFilters = dateKey !== 'all' || radiusIsOverridden || searchQuery.trim() !== '' || activeShortcut !== null;
-  const activeFilterCount = [dateKey !== 'all', radiusIsOverridden, searchQuery.trim() !== '', activeShortcut !== null].filter(Boolean).length;
+  const hasActiveFilters = dateKey !== 'all' || radiusIsOverridden || searchQuery.trim() !== '' || activeShortcut !== null || activeVenues.length > 0;
+  const activeFilterCount = [dateKey !== 'all', radiusIsOverridden, searchQuery.trim() !== '', activeShortcut !== null, activeVenues.length > 0].filter(Boolean).length;
   const clearAllFilters = useCallback(() => {
     setDateKey('all');
     setPickedDate('');
@@ -1511,17 +1545,18 @@ export default function HomePage() {
     setMilesRadius(profileRadiusRef.current); // reset to profile default, not null
     setArtistSearch('');
     setSearchQuery('');
-    setFiltersExpanded(false);
+    // NOTE: does NOT close the panel — user stays in filter view to start over
     setActiveFilterCard(null);
     setVenueSearch('');
     setActiveShortcut(null);
+    setShowCalendar(false);
   }, []);
 
   // Filter panel labels
   const whenLabel = dateKey === 'pick' && pickedDate
     ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
     : DATE_OPTIONS.find(o => o.key === dateKey)?.label || 'Any time';
-  const venueLabel = activeVenues.length === 0 ? 'Any Venue' : activeVenues.length === 1 ? activeVenues[0] : `${activeVenues.length} venues`;
+  const venueLabel = activeVenues.length === 0 ? 'Any venue' : activeVenues.length === 1 ? activeVenues[0] : `${activeVenues.length} venues`;
   const distanceLabel = milesRadius === null ? 'Any distance' : `${milesRadius} mi`;
   const artistLabel = artistSearch.trim() ? artistSearch.trim() : 'Any Artist';
 
@@ -1661,7 +1696,7 @@ export default function HomePage() {
                   );
                 })()}
                 {activeShortcut && (() => {
-                  const pill = dbPills.find(p => p.id === activeShortcut);
+                  const pill = dbPills.find(p => p.id === activeShortcut) || SHORTCUT_PILLS.find(p => p.id === activeShortcut);
                   if (!pill) return null;
                   const iconPath = MATERIAL_ICON_PATHS[pill.icon_name] || MATERIAL_ICON_PATHS.label;
                   return (
@@ -1671,6 +1706,12 @@ export default function HomePage() {
                     </span>
                   );
                 })()}
+                {activeVenues.length > 0 && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z" fill="#E8722A" /></svg>
+                    {activeVenues.length === 1 ? activeVenues[0].length > 12 ? activeVenues[0].slice(0, 12) + '…' : activeVenues[0] : `${activeVenues.length} venues`}
+                  </span>
+                )}
               </div>
             )}
             {!hasActiveFilters && milesRadius === null && <div style={{ flex: 1 }} />}
@@ -1939,56 +1980,34 @@ export default function HomePage() {
                 boxShadow: darkMode ? '0 4px 20px rgba(0,0,0,0.4)' : '0 2px 12px rgba(0,0,0,0.08)',
                 background: darkMode ? '#20202E' : '#F5F3F0',
               }}>
-                {/* Search input + Clear All row */}
+                {/* Search input + inline close button */}
                 <div style={{
                   padding: '10px 14px',
                   borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
                   background: darkMode ? '#262636' : '#FFFFFF',
                   borderRadius: '12px 12px 0 0',
                 }}>
-                  {/* Top row: Clear All (left) + Close X (right) */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <button onClick={clearAllFilters} style={{
-                      background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 0',
-                      fontSize: '12px', fontWeight: 600,
-                      color: darkMode ? '#C0C0D0' : '#6B7280',
-                      fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.3px',
-                      textDecoration: 'underline', textUnderlineOffset: '2px',
-                      display: 'inline-flex', alignItems: 'center', gap: '3px',
-                      opacity: hasActiveFilters ? 1 : 0.5,
-                    }}>
-                      {/* Material: restart_alt */}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                        <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor" />
-                      </svg>
-                      Clear All
-                    </button>
-                    <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
-                      background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      {/* Material: close */}
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={t.textMuted} /></svg>
-                    </button>
-                  </div>
-                  {/* Search input row + autocomplete wrapper */}
-                  <div style={{ position: 'relative' }}>
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      padding: '10px 12px', borderRadius: '10px',
-                      border: `1px solid ${searchFocused ? (darkMode ? '#E8722A80' : '#E8722A') : (darkMode ? '#2E2E40' : '#DDD')}`,
-                      background: darkMode ? '#22222E' : t.inputBg,
-                      transition: 'border-color 0.2s',
-                    }}>
+                  {/* Search bar + Close X inline row */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {/* Search input + autocomplete wrapper */}
+                    <div style={{ flex: 1, position: 'relative' }}>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '10px 12px', borderRadius: '10px',
+                        border: `1px solid ${searchFocused ? (darkMode ? '#E8722A80' : '#E8722A') : (darkMode ? '#2E2E40' : '#DDD')}`,
+                        background: darkMode ? '#22222E' : t.inputBg,
+                        transition: 'border-color 0.2s',
+                      }}>
                       {/* Material: search */}
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                        <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={darkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF'} />
+                        <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill={darkMode ? 'rgba(255,255,255,0.5)' : '#6B7280'} />
                       </svg>
                       <input
                         ref={searchInputRef}
                         type="text"
                         enterKeyHint="search"
-                        placeholder="Search artists, venues, events..."
+                        className={`filter-search-input${darkMode ? ' dark-mode' : ''}`}
+                        placeholder="Search artists, events, etc."
                         value={searchQuery}
                         onChange={e => { setSearchQuery(e.target.value); setShowAutoComplete(true); }}
                         onFocus={() => { setSearchFocused(true); setActiveFilterCard(null); if (searchQuery.trim().length >= 2) setShowAutoComplete(true); }}
@@ -2067,49 +2086,241 @@ export default function HomePage() {
                         ))}
                       </div>
                     )}
+                    </div>
+                    {/* Close X — inline with search bar */}
+                    <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '6px',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0, borderRadius: '50%',
+                      transition: 'opacity 0.15s',
+                    }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={darkMode ? '#9898B0' : '#6B7280'} /></svg>
+                    </button>
                   </div>
                 </div>
 
-                {/* ── Shortcut Pills — horizontal scroll ────────── */}
-                <div
-                  className="shortcut-pills"
-                  style={{
-                    display: 'flex', overflowX: 'auto', gap: '8px',
-                    padding: '8px 14px',
-                    WebkitOverflowScrolling: 'touch',
-                    borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
-                    background: darkMode ? '#262636' : '#FFFFFF',
-                  }}
-                >
-                  {dbPills.map(pill => {
-                    const isActive = activeShortcut === pill.id;
-                    const iconPath = MATERIAL_ICON_PATHS[pill.icon_name] || MATERIAL_ICON_PATHS.label;
-                    return (
-                      <button
-                        key={pill.id}
-                        onClick={() => setActiveShortcut(isActive ? null : pill.id)}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: '5px',
-                          padding: '7px 14px', borderRadius: '20px',
-                          border: isActive ? '1.5px solid #E8722A' : `1px solid ${darkMode ? '#3A3A4A' : '#D1D5DB'}`,
-                          background: isActive ? '#E8722A' : (darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.03)'),
-                          color: isActive ? '#1C1917' : (darkMode ? '#C0C0D0' : '#4B5563'),
-                          fontSize: '12px', fontWeight: isActive ? 700 : 500,
-                          fontFamily: "'DM Sans', sans-serif",
-                          whiteSpace: 'nowrap', flexShrink: 0, cursor: 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                          <path d={iconPath} fill="currentColor" />
-                        </svg>
-                        {pill.label}
-                      </button>
-                    );
-                  })}
+                {/* ── Shortcut Pills — horizontal scroll with gradient fade ────────── */}
+                <div style={{ position: 'relative',
+                  borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  background: darkMode ? '#262636' : '#FFFFFF',
+                }}>
+                  <div
+                    className="shortcut-pills"
+                    style={{
+                      display: 'flex', overflowX: 'auto', gap: '8px',
+                      padding: '8px 14px',
+                      WebkitOverflowScrolling: 'touch',
+                      scrollbarWidth: 'none', msOverflowStyle: 'none',
+                    }}
+                  >
+                    {/* Shortcut pills — hardcoded list only, no DB merge */}
+                    {SHORTCUT_PILLS.map(pill => {
+                      const isActive = activeShortcut === pill.id;
+                      const iconPath = MATERIAL_ICON_PATHS[pill.icon || pill.icon_name] || MATERIAL_ICON_PATHS.label;
+                      return (
+                        <button
+                          key={pill.id}
+                          onClick={() => setActiveShortcut(isActive ? null : pill.id)}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '5px',
+                            padding: '7px 14px', borderRadius: '20px',
+                            border: isActive
+                              ? '1.5px solid #E8722A'
+                              : `1px solid ${darkMode ? 'rgba(255,255,255,0.18)' : '#D1D5DB'}`,
+                            background: isActive
+                              ? (darkMode ? 'rgba(232,114,42,0.15)' : '#FFF4ED')
+                              : (darkMode ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)'),
+                            color: isActive ? '#E8722A' : (darkMode ? '#B0B0C8' : '#4B5563'),
+                            fontSize: '12px', fontWeight: isActive ? 700 : 500,
+                            fontFamily: "'DM Sans', sans-serif",
+                            whiteSpace: 'nowrap', flexShrink: 0, cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            boxShadow: isActive
+                              ? '0 0 10px rgba(232,114,42,0.5), 0 0 25px rgba(232,114,42,0.2), inset 0 0 8px rgba(232,114,42,0.15)'
+                              : 'none',
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                            <path d={iconPath} fill="currentColor" />
+                          </svg>
+                          {pill.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Right-side gradient fade to signal scrollable overflow */}
+                  <div style={{
+                    position: 'absolute', top: 0, right: 0, bottom: 0, width: '40px',
+                    background: `linear-gradient(to right, transparent, ${darkMode ? '#262636' : '#FFFFFF'})`,
+                    pointerEvents: 'none',
+                  }} />
                 </div>
 
-                {/* 1. WHERE card — Blue accent (#E8722A) */}
+                {/* 1. DATE card (Date Picker) */}
+                <div style={{
+                  background: activeFilterCard === 'when'
+                    ? (darkMode ? '#2A1E14' : '#FFF8F3')
+                    : (darkMode ? '#262636' : '#FFFFFF'),
+                  border: activeFilterCard === 'when'
+                    ? `1.5px solid ${darkMode ? '#E8722A80' : '#E8722A'}`
+                    : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  borderRadius: activeFilterCard === 'when' ? '10px' : '0',
+                  margin: activeFilterCard === 'when' ? '4px 6px' : '0',
+                  transition: 'all 0.2s ease',
+                }}>
+                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'when' ? null : 'when')} style={{
+                    display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
+                    background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
+                  }}>
+                    {/* Material: calendar_month */}
+                    <svg width="16" height="16" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z" fill={dateKey !== 'all' ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151')} /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: dateKey !== 'all' ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151'), lineHeight: 1 }}>Date</span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontSize: '13px', fontWeight: 500, color: dateKey !== 'all' ? '#E8722A' : (darkMode ? '#8C8CA4' : '#6B7280'), lineHeight: 1, marginRight: '6px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}>{whenLabel}</span>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0, transform: activeFilterCard === 'when' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={dateKey !== 'all' ? '#E8722A' : (darkMode ? '#8C8CA4' : '#9CA3AF')} strokeWidth="1.5" fill="none" /></svg>
+                  </button>
+                  {activeFilterCard === 'when' && (
+                    <div style={{ padding: '0 12px 8px 12px' }}>
+                      {/* Row 1: Quick-select pills — forced single line */}
+                      <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px' }}>
+                        {DATE_OPTIONS.filter(o => o.key !== 'pick').map(opt => (
+                          <button key={opt.key} onClick={() => {
+                            setDateKey(opt.key);
+                            setPickedDate(''); setShowCalendar(false); setActiveFilterCard(null);
+                          }} style={{
+                            flex: 1, padding: '10px 6px', borderRadius: '20px', border: 'none', cursor: 'pointer',
+                            background: dateKey === opt.key ? '#E8722A' : (darkMode ? '#2A2A3C' : '#E8E6E2'),
+                            color: dateKey === opt.key ? '#1C1917' : t.text,
+                            fontSize: '13px', fontWeight: dateKey === opt.key ? 700 : 500,
+                            fontFamily: "'DM Sans', sans-serif",
+                            minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Row 2: Custom calendar picker — replaces native <input type="date"> */}
+                      {/* Toggle button */}
+                      <button onClick={() => {
+                        setShowCalendar(prev => {
+                          if (!prev) setCalViewDate(pickedDate ? new Date(pickedDate + 'T12:00:00') : new Date());
+                          return !prev;
+                        });
+                      }} style={{
+                        width: '100%', padding: '10px 14px', borderRadius: '10px', marginTop: '6px',
+                        background: dateKey === 'pick' ? (darkMode ? '#2A2A3C' : '#FFF7ED') : (darkMode ? '#2A2A3C' : '#E8E6E2'),
+                        color: dateKey === 'pick' ? '#E8722A' : t.text,
+                        border: dateKey === 'pick' ? '1.5px solid #E8722A' : '1.5px solid transparent',
+                        fontSize: '14px', fontWeight: dateKey === 'pick' ? 700 : 500,
+                        fontFamily: "'DM Sans', sans-serif",
+                        minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                        cursor: 'pointer',
+                      }}>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                          <rect x="1" y="2.5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+                          <path d="M1 6.5h14" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M4.5 1v3M11.5 1v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                        {dateKey === 'pick' && pickedDate
+                          ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                          : 'Pick a Specific Date'}
+                      </button>
+
+                      {/* Inline calendar grid */}
+                      {showCalendar && (() => {
+                        const vYear = calViewDate.getFullYear();
+                        const vMonth = calViewDate.getMonth();
+                        const firstDay = new Date(vYear, vMonth, 1).getDay(); // 0=Sun
+                        const daysInMonth = new Date(vYear, vMonth + 1, 0).getDate();
+                        const today = new Date(); today.setHours(0,0,0,0);
+                        const cells = [];
+                        // Leading blanks for alignment
+                        for (let i = 0; i < firstDay; i++) cells.push(null);
+                        for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+                        const monthLabel = calViewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                        // Can't go before current month
+                        const canPrev = vYear > today.getFullYear() || (vYear === today.getFullYear() && vMonth > today.getMonth());
+
+                        return (
+                          <div style={{
+                            marginTop: '6px', borderRadius: '10px', overflow: 'hidden',
+                            background: darkMode ? '#1E1E2E' : '#FFFFFF',
+                            border: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
+                          }}>
+                            {/* Month nav header */}
+                            <div style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                              padding: '6px 10px',
+                              background: darkMode ? '#262636' : '#F9F9FB',
+                              borderBottom: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
+                            }}>
+                              <button onClick={e => { e.preventDefault(); e.stopPropagation(); if (canPrev) setCalViewDate(new Date(vYear, vMonth - 1, 1)); }}
+                                style={{ background: 'none', border: 'none', cursor: canPrev ? 'pointer' : 'default',
+                                  padding: '4px 6px', borderRadius: '6px', opacity: canPrev ? 1 : 0.3,
+                                  color: t.text, fontSize: '16px', lineHeight: 1, }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                              </button>
+                              <span style={{ fontSize: '13px', fontWeight: 700, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
+                                {monthLabel}
+                              </span>
+                              <button onClick={e => { e.preventDefault(); e.stopPropagation(); setCalViewDate(new Date(vYear, vMonth + 1, 1)); }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer',
+                                  padding: '4px 6px', borderRadius: '6px',
+                                  color: t.text, fontSize: '16px', lineHeight: 1, }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                              </button>
+                            </div>
+                            {/* Day-of-week headers */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', padding: '4px 6px 0', gap: '1px' }}>
+                              {['S','M','T','W','T','F','S'].map((d, i) => (
+                                <div key={i} style={{ textAlign: 'center', fontSize: '10px', fontWeight: 600,
+                                  color: darkMode ? '#6B6B8A' : '#9CA3AF', padding: '1px 0',
+                                  fontFamily: "'DM Sans', sans-serif" }}>{d}</div>
+                              ))}
+                            </div>
+                            {/* Day cells */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', padding: '2px 6px 6px', gap: '1px' }}>
+                              {cells.map((day, i) => {
+                                if (day === null) return <div key={`blank-${i}`} />;
+                                const cellDate = new Date(vYear, vMonth, day);
+                                const cellStr = `${vYear}-${String(vMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                                const isPast = cellDate < today;
+                                const isToday = cellStr === todayStr;
+                                const isSelected = cellStr === pickedDate;
+                                return (
+                                  <button key={cellStr}
+                                    disabled={isPast}
+                                    onClick={e => {
+                                      e.preventDefault(); e.stopPropagation();
+                                      setPickedDate(cellStr); setDateKey('pick');
+                                      setShowCalendar(false); setActiveFilterCard(null);
+                                    }}
+                                    style={{
+                                      width: '100%', height: '36px', borderRadius: '8px',
+                                      border: isToday && !isSelected ? `1.5px solid ${darkMode ? '#555570' : '#CCCCCC'}` : isSelected ? '1.5px solid #E8722A' : '1.5px solid transparent',
+                                      background: isSelected ? '#E8722A' : 'transparent',
+                                      color: isSelected ? '#FFFFFF' : isPast ? (darkMode ? '#444460' : '#C0C0C0') : isToday ? '#E8722A' : t.text,
+                                      fontWeight: isSelected || isToday ? 700 : 500,
+                                      fontSize: '13px', fontFamily: "'DM Sans', sans-serif",
+                                      cursor: isPast ? 'default' : 'pointer',
+                                      opacity: isPast ? 0.4 : 1,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                      transition: 'background 0.1s, border-color 0.1s',
+                                    }}>
+                                    {day}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. LOCATION card (Distance) */}
                 <div style={{
                   background: activeFilterCard === 'distance'
                     ? (darkMode ? '#2A1E14' : '#FFF8F3')
@@ -2120,20 +2331,18 @@ export default function HomePage() {
                   borderRadius: activeFilterCard === 'distance' ? '10px' : '0',
                   margin: activeFilterCard === 'distance' ? '4px 6px' : '0',
                   transition: 'all 0.2s ease',
-                  colorScheme: darkMode ? 'dark' : 'light',
                 }}>
                   <button onClick={() => setActiveFilterCard(activeFilterCard === 'distance' ? null : 'distance')} style={{
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={milesRadius !== null ? '#E8722A' : t.textMuted} /></svg>
-                    <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: milesRadius !== null ? '#E8722A' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>Where</div>
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>
-                        {milesRadius !== null ? `Within ${milesRadius} miles` : 'Any distance'}
-                      </div>
-                    </div>
-                    <svg width="12" height="12" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={milesRadius !== null ? '#E8722A' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={locationCoords ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151')} /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: locationCoords ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151'), lineHeight: 1 }}>Location</span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontSize: '13px', fontWeight: 500, color: locationCoords ? '#E8722A' : (darkMode ? '#8C8CA4' : '#6B7280'), lineHeight: 1, marginRight: '6px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>
+                      {locationCoords && milesRadius !== null ? `${locationLabel} + ${milesRadius} mi` : locationCoords ? locationLabel : 'Any distance'}
+                    </span>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0, transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={locationCoords ? '#E8722A' : (darkMode ? '#8C8CA4' : '#9CA3AF')} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'distance' && (
                     <div style={{ padding: '0 12px 10px', position: 'relative' }}>
@@ -2259,112 +2468,193 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* 2. WHEN card — Green accent (#E8722A) */}
+                {/* 3. VENUE card (Searchable multi-select combobox) */}
                 <div style={{
-                  background: activeFilterCard === 'when'
+                  background: activeFilterCard === 'venue'
                     ? (darkMode ? '#2A1E14' : '#FFF8F3')
                     : (darkMode ? '#262636' : '#FFFFFF'),
-                  border: activeFilterCard === 'when'
+                  border: activeFilterCard === 'venue'
                     ? `1.5px solid ${darkMode ? '#E8722A80' : '#E8722A'}`
                     : `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
-                  borderRadius: activeFilterCard === 'when' ? '10px' : '0',
-                  margin: activeFilterCard === 'when' ? '4px 6px' : '0',
+                  borderRadius: activeFilterCard === 'venue' ? '10px' : '0',
+                  margin: activeFilterCard === 'venue' ? '4px 6px' : '0',
                   transition: 'all 0.2s ease',
                 }}>
-                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'when' ? null : 'when')} style={{
+                  <button onClick={() => setActiveFilterCard(activeFilterCard === 'venue' ? null : 'venue')} style={{
                     display: 'flex', alignItems: 'center', width: '100%', padding: '10px 12px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px',
                   }}>
-                    {/* Material: calendar_month */}
-                    <svg width="18" height="18" viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z" fill={dateKey !== 'all' ? '#E8722A' : t.textMuted} /></svg>
-                    <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', color: dateKey !== 'all' ? '#E8722A' : (darkMode ? '#9898B8' : '#6B7280'), lineHeight: 1, marginBottom: '2px' }}>When</div>
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: t.text, lineHeight: 1.2 }}>{whenLabel}</div>
-                    </div>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ transform: activeFilterCard === 'when' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={dateKey !== 'all' ? '#E8722A' : t.textMuted} strokeWidth="1.5" fill="none" /></svg>
+                    {/* Material: storefront */}
+                    <svg width="16" height="16" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z" fill={activeVenues.length > 0 ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151')} /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: activeVenues.length > 0 ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151'), lineHeight: 1 }}>Venue</span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontSize: '13px', fontWeight: 500, color: activeVenues.length > 0 ? '#E8722A' : (darkMode ? '#8C8CA4' : '#6B7280'), lineHeight: 1, marginRight: '6px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}>
+                      {venueLabel}
+                    </span>
+                    {activeVenues.length > 0 && (
+                      <span style={{
+                        background: '#E8722A', color: '#FFFFFF', fontSize: '10px', fontWeight: 700,
+                        borderRadius: '8px', padding: '1px 6px', minWidth: '18px', textAlign: 'center',
+                        fontFamily: "'DM Sans', sans-serif", flexShrink: 0,
+                      }}>{activeVenues.length}</span>
+                    )}
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0, transform: activeFilterCard === 'venue' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={activeVenues.length > 0 ? '#E8722A' : (darkMode ? '#8C8CA4' : '#9CA3AF')} strokeWidth="1.5" fill="none" /></svg>
                   </button>
-                  {activeFilterCard === 'when' && (
-                    <div style={{ padding: '0 12px 8px 12px' }}>
-                      {/* Row 1: Quick-select pills — forced single line */}
-                      <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px' }}>
-                        {DATE_OPTIONS.filter(o => o.key !== 'pick').map(opt => (
-                          <button key={opt.key} onClick={() => {
-                            setDateKey(opt.key);
-                            setPickedDate(''); setActiveFilterCard(null);
-                          }} style={{
-                            flex: 1, padding: '10px 6px', borderRadius: '20px', border: 'none', cursor: 'pointer',
-                            background: dateKey === opt.key ? '#E8722A' : (darkMode ? '#2A2A3C' : '#E8E6E2'),
-                            color: dateKey === opt.key ? '#1C1917' : t.text,
-                            fontSize: '13px', fontWeight: dateKey === opt.key ? 700 : 500,
-                            fontFamily: "'DM Sans', sans-serif",
-                            minHeight: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            whiteSpace: 'nowrap',
-                          }}>
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                      {/* Row 2: Full-width date picker — invisible input overlay */}
-                      <div style={{ position: 'relative', marginTop: '8px' }}>
-                        <div style={{
-                          width: '100%', padding: '12px 16px', borderRadius: '12px',
-                          background: dateKey === 'pick' ? '#E8722A' : (darkMode ? '#2A2A3C' : '#E8E6E2'),
-                          color: dateKey === 'pick' ? '#1C1917' : t.text,
-                          fontSize: '14px', fontWeight: dateKey === 'pick' ? 700 : 500,
-                          fontFamily: "'DM Sans', sans-serif",
-                          minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                          pointerEvents: 'none',
-                        }}>
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                            <rect x="1" y="2.5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                            <path d="M1 6.5h14" stroke="currentColor" strokeWidth="1.5"/>
-                            <path d="M4.5 1v3M11.5 1v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                          </svg>
-                          {dateKey === 'pick' && pickedDate
-                            ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                            : 'Pick a Specific Date'}
-                        </div>
-                        <input ref={datePickRef} type="date" value={todayStr} min={todayStr}
-                          onClick={e => { try { e.target.showPicker(); } catch {} }}
-                          onFocus={e => { datePickOpenVal.current = e.target.value; try { e.target.showPicker(); } catch {} }}
-                          onChange={e => {
-                            const v = e.target.value;
-                            if (v && v !== datePickOpenVal.current) {
-                              setPickedDate(v); setDateKey('pick'); setActiveFilterCard(null);
-                              datePickOpenVal.current = v;
-                            }
-                          }}
-                          onBlur={e => {
-                            const v = e.target.value;
-                            if (v && v !== datePickOpenVal.current) {
-                              setPickedDate(v); setDateKey('pick'); setActiveFilterCard(null);
-                              datePickOpenVal.current = v;
-                            }
-                          }}
+                  {activeFilterCard === 'venue' && (
+                    <div style={{ padding: '0 12px 10px' }}>
+                      {/* Venue search input */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        padding: '8px 12px', borderRadius: '8px', marginBottom: '8px',
+                        border: `1px solid ${darkMode ? '#2E2E40' : '#DDD'}`,
+                        background: darkMode ? '#22222E' : t.inputBg,
+                      }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5z" fill={t.textMuted} /></svg>
+                        <input
+                          type="text"
+                          placeholder="Search venues..."
+                          value={venueSearch}
+                          onChange={e => setVenueSearch(e.target.value)}
                           style={{
-                            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                            width: '100%', height: '100%',
-                            opacity: 0, cursor: 'pointer', zIndex: 10,
-                            WebkitAppearance: 'none',
+                            flex: 1, border: 'none', background: 'transparent', outline: 'none',
+                            fontSize: '14px', color: t.text, fontFamily: "'DM Sans', sans-serif",
                           }}
                         />
+                        {venueSearch && (
+                          <button onClick={() => setVenueSearch('')} style={{
+                            background: darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+                            border: 'none', cursor: 'pointer',
+                            width: '20px', height: '20px', borderRadius: '50%', flexShrink: 0,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            <svg width="8" height="8" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={darkMode ? '#FFF' : '#666'} /></svg>
+                          </button>
+                        )}
                       </div>
+                      {/* Selected venues chips */}
+                      {activeVenues.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                          {activeVenues.map(v => (
+                            <button key={v} onClick={() => setActiveVenues(prev => prev.filter(x => x !== v))} style={{
+                              display: 'inline-flex', alignItems: 'center', gap: '4px',
+                              padding: '4px 10px', borderRadius: '14px', border: 'none', cursor: 'pointer',
+                              background: darkMode ? '#E8722A30' : '#FFF0E6',
+                              fontSize: '12px', fontWeight: 600, color: '#E8722A',
+                              fontFamily: "'DM Sans', sans-serif",
+                            }}>
+                              {v}
+                              <svg width="8" height="8" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="#E8722A" /></svg>
+                            </button>
+                          ))}
+                          <button onClick={() => setActiveVenues([])} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '3px',
+                            padding: '4px 8px', borderRadius: '14px', border: 'none', cursor: 'pointer',
+                            background: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                            fontSize: '11px', fontWeight: 600, color: t.textMuted,
+                            fontFamily: "'DM Sans', sans-serif",
+                          }}>
+                            Clear
+                          </button>
+                        </div>
+                      )}
+                      {/* Scrollable checklist */}
+                      <div style={{
+                        maxHeight: '200px', overflowY: 'auto',
+                        borderRadius: '8px',
+                        border: `1px solid ${darkMode ? '#2E2E40' : '#E5E7EB'}`,
+                        background: darkMode ? '#1E1E2C' : '#FAFAFA',
+                      }}>
+                        {filteredPanelVenues.length === 0 ? (
+                          <div style={{ padding: '16px', textAlign: 'center', fontSize: '13px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+                            {venueSearch.trim() ? 'No venues match your search' : 'No venues found'}
+                          </div>
+                        ) : (
+                          filteredPanelVenues.map((v, i) => {
+                            const isChecked = activeVenues.includes(v.name);
+                            return (
+                              <button
+                                key={v.name}
+                                onClick={() => {
+                                  setActiveVenues(prev =>
+                                    isChecked ? prev.filter(x => x !== v.name) : [...prev, v.name]
+                                  );
+                                }}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                                  padding: '9px 12px', background: isChecked ? (darkMode ? '#E8722A15' : '#FFF8F3') : 'transparent',
+                                  border: 'none', cursor: 'pointer', textAlign: 'left',
+                                  borderBottom: i < filteredPanelVenues.length - 1 ? `1px solid ${darkMode ? '#2A2A3A' : '#F0F0F0'}` : 'none',
+                                  transition: 'background 0.1s',
+                                }}
+                              >
+                                {/* Checkbox */}
+                                <div style={{
+                                  width: '18px', height: '18px', borderRadius: '4px', flexShrink: 0,
+                                  border: isChecked ? '2px solid #E8722A' : `2px solid ${darkMode ? '#4A4A5A' : '#CCC'}`,
+                                  background: isChecked ? '#E8722A' : 'transparent',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  transition: 'all 0.15s',
+                                }}>
+                                  {isChecked && (
+                                    <svg width="10" height="10" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#FFF" /></svg>
+                                  )}
+                                </div>
+                                {/* Venue name */}
+                                <span style={{
+                                  flex: 1, fontSize: '13px', fontWeight: isChecked ? 700 : 500,
+                                  color: isChecked ? '#E8722A' : t.text,
+                                  fontFamily: "'DM Sans', sans-serif",
+                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                }}>{v.name}</span>
+                                {/* Event count badge */}
+                                <span style={{
+                                  fontSize: '11px', fontWeight: 600,
+                                  color: darkMode ? '#6B6B8A' : '#9CA3AF',
+                                  fontFamily: "'DM Sans', sans-serif",
+                                }}>{v.count}</span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                      {/* Result count footer */}
+                      {venueSearch.trim() && filteredPanelVenues.length > 0 && (
+                        <div style={{ marginTop: '6px', fontSize: '11px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+                          {filteredPanelVenues.length} of {venueListWithCounts.length} venues
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
 
-                {/* Action bar — Show events CTA */}
+                {/* Footer — Clear All (ghost) + Show events (primary) */}
                 <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  padding: '8px 12px', background: darkMode ? '#262636' : '#FFFFFF',
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  padding: '10px 12px', background: darkMode ? '#262636' : '#FFFFFF',
                   borderTop: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
                   borderRadius: '0 0 12px 12px',
                 }}>
+                  {/* Clear All — ghost button, left side */}
+                  <button onClick={clearAllFilters} style={{
+                    display: 'flex', alignItems: 'center', gap: '5px',
+                    padding: '10px 12px', borderRadius: '10px',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    fontSize: '13px', fontWeight: 600,
+                    color: hasActiveFilters ? (darkMode ? '#D0D0E0' : '#374151') : (darkMode ? '#8C8CA4' : '#6B7280'),
+                    fontFamily: "'DM Sans', sans-serif",
+                    transition: 'color 0.15s ease',
+                    whiteSpace: 'nowrap', flexShrink: 0,
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                      <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor" />
+                    </svg>
+                    Clear All
+                  </button>
+                  {/* Show events — primary CTA, takes remaining space */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
-                    padding: '10px 24px', borderRadius: '10px', border: 'none',
+                    flex: 1, padding: '10px 24px', borderRadius: '10px', border: 'none',
                     background: t.accent, color: '#1C1917', cursor: 'pointer',
                     fontSize: '13px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
-                    width: '100%',
                   }}>
                     Show {filteredEvents.length} events
                   </button>

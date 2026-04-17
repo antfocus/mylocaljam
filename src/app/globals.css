@@ -49,6 +49,10 @@ body {
 .shortcut-pills::-webkit-scrollbar { display: none; }
 .shortcut-pills { scrollbar-width: none; }
 
+/* Placeholder text contrast — light & dark mode */
+.filter-search-input::placeholder { color: #5C6370; opacity: 1; }
+.filter-search-input.dark-mode::placeholder { color: #9898B0; opacity: 1; }
+
 /* Selection */
 ::selection {
   background: var(--accent);
