@@ -7,7 +7,7 @@ export const metadata = {
   description: 'Your local source, all in one spot.',
   keywords: 'live music, jersey shore, asbury park, belmar, point pleasant, concerts, events tonight, local bands, NJ music',
   openGraph: {
-    title: 'mylocaljam.com',
+    title: 'mylocaljam',
     description: 'Your local source, all in one spot.',
     url: 'https://mylocaljam.com',
     siteName: 'myLocaljam',
@@ -23,7 +23,7 @@ export const metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'mylocaljam.com',
+    title: 'mylocaljam',
     description: 'Your local source, all in one spot.',
     images: ['/images/og-share.png'],
   },
