@@ -97,6 +97,8 @@ const HYPE_WORDS = [
   'legendary', 'world-class', 'world class', 'amazing', 'soul-stirring',
   'soul stirring', 'incredible', 'electrifying', 'unforgettable',
   'mind-blowing', 'mind blowing', 'jaw-dropping', 'jaw dropping',
+  'high-energy', 'high energy', 'captivating', 'mesmerizing',
+  'powerhouse', 'showstopping', 'show-stopping', 'breathtaking',
 ];
 
 // Premium placeholder fallback images — abstract music visuals.
@@ -154,6 +156,8 @@ export function normalizeBio(raw, maxChars = BIO_MAX_CHARS) {
   // Strip LLM preamble.
   bio = bio.replace(/^(here\s+is\s+a?\s*bio[^:]*:\s*)/i, '');
   bio = bio.replace(/^bio:\s*/i, '');
+  // Strip Perplexity citation markers like [1], [2][3], [1][2][3]
+  bio = bio.replace(/\[\d+\]/g, '');
   // Collapse whitespace.
   bio = bio.replace(/\s+/g, ' ').trim();
   if (!bio) return null;
@@ -408,10 +412,11 @@ IF kind === "MUSICIAN":
   - Maximum 500 characters (count every character including spaces and punctuation).
   - Focus STRICTLY on the artist's musical style, genre, vocal range, and instrumentation — what kind of music they play and how they sound.
   - DO NOT list past venues, tour history, award history, or any places the band has performed. Not even one example.
-  - AVOID hype words: "legendary", "world-class", "amazing", "soul-stirring", "incredible", "electrifying", "unforgettable", "mind-blowing", "jaw-dropping". Never use promotional adjectives.
+  - AVOID hype words: "legendary", "world-class", "amazing", "soul-stirring", "incredible", "electrifying", "unforgettable", "mind-blowing", "jaw-dropping", "high-energy", "captivating", "mesmerizing", "powerhouse", "showstopping", "breathtaking". Never use promotional adjectives.
   - DO NOT use generic filler sentences such as "Come out for a night of music" or "Don't miss this show" or "You won't want to miss…". Never address the reader or call them to action.
   - Tone: neutral, informative, professional — like an encyclopedia entry, not marketing copy.
   - Write 1–3 complete sentences. End on a period. If you would exceed 500 characters, rewrite shorter rather than truncating mid-sentence.
+  - DO NOT include citation markers like [1], [2], [3] in the bio text. Write clean prose with no references or footnotes.
   - If the data is insufficient to confidently identify the artist, return exactly: "NEEDS_MANUAL_REVIEW" for bio.
 
 IF kind === "VENUE_EVENT":
@@ -420,7 +425,7 @@ IF kind === "VENUE_EVENT":
   - Describe THE ACTIVITY, the venue's atmosphere, and what attendees can expect (e.g. trivia format and prize structure, karaoke vibe, food/drink special details, comedy lineup style).
   - Keep it informative and punchy. 1–3 complete sentences. End on a period.
   - DO NOT invent musical genres, vocal ranges, or performer details for food/trivia/drink events. This event has no "sound".
-  - Same banned hype-word list applies: "legendary", "world-class", "amazing", "soul-stirring", "incredible", "electrifying", "unforgettable", "mind-blowing", "jaw-dropping".
+  - Same banned hype-word list applies: "legendary", "world-class", "amazing", "soul-stirring", "incredible", "electrifying", "unforgettable", "mind-blowing", "jaw-dropping", "high-energy", "captivating", "mesmerizing", "powerhouse", "showstopping", "breathtaking".
   - Same no-call-to-action rule: DO NOT write "Come out…", "Don't miss…", or address the reader.
   - Tone: neutral, informative, professional — a listings description, not marketing copy.
   - If the data is insufficient to describe the event meaningfully, return exactly: "NEEDS_MANUAL_REVIEW" for bio.
