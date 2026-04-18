@@ -81,11 +81,18 @@ export default function BetaWelcome() {
         flexShrink: 0,
       }} />
 
+      {/* ── Scrollable content + sticky button wrapper ── */}
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        maxHeight: 'calc(90vh - 4px)',
+      }}>
       {/* ── Scrollable content ── */}
       <div style={{
-        padding: '28px 24px 24px',
+        padding: '28px 24px 0',
         overflowY: 'auto',
-        maxHeight: 'calc(90vh - 4px)',
+        flex: 1,
+        minHeight: 0,
         WebkitOverflowScrolling: 'touch',
       }}>
 
@@ -266,7 +273,14 @@ export default function BetaWelcome() {
           See you out there!
         </p>
 
-        {/* ── CTA Button — only way to dismiss ── */}
+      </div>
+
+      {/* ── CTA Button — sticky at bottom, always visible ── */}
+      <div style={{
+        padding: '12px 24px 24px',
+        flexShrink: 0,
+        background: surface,
+      }}>
         <button
           onClick={handleDismiss}
           style={{
@@ -287,6 +301,7 @@ export default function BetaWelcome() {
         >
           Let{'\u2019'}s Jam
         </button>
+      </div>
       </div>
     </ModalWrapper>
   );
