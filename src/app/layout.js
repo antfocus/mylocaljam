@@ -3,12 +3,12 @@ import { Suspense } from 'react';
 import PostHogProvider from '@/components/PostHogProvider';
 
 export const metadata = {
-  title: 'My Local Jam',
-  description: 'Your local scene, all in one spot!',
+  title: 'mylocaljam',
+  description: 'Your local source, all in one spot.',
   keywords: 'live music, jersey shore, asbury park, belmar, point pleasant, concerts, events tonight, local bands, NJ music',
   openGraph: {
-    title: 'My Local Jam',
-    description: 'Your local scene, all in one spot!',
+    title: 'mylocaljam | mylocaljam.com',
+    description: 'Your local source, all in one spot.',
     url: 'https://mylocaljam.com',
     siteName: 'myLocaljam',
     images: [
@@ -23,8 +23,8 @@ export const metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'My Local Jam',
-    description: 'Your local scene, all in one spot!',
+    title: 'mylocaljam | mylocaljam.com',
+    description: 'Your local source, all in one spot.',
     images: ['/images/og-share.png'],
   },
   icons: {
