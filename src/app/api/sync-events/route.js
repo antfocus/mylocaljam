@@ -168,20 +168,30 @@ function mapEvent(ev, venueMap, defaultTimes) {
   // Combine date + time into a full ISO timestamp (Eastern)
   let eventDate = null;
   if (ev.date) {
-    if (ev.date.includes('T')) {
-      eventDate = new Date(ev.date).toISOString();
-    } else {
-      const offset = easternOffset(ev.date);
-      let timeStr;
-      if (hasRealTime) {
-        timeStr = convertTo24h(scrapedTime);
-      } else if (venueDefaultTime) {
-        timeStr = convertTo24h(venueDefaultTime);
+    try {
+      if (ev.date.includes('T')) {
+        const d = new Date(ev.date);
+        if (isNaN(d.getTime())) throw new Error(`Invalid ISO date: "${ev.date}"`);
+        eventDate = d.toISOString();
       } else {
-        timeStr = '00:00';
-        isTimeTbd = true;
+        const offset = easternOffset(ev.date);
+        let timeStr;
+        if (hasRealTime) {
+          timeStr = convertTo24h(scrapedTime);
+        } else if (venueDefaultTime) {
+          timeStr = convertTo24h(venueDefaultTime);
+        } else {
+          timeStr = '00:00';
+          isTimeTbd = true;
+        }
+        const raw = `${ev.date}T${timeStr}:00${offset}`;
+        const d = new Date(raw);
+        if (isNaN(d.getTime())) throw new Error(`Invalid constructed date: "${raw}"`);
+        eventDate = d.toISOString();
       }
-      eventDate = new Date(`${ev.date}T${timeStr}:00${offset}`).toISOString();
+    } catch (dateErr) {
+      console.error(`[mapEvent] Bad date for "${ev.title}" at ${ev.venue}: ${dateErr.message}`);
+      eventDate = null;
     }
   }
 
