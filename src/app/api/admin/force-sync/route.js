@@ -529,5 +529,6 @@ export async function POST(request) {
     upsertErrors: upsertErrors.length ? upsertErrors : null,
     healthError,
     healthDebug,
+    _supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
   });
 }
