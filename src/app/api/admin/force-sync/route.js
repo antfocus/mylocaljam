@@ -463,23 +463,21 @@ export async function POST(request) {
     console.error('[force-sync] Artist linking error:', linkErr.message);
   }
 
-  // Update scraper_health — use raw SQL via rpc to bypass any client/PostgREST issues
+  // Update scraper_health — delete-then-insert to avoid ghost duplicate rows
   let healthError = null;
-  let healthDebug = {};
   const newStatus = result.error ? 'fail' : (result.events.length === 0 ? 'warning' : 'success');
   try {
-    // First: read the current row to confirm we can see it
-    const { data: current, error: readErr } = await supabase
+    // Delete ALL existing rows for this scraper_key (cleans up any duplicates)
+    await supabase
       .from('scraper_health')
-      .select('id, scraper_key, status, events_found')
-      .eq('scraper_key', scraper_key)
-      .single();
-    healthDebug.readResult = readErr ? `err: ${readErr.message}` : current;
+      .delete()
+      .eq('scraper_key', scraper_key);
 
-    // Try update
-    const { data: updated, error: upErr, count } = await supabase
+    // Insert fresh row
+    const { error: insErr } = await supabase
       .from('scraper_health')
-      .update({
+      .insert({
+        scraper_key,
         venue_name: validEvents[0]?.venue_name || scraper_key,
         website_url: result.events[0]?.source_url || null,
         platform: PLATFORM_MAP[scraper_key] || null,
@@ -487,30 +485,8 @@ export async function POST(request) {
         status: newStatus,
         error_message: result.error || null,
         last_sync: new Date().toISOString(),
-      })
-      .eq('scraper_key', scraper_key)
-      .select('id, status, events_found');
-    healthDebug.updateResult = upErr ? `err: ${upErr.message}` : { updated, count };
-
-    if (upErr) {
-      healthError = `update: ${upErr.message}`;
-    } else if (!updated || updated.length === 0) {
-      // No existing row — insert
-      const { error: insErr } = await supabase
-        .from('scraper_health')
-        .insert({
-          scraper_key,
-          venue_name: validEvents[0]?.venue_name || scraper_key,
-          website_url: result.events[0]?.source_url || null,
-          platform: PLATFORM_MAP[scraper_key] || null,
-          events_found: result.events.length,
-          status: newStatus,
-          error_message: result.error || null,
-          last_sync: new Date().toISOString(),
-        });
-      healthDebug.insertResult = insErr ? `err: ${insErr.message}` : 'inserted';
-      if (insErr) healthError = `insert: ${insErr.message}`;
-    }
+      });
+    if (insErr) healthError = `insert: ${insErr.message}`;
   } catch (healthErr) {
     healthError = healthErr.message;
     console.error('Failed to write scraper health:', healthErr);
@@ -528,7 +504,5 @@ export async function POST(request) {
     error: result.error || null,
     upsertErrors: upsertErrors.length ? upsertErrors : null,
     healthError,
-    healthDebug,
-    _supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
   });
 }

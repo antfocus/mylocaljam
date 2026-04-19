@@ -23,9 +23,7 @@ export async function GET(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const res = NextResponse.json(data || []);
-  res.headers.set('x-supabase-url', process.env.NEXT_PUBLIC_SUPABASE_URL || 'not-set');
-  return res;
+  return NextResponse.json(data || []);
 }
 
 export async function PUT(request) {
