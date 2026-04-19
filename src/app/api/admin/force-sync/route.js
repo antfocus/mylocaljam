@@ -463,42 +463,23 @@ export async function POST(request) {
     console.error('[force-sync] Artist linking error:', linkErr.message);
   }
 
-  // Update scraper_health
+  // Update scraper_health via upsert (works now that getAdminClient disables Next.js Data Cache)
   let healthError = null;
-  let healthFoundId = null;
   const newStatus = result.error ? 'fail' : (result.events.length === 0 ? 'warning' : 'success');
-  const healthPayload = {
-    venue_name: validEvents[0]?.venue_name || scraper_key,
-    website_url: result.events[0]?.source_url || null,
-    platform: PLATFORM_MAP[scraper_key] || null,
-    events_found: result.events.length,
-    status: newStatus,
-    error_message: result.error || null,
-    last_sync: new Date().toISOString(),
-  };
   try {
-    // Read the row the way the scraper-health API does (select all, find by key)
-    const { data: allRows } = await supabase
+    const { error: healthErr } = await supabase
       .from('scraper_health')
-      .select('id, scraper_key')
-      .order('venue_name');
-    const existing = (allRows || []).find(r => r.scraper_key === scraper_key);
-
-    healthFoundId = existing ? existing.id : 'not-found';
-    if (existing) {
-      // Update by primary key ID
-      const { error: upErr } = await supabase
-        .from('scraper_health')
-        .update(healthPayload)
-        .eq('id', existing.id);
-      if (upErr) healthError = `update by id: ${upErr.message}`;
-    } else {
-      // Insert new
-      const { error: insErr } = await supabase
-        .from('scraper_health')
-        .insert({ scraper_key, ...healthPayload });
-      if (insErr) healthError = `insert: ${insErr.message}`;
-    }
+      .upsert({
+        scraper_key,
+        venue_name: validEvents[0]?.venue_name || scraper_key,
+        website_url: result.events[0]?.source_url || null,
+        platform: PLATFORM_MAP[scraper_key] || null,
+        events_found: result.events.length,
+        status: newStatus,
+        error_message: result.error || null,
+        last_sync: new Date().toISOString(),
+      }, { onConflict: 'scraper_key' });
+    if (healthErr) healthError = healthErr.message;
   } catch (healthErr) {
     healthError = healthErr.message;
     console.error('Failed to write scraper health:', healthErr);
@@ -516,6 +497,5 @@ export async function POST(request) {
     error: result.error || null,
     upsertErrors: upsertErrors.length ? upsertErrors : null,
     healthError,
-    healthFoundId,
   });
 }
