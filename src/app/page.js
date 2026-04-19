@@ -2638,37 +2638,38 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* Footer — Reset Filters (ghost) + Show events (primary) */}
+                {/* Footer — Reset Filters (secondary) + Show events (primary) */}
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: '10px',
                   padding: '10px 12px', background: darkMode ? '#262636' : '#FFFFFF',
                   borderTop: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
                   borderRadius: '0 0 12px 12px',
                 }}>
-                  {/* Reset Filters — outlined button, same width as Show events */}
+                  {/* Reset Filters — subtle outline, hugs content */}
                   <button onClick={clearAllFilters} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                    flex: 1, padding: '10px 16px', borderRadius: '10px',
-                    background: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                    border: `1px solid ${darkMode ? 'rgba(255,255,255,0.15)' : '#D1D5DB'}`,
+                    padding: '10px 14px', borderRadius: '10px',
+                    background: darkMode ? 'transparent' : '#FFFFFF',
+                    border: `1px solid ${darkMode ? 'rgba(255,255,255,0.12)' : '#D1D5DB'}`,
                     cursor: 'pointer',
-                    fontSize: '13px', fontWeight: 600,
-                    color: darkMode ? '#D0D0E0' : '#374151',
+                    fontSize: '13px', fontWeight: 500,
+                    color: darkMode ? '#9090A8' : '#6B7280',
                     fontFamily: "'DM Sans', sans-serif",
-                    transition: 'background 0.15s ease, border-color 0.15s ease',
-                    whiteSpace: 'nowrap',
+                    transition: 'background 0.15s ease',
+                    whiteSpace: 'nowrap', flexShrink: 0,
                     minHeight: '44px',
                   }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                       <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor" />
                     </svg>
                     Reset Filters
                   </button>
-                  {/* Show events — primary CTA, same width as Reset Filters */}
+                  {/* Show events — primary CTA, takes remaining space */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                     flex: 1, padding: '10px 24px', borderRadius: '10px', border: 'none',
                     background: t.accent, color: '#1C1917', cursor: 'pointer',
                     fontSize: '13px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
+                    minHeight: '44px',
                   }}>
                     Show {filteredEvents.length} events
                   </button>
