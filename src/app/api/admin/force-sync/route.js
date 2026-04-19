@@ -105,7 +105,7 @@ const PLATFORM_MAP = {
   MarinaGrille: 'Squarespace', AnchorTavern: 'Squarespace', RBar: 'Squarespace',
   BrielleHouse: 'WordPress AJAX', TenthAveBurrito: 'WordPress', ReefAndBarrel: 'Google Calendar',
   Palmetto: 'Image Poster', IdleHour: 'Google Calendar', AsburyLanes: 'HTML Scrape',
-  BakesBrewing: 'Squarespace', RiverRock: 'WordPress AJAX', WildAir: 'Squarespace',
+  BakesBrewing: 'HTML Scrape (Webflow)', RiverRock: 'WordPress AJAX', WildAir: 'Squarespace',
   AsburyParkBrewery: 'Squarespace', Boatyard401: 'WordPress AJAX', WindwardTavern: 'Google Calendar',
   Jamians: 'Squarespace', TheCabin: 'Squarespace', TheVogel: 'HTML Scrape',
   SunHarbor: 'Squarespace', BumRogers: 'BentoBox/Wix', TheColumns: 'WordPress',
