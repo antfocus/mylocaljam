@@ -1029,6 +1029,9 @@ export async function POST(request) {
   try {
     // Fetch all future published LIVE MUSIC events for enrichment + artist linking
     // Only enrich events categorized as Live Music (or uncategorized) — skip drink specials, trivia, etc.
+    // Order by event_date ASC so artists playing soonest get enriched first.
+    // With the 30-per-run cap, this ensures tonight's acts have bios/images
+    // before someone playing 3 weeks from now.
     const { data: unenriched } = await supabase
       .from('events')
       .select('id, artist_name, image_url, artist_bio, artist_id, is_human_edited, is_locked, category, template_id, is_category_verified, category_source')
@@ -1036,6 +1039,7 @@ export async function POST(request) {
       .not('artist_name', 'is', null)
       .gte('event_date', new Date().toISOString())
       .or('category.is.null,category.eq.Live Music')
+      .order('event_date', { ascending: true })
       .limit(500);
 
     if (unenriched?.length) {
