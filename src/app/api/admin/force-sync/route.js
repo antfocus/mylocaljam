@@ -464,8 +464,9 @@ export async function POST(request) {
   }
 
   // Update scraper_health
+  let healthError = null;
   try {
-    await supabase.from('scraper_health').upsert({
+    const { error: hErr } = await supabase.from('scraper_health').upsert({
       scraper_key,
       venue_name: validEvents[0]?.venue_name || scraper_key,
       website_url: result.events[0]?.source_url || null,
@@ -475,7 +476,12 @@ export async function POST(request) {
       error_message: result.error || null,
       last_sync: new Date().toISOString(),
     }, { onConflict: 'scraper_key' });
+    if (hErr) {
+      healthError = hErr.message;
+      console.error('Failed to write scraper health:', hErr.message);
+    }
   } catch (healthErr) {
+    healthError = healthErr.message;
     console.error('Failed to write scraper health:', healthErr);
   }
 
@@ -490,5 +496,6 @@ export async function POST(request) {
     eventsLinked,
     error: result.error || null,
     upsertErrors: upsertErrors.length ? upsertErrors : null,
+    healthError,
   });
 }
