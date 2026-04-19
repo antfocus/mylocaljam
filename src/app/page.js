@@ -1745,7 +1745,7 @@ export default function HomePage() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   flexShrink: 0, borderRadius: '50%',
                 }}
-                title="Clear all filters"
+                title="Reset filters"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={darkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF'} /></svg>
               </button>
@@ -2347,13 +2347,13 @@ export default function HomePage() {
                     display: 'flex', alignItems: 'center', width: '100%', padding: '14px 16px',
                     background: 'transparent', border: 'none', cursor: 'pointer', gap: '8px', minHeight: '44px',
                   }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={locationCoords ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151')} /></svg>
-                    <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: locationCoords ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151'), lineHeight: 1 }}>Location</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={locationCoords && milesRadius !== null ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151')} /></svg>
+                    <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: locationCoords && milesRadius !== null ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151'), lineHeight: 1 }}>Location</span>
                     <span style={{ flex: 1 }} />
-                    <span style={{ fontSize: '13px', fontWeight: 500, color: locationCoords ? '#E8722A' : (darkMode ? '#8C8CA4' : '#6B7280'), lineHeight: 1, marginRight: '6px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 500, color: locationCoords && milesRadius !== null ? '#E8722A' : (darkMode ? '#8C8CA4' : '#6B7280'), lineHeight: 1, marginRight: '6px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>
                       {locationCoords && milesRadius !== null ? `${locationLabel} + ${milesRadius} mi` : locationCoords ? locationLabel : 'Any distance'}
                     </span>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0, transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={locationCoords ? '#E8722A' : (darkMode ? '#8C8CA4' : '#9CA3AF')} strokeWidth="1.5" fill="none" /></svg>
+                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0, transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={locationCoords && milesRadius !== null ? '#E8722A' : (darkMode ? '#8C8CA4' : '#9CA3AF')} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'distance' && (
                     <div style={{ padding: '0 12px 10px', position: 'relative' }}>
@@ -2638,17 +2638,17 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* Footer — Clear All (ghost) + Show events (primary) */}
+                {/* Footer — Reset Filters (ghost) + Show events (primary) */}
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: '10px',
                   padding: '10px 12px', background: darkMode ? '#262636' : '#FFFFFF',
                   borderTop: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
                   borderRadius: '0 0 12px 12px',
                 }}>
-                  {/* Clear All — outlined button, left side */}
+                  {/* Reset Filters — outlined button, same width as Show events */}
                   <button onClick={clearAllFilters} style={{
-                    display: 'flex', alignItems: 'center', gap: '5px',
-                    padding: '10px 16px', borderRadius: '10px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                    flex: 1, padding: '10px 16px', borderRadius: '10px',
                     background: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
                     border: `1px solid ${darkMode ? 'rgba(255,255,255,0.15)' : '#D1D5DB'}`,
                     cursor: 'pointer',
@@ -2656,15 +2656,15 @@ export default function HomePage() {
                     color: darkMode ? '#D0D0E0' : '#374151',
                     fontFamily: "'DM Sans', sans-serif",
                     transition: 'background 0.15s ease, border-color 0.15s ease',
-                    whiteSpace: 'nowrap', flexShrink: 0,
+                    whiteSpace: 'nowrap',
                     minHeight: '44px',
                   }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                       <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor" />
                     </svg>
-                    Clear All
+                    Reset Filters
                   </button>
-                  {/* Show events — primary CTA, takes remaining space */}
+                  {/* Show events — primary CTA, same width as Reset Filters */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                     flex: 1, padding: '10px 24px', borderRadius: '10px', border: 'none',
                     background: t.accent, color: '#1C1917', cursor: 'pointer',
