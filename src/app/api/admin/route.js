@@ -63,6 +63,7 @@ export async function GET(request) {
   const triageFilter = searchParams.get('triage');
   const statusFilter = searchParams.get('status'); // 'upcoming' | 'past' | 'hidden'
   const missingTime = searchParams.get('missingTime') === 'true';
+  const missingImage = searchParams.get('missingImage') === 'true';
   const recentlyAdded = searchParams.get('recentlyAdded') === 'true';
   // Strict Eastern-day date filter — used by the Spotlights admin tab so the
   // payload is ~30× smaller than the client-side filter it replaces.
@@ -128,6 +129,14 @@ export async function GET(request) {
     query = query.eq('is_time_tbd', true);
   }
 
+  // Filter for events missing ALL image sources (event-level columns only;
+  // artist/template images are checked client-side in the waterfall).
+  // An event is "missing image" when custom_image_url, event_image_url,
+  // and legacy image_url are all null/empty.
+  if (missingImage) {
+    query = query.is('custom_image_url', null).is('event_image_url', null).is('image_url', null);
+  }
+
   // Strict single-day Eastern filter (admin Spotlights tab).
   if (dateStart && dateEnd) {
     query = query.gte('event_date', dateStart).lte('event_date', dateEnd);
@@ -166,6 +175,7 @@ export async function GET(request) {
     countQuery = countQuery.gte('created_at', since);
   }
   if (missingTime) countQuery = countQuery.eq('is_time_tbd', true);
+  if (missingImage) countQuery = countQuery.is('custom_image_url', null).is('event_image_url', null).is('image_url', null);
   if (dateStart && dateEnd) countQuery = countQuery.gte('event_date', dateStart).lte('event_date', dateEnd);
   const countResult = await countQuery;
   count = countResult.count;

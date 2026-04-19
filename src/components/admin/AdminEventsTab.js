@@ -167,6 +167,7 @@ export default function AdminEventsTab({
   templates = [],
   eventsSearch, setEventsSearch, eventsStatusFilter, setEventsStatusFilter,
   eventsMissingTime, setEventsMissingTime,
+  eventsMissingImage, setEventsMissingImage,
   eventsSortField, setEventsSortField, eventsSortOrder, setEventsSortOrder,
   eventsPage, setEventsPage, eventsTotalPages, eventsTotal,
   newEvents24h, eventsRecentlyAdded, setEventsRecentlyAdded,
@@ -575,10 +576,10 @@ export default function AdminEventsTab({
                 onClick={() => {
                   const next = !eventsRecentlyAdded;
                   setEventsRecentlyAdded(next);
-                  if (next) setEventsMissingTime(false);
+                  if (next) { setEventsMissingTime(false); setEventsMissingImage(false); }
                   setEvents([]);
                   setSelectedEvents(new Set());
-                  fetchEvents(1, next ? 'created_at' : eventsSortField, next ? 'desc' : eventsSortOrder, eventsStatusFilter, false, next);
+                  fetchEvents(1, next ? 'created_at' : eventsSortField, next ? 'desc' : eventsSortOrder, eventsStatusFilter, false, next, false);
                 }}
                 style={{
                   padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
@@ -595,10 +596,10 @@ export default function AdminEventsTab({
                 onClick={() => {
                   const next = !eventsMissingTime;
                   setEventsMissingTime(next);
-                  if (next) setEventsRecentlyAdded(false);
+                  if (next) { setEventsRecentlyAdded(false); setEventsMissingImage(false); }
                   setEvents([]);
                   setSelectedEvents(new Set());
-                  fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, next, false);
+                  fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, next, false, false);
                 }}
                 style={{
                   padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
@@ -610,6 +611,26 @@ export default function AdminEventsTab({
                 }}
               >
                 Missing Time
+              </button>
+              <button
+                onClick={() => {
+                  const next = !eventsMissingImage;
+                  setEventsMissingImage(next);
+                  if (next) { setEventsRecentlyAdded(false); setEventsMissingTime(false); }
+                  setEvents([]);
+                  setSelectedEvents(new Set());
+                  fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, false, false, next);
+                }}
+                style={{
+                  padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', border: 'none',
+                  whiteSpace: 'nowrap',
+                  background: eventsMissingImage ? 'rgba(234,179,8,0.15)' : 'var(--bg-card)',
+                  color: eventsMissingImage ? '#EAB308' : 'var(--text-muted)',
+                  outline: eventsMissingImage ? '1.5px solid rgba(234,179,8,0.4)' : '1px solid var(--border)',
+                }}
+              >
+                Missing Image
               </button>
               <button
                 onClick={() => {

@@ -60,6 +60,7 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
   const [eventsStatusFilter, setEventsStatusFilter] = useState('upcoming');
   const [eventsSearch, setEventsSearch] = useState('');
   const [eventsMissingTime, setEventsMissingTime] = useState(false);
+  const [eventsMissingImage, setEventsMissingImage] = useState(false);
   const [eventsSortField, setEventsSortField] = useState('event_date');
   const [eventsSortOrder, setEventsSortOrder] = useState('asc');
   const [eventsPage, setEventsPage] = useState(1);
@@ -68,11 +69,12 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
   const [newEvents24h, setNewEvents24h] = useState(0);
   const [eventsRecentlyAdded, setEventsRecentlyAdded] = useState(false);
 
-  const fetchEvents = useCallback(async (page = 1, sort = eventsSortField, order = eventsSortOrder, status = eventsStatusFilter, missingTime = eventsMissingTime, recentlyAdded = eventsRecentlyAdded) => {
+  const fetchEvents = useCallback(async (page = 1, sort = eventsSortField, order = eventsSortOrder, status = eventsStatusFilter, missingTime = eventsMissingTime, recentlyAdded = eventsRecentlyAdded, missingImage = eventsMissingImage) => {
     try {
       const params = new URLSearchParams({ page: String(page), limit: '100', sort, order });
       if (status) params.set('status', status);
       if (missingTime) params.set('missingTime', 'true');
+      if (missingImage) params.set('missingImage', 'true');
       if (recentlyAdded) params.set('recentlyAdded', 'true');
       const res = await fetch(`/api/admin?${params}`, { headers: { Authorization: `Bearer ${password}` } });
       if (res.status === 401) { setAuthenticated(false); try { sessionStorage.removeItem('mlj_admin_pw'); } catch {} alert('Invalid password'); return; }
@@ -100,7 +102,7 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
       }
       if (data.newEvents24h !== undefined) setNewEvents24h(data.newEvents24h);
     } catch (err) { console.error(err); }
-  }, [password, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime, eventsRecentlyAdded]);
+  }, [password, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime, eventsMissingImage, eventsRecentlyAdded]);
 
   // NOTE: `toggleFeatured` retired Phase 5 — Spotlight curation now lives
   // exclusively in the `spotlight_events` table (see AdminSpotlightTab /
@@ -185,6 +187,7 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
     eventsStatusFilter, setEventsStatusFilter,
     eventsSearch, setEventsSearch,
     eventsMissingTime, setEventsMissingTime,
+    eventsMissingImage, setEventsMissingImage,
     eventsSortField, setEventsSortField,
     eventsSortOrder, setEventsSortOrder,
     eventsPage, setEventsPage,

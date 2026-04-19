@@ -322,7 +322,8 @@ export default function AdminPage() {
           eventsStatusFilter={ev.eventsStatusFilter} setEventsStatusFilter={ev.setEventsStatusFilter} setActiveTab={setActiveTab}
           setVenuesFilter={ve.setVenuesFilter} setEventsRecentlyAdded={ev.setEventsRecentlyAdded}
           setEvents={ev.setEvents} setFlagsViewFilter={re.setFlagsViewFilter}
-          setEventsMissingTime={ev.setEventsMissingTime} setArtistMissingFilters={ar.setArtistMissingFilters}
+          setEventsMissingTime={ev.setEventsMissingTime} setEventsMissingImage={ev.setEventsMissingImage}
+          setArtistMissingFilters={ar.setArtistMissingFilters}
         />
       )}
 
@@ -348,6 +349,7 @@ export default function AdminPage() {
           eventsSearch={ev.eventsSearch} setEventsSearch={ev.setEventsSearch}
           eventsStatusFilter={ev.eventsStatusFilter} setEventsStatusFilter={ev.setEventsStatusFilter}
           eventsMissingTime={ev.eventsMissingTime} setEventsMissingTime={ev.setEventsMissingTime}
+          eventsMissingImage={ev.eventsMissingImage} setEventsMissingImage={ev.setEventsMissingImage}
           eventsSortField={ev.eventsSortField} setEventsSortField={ev.setEventsSortField}
           eventsSortOrder={ev.eventsSortOrder} setEventsSortOrder={ev.setEventsSortOrder}
           eventsPage={ev.eventsPage} setEventsPage={ev.setEventsPage}

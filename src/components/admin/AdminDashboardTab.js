@@ -8,10 +8,17 @@ export default function AdminDashboardTab({
   fetchEvents, fetchArtists, fetchScraperHealth, fetchReports,
   eventsSortField, eventsSortOrder, eventsStatusFilter, setEventsStatusFilter,
   setActiveTab, setVenuesFilter, setEventsRecentlyAdded,
-  setEvents, setFlagsViewFilter, setEventsMissingTime, setArtistMissingFilters,
+  setEvents, setFlagsViewFilter, setEventsMissingTime, setEventsMissingImage,
+  setArtistMissingFilters,
 }) {
         // Compute Data Health metrics from existing state
-        const eventsWithoutImage = events.filter(e => !e.image_url && !e.artists?.image_url).length;
+        // Full image waterfall check: custom_image_url → event_image_url →
+        // template.image_url → legacy image_url → artist.image_url
+        const eventsWithoutImage = events.filter(e =>
+          !e.custom_image_url && !e.event_image_url &&
+          !e.event_templates?.image_url &&
+          !e.image_url && !e.artists?.image_url
+        ).length;
         const eventsMissingTimeCount = events.filter(e => e.is_time_tbd).length;
         const artistsWithoutBio = artists.filter(a => !a.bio).length;
         const pendingFlags = reports.filter(r => r.status === 'pending').length;
@@ -197,6 +204,7 @@ export default function AdminDashboardTab({
               onClick={newEvents24h > 0 ? () => {
                 setEventsRecentlyAdded(true);
                 setEventsMissingTime(false);
+                setEventsMissingImage(false);
                 setEventsStatusFilter('');
                 setEvents([]);
                 setActiveTab('events');
@@ -239,9 +247,10 @@ export default function AdminDashboardTab({
               onClick={eventsMissingTimeCount > 0 ? () => {
                 setActiveTab('events');
                 setEventsMissingTime(true);
+                setEventsMissingImage(false);
                 setEventsRecentlyAdded(false);
                 setEvents([]);
-                fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, true, false);
+                fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, true, false, false);
               } : undefined}
             />
             <MetricCard
@@ -250,9 +259,12 @@ export default function AdminDashboardTab({
               sub={eventsWithoutImage === 0 ? 'All clear' : 'Click to view →'}
               color={eventsWithoutImage > 0 ? '#EAB308' : '#22c55e'}
               onClick={eventsWithoutImage > 0 ? () => {
-                setActiveTab('artists');
-                setArtistMissingFilters({ bio: false, image_url: true, genres: false, vibes: false });
-                fetchArtists('', false);
+                setActiveTab('events');
+                setEventsMissingImage(true);
+                setEventsMissingTime(false);
+                setEventsRecentlyAdded(false);
+                setEvents([]);
+                fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, false, false, true);
               } : undefined}
             />
             <MetricCard
