@@ -465,6 +465,7 @@ export async function POST(request) {
 
   // Update scraper_health
   let healthError = null;
+  let healthFoundId = null;
   const newStatus = result.error ? 'fail' : (result.events.length === 0 ? 'warning' : 'success');
   const healthPayload = {
     venue_name: validEvents[0]?.venue_name || scraper_key,
@@ -483,6 +484,7 @@ export async function POST(request) {
       .order('venue_name');
     const existing = (allRows || []).find(r => r.scraper_key === scraper_key);
 
+    healthFoundId = existing ? existing.id : 'not-found';
     if (existing) {
       // Update by primary key ID
       const { error: upErr } = await supabase
@@ -514,5 +516,6 @@ export async function POST(request) {
     error: result.error || null,
     upsertErrors: upsertErrors.length ? upsertErrors : null,
     healthError,
+    healthFoundId,
   });
 }
