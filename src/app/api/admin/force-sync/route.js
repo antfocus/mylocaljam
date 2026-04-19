@@ -463,22 +463,32 @@ export async function POST(request) {
     console.error('[force-sync] Artist linking error:', linkErr.message);
   }
 
-  // Update scraper_health
+  // Update scraper_health — use explicit update-then-insert to avoid upsert quirks
   let healthError = null;
+  const healthData = {
+    venue_name: validEvents[0]?.venue_name || scraper_key,
+    website_url: result.events[0]?.source_url || null,
+    platform: PLATFORM_MAP[scraper_key] || null,
+    events_found: result.events.length,
+    status: result.error ? 'fail' : (result.events.length === 0 ? 'warning' : 'success'),
+    error_message: result.error || null,
+    last_sync: new Date().toISOString(),
+  };
   try {
-    const { error: hErr } = await supabase.from('scraper_health').upsert({
-      scraper_key,
-      venue_name: validEvents[0]?.venue_name || scraper_key,
-      website_url: result.events[0]?.source_url || null,
-      platform: PLATFORM_MAP[scraper_key] || null,
-      events_found: result.events.length,
-      status: result.error ? 'fail' : (result.events.length === 0 ? 'warning' : 'success'),
-      error_message: result.error || null,
-      last_sync: new Date().toISOString(),
-    }, { onConflict: 'scraper_key' });
-    if (hErr) {
-      healthError = hErr.message;
-      console.error('Failed to write scraper health:', hErr.message);
+    // Try update first
+    const { data: updated, error: upErr } = await supabase
+      .from('scraper_health')
+      .update(healthData)
+      .eq('scraper_key', scraper_key)
+      .select('id');
+    if (upErr) {
+      healthError = `update: ${upErr.message}`;
+    } else if (!updated || updated.length === 0) {
+      // No existing row — insert
+      const { error: insErr } = await supabase
+        .from('scraper_health')
+        .insert({ scraper_key, ...healthData });
+      if (insErr) healthError = `insert: ${insErr.message}`;
     }
   } catch (healthErr) {
     healthError = healthErr.message;
