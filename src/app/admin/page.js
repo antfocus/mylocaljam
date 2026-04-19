@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { formatDate, formatTime, GENRES, VIBES } from '@/lib/utils';
+import { formatDate, formatTime, GENRES, VIBES, ARTIST_VIBES } from '@/lib/utils';
 import { Icons } from '@/components/Icons';
 import { supabase } from '@/lib/supabase';
 import EventFormModal from '@/components/EventFormModal';
@@ -408,7 +408,7 @@ export default function AdminPage() {
           fetchArtists={ar.fetchArtists} runBulkEnrich={ar.runBulkEnrich}
           regenerateField={ar.regenerateField} showQueueToast={showQueueToast}
           setActiveTab={setActiveTab} setReturnToTab={setReturnToTab} returnToTab={returnToTab}
-          GENRES={GENRES} VIBES={VIBES}
+          GENRES={GENRES} VIBES={VIBES} ARTIST_VIBES={ARTIST_VIBES}
         />
       )}
 

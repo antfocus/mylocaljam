@@ -77,11 +77,17 @@
 export const ALLOWED_GENRES = [
   'Rock', 'Pop', 'Country', 'Acoustic', 'Cover Band', 'DJ', 'Electronic',
   'Jazz', 'Blues', 'Reggae', 'R&B', 'Hip Hop', 'Latin', 'Emo', 'Punk', 'Metal',
-  'Indie', 'Folk',
+  'Indie', 'Folk', 'Disco', 'Jam',
 ];
 
 export const ALLOWED_VIBES = [
   'Chill / Low Key', 'Energetic / Party', 'Outdoor / Patio', 'Family-Friendly',
+];
+
+// Artist-only vibes — "Outdoor / Patio" describes a venue setting, not how a
+// band sounds, so we exclude it from the MUSICIAN tagger. Events keep all four.
+export const ARTIST_VIBES = [
+  'Chill / Low Key', 'Energetic / Party', 'Family-Friendly',
 ];
 
 // Hard cap on bio length. The prompt asks the LLM to stay under 500 chars,
@@ -500,10 +506,12 @@ Return the strict JSON object defined in STEP 5. Obey every rule for the chosen 
 
   const tagSystemPrompt = `You are a music categorization engine. Review the provided artist bio and assign up to 3 Genres and up to 2 Vibes.
 
-CRITICAL RULE: You may ONLY select from the allowed lists. Do not invent new labels. If the artist is "Alternative Rock", output "Rock".
+CRITICAL RULE: You may ONLY select from the allowed lists. Do not invent new labels. If the artist is "Alternative Rock", output "Rock". If the artist plays jam-band, improvisational, or Grateful Dead / Phish-style music, output "Jam".
 
 Allowed Genres: ${JSON.stringify(ALLOWED_GENRES)}
-Allowed Vibes: ${JSON.stringify(ALLOWED_VIBES)}
+Allowed Vibes: ${JSON.stringify(ARTIST_VIBES)}
+
+"Outdoor / Patio" is NOT a valid vibe for artists — it describes a venue, not a performer.
 
 Respond with strict JSON only, no markdown, no commentary, no code fences:
 { "genres": ["string"], "vibes": ["string"] }`;
@@ -543,7 +551,8 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
   const genres = rawGenres.filter(g => ALLOWED_GENRES.includes(g)).slice(0, 3);
 
   const rawVibes = tagResult?.vibes || [];
-  const vibes = rawVibes.filter(v => ALLOWED_VIBES.includes(v)).slice(0, 2);
+  const vibeAllowlist = kind === 'MUSICIAN' ? ARTIST_VIBES : ALLOWED_VIBES;
+  const vibes = rawVibes.filter(v => vibeAllowlist.includes(v)).slice(0, 2);
 
   // ── Pass 3: Image fallback (Serper) ───────────────────────────────────
   // Only fires if Perplexity didn't give us a usable image_url. This keeps

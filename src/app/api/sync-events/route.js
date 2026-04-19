@@ -1065,9 +1065,9 @@ export async function POST(request) {
       const cachedMap = {};
       for (const a of (cached || [])) cachedMap[a.name.toLowerCase()] = a;
 
-      // Look up uncached artists (max 15 per sync — universal pipeline is slower due to 3 APIs)
+      // Look up uncached artists (max 30 per sync — Pro plan allows longer function execution)
       // Uses the Universal Enrichment Hook: MusicBrainz → Discogs → Last.fm
-      const uncached = cleanNames.filter(n => !cachedMap[n.toLowerCase()]).slice(0, 15);
+      const uncached = cleanNames.filter(n => !cachedMap[n.toLowerCase()]).slice(0, 30);
       for (const name of uncached) {
         try {
           await enrichArtist(name, supabase, { blacklist: blacklistedNames });

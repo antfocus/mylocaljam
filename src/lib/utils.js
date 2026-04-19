@@ -122,15 +122,23 @@ export function getVenueColor(venueName) {
 // a rollback of the artists.genres and events genre columns.
 // 2026-04-14 (later): Added 'Latin' to bring the canonical to 18 items, after
 // discovering legacy 'Latin / Reggaeton' and 'Latin / World' rows had no home.
+// 2026-04-18: Added 'Disco' and 'Jam' — lots of jam bands at the shore.
 export const GENRES = [
   'Rock', 'Pop', 'Country', 'Acoustic', 'Cover Band', 'DJ', 'Electronic',
   'Jazz', 'Blues', 'Reggae', 'R&B', 'Hip Hop', 'Latin', 'Emo', 'Punk', 'Metal',
-  'Indie', 'Folk',
+  'Indie', 'Folk', 'Disco', 'Jam',
 ];
 
+// Full vibe set — used for events (all four are relevant to a venue setting).
 export const VIBES = [
   'Chill / Low Key', 'Energetic / Party',
   'Outdoor / Patio', 'Family-Friendly',
+];
+
+// Artist-only vibes — "Outdoor / Patio" describes a venue, not a performer.
+// Used in the artist admin modal and the AI genre/vibe tagger for MUSICIAN kind.
+export const ARTIST_VIBES = [
+  'Chill / Low Key', 'Energetic / Party', 'Family-Friendly',
 ];
 
 // ── New: clean time range formatting ─────────────────────────────────────────

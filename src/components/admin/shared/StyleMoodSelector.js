@@ -19,9 +19,9 @@
 // Re-exported from @/lib/utils to keep one source of truth. Historical callers
 // of this barrel (EventFormModal, AdminEventTemplatesTab) keep working without
 // changes, but the actual list now lives in utils.js.
-import { GENRES, VIBES } from '@/lib/utils';
+import { GENRES, VIBES, ARTIST_VIBES } from '@/lib/utils';
 
-export { GENRES, VIBES };
+export { GENRES, VIBES, ARTIST_VIBES };
 
 export default function StyleMoodSelector({
   label,

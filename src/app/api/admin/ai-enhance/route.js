@@ -6,6 +6,8 @@ function checkAuth(request) {
 }
 
 // Must stay in sync with VIBES in src/lib/utils.js
+// This route enhances EVENTS, so all 4 vibes apply (including Outdoor / Patio).
+// For ARTIST-only vibes, see ARTIST_VIBES in utils.js (excludes Outdoor / Patio).
 const ALLOWED_VIBES = ['Chill / Low Key', 'Energetic / Party', 'Outdoor / Patio', 'Family-Friendly'];
 
 export async function POST(request) {

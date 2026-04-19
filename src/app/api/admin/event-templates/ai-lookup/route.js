@@ -20,6 +20,7 @@ const ALLOWED_CATEGORIES = [
 ];
 
 // Final-4 canonical vibes. Must stay in sync with VIBES in src/lib/utils.js.
+// This route enhances EVENT TEMPLATES, so all 4 vibes apply.
 const ALLOWED_VIBES = [
   'Chill / Low Key',
   'Energetic / Party',

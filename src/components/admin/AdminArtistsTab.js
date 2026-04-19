@@ -162,7 +162,7 @@ export default function AdminArtistsTab({
   mergeConfirm, setMergeConfirm, mergeMasterId, setMergeMasterId,
   fetchArtists, runBulkEnrich, regenerateField, showQueueToast,
   setActiveTab, setReturnToTab, returnToTab,
-  GENRES, VIBES,
+  GENRES, VIBES, ARTIST_VIBES,
 }) {
   const headers = { Authorization: 'Bearer ' + password };
   const maxLen = 50;
@@ -921,7 +921,7 @@ export default function AdminArtistsTab({
                     </div>
                     <StyleMoodSelector
                       label="Vibes"
-                      options={VIBES}
+                      options={ARTIST_VIBES}
                       selected={artistForm.vibes}
                       onChange={(next) => setArtistForm(p => ({ ...p, vibes: next }))}
                       disabled={isArtistLocked}
