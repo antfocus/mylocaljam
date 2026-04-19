@@ -372,6 +372,97 @@ export async function POST(request) {
     } catch { /* skip */ }
   }
 
+  // ── Artist Linking ─────────────────────────────────────────────────────
+  // Link newly upserted events to existing artist records by name + aliases.
+  // This mirrors the cron sync's linking logic but skips enrichment (the cron
+  // handles MusicBrainz/Discogs/Last.fm/Perplexity lookups). Without this,
+  // events created via force-sync have artist_id=null and don't show metadata.
+  let eventsLinked = 0;
+  try {
+    // Get the events we just upserted that have no artist_id
+    const extIds = validEvents.map(ev => ev.external_id).filter(Boolean);
+    const unlinkdEvents = [];
+    for (let i = 0; i < extIds.length; i += 200) {
+      const chunk = extIds.slice(i, i + 200);
+      const { data: rows } = await supabase
+        .from('events')
+        .select('id, artist_name, artist_id')
+        .in('external_id', chunk)
+        .is('artist_id', null);
+      if (rows?.length) unlinkdEvents.push(...rows);
+    }
+
+    if (unlinkdEvents.length > 0) {
+      // Collect unique artist names to look up
+      const nameSet = new Set();
+      for (const ev of unlinkdEvents) {
+        const name = (ev.artist_name || '').trim();
+        if (name) nameSet.add(name);
+      }
+      const uniqueNames = [...nameSet];
+
+      // Direct name match against artists table
+      const artistMap = {}; // lowercase name → artist record
+      for (let i = 0; i < uniqueNames.length; i += 200) {
+        const chunk = uniqueNames.slice(i, i + 200);
+        const { data: artists } = await supabase
+          .from('artists')
+          .select('id, name, default_category')
+          .in('name', chunk);
+        for (const a of (artists || [])) artistMap[a.name.toLowerCase()] = a;
+      }
+
+      // Alias lookup for any names that didn't match directly
+      const unmatchedNames = uniqueNames.filter(n => !artistMap[n.toLowerCase()]);
+      if (unmatchedNames.length > 0) {
+        const lowerNames = unmatchedNames.map(n => n.toLowerCase().trim());
+        const { data: aliasRows } = await supabase
+          .from('artist_aliases')
+          .select('artist_id, alias_lower')
+          .in('alias_lower', lowerNames.slice(0, 200));
+
+        if (aliasRows?.length) {
+          const aliasArtistIds = [...new Set(aliasRows.map(a => a.artist_id))];
+          const { data: aliasArtists } = await supabase
+            .from('artists')
+            .select('id, name, default_category')
+            .in('id', aliasArtistIds);
+
+          const artistById = {};
+          for (const a of (aliasArtists || [])) artistById[a.id] = a;
+
+          for (const row of aliasRows) {
+            const master = artistById[row.artist_id];
+            if (master && !artistMap[row.alias_lower]) {
+              artistMap[row.alias_lower] = master;
+            }
+          }
+        }
+      }
+
+      // Link events to matched artists
+      for (const ev of unlinkdEvents) {
+        const key = (ev.artist_name || '').trim().toLowerCase();
+        const artist = artistMap[key];
+        if (!artist) continue;
+
+        const update = { artist_id: artist.id };
+
+        // Apply default category if artist has one and event isn't already categorized
+        if (artist.default_category) {
+          update.category = artist.default_category;
+          update.is_category_verified = true;
+          update.category_source = 'artist_default';
+        }
+
+        const { error: linkErr } = await supabase.from('events').update(update).eq('id', ev.id);
+        if (!linkErr) eventsLinked++;
+      }
+    }
+  } catch (linkErr) {
+    console.error('[force-sync] Artist linking error:', linkErr.message);
+  }
+
   // Update scraper_health
   try {
     await supabase.from('scraper_health').upsert({
@@ -396,6 +487,7 @@ export async function POST(request) {
     duration,
     eventsScraped: result.events.length,
     eventsUpserted: totalUpserted,
+    eventsLinked,
     error: result.error || null,
     upsertErrors: upsertErrors.length ? upsertErrors : null,
   });
