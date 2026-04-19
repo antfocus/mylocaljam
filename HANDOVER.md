@@ -4119,3 +4119,68 @@ All prior Safety Locks remain in force. This session adds:
 - All April 16 (session 1) additions remain in force.
 - All April 16 (session 2) additions remain in force.
 - April 16 (session 3) additions: PostgREST FK hint requirement, single-line select strings, event_image virtual field in search route.
+
+---
+
+## Session: April 18, 2026
+
+### Summary
+
+Enrichment pipeline tuning, genre/vibe taxonomy expansion, and cron sync prioritization.
+
+### Changes Made
+
+#### 1. Enrichment Limit Bumped (15 → 30)
+
+**File:** `src/app/api/sync-events/route.js` (line ~1070)
+
+The per-sync artist enrichment cap was raised from 15 to 30. The old limit was too conservative for the Pro plan's longer function execution time, causing a growing backlog (~585 artists missing bios at time of audit). At 30 per run with more frequent cron syncs, the backlog clears ~2x faster.
+
+#### 2. Enrichment Prioritized by Event Date
+
+**File:** `src/app/api/sync-events/route.js` (enrichment query)
+
+Added `.order('event_date', { ascending: true })` to the unenriched events query. Artists playing soonest now get enriched first. Previously, enrichment order was arbitrary (insertion order), meaning tonight's act could be behind someone playing 3 weeks out.
+
+#### 3. Added "Disco" and "Jam" Genres
+
+**Files:** `src/lib/utils.js`, `src/lib/aiLookup.js`
+
+Added `'Disco'` and `'Jam'` to both `GENRES` (utils.js, now 20 items) and `ALLOWED_GENRES` (aiLookup.js). Jam bands are prevalent at the Jersey Shore (Grateful Dead/Phish-influenced acts) and were being shoehorned into "Rock". The AI tagger prompt now includes explicit guidance: "If the artist plays jam-band, improvisational, or Grateful Dead/Phish-style music, output 'Jam'."
+
+#### 4. Artist vs Event Vibe Split
+
+**Files:** `src/lib/utils.js`, `src/lib/aiLookup.js`, `src/app/admin/page.js`, `src/components/admin/AdminArtistsTab.js`, `src/components/admin/shared/StyleMoodSelector.js`, `src/components/admin/shared/index.js`
+
+New export `ARTIST_VIBES` (3 items): `'Chill / Low Key'`, `'Energetic / Party'`, `'Family-Friendly'`. Excludes `'Outdoor / Patio'` which describes a venue setting, not how a band sounds.
+
+- **Artist admin modal** now shows only 3 vibes (uses `ARTIST_VIBES`)
+- **Event modals** (EventFormModal, AdminEventTemplatesTab) still show all 4 vibes (uses `VIBES`)
+- **AI Pass 2 tagger** uses `ARTIST_VIBES` for MUSICIAN kind, `ALLOWED_VIBES` for VENUE_EVENT kind
+- **Vibe validation** in `aiLookupArtist()` is now kind-aware — won't accept "Outdoor / Patio" on a musician
+
+#### 5. Force-Sync Artist Linking (from earlier in session)
+
+**File:** `src/app/api/admin/force-sync/route.js`
+
+Added artist-linking logic post-upsert that mirrors the cron sync's linking. Steps: find unlinked events → direct name match against artists table → alias lookup for unmatched → set artist_id + default_category on matched events. Returns `eventsLinked` count in response. This fixed the root cause of artists like Skinny Amigo not showing metadata on the live site after a force-sync.
+
+### Cron Sync Mechanics (Reference)
+
+For operator awareness, here's how the cron sync handles re-runs:
+
+- **Events:** Upserted on `external_id` conflict. Re-scraped events update existing rows, never duplicate.
+- **Artists:** Only names NOT already in the `artists` table (the `cachedMap`) get sent for enrichment. Running cron more frequently does NOT re-enrich existing artists — it only processes the uncached backlog.
+- **Recommendation:** 2-3 cron runs per day to keep pace with ~13 new artists/day and clear the enrichment backlog.
+
+### Safety Locks — Additions
+
+All prior Safety Locks remain in force. This session adds:
+
+- **Enum Prison expanded.** `GENRES` Flat-20 (was Flat-18). Added `'Disco'` and `'Jam'`. `ALLOWED_GENRES` in `aiLookup.js` must stay in sync.
+- **Artist vibe boundary.** `ARTIST_VIBES` is the canonical vibe list for MUSICIAN contexts. `'Outdoor / Patio'` must NOT appear on artist profiles or in AI tagger output for musicians. The full `VIBES` (4 items) is for events only.
+- **Enrichment date priority.** The enrichment query in `sync-events/route.js` MUST order by `event_date ASC`. Do not remove this ordering — it ensures soonest events get bios/images first.
+
+### Roadmap — Added April 18, 2026
+
+- **Retroactive QA Audit System (build in ~2 weeks).** A Gemini Flash-powered audit system at `/api/admin/qa-audit` that evaluates all existing live data. Three phases: Phase 1 — programmatic checks (hype words, char limits, dead URLs, missing fields) at zero API cost. Phase 2 — LLM quality scoring on bios that passed Phase 1 but may still be fluff. Phase 3 — vision-based image QA (detect text-heavy flyers, generic stock photos, irrelevant images). Results surface in a "QA Review" queue in the admin dashboard. Use Gemini Flash (not Perplexity) to keep enrichment and audit on separate billing. Wait until the improved enrichment pipeline (hype word filters, citation stripping, date-priority ordering) has run for 2 weeks before auditing, so new data comes in clean.

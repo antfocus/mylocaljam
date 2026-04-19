@@ -337,6 +337,11 @@ The Spotlight tab result banner now surfaces `lockedBlankFilled` when nonzero, r
 
 - **Server-Side Search, Database Indexing, and Pagination.** Replace the 80-event client-side limit with an industry-standard paginated feed. This is the next major platform upgrade.
 
+### Added April 18, 2026
+
+- **Retroactive QA Audit System (deferred ~2 weeks).** Build a Gemini Flash-powered `/api/admin/qa-audit` route that evaluates all existing live artist/event data. Phase 1: programmatic checks (hype words, char limits, dead URLs, missing fields) — zero API cost. Phase 2: LLM bio quality scoring. Phase 3: vision-based image QA (detect text-heavy flyers, stock photos). Results surface in a "QA Review" admin queue. Use Gemini Flash, not Perplexity. Wait for improved enrichment pipeline to run 2 weeks first.
+- **Cron sync frequency increase.** Current: ~3 runs/month. Recommended: 2-3 runs/day. Enrichment limit bumped to 30/run. Enrichment query now date-prioritized (soonest events first). Backlog of ~585 artists without bios needs clearing.
+
 ### Carried over
 
 - Extract `<MetadataEditor>` (the "Twin Editor" from the April 6 roadmap).
@@ -394,7 +399,9 @@ When building or modifying automated data handlers, the Agent must prioritize **
 2. **Confidence threshold.** All LLM-based categorization must return a numeric confidence score alongside its label. If the score is below **0.85**, the handler must fail-safe to `'Other / Special Event'` (or `triage_status: 'pending'` for artist metadata) and flag the row for human review rather than auto-saving. Scores should be persisted in a `category_confidence` (or field-scoped) column for auditability.
 3. **Enum Prison.** AI outputs must be validated against the canonical whitelist before any DB write:
    - Categories → `CATEGORY_OPTIONS` in `src/hooks/useAdminEvents.js`
-   - Genres → `GENRES` Flat-18 in `src/lib/utils.js` (also mirrored as `ALLOWED_GENRES` in the ai-lookup route)
+   - Genres → `GENRES` Flat-20 in `src/lib/utils.js` (also mirrored as `ALLOWED_GENRES` in `src/lib/aiLookup.js`). Added April 18, 2026: `'Disco'`, `'Jam'`.
+   - Vibes (artists) → `ARTIST_VIBES` in `src/lib/utils.js` (3 items: Chill / Low Key, Energetic / Party, Family-Friendly). Excludes "Outdoor / Patio" which describes a venue, not a performer.
+   - Vibes (events) → `VIBES` in `src/lib/utils.js` (4 items, includes Outdoor / Patio).
    Any value not in the whitelist is dropped (not coerced).
 4. **Chain of Command.** Resolution order for categorization and metadata is non-negotiable: **Templates → Linked Artist → AI Suggestion → Default.** AI never overrides a template-linked or artist-linked value. This is the Metadata Waterfall — see HANDOVER.md §1 for field-by-field enforcement.
 5. **Batch Economy.** Where the endpoint supports it, AI operations must be processed in server-side batches. Reference pattern: `POST /api/admin/ignored-names` accepts `names[]` and upserts via `onConflict: 'name_lower'` in a single round-trip. Do not issue N serial requests when the API exposes a batch shape.
@@ -406,7 +413,7 @@ These pre-existing locks still apply and are complemented — not replaced — b
 - `is_human_edited` on `events` (boolean) — row-level lock. Interpreted as "don't clobber populated fields," not "skip row entirely." Smart Fill (Workflow 5) may write to BLANK image/bio fields on such rows; it must never write to `event_title` or `start_time`.
 - `is_locked` on `artists` (boolean) — Master Lock. When `true`, AI enrichment skips the row entirely.
 - Admin "save" stamps `metadata_source: 'manual'` automatically; AI writes stamp `'ai_generated'`. Never overwrite `'manual'` with `'ai_generated'`.
-- **Classification Fork kind gate.** `aiLookupArtist()` returns `kind: 'MUSICIAN' | 'VENUE_EVENT'`. The Pass-2 genre tagger and the tribute-artist flag are gated to MUSICIAN. Do not lift the gate.
+- **Classification Fork kind gate.** `aiLookupArtist()` returns `kind: 'MUSICIAN' | 'VENUE_EVENT'`. The Pass-2 genre tagger and the tribute-artist flag are gated to MUSICIAN. Do not lift the gate. The vibe tagger is also kind-aware: MUSICIAN uses `ARTIST_VIBES` (3 items), VENUE_EVENT uses `ALLOWED_VIBES` (4 items).
 - **`stripLockedFields` applicability.** The guard is correct for per-event admin saves (`src/app/api/admin/route.js`) and per-artist enrichment (`src/app/api/enrich-artists/route.js`). It is WRONG for rescue paths like Smart Fill, where the rescue target is precisely the rogue-locked row with blank data — it would strip the rescue write. Any new rescue endpoint must replicate the per-field blank-only pre-check instead.
 
 ### Rollout requirement
