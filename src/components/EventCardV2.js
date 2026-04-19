@@ -331,7 +331,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
 
         {/* Expanded detail panel — always rendered, animated via max-height */}
         <div style={{
-          maxHeight: expanded ? '600px' : '0px',
+          maxHeight: expanded ? '1200px' : '0px',
           overflow: 'hidden',
           transition: 'max-height 0.25s ease-out',
         }}>
