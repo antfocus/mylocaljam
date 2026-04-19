@@ -49,6 +49,9 @@ import { scrapeMjsRestaurant } from '@/lib/scrapers/mjsRestaurant';
 import { scrapePaganosUva } from '@/lib/scrapers/paganosUva';
 import { scrapeCaptainsInn } from '@/lib/scrapers/captainsInn';
 import { scrapeCharleysOceanGrill } from '@/lib/scrapers/charleysOceanGrill';
+// ── Wix Events scrapers ──
+import { scrapeHeights27 } from '@/lib/scrapers/heights27';
+import { scrapeLeggetts } from '@/lib/scrapers/leggetts';
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
 import { enrichArtist } from '@/lib/enrichArtist';
 import { matchTemplate } from '@/lib/matchTemplate';
@@ -287,7 +290,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill, heights27, leggetts] = await Promise.all([
     scrapePigAndParrot(),
     scrapeTicketmaster(),
     scrapeJoesSurfShack(),
@@ -334,6 +337,9 @@ export async function POST(request) {
     scrapePaganosUva(),
     scrapeCaptainsInn(),
     scrapeCharleysOceanGrill(),
+    // Wix Events scrapers
+    scrapeHeights27(),
+    scrapeLeggetts(),
   ]);
 
   const scraperResults = {
@@ -383,6 +389,9 @@ export async function POST(request) {
     PaganosUva: { count: paganosUva.events.length, error: paganosUva.error },
     CaptainsInn: { count: captainsInn.events.length, error: captainsInn.error },
     CharleysOcean: { count: charleysOceanGrill.events.length, error: charleysOceanGrill.error },
+    // Wix Events scrapers
+    Heights27: { count: heights27.events.length, error: heights27.error },
+    Leggetts: { count: leggetts.events.length, error: leggetts.error },
   };
 
   // ── Write scraper health to database ──────────────────────────────────────
@@ -433,6 +442,9 @@ export async function POST(request) {
     PaganosUva: { venue: "Pagano's UVA Ristorante", url: 'https://www.uvaonmain.com/live-music/', source: 'Vision OCR (Gemini)' },
     CaptainsInn: { venue: "Captain's Inn", url: 'https://www.captainsinnnj.com/calendar', source: 'Vision OCR (Gemini)' },
     CharleysOcean: { venue: "Charley's Ocean Bar & Grill", url: 'https://www.charleysoceangrill.com/events.php', source: 'Vision OCR (Gemini)' },
+    // Wix Events scrapers
+    Heights27: { venue: 'Heights 27', url: 'https://www.heights27.com/calendar', source: 'Wix Events' },
+    Leggetts: { venue: "Leggett's Sand Bar", url: 'https://www.leggetts.us/calendar', source: 'Wix Events' },
   };
 
   try {
@@ -522,6 +534,9 @@ export async function POST(request) {
     ...paganosUva.events,
     ...captainsInn.events,
     ...charleysOceanGrill.events,
+    // Wix Events scrapers
+    ...heights27.events,
+    ...leggetts.events,
   ].map(ev => mapEvent(ev, venueMap, defaultTimes));
 
   // Filter out events with no external_id or date, and deduplicate by external_id
