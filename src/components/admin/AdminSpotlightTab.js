@@ -45,7 +45,7 @@ export default function AdminSpotlightTab({
   setSpotlightImageWarning,
   fetchSpotlight, fetchSpotlightEvents,
   saveSpotlight, clearSpotlight, toggleSpotlightPin,
-  insertPin, reorderPins, removePin, MAX_PINS = 6,
+  insertPin, reorderPins, removePin, MAX_PINS = 10,
   // Magic Wand — bulk AI enrichment (POST /api/admin/enrich-date).
   // When the user clicks ✨ Auto-Fill, every event on spotlightDate that
   // is missing bio/image AND isn't admin-locked runs through the full
@@ -526,7 +526,7 @@ export default function AdminSpotlightTab({
         <div style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <h3 className="font-display font-semibold text-sm" style={{ color: 'var(--text-secondary)', margin: 0 }}>
-              Main Spotlight + Runner-Ups
+              Spotlight Slots
             </h3>
             {hasSuggestedPins && (
               <span style={{
@@ -558,7 +558,7 @@ export default function AdminSpotlightTab({
                 return (
                   <div key={slotId}>
                     {/* Visual separator between Main Spotlight and Runner-Ups */}
-                    {i === 1 && (
+                    {i === 5 && (
                       <div style={{
                         display: 'flex', alignItems: 'center', gap: 10,
                         margin: '6px 0 10px',
@@ -907,17 +907,17 @@ function SpotlightSlot({
           ⠿
         </span>
 
-        {/* Rank badge — ★ for main spotlight (#1), numbered for runner-ups.
-            Orange for manual pins, muted blue for suggestions. */}
+        {/* Rank badge — orange for main slots (#1-5), teal for runner-ups (#6-10).
+            Muted blue for autopilot suggestions. */}
         <span style={{
           fontSize: 11, fontWeight: 800,
-          color: isSuggested ? '#60A5FA' : (index === 0 ? '#F59E0B' : '#E8722A'),
+          color: isSuggested ? '#60A5FA' : (index < 5 ? '#E8722A' : '#3AADA0'),
           flexShrink: 0,
-          background: isSuggested ? 'rgba(96,165,250,0.12)' : (index === 0 ? 'rgba(245,158,11,0.15)' : 'rgba(232,114,42,0.12)'),
+          background: isSuggested ? 'rgba(96,165,250,0.12)' : (index < 5 ? 'rgba(232,114,42,0.12)' : 'rgba(58,173,160,0.12)'),
           borderRadius: 6, padding: '2px 8px',
           fontFamily: "'DM Sans', sans-serif",
         }}>
-          {index === 0 ? '★ Main' : `#${index + 1}`}
+          {index < 5 ? `#${index + 1}` : `R${index - 4}`}
         </span>
 
         {/* DRAFT badge — only on suggested slots. Sits adjacent to the rank

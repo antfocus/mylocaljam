@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 
-const MAX_PINS = 6; // 1 main spotlight + 5 runner-ups
+const MAX_PINS = 10; // 5 main spotlight + 5 runner-ups
 
 // NOTE: intentionally does NOT depend on the parent's `fetchAll`. Calling
 // `fetchAll()` after an auto-save causes the admin page's global `loading`
