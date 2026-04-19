@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 
-const MAX_PINS = 5;
+const MAX_PINS = 6; // 1 main spotlight + 5 runner-ups
 
 // NOTE: intentionally does NOT depend on the parent's `fetchAll`. Calling
 // `fetchAll()` after an auto-save causes the admin page's global `loading`
@@ -333,7 +333,9 @@ export default function useAdminSpotlight({ password }) {
   }, [commitPins]);
 
   /**
-   * Star-button: if unpinned → insert at #1 (push-off). If pinned → unpin.
+   * Star-button: if unpinned → insert in chronological order by start_time.
+   * If already pinned → unpin. After inserting, the full pin list is re-sorted
+   * chronologically so the Spotlight lineup always reads earliest → latest.
    */
   const toggleSpotlightPin = useCallback((eventId) => {
     setSpotlightPins(prev => {
@@ -342,12 +344,24 @@ export default function useAdminSpotlight({ password }) {
         commitPins(next);
         return next;
       }
-      // Insert at rank #1 (index 0) with slide-out.
-      const next = [eventId, ...prev].slice(0, MAX_PINS);
+      // Build a lookup of event start times for chronological sorting
+      const evMap = {};
+      for (const e of spotlightEvents) evMap[e.id] = e;
+      const getTime = (id) => {
+        const ev = evMap[id];
+        if (!ev) return '99:99';
+        // Prefer template start_time → event start_time
+        const t = ev.event_templates?.start_time || ev.start_time || ev.event_time || '99:99';
+        return t === '00:00' || t === '00:00:00' ? '99:99' : t; // midnight = unresolved, sort last
+      };
+      // Add the new event and sort the full list chronologically
+      const merged = [...prev, eventId];
+      merged.sort((a, b) => getTime(a).localeCompare(getTime(b)));
+      const next = merged.slice(0, MAX_PINS);
       commitPins(next);
       return next;
     });
-  }, [commitPins]);
+  }, [commitPins, spotlightEvents]);
 
   // ── Legacy save / clear (still wired for header buttons) ────────────────
   const saveSpotlight = async () => {

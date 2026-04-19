@@ -45,7 +45,7 @@ export default function AdminSpotlightTab({
   setSpotlightImageWarning,
   fetchSpotlight, fetchSpotlightEvents,
   saveSpotlight, clearSpotlight, toggleSpotlightPin,
-  insertPin, reorderPins, removePin, MAX_PINS = 5,
+  insertPin, reorderPins, removePin, MAX_PINS = 6,
   // Magic Wand — bulk AI enrichment (POST /api/admin/enrich-date).
   // When the user clicks ✨ Auto-Fill, every event on spotlightDate that
   // is missing bio/image AND isn't admin-locked runs through the full
@@ -84,6 +84,8 @@ export default function AdminSpotlightTab({
   // `lastEnrichResult` just updates the counts; the operator has to
   // opt-in to filter again via another click.
   const [bannerFilter, setBannerFilter] = useState(null);  // { type: 'updated'|'rescued', ids: string[] } | null
+  // Confirmation dialog state — intercepts pin action so admin must confirm
+  const [pendingPin, setPendingPin] = useState(null); // { eventId, artistName, venue } | null
 
   const toggleSlotExpanded = (eventId) => {
     setExpandedSlots(prev => {
@@ -524,7 +526,7 @@ export default function AdminSpotlightTab({
         <div style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <h3 className="font-display font-semibold text-sm" style={{ color: 'var(--text-secondary)', margin: 0 }}>
-              Spotlight Slots
+              Main Spotlight + Runner-Ups
             </h3>
             {hasSuggestedPins && (
               <span style={{
@@ -554,20 +556,38 @@ export default function AdminSpotlightTab({
                 // the admin touches it — any mutation auto-promotes.
                 const isSuggested = !!eventId && spotlightSources[eventId] === 'suggested';
                 return (
-                  <SpotlightSlot
-                    key={slotId}
-                    id={slotId}
-                    index={i}
-                    event={ev}
-                    resolve={resolve}
-                    showWarning={showWarning}
-                    onRemove={eventId ? () => removePin(eventId) : null}
-                    artists={artists}
-                    templates={templates}
-                    isExpanded={!!eventId && expandedSlots.has(eventId)}
-                    onToggleExpand={eventId ? () => toggleSlotExpanded(eventId) : null}
-                    isSuggested={isSuggested}
-                  />
+                  <div key={slotId}>
+                    {/* Visual separator between Main Spotlight and Runner-Ups */}
+                    {i === 1 && (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        margin: '6px 0 10px',
+                      }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700, color: 'var(--text-muted)',
+                          fontFamily: "'DM Sans', sans-serif",
+                          textTransform: 'uppercase', letterSpacing: '0.5px',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          Runner-Ups
+                        </span>
+                        <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                      </div>
+                    )}
+                    <SpotlightSlot
+                      id={slotId}
+                      index={i}
+                      event={ev}
+                      resolve={resolve}
+                      showWarning={showWarning}
+                      onRemove={eventId ? () => removePin(eventId) : null}
+                      artists={artists}
+                      templates={templates}
+                      isExpanded={!!eventId && expandedSlots.has(eventId)}
+                      onToggleExpand={eventId ? () => toggleSlotExpanded(eventId) : null}
+                      isSuggested={isSuggested}
+                    />
+                  </div>
                 );
               })}
             </div>
@@ -682,7 +702,14 @@ export default function AdminSpotlightTab({
                 resolve={resolve}
                 isExpanded={isExpanded}
                 onToggleExpand={() => setExpandedId(isExpanded ? null : ev.id)}
-                onPin={() => toggleSpotlightPin(ev.id)}
+                onPin={() => {
+                  // If already pinned, unpin immediately (no confirmation needed)
+                  if (spotlightPins.includes(ev.id)) {
+                    toggleSpotlightPin(ev.id);
+                  } else {
+                    setPendingPin({ eventId: ev.id, artistName: ev.artist_name || ev.event_title || 'this event', venue: ev.venue_name || ev.venues?.name || '' });
+                  }
+                }}
                 color={color}
                 timeLabel={timeLabel}
                 w={w}
@@ -719,6 +746,59 @@ export default function AdminSpotlightTab({
           </div>
         ) : null}
       </DragOverlay>
+
+      {/* ── Confirm-to-Pin dialog ─────────────────────────────────── */}
+      {pendingPin && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+        }} onClick={() => setPendingPin(null)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card, #1A1A24)', borderRadius: 14,
+              border: '1px solid var(--border, #2A2A3A)',
+              padding: '24px 28px', maxWidth: 360, width: '90%',
+              fontFamily: "'DM Sans', sans-serif",
+              boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#FFFFFF' }}>
+              Add to Spotlight?
+            </h3>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: '#D1D5DB', lineHeight: 1.5 }}>
+              <strong style={{ color: '#FFFFFF' }}>{pendingPin.artistName}</strong>
+              {pendingPin.venue ? ` at ${pendingPin.venue}` : ''} will be added to the Spotlight lineup.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setPendingPin(null)}
+                style={{
+                  padding: '8px 18px', borderRadius: 8, border: '1px solid var(--border, #2A2A3A)',
+                  background: 'transparent', color: '#D1D5DB', fontSize: 13, fontWeight: 600,
+                  cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  toggleSpotlightPin(pendingPin.eventId);
+                  setPendingPin(null);
+                }}
+                style={{
+                  padding: '8px 18px', borderRadius: 8, border: 'none',
+                  background: '#E8722A', color: '#1C1917', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
+                }}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DndContext>
   );
 }
@@ -827,17 +907,17 @@ function SpotlightSlot({
           ⠿
         </span>
 
-        {/* Rank badge — orange for manual pins, muted blue for suggestions
-            so the visual weight matches the border treatment above. */}
+        {/* Rank badge — ★ for main spotlight (#1), numbered for runner-ups.
+            Orange for manual pins, muted blue for suggestions. */}
         <span style={{
           fontSize: 11, fontWeight: 800,
-          color: isSuggested ? '#60A5FA' : '#E8722A',
+          color: isSuggested ? '#60A5FA' : (index === 0 ? '#F59E0B' : '#E8722A'),
           flexShrink: 0,
-          background: isSuggested ? 'rgba(96,165,250,0.12)' : 'rgba(232,114,42,0.12)',
+          background: isSuggested ? 'rgba(96,165,250,0.12)' : (index === 0 ? 'rgba(245,158,11,0.15)' : 'rgba(232,114,42,0.12)'),
           borderRadius: 6, padding: '2px 8px',
           fontFamily: "'DM Sans', sans-serif",
         }}>
-          #{index + 1}
+          {index === 0 ? '★ Main' : `#${index + 1}`}
         </span>
 
         {/* DRAFT badge — only on suggested slots. Sits adjacent to the rank
@@ -964,6 +1044,17 @@ function SpotlightSlot({
               source={sourceLabel(event, r.template, 'bio')}
               multiline
             />
+            {/* Genre / Vibe pills — sourced from linked artist profile */}
+            {r.linkedArtist && (r.linkedArtist.genres?.length > 0 || r.linkedArtist.vibes?.length > 0) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, margin: '8px 0 4px' }}>
+                {(r.linkedArtist.genres || []).map(g => (
+                  <span key={g} style={genrePillStyle}>{g}</span>
+                ))}
+                {(r.linkedArtist.vibes || []).map(v => (
+                  <span key={v} style={vibePillStyle}>{v}</span>
+                ))}
+              </div>
+            )}
             {r.template && (
               <PreviewRow label="Template" value={r.template.template_name || '(unnamed)'} source="event.template_id" />
             )}
@@ -1199,6 +1290,17 @@ function DraggableEventCard({
                 multiline
                 clampLines={6}
               />
+              {/* Genre / Vibe pills — sourced from linked artist profile */}
+              {r.linkedArtist && (r.linkedArtist.genres?.length > 0 || r.linkedArtist.vibes?.length > 0) && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, margin: '8px 0 4px' }}>
+                  {(r.linkedArtist.genres || []).map(g => (
+                    <span key={g} style={genrePillStyle}>{g}</span>
+                  ))}
+                  {(r.linkedArtist.vibes || []).map(v => (
+                    <span key={v} style={vibePillStyle}>{v}</span>
+                  ))}
+                </div>
+              )}
               {r.template && (
                 <PreviewRow label="Template" value={r.template.template_name || '(unnamed)'} source="event.template_id" />
               )}
@@ -1236,6 +1338,20 @@ function resolveSlotIndex(overId, pins) {
   const idx = pins.indexOf(overId);
   return idx >= 0 ? idx : null;
 }
+
+// Genre / Vibe pill styles for expanded spotlight cards
+const genrePillStyle = {
+  fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '999px',
+  background: 'rgba(232, 114, 42, 0.12)', color: '#E8722A',
+  border: '1px solid rgba(232, 114, 42, 0.25)',
+  fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+};
+const vibePillStyle = {
+  fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '999px',
+  background: 'rgba(58, 173, 160, 0.12)', color: '#3AADA0',
+  border: '1px solid rgba(58, 173, 160, 0.25)',
+  fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+};
 
 function chipStyle(color) {
   return {

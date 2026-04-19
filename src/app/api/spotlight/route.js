@@ -348,8 +348,8 @@ export async function POST(request) {
     return NextResponse.json({ error: 'date and event_ids[] required' }, { status: 400 });
   }
 
-  if (event_ids.length > 5) {
-    return NextResponse.json({ error: 'Maximum 5 spotlight events per day' }, { status: 400 });
+  if (event_ids.length > 6) {
+    return NextResponse.json({ error: 'Maximum 6 spotlight events per day' }, { status: 400 });
   }
 
   // Delete existing pins for this date
