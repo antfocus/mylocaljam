@@ -8,6 +8,20 @@ const VENUES = [
   { id: 'KovZpZAEAIIA', name: 'PNC Bank Arts Center' },
 ];
 
+// Skip Ticketmaster placeholder events that aren't real shows
+const PLACEHOLDER_PATTERNS = [
+  /\bseason\b/i,
+  /\bseries\b/i,
+  /\bshell event\b/i,
+  /\bnon-manifested\b/i,
+  /\bpremium.*tickets?\b/i,
+  /\bparking\b/i,
+];
+
+function isPlaceholder(name) {
+  return PLACEHOLDER_PATTERNS.some(pattern => pattern.test(name));
+}
+
 function formatTime(timeStr) {
   if (!timeStr) return null;
   const [h, m] = timeStr.split(':').map(Number);
@@ -31,6 +45,9 @@ async function scrapeVenue(venue, apiKey) {
   const items = json?._embedded?.events || [];
 
   for (const ev of items) {
+    // Skip Ticketmaster placeholder/shell events
+    if (isPlaceholder(ev.name)) continue;
+
     const dateInfo = ev.dates?.start;
     const priceRange = ev.priceRanges?.[0];
     const imageUrl =
