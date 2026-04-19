@@ -82,7 +82,7 @@ export async function GET(request) {
 
   let query = supabase
     .from('events')
-    .select('*, venues(name, address, color), artists(name, image_url, bio), event_templates(template_name, bio, image_url, category, start_time, genres)')
+    .select('*, venues(name, address, color), artists(name, image_url, bio, genres, vibes), event_templates(template_name, bio, image_url, category, start_time, genres)')
     .order(sort, { ascending: order })
     .range(pageFrom, pageTo);
 
