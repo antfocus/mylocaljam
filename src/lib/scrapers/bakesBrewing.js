@@ -136,6 +136,10 @@ function extractEvents(html) {
     const priceMatch = block.match(/class="text-block-14"[^>]*>([\s\S]*?)<\/div>/);
     const price = priceMatch ? stripHtml(priceMatch[1]) : null;
 
+    // ── Image — lives in sibling .event-image-container after the info container ──
+    const imgMatch = block.match(/class="event-image-container"[\s\S]*?<img[^>]+src="([^"]+)"/);
+    const imageUrl = imgMatch ? imgMatch[1] : null;
+
     if (!title || !date) continue;
 
     // Build combined time string
@@ -144,7 +148,7 @@ function extractEvents(html) {
       time = `${startTime} - ${endTime}`;
     }
 
-    events.push({ title, date, time, description, price, detailPath });
+    events.push({ title, date, time, description, price, detailPath, imageUrl });
   }
 
   return events;
@@ -186,7 +190,7 @@ export async function scrapeBakesBrewing() {
         price: e.price || null,
         source_url: PAGE_URL,
         external_id: `bakesbrew-${e.date}-${e.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
-        image_url: null,
+        image_url: e.imageUrl || null,
       }));
 
     console.log(`[BakesBrewing] ${events.length} upcoming events after date filter`);
