@@ -1,144 +1,164 @@
 /**
- * Bakes Brewing Co scraper (Vision OCR)
- * URL: https://www.bakesbrewing.co/events
+ * Bakes Brewing Co scraper (HTML text parsing)
+ * URL: https://www.bakesbrewing.com/events
  *
- * Webflow CMS site — the live music schedule is posted as IMAGE POSTERS
- * on the events page. The old Webflow dynamic-list approach returned 0
- * events when the CMS structure changed or the dynamic list was emptied.
+ * Webflow CMS site — events are rendered as structured HTML blocks
+ * with consistent CSS classes for date, time, title, description, and price.
  *
- * ── PREVIOUS APPROACH ──
- * Parsed Webflow w-dyn-items / role="listitem" HTML blocks for
- * headings, dates, and times. Broke when CMS was emptied or class
- * names changed.
+ * ── DOM STRUCTURE (as of April 2026) ──
+ * div.event-info-container
+ *   div.event-time
+ *     div.text-block-12    → date ("April 23, 2026")
+ *     div.start-time       → start time ("6:30pm")
+ *     (last child div)     → end time ("8:30pm")
+ *   a.link-block (href="/events/...")
+ *     h1.heading-11        → event title
+ *   div.rich-text-block-3  → description (may contain <p> tags)
+ *   div.price-container
+ *     div.text-block-14    → price value ("Free", "$50", etc.)
  *
- * ── CURRENT APPROACH (Vision OCR) ──
- * Fetches the events page, locates the music poster/schedule image, and
- * sends it to Gemini 2.5 Flash for OCR extraction — same pipeline as
- * Eventide Grille, 10th Ave Burrito, Palmetto, MJ's, etc.
+ * ── PREVIOUS APPROACH (Vision OCR) ──
+ * Used Gemini 2.5 Flash to OCR image posters. The site migrated from
+ * image-based posters to structured HTML text, so OCR is no longer needed.
  *
  * If it breaks:
- *   1. Go to https://www.bakesbrewing.co/events
- *   2. Right-click the music schedule poster → Copy Image Address
- *   3. Check if the URL pattern is still uploads-ssl.webflow.com/...
- *   4. If the poster location changed, update findFlyerUrl() below
+ *   1. Go to https://www.bakesbrewing.com/events
+ *   2. Right-click an event → Inspect to check CSS class names
+ *   3. Look for .event-info-container, .text-block-12, .start-time,
+ *      .heading-11, .text-block-14
+ *   4. If class names changed, update the regex patterns below
  *
- * Address: Bakes Brewing, Belmar, NJ
+ * Address: Bakes Brewing, Wall, NJ
  */
-
-import { extractEventsFromFlyer } from '@/lib/visionOCR';
 
 const VENUE = 'Bakes Brewing';
-const PAGE_URL = 'https://www.bakesbrewing.co/events';
+const PAGE_URL = 'https://www.bakesbrewing.com/events';
 
 /**
- * Month names for matching poster images by month context.
+ * Month name → 0-indexed month number.
  */
-const MONTH_NAMES = [
-  'january', 'february', 'march', 'april', 'may', 'june',
-  'july', 'august', 'september', 'october', 'november', 'december',
-];
+const MONTHS = {
+  january: 0, february: 1, march: 2, april: 3,
+  may: 4, june: 5, july: 6, august: 7,
+  september: 8, october: 9, november: 10, december: 11,
+};
 
 /**
- * Find the music poster/schedule image URL from the Webflow events page.
- *
- * Webflow image hosting patterns:
- *   - uploads-ssl.webflow.com/SITE_ID/HASH_filename.jpg
- *   - assets-global.website-files.com/SITE_ID/HASH_filename.jpg
- *   - cdn.prod.website-files.com/SITE_ID/HASH_filename.jpg
- *   - Sometimes served via data-src for lazy loading
- *
- * Strategy 1: Image whose URL or surrounding context mentions "music",
- *             "schedule", "events", "live", or the current month.
- * Strategy 2: Any Webflow-hosted image that isn't a logo/icon.
- * Strategy 3: Any non-logo content image on the page.
+ * Parse a date string like "April 25, 2026" into "2026-04-25".
  */
-function findFlyerUrl(html) {
-  const now = new Date();
-  const currentMonth = MONTH_NAMES[now.getMonth()];
+function parseDate(dateStr) {
+  if (!dateStr) return null;
+  const m = dateStr.trim().match(/^(\w+)\s+(\d{1,2}),?\s+(\d{4})$/);
+  if (!m) return null;
 
-  // Collect all image URLs from src, data-src, srcset, and background-image
-  const allImageRefs = [
-    // Webflow CDN images
-    ...html.matchAll(/(?:src|data-src|srcset)="(https?:\/\/(?:uploads-ssl\.webflow\.com|assets-global\.website-files\.com|cdn\.prod\.website-files\.com)\/[^"\s]+\.(?:jpg|jpeg|png|webp))[^"\s]*/gi),
-    // Generic image src/data-src
-    ...html.matchAll(/(?:src|data-src)="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))[^"]*"/gi),
-    // Background images in inline styles
-    ...html.matchAll(/background-image:\s*url\(['"]?(https?:\/\/[^'")\s]+\.(?:jpg|jpeg|png|webp))[^'")\s]*/gi),
-  ];
+  const month = MONTHS[m[1].toLowerCase()];
+  if (month === undefined) return null;
 
-  // Deduplicate by base URL (before query params / srcset width descriptors)
-  const seen = new Set();
-  const urls = [];
-  for (const m of allImageRefs) {
-    const base = m[1].split('?')[0].split(' ')[0]; // strip ?params and srcset descriptors
-    if (!seen.has(base)) {
-      seen.add(base);
-      urls.push(m[1].split(' ')[0]); // keep the clean URL
+  const day = parseInt(m[2], 10);
+  const year = parseInt(m[3], 10);
+
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/**
+ * Normalise a time string like "6:30pm" → "6:30 PM".
+ */
+function normaliseTime(raw) {
+  if (!raw) return null;
+  const t = raw.trim().toLowerCase();
+  const m = t.match(/^(\d{1,2}):?(\d{2})?\s*(am|pm)$/);
+  if (!m) return null;
+
+  const hour = m[1];
+  const mins = m[2] || '00';
+  const ampm = m[3].toUpperCase();
+  return `${hour}:${mins} ${ampm}`;
+}
+
+/**
+ * Strip HTML tags and decode common entities.
+ */
+function stripHtml(s) {
+  return s
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extract all event blocks from the HTML using the Webflow class structure.
+ *
+ * Each event lives inside a <div class="event-info-container"> with child
+ * elements for date, time, title, description, and price.
+ */
+function extractEvents(html) {
+  const events = [];
+
+  // Split HTML on event-info-container boundaries
+  const blocks = html.split(/class="event-info-container"/);
+
+  // First element is everything before the first event — skip it
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i];
+
+    // ── Date ──
+    const dateMatch = block.match(/class="text-block-12"[^>]*>([\s\S]*?)<\/div>/);
+    const dateStr = dateMatch ? stripHtml(dateMatch[1]) : null;
+    const date = parseDate(dateStr);
+
+    // ── Start time ──
+    const startMatch = block.match(/class="start-time"[^>]*>([\s\S]*?)<\/div>/);
+    const startTime = startMatch ? normaliseTime(stripHtml(startMatch[1])) : null;
+
+    // ── End time — last div inside event-time, after the dash ──
+    const endMatch = block.match(/class="dash"[^>]*>[\s\S]*?<\/div>\s*<div[^>]*>([\s\S]*?)<\/div>/);
+    const endTime = endMatch ? normaliseTime(stripHtml(endMatch[1])) : null;
+
+    // ── Title ──
+    const titleMatch = block.match(/class="heading-11"[^>]*>([\s\S]*?)<\/h1>/);
+    const title = titleMatch ? stripHtml(titleMatch[1]) : null;
+
+    // ── Detail page link ──
+    const linkMatch = block.match(/href="(\/events\/[^"]+)"/);
+    const detailPath = linkMatch ? linkMatch[1] : null;
+
+    // ── Description ──
+    const descMatch = block.match(/class="rich-text-block-3[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+    const description = descMatch ? stripHtml(descMatch[1]) : null;
+
+    // ── Price ──
+    const priceMatch = block.match(/class="text-block-14"[^>]*>([\s\S]*?)<\/div>/);
+    const price = priceMatch ? stripHtml(priceMatch[1]) : null;
+
+    if (!title || !date) continue;
+
+    // Build combined time string
+    let time = startTime;
+    if (startTime && endTime) {
+      time = `${startTime} - ${endTime}`;
     }
+
+    events.push({ title, date, time, description, price, detailPath });
   }
 
-  // Strategy 1: Image whose URL mentions music, schedule, events, live, or current month
-  for (const url of urls) {
-    const decoded = decodeURIComponent(url).toLowerCase();
-    if (
-      decoded.includes('music') || decoded.includes('schedule') ||
-      decoded.includes('live') || decoded.includes('calendar') ||
-      decoded.includes('lineup') || decoded.includes('flyer') ||
-      decoded.includes('poster') || decoded.includes(currentMonth)
-    ) {
-      console.log(`[BakesBrewing] URL-match flyer: ${url}`);
-      return url;
-    }
-  }
-
-  // Strategy 1b: Check surrounding HTML context for music-related terms
-  for (const url of urls) {
-    const lower = url.toLowerCase();
-    if (lower.includes('logo') || lower.includes('favicon') || lower.includes('icon') || lower.includes('social') || lower.includes('avatar') || lower.includes('brand')) continue;
-
-    const idx = html.indexOf(url);
-    if (idx !== -1) {
-      const context = html.slice(Math.max(0, idx - 400), idx + url.length + 400).toLowerCase();
-      if (
-        context.includes('music') || context.includes('live') ||
-        context.includes('entertainment') || context.includes('schedule') ||
-        context.includes('lineup') || context.includes(currentMonth)
-      ) {
-        console.log(`[BakesBrewing] Context-match flyer: ${url}`);
-        return url;
-      }
-    }
-  }
-
-  // Strategy 2: Any Webflow CDN image that isn't a logo/icon
-  for (const url of urls) {
-    const lower = url.toLowerCase();
-    if (lower.includes('logo') || lower.includes('favicon') || lower.includes('icon') || lower.includes('social') || lower.includes('avatar') || lower.includes('brand')) continue;
-    if (lower.includes('webflow.com') || lower.includes('website-files.com')) {
-      console.log(`[BakesBrewing] Webflow CDN fallback: ${url}`);
-      return url;
-    }
-  }
-
-  // Strategy 3: Any non-logo content image
-  for (const url of urls) {
-    const lower = url.toLowerCase();
-    if (lower.includes('logo') || lower.includes('favicon') || lower.includes('icon') || lower.includes('social') || lower.includes('avatar') || lower.includes('brand')) continue;
-    console.log(`[BakesBrewing] Generic fallback: ${url}`);
-    return url;
-  }
-
-  return null;
+  return events;
 }
 
 export async function scrapeBakesBrewing() {
   try {
-    // Fetch the events page
     const res = await fetch(PAGE_URL, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
-        'Accept': 'text/html,application/xhtml+xml',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
       },
+      next: { revalidate: 0 },
     });
 
     if (!res.ok) {
@@ -146,46 +166,30 @@ export async function scrapeBakesBrewing() {
     }
 
     const html = await res.text();
-    const flyerUrl = findFlyerUrl(html);
+    const extracted = extractEvents(html);
 
-    if (!flyerUrl) {
-      console.warn('[BakesBrewing] No flyer image found on page');
-      return { events: [], error: 'No flyer image found — poster may have moved or site structure changed' };
-    }
+    console.log(`[BakesBrewing] Parsed ${extracted.length} events from HTML`);
 
-    console.log(`[BakesBrewing] Found flyer: ${flyerUrl}`);
-
-    // Send to Gemini 2.5 Flash for OCR extraction
+    // Filter to upcoming events only
     const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-
-    const extracted = await extractEventsFromFlyer(flyerUrl, {
-      venueName: VENUE,
-      year,
-      month,
-    });
-
-    console.log(`[BakesBrewing] Gemini extracted ${extracted.length} events`);
-
-    // Convert to standard scraper output format
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
     const events = extracted
-      .filter(e => e.date && e.date >= todayStr)
+      .filter(e => e.date >= todayStr)
       .map(e => ({
-        title: e.artist,
+        title: e.title,
         venue: VENUE,
         date: e.date,
         time: e.time || null,
-        description: null,
-        ticket_url: PAGE_URL,
-        price: null,
+        description: e.description || null,
+        ticket_url: e.detailPath ? `https://www.bakesbrewing.com${e.detailPath}` : PAGE_URL,
+        price: e.price || null,
         source_url: PAGE_URL,
-        external_id: `bakesbrew-${e.date}-${e.artist.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
+        external_id: `bakesbrew-${e.date}-${e.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)}`,
         image_url: null,
       }));
 
-    console.log(`[BakesBrewing] Found ${events.length} upcoming events`);
+    console.log(`[BakesBrewing] ${events.length} upcoming events after date filter`);
     return { events, error: null };
 
   } catch (err) {
