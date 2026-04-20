@@ -10,9 +10,28 @@
  *
  * Returns a ranked list of artist names with their priority scores,
  * ready for the backfill endpoint to process in batches.
+ *
+ * EXCLUSION RULES (added 2026-04-20):
+ *   - default_category ∈ {Trivia, Karaoke, Comedy, Food & Drink, Sports, Other}
+ *     → these are events, not artists. Skip entirely.
+ *   - field_status.bio === 'no_data' → AI already tried and failed. Don't retry.
+ *   - field_status.image_url === 'no_data' → same, for images.
+ *   The 'DJ/Dance Party' category is NOT skipped — DJs are artists.
  */
 
 import { createClient } from '@supabase/supabase-js';
+
+// Categories that are event-types, not artist-types. Rows tagged with these
+// should not be fed to the AI enrichment loop — bios and images for them
+// would either be fabricated or come from event templates instead.
+const EVENT_ONLY_CATEGORIES = new Set([
+  'Trivia',
+  'Karaoke',
+  'Comedy',
+  'Food & Drink',
+  'Sports',
+  'Other',
+]);
 
 function getSupabase() {
   return createClient(
@@ -74,7 +93,7 @@ export async function fetchPrioritizedArtists({ limit = 50, bareOnly = false } =
       const chunk = artistIds.slice(i, i + 100);
       const { data: artists } = await supabase
         .from('artists')
-        .select('id, name, bio, image_url, genres, is_human_edited, is_locked, last_fetched')
+        .select('id, name, bio, image_url, genres, is_human_edited, is_locked, last_fetched, default_category, field_status')
         .in('id', chunk);
 
       if (artists) {
@@ -99,11 +118,24 @@ export async function fetchPrioritizedArtists({ limit = 50, bareOnly = false } =
     if (artist?.is_locked) continue;
     if (artist?.is_human_edited === true) continue; // boolean lock = entire row frozen
 
-    // Determine what's missing
-    const hasBio = !!(artist?.bio);
-    const hasImage = !!(artist?.image_url);
+    // Skip event-category rows (Trivia / Karaoke / Comedy / etc). These are
+    // not artists even though they live in the artists table — they got swept
+    // in by the scraper ingesting event titles. Their bios come from event
+    // templates, not AI per-artist enrichment. 'DJ/Dance Party' is NOT in
+    // this list — DJs are artists and deserve bios.
+    if (artist?.default_category && EVENT_ONLY_CATEGORIES.has(artist.default_category)) continue;
 
-    // If fully enriched, skip
+    // Determine what's missing. A 'no_data' sentinel in field_status means
+    // the AI has already been asked for this field and came back empty — we
+    // treat that as "effectively has data" for priority purposes so we don't
+    // re-ask on every batch.
+    const fieldStatus = artist?.field_status || {};
+    const bioExhausted = fieldStatus.bio === 'no_data';
+    const imageExhausted = fieldStatus.image_url === 'no_data';
+    const hasBio = !!(artist?.bio) || bioExhausted;
+    const hasImage = !!(artist?.image_url) || imageExhausted;
+
+    // If fully enriched (or both fields exhausted by prior attempts), skip
     if (hasBio && hasImage) continue;
 
     // If bareOnly mode, skip partial enrichment

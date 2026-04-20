@@ -160,6 +160,33 @@ export async function POST(request) {
     }
 
     try {
+      // ── Pre-write snapshot capture (moved up 2026-04-20) ─────────────
+      // We read the pre-state BEFORE the AI call so that field_status is
+      // available when we decide whether to write sentinels. The race
+      // window expands to include the AI call duration, which is fine —
+      // rollback backup, not a critical-section read.
+      let preState = null;
+      try {
+        if (artist.artist_id) {
+          const { data: current } = await supabase
+            .from('artists')
+            .select('*')
+            .eq('id', artist.artist_id)
+            .maybeSingle();
+          preState = current || null;
+        } else {
+          const { data: current } = await supabase
+            .from('artists')
+            .select('*')
+            .ilike('name', artist.artist_name)
+            .maybeSingle();
+          preState = current || null;
+        }
+      } catch (snapErr) {
+        console.warn(`[EnrichBackfill] Snapshot failed for ${artist.artist_name}:`, snapErr.message);
+        preState = { _snapshot_error: snapErr.message };
+      }
+
       const venue = venueMap.get(artist.venue_name);
       const city = venue ? extractCity(venue.address) : null;
 
@@ -174,10 +201,9 @@ export async function POST(request) {
         autoMode: true,
       });
 
-      if (!result) {
-        errors.push(`${artist.artist_name}: AI lookup returned null`);
-        continue;
-      }
+      // NOTE: We no longer early-return on `!result`. A null AI response is
+      // still information — it means we tried. Bump last_fetched + write
+      // 'no_data' sentinels so this row drops out of the priority queue.
 
       // Build the upsert payload — only write fields the artist is MISSING.
       // This is belt-and-suspenders on top of enrichmentPriority.js's filter
@@ -196,11 +222,11 @@ export async function POST(request) {
       const canWriteImage = missing.includes('image_url');
       let hasNewData = false;
 
-      if (result.bio && canWriteBio) {
+      if (result?.bio && canWriteBio) {
         upsertData.bio = result.bio;
         hasNewData = true;
       }
-      if (result.image_url && canWriteImage) {
+      if (result?.image_url && canWriteImage) {
         upsertData.image_url = result.image_url;
         // image_source tracks which provider produced the URL
         // (perplexity / serper / placeholder / gemini). Labelling it
@@ -215,53 +241,67 @@ export async function POST(request) {
       }
       // Genres: fill only when the artist has none (i.e. bio was also
       // missing, which is how we got here via priority scoring).
-      if (result.genres?.length && canWriteBio) {
+      if (result?.genres?.length && canWriteBio) {
         upsertData.genres = result.genres;
       }
       // bio_source: record the source page the LLM used. Only relevant when
       // we actually wrote a new bio.
-      if (result.source_link && canWriteBio) {
+      if (result?.source_link && canWriteBio) {
         upsertData.bio_source = result.source_link;
       }
 
-      if (!hasNewData) {
-        errors.push(`${artist.artist_name}: AI returned no usable data for missing fields`);
-        continue;
+      // ── Field-status sentinels ───────────────────────────────────────
+      // When the AI came back empty for a field the priority scorer flagged
+      // as missing, write a 'no_data' sentinel into field_status.<field> so
+      // the scorer won't pick this artist again for that field. This is
+      // what drains the queue when names are too obscure for the AI to
+      // ground (e.g., local Jersey Shore acts with no web presence).
+      const prevFieldStatus = (preState && !preState._snapshot_error && preState.field_status)
+        ? preState.field_status
+        : {};
+      const nextFieldStatus = { ...prevFieldStatus };
+      let fieldStatusChanged = false;
+      if (canWriteBio && !upsertData.bio && !prevFieldStatus.bio) {
+        nextFieldStatus.bio = 'no_data';
+        fieldStatusChanged = true;
+      }
+      if (canWriteImage && !upsertData.image_url && !prevFieldStatus.image_url) {
+        nextFieldStatus.image_url = 'no_data';
+        fieldStatusChanged = true;
+      }
+      if (fieldStatusChanged) {
+        upsertData.field_status = nextFieldStatus;
       }
 
-      // Upsert into artists table
+      // ── VENUE_EVENT classification persistence ───────────────────────
+      // If the AI classified this row as a VENUE_EVENT (not a musician) and
+      // we don't already have a default_category set, tag it 'Other'. This
+      // drops the row out of the bio-enrichment queue permanently. Coarse
+      // but correct — the SQL pre-classification handled obvious event
+      // keywords; whatever the AI catches here is the long tail.
+      const preCategory = preState && !preState._snapshot_error ? preState.default_category : null;
+      if (result?.kind === 'VENUE_EVENT' && !preCategory) {
+        upsertData.default_category = 'Other';
+      }
+
+      // Always bump last_fetched — successful OR failed attempts count as
+      // "we tried this row." The priority scorer uses last_fetched as an
+      // implicit cooldown; without this, a failed artist sits at the top of
+      // the queue forever, retrying on every batch (the loop trap from the
+      // 2026-04-20 test batch).
       upsertData.last_fetched = new Date().toISOString();
 
-      // ── Pre-write snapshot capture ───────────────────────────────────
-      // Read the current row BEFORE we modify it, so the backup is a true
-      // pre-state (not a post-state with our new values already applied).
-      // We do this inside the loop rather than in a batch pre-fetch so the
-      // snapshot is as close to the write as possible — minimizes race
-      // windows if the cron scraper runs concurrently.
-      let preState = null;
-      try {
-        if (artist.artist_id) {
-          const { data: current } = await supabase
-            .from('artists')
-            .select('*')
-            .eq('id', artist.artist_id)
-            .maybeSingle();
-          preState = current || null;
-        } else {
-          // No artist_id yet — look up by name (same key used for upsert)
-          const { data: current } = await supabase
-            .from('artists')
-            .select('*')
-            .ilike('name', artist.artist_name)
-            .maybeSingle();
-          preState = current || null;
-        }
-      } catch (snapErr) {
-        // Snapshot failure should NOT block the write — we still write,
-        // but we record that the snapshot couldn't be taken so the admin
-        // knows this row's rollback will require manual reconstruction.
-        console.warn(`[EnrichBackfill] Snapshot failed for ${artist.artist_name}:`, snapErr.message);
-        preState = { _snapshot_error: snapErr.message };
+      // If we have NOTHING to write — no bio/image, no sentinel change, no
+      // classification — skip. This should be rare (only when prior state
+      // already recorded no_data and the AI still returned nothing).
+      const willWrite = hasNewData || fieldStatusChanged || upsertData.default_category;
+      if (!willWrite) {
+        errors.push(`${artist.artist_name}: AI returned no data, no sentinel change`);
+        continue;
+      }
+      if (!hasNewData) {
+        // Record that we tried and got nothing, but don't count as enriched
+        errors.push(`${artist.artist_name}: AI returned no usable bio/image${result?.kind === 'VENUE_EVENT' ? ' (classified as VENUE_EVENT)' : ''}`);
       }
 
       if (artist.artist_id) {
@@ -294,18 +334,25 @@ export async function POST(request) {
       }
 
       // Record snapshot entry AFTER successful write. Failed writes don't
-      // get a snapshot entry because nothing actually changed.
+      // get a snapshot entry because nothing actually changed. "Successful"
+      // now includes sentinel-only writes (no bio/image, but field_status or
+      // default_category changed) — those are still reversible state changes.
       snapshotEntries.push({
         artist_name: artist.artist_name,
         artist_id: artist.artist_id || null,
-        kind: result.kind,
+        kind: result?.kind,
+        wrote_bio: !!upsertData.bio,
+        wrote_image: !!upsertData.image_url,
+        wrote_sentinel: fieldStatusChanged,
+        wrote_category: !!upsertData.default_category,
         pre_state: preState,
         post_state: upsertData,
         written_at: new Date().toISOString(),
       });
 
-      // Also backfill event-level denormalized columns
-      if (result.bio || result.image_url) {
+      // Also backfill event-level denormalized columns — only when we have
+      // real bio/image content. Sentinel-only writes don't touch events.
+      if (hasNewData && (result?.bio || result?.image_url)) {
         const eventUpdates = {};
         if (result.bio) eventUpdates.artist_bio = result.bio;
         if (result.image_url) eventUpdates.event_image_url = result.image_url;
@@ -322,8 +369,14 @@ export async function POST(request) {
         }
       }
 
-      enrichedCount++;
-      console.log(`[EnrichBackfill] ✓ ${artist.artist_name} (score: ${artist.priority_score.toFixed(1)})`);
+      // Only count as "enriched" when we actually wrote new bio/image. A
+      // sentinel or category write is progress for the queue but not a
+      // data enrichment — the stat card should reflect real fills, not
+      // bookkeeping updates.
+      if (hasNewData) {
+        enrichedCount++;
+      }
+      console.log(`[EnrichBackfill] ✓ ${artist.artist_name} (enriched=${hasNewData}, sentinel=${fieldStatusChanged}, category=${upsertData.default_category || 'none'}, score: ${artist.priority_score?.toFixed(1)})`);
 
     } catch (err) {
       errors.push(`${artist.artist_name}: ${err.message}`);
