@@ -1,15 +1,33 @@
 /**
- * Brielle House scraper
+ * Brielle House scraper — LEGACY / FALLBACK PATH
+ * ----------------------------------------------
  * Events page: https://brielle-house.com/specials-events/
+ *
+ * ⚠️  As of 2026-04, this scraper has been failing with HTTP 500 from
+ * admin-ajax.php. The EventPrime plugin's server-side response breaks when
+ * the request comes from a Vercel/datacenter IP without a full browser
+ * session. The primary scraper is now the Playwright version:
+ *
+ *     src/lib/scrapers/brielleHouse.playwright.js
+ *
+ * The Playwright scraper runs in GitHub Actions (see
+ * .github/workflows/playwright-scrapers.yml and scripts/playwright-sync.mjs)
+ * on a nightly cron separate from the Vercel cron. This file is retained
+ * because it still ships in the Next.js force-sync route — it will return
+ * { events: [], error: ... } gracefully when the AJAX endpoint 500s, which
+ * is what scraper_health already records. Leaving it wired in force-sync
+ * means the operator can still attempt an in-Vercel sync without Playwright
+ * if the AJAX endpoint ever starts working again from server IPs.
  *
  * WordPress site using EventPrime calendar plugin.
  * Events are loaded via admin-ajax.php with action "ep_get_calendar_event".
  * Requires session cookies + nonce from em_front_event_object.
  *
- * If it breaks:
+ * If the AJAX path ever comes back to life:
  *   1. Go to https://brielle-house.com/specials-events/
  *   2. View page source → search for em_front_event_object
  *   3. Check the nonce value and ajaxurl
+ * Otherwise rely on the Playwright scraper.
  */
 
 const EVENTS_PAGE = 'https://brielle-house.com/specials-events/';

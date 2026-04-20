@@ -1,0 +1,66 @@
+name: Playwright Scrapers
+
+# Runs the Playwright-based venue scrapers (Brielle House today; more to
+# come). These venues use JavaScript-rendered calendars that can't be
+# scraped from Vercel's serverless runtime, so they run here instead.
+#
+# The main Vercel cron (POST /api/cron/sync-events, 10 PM ET) is unaffected
+# and continues to handle the fetch()-based scrapers.
+
+on:
+  schedule:
+    # 03:30 UTC = 11:30 PM EDT / 10:30 PM EST — runs ~30–90 minutes after
+    # the Vercel cron at 10 PM ET. GitHub cron is always UTC; the offset
+    # drift between EDT and EST is acceptable for a nightly job.
+    - cron: '30 3 * * *'
+  workflow_dispatch: # allow manual run from the Actions tab
+
+# Prevent overlapping runs if a previous invocation is still going.
+concurrency:
+  group: playwright-scrapers
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    name: Run Playwright scrapers
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Cache the Playwright browser binary between runs. The cache key
+      # includes the package-lock hash so it invalidates when Playwright
+      # is upgraded.
+      - name: Cache Playwright Chromium
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright Chromium (with system deps)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      # If we hit the cache, the browser binary is there but system deps
+      # (libnss3, libatk, etc.) still need to be installed on the runner.
+      - name: Install Playwright system deps (cache hit path)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Run Playwright sync
+        run: node scripts/playwright-sync.mjs
