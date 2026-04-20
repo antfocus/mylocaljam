@@ -1580,8 +1580,9 @@ export default function HomePage() {
 
   // ── Shared styles ────────────────────────────────────────────────────────────
   const dateSeparatorStyle = {
-    fontSize: '13px', fontWeight: 800, textTransform: 'uppercase',
-    letterSpacing: '1px', color: darkMode ? '#E0E0F0' : '#374151',
+    fontSize: '20px', fontWeight: 900, textTransform: 'uppercase',
+    letterSpacing: '0.5px', color: darkMode ? '#E0E0F0' : '#1F2937',
+    fontFamily: "'DM Sans', sans-serif",
   };
 
   return (
@@ -3244,15 +3245,10 @@ export default function HomePage() {
                   <div key={group.date}>
                     <div data-date-header={group.date} style={{
                       position: 'sticky', top: 0, zIndex: 50,
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      padding: '10px 12px',
-                      margin: '0 -16px',
-                      background: darkMode ? 'rgba(13,13,18,0.85)' : 'rgba(247,245,242,0.85)',
-                      backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-                      borderBottom: `1px solid ${darkMode ? '#1E1E2E' : '#E0DDD8'}`,
+                      padding: '16px 0 8px',
+                      background: t.bg,
                     }}>
                       <span style={dateSeparatorStyle}>{group.label}</span>
-                      <div style={{ flex: 1, height: '1px', background: darkMode ? '#3A3A50' : '#D1D5DB' }} />
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {group.events.map((event, i) => (
