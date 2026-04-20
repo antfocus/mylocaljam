@@ -37,6 +37,9 @@ export default function AdminEnrichmentTab({ password, showQueueToast }) {
 
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
+  // Transient state: Pause clicked but current batch still in flight.
+  // Lets us show "Pausing…" instead of a stale "Running" indicator.
+  const [pausing, setPausing] = useState(false);
 
   // Aggregate counters across the whole session.
   const [batchesRun, setBatchesRun] = useState(0);
@@ -68,6 +71,7 @@ export default function AdminEnrichmentTab({ password, showQueueToast }) {
     if (running) return;
     setRunning(true);
     setPaused(false);
+    setPausing(false);
     stopRef.current = false;
 
     let keepGoing = true;
@@ -142,9 +146,13 @@ export default function AdminEnrichmentTab({ password, showQueueToast }) {
     }
 
     setRunning(false);
+    setPausing(false);
   }, [running, batchSize, bareOnly, password, showQueueToast, totalEnriched]);
 
-  const handlePause = () => { stopRef.current = true; };
+  const handlePause = () => {
+    stopRef.current = true;
+    setPausing(true);
+  };
 
   const handleReset = () => {
     setBatchesRun(0);
@@ -155,6 +163,7 @@ export default function AdminEnrichmentTab({ password, showQueueToast }) {
     setErrorLog([]);
     setSnapshots([]);
     setPaused(false);
+    setPausing(false);
   };
 
   const downloadSnapshot = () => {
@@ -218,6 +227,80 @@ export default function AdminEnrichmentTab({ password, showQueueToast }) {
         </p>
       </div>
 
+      {/* Status banner — prominent Running / Pausing / Paused indicator.
+          Shows current batch, enriched count, and live LLM-call total so
+          the operator can see cost accruing in real time. */}
+      {(running || paused) && (() => {
+        const totalLLM = usageStats
+          ? Object.values(usageStats).reduce((s, v) => s + (v.calls || 0), 0)
+          : 0;
+        const mode = pausing ? 'pausing' : running ? 'running' : 'paused';
+        const palette = {
+          running: { bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.35)', dot: '#22c55e', text: '#22c55e', label: 'Running' },
+          pausing: { bg: 'rgba(234,179,8,0.12)', border: 'rgba(234,179,8,0.35)', dot: '#EAB308', text: '#EAB308', label: 'Pausing after current batch' },
+          paused:  { bg: 'rgba(148,163,184,0.12)', border: 'rgba(148,163,184,0.35)', dot: '#94a3b8', text: '#94a3b8', label: 'Paused' },
+        }[mode];
+        return (
+          <>
+            <style>{`
+              @keyframes enrichPulse {
+                0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.55); }
+                70%  { box-shadow: 0 0 0 8px rgba(34,197,94,0); }
+                100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+              }
+            `}</style>
+            <div
+              style={{
+                marginBottom: '12px',
+                padding: '12px 14px',
+                background: palette.bg,
+                border: `1px solid ${palette.border}`,
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '14px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: '200px' }}>
+                <span
+                  style={{
+                    width: '10px',
+                    height: '10px',
+                    borderRadius: '50%',
+                    background: palette.dot,
+                    animation: mode === 'running' ? 'enrichPulse 1.6s infinite' : 'none',
+                    flexShrink: 0,
+                  }}
+                />
+                <strong style={{ color: palette.text, fontSize: '14px', letterSpacing: '0.2px' }}>
+                  {palette.label}
+                </strong>
+              </div>
+              <div style={{ display: 'flex', gap: '18px', fontSize: '12px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                <span>
+                  Batch <strong style={{ color: 'var(--text-primary)' }}>{batchesRun}</strong>
+                </span>
+                <span>
+                  Enriched <strong style={{ color: 'var(--text-primary)' }}>{totalEnriched}</strong>
+                </span>
+                <span>
+                  Remaining <strong style={{ color: 'var(--text-primary)' }}>{remaining === null ? '—' : remaining}</strong>
+                </span>
+                <span>
+                  LLM calls <strong style={{ color: 'var(--text-primary)' }}>{totalLLM}</strong>
+                  {usageStats && (
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      {' '}(G:{usageStats.gemini?.calls || 0} · P:{usageStats.perplexity?.calls || 0} · X:{usageStats.grok?.calls || 0})
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
       {/* Controls */}
       <div style={{ ...card, marginBottom: '12px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end' }}>
@@ -247,12 +330,12 @@ export default function AdminEnrichmentTab({ password, showQueueToast }) {
           <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
             {!running && (
               <button onClick={runBackfill} style={btn('#E8722A')}>
-                {batchesRun > 0 && !paused ? 'Resume Backfill' : 'Run Backfill'}
+                {paused ? 'Resume Backfill' : 'Run Backfill'}
               </button>
             )}
             {running && (
-              <button onClick={handlePause} style={btn('#EAB308')}>
-                Pause after current batch
+              <button onClick={handlePause} disabled={pausing} style={{ ...btn('#EAB308'), opacity: pausing ? 0.6 : 1, cursor: pausing ? 'not-allowed' : 'pointer' }}>
+                {pausing ? 'Pausing after current batch…' : 'Pause after current batch'}
               </button>
             )}
             {!running && batchesRun > 0 && (

@@ -81,24 +81,69 @@ export async function fetchPrioritizedArtists({ limit = 50, bareOnly = false } =
 
   if (!events?.length) return [];
 
-  // Step 2: Get all artist IDs referenced by these events
+  // Step 2: Collect artist identifiers referenced by these events.
+  //
+  // Events come in two flavors:
+  //   (a) linked: event.artist_id set → fetch via ID
+  //   (b) unlinked: event.artist_id null, only event.artist_name → fetch by name
+  //
+  // The scraper ingests many name-only rows (e.g. "AYCE SNOW CRAB",
+  // "$5 High Noons 8pm - Close"). Those rows DO get artists-table entries
+  // written by the enrichment endpoint (keyed by name via upsert), but if
+  // the scorer looks up only by ID it sees null and treats them as bare
+  // every batch — a loop trap that burns LLM calls on the same names.
+  //
+  // Fix: batch-fetch by ID AND by name, build a by-name Map alongside the
+  // by-ID Map, and fall back to the by-name Map in the per-event loop when
+  // artist_id is null.
   const artistIds = [...new Set(events.filter(e => e.artist_id).map(e => e.artist_id))];
-  const artistNames = [...new Set(events.filter(e => e.artist_name).map(e => e.artist_name.trim().toLowerCase()))];
 
-  // Fetch existing artist records
-  let existingArtists = new Map();
+  // Map original-cased name → lowercase key. Keep both: originals feed the
+  // .in('name', ...) query (artists.name stored as-typed by upsert path),
+  // lowercase keys feed the Map lookup.
+  const nameByKey = new Map(); // lowercaseKey → originalName
+  for (const e of events) {
+    const raw = (e.artist_name || '').trim();
+    if (raw) nameByKey.set(raw.toLowerCase(), raw);
+  }
+  const artistNamesOriginal = [...nameByKey.values()];
+
+  const SELECT_COLS = 'id, name, bio, image_url, genres, is_human_edited, is_locked, last_fetched, default_category, field_status';
+
+  const existingArtists = new Map();       // keyed by artist_id
+  const existingArtistsByName = new Map(); // keyed by name.toLowerCase()
+
+  // (a) Fetch by ID
   if (artistIds.length > 0) {
-    // Batch in chunks of 100 to avoid URL length limits
     for (let i = 0; i < artistIds.length; i += 100) {
       const chunk = artistIds.slice(i, i + 100);
       const { data: artists } = await supabase
         .from('artists')
-        .select('id, name, bio, image_url, genres, is_human_edited, is_locked, last_fetched, default_category, field_status')
+        .select(SELECT_COLS)
         .in('id', chunk);
 
       if (artists) {
         for (const a of artists) {
           existingArtists.set(a.id, a);
+          if (a.name) existingArtistsByName.set(a.name.trim().toLowerCase(), a);
+        }
+      }
+    }
+  }
+
+  // (b) Fetch by name for the unlinked rows
+  if (artistNamesOriginal.length > 0) {
+    for (let i = 0; i < artistNamesOriginal.length; i += 100) {
+      const chunk = artistNamesOriginal.slice(i, i + 100);
+      const { data: artistsByName } = await supabase
+        .from('artists')
+        .select(SELECT_COLS)
+        .in('name', chunk);
+
+      if (artistsByName) {
+        for (const a of artistsByName) {
+          if (a.name) existingArtistsByName.set(a.name.trim().toLowerCase(), a);
+          if (a.id) existingArtists.set(a.id, a);
         }
       }
     }
@@ -112,7 +157,14 @@ export async function fetchPrioritizedArtists({ limit = 50, bareOnly = false } =
     if (!name) continue;
 
     const normalizedName = name.toLowerCase();
-    const artist = event.artist_id ? existingArtists.get(event.artist_id) : null;
+    // Prefer ID-based lookup when available; fall back to name-based for
+    // unlinked events (artist_id=null). Without the fallback, name-only
+    // rows invisibly re-enter the queue every batch because the scorer
+    // can't read their sentinels or default_category.
+    const artist =
+      (event.artist_id && existingArtists.get(event.artist_id)) ||
+      existingArtistsByName.get(normalizedName) ||
+      null;
 
     // Skip locked artists — human has taken ownership
     if (artist?.is_locked) continue;
