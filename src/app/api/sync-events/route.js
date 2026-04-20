@@ -1132,9 +1132,27 @@ export async function POST(request) {
         }
       } catch { /* artist_aliases table may not exist yet */ }
 
+      // ── Pass 1: Artist-ID linking (ALL events, including locked/human-edited) ──
+      // Linking artist_id is non-destructive (only sets a null FK) and is the
+      // foundation for the image/bio waterfall. Skipping locked rows here was
+      // the root cause of OCR-scraped events (Captain's Inn, Palmetto, etc.)
+      // never getting their artist image — the admin's category edit set
+      // is_human_edited=true, which blocked the entire enrichment loop.
+      const allUnlinked = unenriched.filter(e => !e.artist_id && !blacklistedNames.has(e.artist_name.trim().toLowerCase()));
+      for (const ev of allUnlinked) {
+        const evNameLower = ev.artist_name.trim().toLowerCase();
+        const artistData = freshMap[evNameLower];
+        if (!artistData?.id) continue;
+        const { error: linkErr } = await supabase.from('events').update({ artist_id: artistData.id }).eq('id', ev.id);
+        if (!linkErr) enrichResult.eventsLinked++;
+      }
+
+      // ── Pass 2: Bio/image enrichment + category cascade (unlocked only) ──
+      // These writes can overwrite existing data, so they respect the
+      // human-edited/locked guard.
       for (const ev of enrichable) {
         const evNameLower = ev.artist_name.trim().toLowerCase();
-        // Skip blacklisted artists in the linking step too
+        // Skip blacklisted artists in the enrichment step too
         if (blacklistedNames.has(evNameLower)) continue;
         const artistData = freshMap[evNameLower];
         if (!artistData) continue;
@@ -1146,8 +1164,6 @@ export async function POST(request) {
         if (artistData.bio && (existingBioLen === 0 || existingBioLen < 100)) {
           update.artist_bio = artistData.bio;
         }
-        // Link event → artist via FK if not already linked
-        if (!ev.artist_id && artistData.id) update.artist_id = artistData.id;
 
         // ── Confidence Cascade Tier 1: Default-Category Bypass ───────────
         // If the matched artist has an admin-set default_category, stamp it
@@ -1182,7 +1198,6 @@ export async function POST(request) {
         const { error: upErr } = await supabase.from('events').update(update).eq('id', ev.id);
         if (!upErr) {
           if (update.image_url || update.artist_bio) enrichResult.eventsEnriched++;
-          if (update.artist_id) enrichResult.eventsLinked++;
           if (update.category_source === 'artist_default') enrichResult.defaultCategoryApplied++;
         }
       }
