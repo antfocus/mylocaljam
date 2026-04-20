@@ -606,32 +606,49 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
     image_candidates = [perplexityImage];
     image_source = 'perplexity';
   } else {
-    try {
-      // Kind-aware Serper query — "band live music" for MUSICIAN;
-      // venue-focused ("${name} ${venue}" / "${venue} interior") for
-      // VENUE_EVENT so we don't contaminate the search with music
-      // keywords on non-band rows like "Family Night". See
-      // searchArtistImages for the full query-build rules.
-      const serperHits = await searchArtistImages(name, kind, { venue: venueStr, city: cityStr });
-      if (serperHits.length > 0) {
-        image_candidates = serperHits;
-        image_url = serperHits[0];
-        image_source = 'serper';
-      } else if (!autoMode) {
-        // Admin UI: fall back to premium placeholders so the carousel is
-        // non-empty and the admin can still pick something. Auto mode
-        // refuses placeholders (see docstring).
-        const shuffled = [...FALLBACK_IMAGES].sort(() => Math.random() - 0.5);
-        image_candidates = shuffled.slice(0, 5);
-        image_url = image_candidates[0];
-        image_source = 'placeholder';
-      }
-    } catch {
-      if (!autoMode) {
-        const shuffled = [...FALLBACK_IMAGES].sort(() => Math.random() - 0.5);
-        image_candidates = shuffled.slice(0, 5);
-        image_url = image_candidates[0];
-        image_source = 'placeholder';
+    // Gate Serper on bio confirmation in autoMode.
+    //
+    // If the LLM couldn't produce a bio for this entity, it's almost
+    // certainly not a real artist — Serper's Google Images returns stock
+    // band photos, event flyers, or unrelated bands in those cases (e.g.
+    // "BOGO Burger" → Redd Kross; "Happy Hour" → wedding-band stock;
+    // "Trivia NIGHT" → random trivia flyers). In autoMode we skip Serper
+    // when bio is empty and let the enrichment endpoint sentinel image_url
+    // as 'no_data' instead of writing garbage.
+    //
+    // Admin mode (manual triage) keeps the old behavior so the image
+    // carousel always has picks to choose from — a human reviews anyway.
+    const bioConfirmsEntity = !!bio && !needs_review;
+    const skipSerperInAuto = autoMode && !bioConfirmsEntity;
+
+    if (!skipSerperInAuto) {
+      try {
+        // Kind-aware Serper query — "band live music" for MUSICIAN;
+        // venue-focused ("${name} ${venue}" / "${venue} interior") for
+        // VENUE_EVENT so we don't contaminate the search with music
+        // keywords on non-band rows like "Family Night". See
+        // searchArtistImages for the full query-build rules.
+        const serperHits = await searchArtistImages(name, kind, { venue: venueStr, city: cityStr });
+        if (serperHits.length > 0) {
+          image_candidates = serperHits;
+          image_url = serperHits[0];
+          image_source = 'serper';
+        } else if (!autoMode) {
+          // Admin UI: fall back to premium placeholders so the carousel is
+          // non-empty and the admin can still pick something. Auto mode
+          // refuses placeholders (see docstring).
+          const shuffled = [...FALLBACK_IMAGES].sort(() => Math.random() - 0.5);
+          image_candidates = shuffled.slice(0, 5);
+          image_url = image_candidates[0];
+          image_source = 'placeholder';
+        }
+      } catch {
+        if (!autoMode) {
+          const shuffled = [...FALLBACK_IMAGES].sort(() => Math.random() - 0.5);
+          image_candidates = shuffled.slice(0, 5);
+          image_url = image_candidates[0];
+          image_source = 'placeholder';
+        }
       }
     }
   }
