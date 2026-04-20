@@ -1,5 +1,10 @@
 /**
- * AI Artist Lookup — Perplexity-backed bio/image lookup with strict constraints.
+ * AI Artist Lookup — multi-provider LLM bio/image lookup with strict constraints.
+ *
+ * Uses the LLM Router (`src/lib/llmRouter.js`) for automatic Gemini → Perplexity
+ * → Grok failover. Pass 1 (bio + image research) prefers Perplexity for web
+ * grounding; Pass 2 (genre/vibe tagging) prefers Gemini because it's a pure
+ * text-classification task. See the call sites below for the per-pass rationale.
  *
  * Extracted from `src/app/api/admin/artists/ai-lookup/route.js` so the same
  * logic can serve three callers:
@@ -22,8 +27,8 @@
  *   differently (e.g. skip musical-genre tagging on venue events).
  *
  *   Bio (MUSICIAN branch):
- *     • Max 500 characters (hard cap, enforced both in prompt AND client-side
- *       post-trim — the LLM sometimes overshoots; we never write >500 chars).
+ *     • Max 250 characters (hard cap, enforced both in prompt AND client-side
+ *       post-trim — the LLM sometimes overshoots; we never write >250 chars).
  *     • Focus strictly on musical style, genre, and range.
  *     • NO past venues, NO tour history, NO place-name dropping.
  *     • NO hype words (legendary, world-class, amazing, soul-stirring,
@@ -32,7 +37,7 @@
  *     • Tone: neutral, informative, professional.
  *
  *   Bio (VENUE_EVENT branch):
- *     • Max 500 characters (same hard cap, same client-side trim).
+ *     • Max 250 characters (same hard cap, same client-side trim).
  *     • Describe THE ACTIVITY, the venue atmosphere, and what attendees can
  *       expect (e.g. trivia format, food special details, karaoke vibe).
  *     • Keep it informative and punchy.
@@ -62,14 +67,25 @@
  *     kind === 'VENUE_EVENT' so we never tag a trivia night as "Jazz / Chill".
  *
  * Why ONE place, not three prompt copies: the tone contract (no marketing
- * hyperbole, 500-char cap, banned-word list, context framing) CANNOT be
+ * hyperbole, 250-char cap, banned-word list, context framing) CANNOT be
  * allowed to drift between manual admin use and automated enrichment.
  *
  * Env vars:
- *   - PERPLEXITY_API_KEY (required — without it, aiLookupArtist returns null)
+ *   - At least ONE of: GOOGLE_AI_KEY, PERPLEXITY_API_KEY, XAI_API_KEY
+ *     (router falls through missing-key providers; aiLookupArtist returns
+ *     null only if ALL configured providers fail. Without any key, the
+ *     router returns null on the first call and the flow bails gracefully.)
  *   - SERPER_API_KEY     (optional — image fallback; admin UI falls back to
  *                         premium placeholder carousel, auto mode refuses)
  */
+
+// Multi-provider LLM abstraction with Gemini → Perplexity → Grok failover.
+// Pass 1 (bio + image research) uses the web-grounded route (Perplexity first)
+// because live web access materially improves artist research. Pass 2
+// (genre/vibe tagging) uses the default route (Gemini first) because it's
+// just classification from the bio text we already have — no web needed,
+// and Gemini is cheaper.
+import { callLLM, callLLMWebGrounded } from './llmRouter';
 
 // Keep in lockstep with ALLOWED_GENRES in src/lib/utils.js and the admin
 // route's local copy. 'Latin' was added after the utils.js migration to
@@ -90,10 +106,10 @@ export const ARTIST_VIBES = [
   'Chill / Low Key', 'Energetic / Party', 'Family-Friendly',
 ];
 
-// Hard cap on bio length. The prompt asks the LLM to stay under 500 chars,
+// Hard cap on bio length. The prompt asks the LLM to stay under 250 chars,
 // but we ALSO enforce this client-side because sonar-pro occasionally runs
 // long. Trimming on a sentence boundary is handled in normalizeBio below.
-const BIO_MAX_CHARS = 500;
+const BIO_MAX_CHARS = 250;
 
 // Banned "hype" words — the system prompt asks the LLM not to use them, but
 // we also scrub the response client-side before accepting it. If a bio comes
@@ -292,6 +308,12 @@ export async function searchArtistImages(artistName, kind = 'MUSICIAN', context 
 
 /**
  * Low-level Perplexity chat completion.
+ *
+ * DEPRECATED for new callers — prefer `callLLM` / `callLLMWebGrounded` from
+ * `./llmRouter` which add multi-provider failover. This function is kept for
+ * backward compatibility with any external caller that bound to it directly.
+ * The internal Pass 1 / Pass 2 sites have already moved to the router.
+ *
  * Returns parsed JSON or null on any failure (network, non-2xx, bad JSON).
  */
 export async function callPerplexity(systemPrompt, userPrompt, { apiKey, model = 'sonar-pro' } = {}) {
@@ -359,7 +381,7 @@ export async function callPerplexity(systemPrompt, userPrompt, { apiKey, model =
  * Returns:
  *   {
  *     kind,              // 'MUSICIAN' | 'VENUE_EVENT' — classification fork result
- *     bio,               // string (<=500 chars, no hype words) or null
+ *     bio,               // string (<=250 chars, no hype words) or null
  *     image_url,         // validated URL or null
  *     source_link,       // URL the LLM sourced the research from, or null
  *     genres,            // string[] ⊆ ALLOWED_GENRES  ([] for VENUE_EVENT — we
@@ -374,8 +396,17 @@ export async function callPerplexity(systemPrompt, userPrompt, { apiKey, model =
  */
 export async function aiLookupArtist({ artistName, venue, city, autoMode = false } = {}) {
   if (!artistName || !artistName.trim()) return null;
-  const apiKey = process.env.PERPLEXITY_API_KEY;
-  if (!apiKey) return null;
+
+  // NOTE: We used to hard-require PERPLEXITY_API_KEY here. That check moved
+  // into the LLM router, which knows how to skip over unconfigured providers.
+  // As long as ANY of GOOGLE_AI_KEY / PERPLEXITY_API_KEY / XAI_API_KEY is set,
+  // Pass 1 / Pass 2 will succeed; if all three are missing the router returns
+  // null and this function degrades to "no-op" (caller handles null).
+  if (!process.env.GOOGLE_AI_KEY
+    && !process.env.PERPLEXITY_API_KEY
+    && !process.env.XAI_API_KEY) {
+    return null;
+  }
 
   const name = artistName.trim();
   const venueStr = (venue && typeof venue === 'string') ? venue.trim() : '';
@@ -415,19 +446,19 @@ STEP 2 — CONDITIONAL WRITING RULES
 
 IF kind === "MUSICIAN":
   BIO RULES (MUSICIAN):
-  - Maximum 500 characters (count every character including spaces and punctuation).
+  - Maximum 250 characters (count every character including spaces and punctuation).
   - Focus STRICTLY on the artist's musical style, genre, vocal range, and instrumentation — what kind of music they play and how they sound.
   - DO NOT list past venues, tour history, award history, or any places the band has performed. Not even one example.
   - AVOID hype words: "legendary", "world-class", "amazing", "soul-stirring", "incredible", "electrifying", "unforgettable", "mind-blowing", "jaw-dropping", "high-energy", "captivating", "mesmerizing", "powerhouse", "showstopping", "breathtaking". Never use promotional adjectives.
   - DO NOT use generic filler sentences such as "Come out for a night of music" or "Don't miss this show" or "You won't want to miss…". Never address the reader or call them to action.
   - Tone: neutral, informative, professional — like an encyclopedia entry, not marketing copy.
-  - Write 1–3 complete sentences. End on a period. If you would exceed 500 characters, rewrite shorter rather than truncating mid-sentence.
+  - Write 1–3 complete sentences. End on a period. If you would exceed 250 characters, rewrite shorter rather than truncating mid-sentence.
   - DO NOT include citation markers like [1], [2], [3] in the bio text. Write clean prose with no references or footnotes.
   - If the data is insufficient to confidently identify the artist, return exactly: "NEEDS_MANUAL_REVIEW" for bio.
 
 IF kind === "VENUE_EVENT":
   BIO RULES (VENUE_EVENT):
-  - Maximum 500 characters (same hard cap).
+  - Maximum 250 characters (same hard cap).
   - Describe THE ACTIVITY, the venue's atmosphere, and what attendees can expect (e.g. trivia format and prize structure, karaoke vibe, food/drink special details, comedy lineup style).
   - Keep it informative and punchy. 1–3 complete sentences. End on a period.
   - DO NOT invent musical genres, vocal ranges, or performer details for food/trivia/drink events. This event has no "sound".
@@ -488,7 +519,12 @@ Then apply the conditional BIO RULES and IMAGE RULES for the chosen kind. If the
 
 Return the strict JSON object defined in STEP 5. Obey every rule for the chosen branch.`;
 
-  const bioResult = await callPerplexity(bioSystemPrompt, bioUserPrompt, { apiKey });
+  // Pass 1 uses the web-grounded route (Perplexity → Gemini → Grok). Artist
+  // bio + image research benefits from live web access, and Perplexity's
+  // sonar-pro model is built around that. If Perplexity rate-limits, the
+  // router falls through to Gemini automatically. Returns parsed JSON or
+  // null on total failure.
+  const bioResult = await callLLMWebGrounded(bioSystemPrompt, bioUserPrompt);
 
   // Normalize the classification decision. Anything the LLM doesn't clearly
   // emit as "VENUE_EVENT" falls back to MUSICIAN — that's the legacy path
@@ -518,13 +554,16 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
 
   const tagUserPrompt = `Artist: "${name}"\nBio: "${bioText}"\n\nCategorize using ONLY the allowed lists.`;
 
+  // Pass 2 uses the default route (Gemini → Perplexity → Grok). Genre/vibe
+  // tagging is a pure classification-from-text task — no web search needed —
+  // so Gemini-first saves money and leaves Perplexity quota for Pass 1.
   const tagResult = (bioText && kind === 'MUSICIAN')
-    ? await callPerplexity(tagSystemPrompt, tagUserPrompt, { apiKey })
+    ? await callLLM(tagSystemPrompt, tagUserPrompt)
     : null;
 
   // ── Normalize & validate the Pass 1 output ────────────────────────────
 
-  // Bio: trim to 500 chars + reject NEEDS_MANUAL_REVIEW + scrub hype words
+  // Bio: trim to 250 chars + reject NEEDS_MANUAL_REVIEW + scrub hype words
   // in autoMode (admin mode tolerates them since a human is reviewing).
   let bio = normalizeBio(rawBio);
   const needs_review = rawBio === 'NEEDS_MANUAL_REVIEW' || !bio;
