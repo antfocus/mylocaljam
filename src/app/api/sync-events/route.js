@@ -1,3 +1,5 @@
+export const maxDuration = 60; // Vercel Hobby default is 10s — way too short for 40+ scrapers
+
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
 import { scrapePigAndParrot } from '@/lib/scrapers/pigAndParrot';
