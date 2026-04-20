@@ -86,12 +86,42 @@ function extractPerformanceId(href) {
 export async function scrapeHouseOfIndependents() {
   let browser;
   try {
-    browser = await chromium.launch({ headless: true });
+    // Etix uses AWS WAF with browser fingerprinting. Stealth args help
+    // headless Chromium pass detection on GitHub Actions runners.
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-web-security',
+        '--lang=en-US,en',
+      ],
+    });
     const context = await browser.newContext({
       userAgent:
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      viewport: { width: 1366, height: 768 },
+      locale: 'en-US',
+      timezoneId: 'America/New_York',
     });
     const page = await context.newPage();
+
+    // Hide webdriver flag that AWS WAF checks
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      // Spoof plugins array (headless has none by default)
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => [1, 2, 3, 4, 5],
+      });
+      // Spoof languages
+      Object.defineProperty(navigator, 'languages', {
+        get: () => ['en-US', 'en'],
+      });
+      // Chrome runtime object (missing in headless)
+      window.chrome = { runtime: {} };
+    });
 
     // Navigate and wait for the SPA to render event data
     await page.goto(CALENDAR_URL, { waitUntil: 'networkidle', timeout: 45000 });
