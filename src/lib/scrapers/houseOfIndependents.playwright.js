@@ -26,7 +26,22 @@
  * Address: 572 Cookman Avenue, Asbury Park, NJ 07712
  */
 
-import { chromium } from 'playwright';
+import { chromium as playwrightChromium } from 'playwright';
+
+// Use playwright-extra + stealth plugin if available (patches dozens of
+// headless detection vectors: WebGL, canvas, plugins, permissions, etc.)
+// Falls back to vanilla playwright if not installed.
+let chromium;
+try {
+  const { chromium: stealthChromium } = await import('playwright-extra');
+  const { default: stealth } = await import('puppeteer-extra-plugin-stealth');
+  stealthChromium.use(stealth());
+  chromium = stealthChromium;
+  console.log('[HouseOfIndependents] Using playwright-extra with stealth plugin');
+} catch {
+  chromium = playwrightChromium;
+  console.log('[HouseOfIndependents] Stealth plugin not available, using vanilla playwright');
+}
 
 const VENUE = 'House of Independents';
 const CALENDAR_URL = 'https://www.etix.com/ticket/v/33546/calendars';
