@@ -55,7 +55,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { callLLMWebGrounded } from '@/lib/llmRouter';
+import { callLLMWebGrounded, getUsageStats } from '@/lib/llmRouter';
 import { normalizeBio, isHypeFree, validateImageUrl } from '@/lib/aiLookup';
 
 export const dynamic = 'force-dynamic';
@@ -202,6 +202,23 @@ Then apply the conditional BIO RULES and IMAGE RULES for the chosen kind. If the
 
 Return the strict JSON object defined in STEP 5. Obey every rule for the chosen branch.`;
 
+  // ── Config visibility — which provider keys does the deployed function
+  //     actually see? Returns booleans only (no key values leaked).
+  //
+  // We also snapshot the router's usage counters around the call so the
+  // response tells us which provider was attempted and whether it
+  // rate-limited, failed, or simply wasn't reached. The counters are
+  // per-process in-memory and reset on Vercel cold start, so this only
+  // reliably shows the DELTA from this single request. That's still useful:
+  // "perplexity.calls delta == 1, perplexity.rateLimits delta == 1" tells
+  // us exactly what happened without needing Vercel logs.
+  const config = {
+    hasGemini: !!process.env.GOOGLE_AI_KEY,
+    hasPerplexity: !!process.env.PERPLEXITY_API_KEY,
+    hasGrok: !!process.env.XAI_API_KEY,
+  };
+  const statsBefore = getUsageStats();
+
   // ── Pass 1: fire the LLM ───────────────────────────────────────────────
   const t0 = Date.now();
   let llmResult = null;
@@ -212,13 +229,28 @@ Return the strict JSON object defined in STEP 5. Obey every rule for the chosen 
     llmError = err?.message || String(err);
   }
   const elapsedMs = Date.now() - t0;
+  const statsAfter = getUsageStats();
+
+  // Per-provider delta: what changed during THIS request.
+  const statsDelta = {};
+  for (const key of Object.keys(statsAfter)) {
+    const a = statsAfter[key] || {};
+    const b = statsBefore[key] || {};
+    statsDelta[key] = {
+      calls: (a.calls || 0) - (b.calls || 0),
+      failures: (a.failures || 0) - (b.failures || 0),
+      rateLimits: (a.rateLimits || 0) - (b.rateLimits || 0),
+    };
+  }
 
   if (!llmResult) {
     return NextResponse.json({
       ok: false,
       input: { name, venue, city },
+      config,
+      statsDelta,
       llm: { elapsedMs, error: llmError || 'callLLMWebGrounded returned null' },
-      note: 'All LLM providers failed or unconfigured. Check GOOGLE_AI_KEY / PERPLEXITY_API_KEY / XAI_API_KEY.',
+      note: 'All LLM providers failed or unconfigured. If `config` shows a key as true but `statsDelta.<provider>.calls` is 0, the router may have skipped it. If `calls > 0` and `rateLimits > 0`, the provider is throttling us. If `calls > 0` and `failures > 0`, it errored — check Vercel logs within the 1-hour window.',
     }, { status: 502 });
   }
 
@@ -267,6 +299,8 @@ Return the strict JSON object defined in STEP 5. Obey every rule for the chosen 
   return NextResponse.json({
     ok: true,
     input: { name, venue, city },
+    config,
+    statsDelta,
     llm: {
       elapsedMs,
       raw: llmResult,
