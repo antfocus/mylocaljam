@@ -55,8 +55,17 @@
  */
 
 import { NextResponse } from 'next/server';
-import { callLLMWebGrounded, getUsageStats } from '@/lib/llmRouter';
+import { callLLM, callLLMWebGrounded, getUsageStats } from '@/lib/llmRouter';
 import { normalizeBio, isHypeFree, validateImageUrl } from '@/lib/aiLookup';
+
+// getUsageStats() returns a SHALLOW copy of the counter map, so
+// snapshot.provider.calls is the same object as usage.provider.calls.
+// Reading before/after the LLM call and subtracting returns 0 every time
+// because both snapshots point at the mutated object. snapshotStats()
+// forces a deep copy so the delta is meaningful.
+function snapshotStats() {
+  return JSON.parse(JSON.stringify(getUsageStats()));
+}
 
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
@@ -180,6 +189,12 @@ export async function POST(request) {
   const name = (body?.name || '').trim();
   const venue = (body?.venue || '').trim();
   const city = (body?.city || '').trim();
+  // Optional: force a single provider so we can isolate which one fails for
+  // a given name. Accepts 'perplexity', 'gemini', 'grok'. When omitted, uses
+  // the default web-grounded route (Perplexity → Gemini → Grok).
+  const preferProvider = typeof body?.preferProvider === 'string'
+    ? body.preferProvider.trim().toLowerCase()
+    : null;
 
   if (!name) {
     return NextResponse.json({ error: 'Missing `name` in body' }, { status: 400 });
@@ -217,19 +232,26 @@ Return the strict JSON object defined in STEP 5. Obey every rule for the chosen 
     hasPerplexity: !!process.env.PERPLEXITY_API_KEY,
     hasGrok: !!process.env.XAI_API_KEY,
   };
-  const statsBefore = getUsageStats();
+  const statsBefore = snapshotStats();
 
   // ── Pass 1: fire the LLM ───────────────────────────────────────────────
+  // When preferProvider is set, use callLLM with that provider pinned so we
+  // can isolate failures per provider. Otherwise use the default
+  // web-grounded route (Perplexity → Gemini → Grok).
   const t0 = Date.now();
   let llmResult = null;
   let llmError = null;
   try {
-    llmResult = await callLLMWebGrounded(BIO_SYSTEM_PROMPT, userPrompt);
+    if (preferProvider) {
+      llmResult = await callLLM(BIO_SYSTEM_PROMPT, userPrompt, { preferProvider });
+    } else {
+      llmResult = await callLLMWebGrounded(BIO_SYSTEM_PROMPT, userPrompt);
+    }
   } catch (err) {
     llmError = err?.message || String(err);
   }
   const elapsedMs = Date.now() - t0;
-  const statsAfter = getUsageStats();
+  const statsAfter = snapshotStats();
 
   // Per-provider delta: what changed during THIS request.
   const statsDelta = {};
@@ -246,7 +268,7 @@ Return the strict JSON object defined in STEP 5. Obey every rule for the chosen 
   if (!llmResult) {
     return NextResponse.json({
       ok: false,
-      input: { name, venue, city },
+      input: { name, venue, city, preferProvider: preferProvider || null },
       config,
       statsDelta,
       llm: { elapsedMs, error: llmError || 'callLLMWebGrounded returned null' },
@@ -298,7 +320,7 @@ Return the strict JSON object defined in STEP 5. Obey every rule for the chosen 
 
   return NextResponse.json({
     ok: true,
-    input: { name, venue, city },
+    input: { name, venue, city, preferProvider: preferProvider || null },
     config,
     statsDelta,
     llm: {
