@@ -4260,3 +4260,106 @@ All prior Safety Locks remain in force. This session adds:
 | `scripts/playwright-sync.mjs` | **NEW** — Playwright sync runner with HOI + Brielle House |
 | `.github/workflows/playwright-scrapers.yml` | **NEW** — Nightly GH Actions cron for Playwright scrapers |
 | `package.json` | Added `playwright`, `playwright-extra`, `puppeteer-extra-plugin-stealth` to devDependencies |
+
+---
+
+## Session — April 20, 2026 (cont.) — Metadata Enrichment Pipeline
+
+### Summary
+
+Built and wired the pre-launch metadata enrichment pipeline — the system that fills bios, images, and genre tags on hundreds of unenriched artist rows before launch. Foundation was laid in the prior session; this pass (a) wired the LLM router into the AI lookup, (b) fixed a duplicate-bio write bug, (c) added pre-write snapshots for safe rollback, and (d) shipped an admin UI tab for running the backfill.
+
+### 1. LLM Router wired into `aiLookup.js`
+
+The multi-provider abstraction at `src/lib/llmRouter.js` is now the primary path for `aiLookupArtist`:
+
+- **Pass 1** (classify + bio + image + source_link) → `callLLMWebGrounded()` → Perplexity → Gemini → Grok. Web grounding matters for artist research; Perplexity's `sonar-pro` is built around it. If Perplexity 429s, the router falls through to Gemini.
+- **Pass 2** (genre + vibe tagging from bio text) → `callLLM()` → Gemini → Perplexity → Grok. Pure classification from text already in hand; Gemini-first saves Perplexity quota for Pass 1.
+
+The old `callPerplexity()` helper in `aiLookup.js` is kept for backward-compat (its docstring now marks it DEPRECATED). No external callers bind to it directly — verified with a cross-repo grep.
+
+**Behavioral change for Gemini-only deployments:** the old hard-fail when `PERPLEXITY_API_KEY` is missing was relaxed. `aiLookupArtist` now succeeds as long as ANY of `GOOGLE_AI_KEY`, `PERPLEXITY_API_KEY`, or `XAI_API_KEY` is set. The router skips unconfigured providers.
+
+### 2. Duplicate-bio Bug fixed in `enrich-backfill/route.js`
+
+The prior draft of the backfill endpoint had a broken write gate:
+
+```js
+// OLD — broken precedence + duplicate override
+if (result.bio && !artist.missing_fields?.includes('bio') === false) { ... }
+if (result.bio) { upsertData.bio = result.bio; hasNewData = true; }
+```
+
+`!x === false` evaluates before the `&&`, and the second block ran unconditionally — net effect "always write bio". Replaced with a clean `missing_fields` gate:
+
+```js
+const canWriteBio = missing.includes('bio');
+const canWriteImage = missing.includes('image_url');
+if (result.bio && canWriteBio) { ... }
+if (result.image_url && canWriteImage) { ... }
+```
+
+Also fixed the `image_source` label — it was hardcoded to `'AI (Perplexity)'` which was wrong once the router started producing Gemini-sourced URLs too. Now it reflects the actual provider (`AI (Perplexity)` / `AI (Serper)` / `AI (gemini)` / etc.).
+
+### 3. Pre-write Snapshots
+
+Every batch now captures the pre-write state of each artist row BEFORE writing. The snapshot contains `{artist_name, artist_id, kind, pre_state, post_state, written_at}` per entry. Returned in the response body as `snapshot.entries` and also dumped to `/tmp/mylocaljam-enrich-<ISO>.json` on the server (ephemeral — survives the request for `vercel logs` post-mortem).
+
+**Rollback recipe:** given the downloaded JSON, replay each entry's `pre_state` into Supabase via `upsert(pre_state, { onConflict: 'id' })` to restore the exact pre-write row. `_snapshot_error` key on a pre_state means the read failed and manual reconstruction is needed for that row (rare).
+
+Snapshot is critical because:
+1. Vercel's filesystem is ephemeral — the /tmp copy is gone after cold-boot
+2. The endpoint CAN overwrite partially-enriched rows' existing bio/image if the priority filter's lock check misses a case (e.g. a future schema change)
+3. Any LLM misclassification (MUSICIAN vs VENUE_EVENT) is reversible up until the admin downloads the next batch's snapshot
+
+### 4. Admin UI — "Enrichment" tab
+
+New `src/components/admin/AdminEnrichmentTab.js`, wired as a new tab in `src/app/admin/page.js` (`key: 'enrichment'`). Features:
+
+- Batch size input (1-25, defaults to 2 for safe first runs)
+- "Bare only" toggle — restricts to artists missing BOTH bio AND image
+- Run / Pause / Resume — cooperative stop via `stopRef.current`, finishes the in-flight batch before halting
+- Stats grid: batches run, artists enriched, remaining in queue, LLM calls (broken out by provider)
+- Two-column log: enrichment log (kind badge + name + wrote-bio/image indicators) and error log
+- Snapshot download button — combines every batch's snapshot into a single timestamped JSON file for the session
+- Safety hint at the bottom reminding the admin to download the snapshot before firing the next session
+
+Loop pattern: POST → read `remaining` → sleep 1.5s → POST again → stop on `remaining === 0` or explicit Pause. A 200-iteration safety cap prevents a runaway loop if the `remaining` counter somehow stays non-zero.
+
+### 5. Testing + Rollout Plan
+
+**Local test (recommended first run):**
+
+```bash
+npm run dev
+# In another terminal:
+curl -X POST http://localhost:3000/api/admin/enrich-backfill \
+  -H "Authorization: Bearer $(grep '^ADMIN_PASSWORD=' .env.local | cut -d'"' -f2)" \
+  -H "Content-Type: application/json" \
+  -d '{"batchSize": 2, "bareOnly": false}' | jq .
+```
+
+**Quality audit checklist — run against the 2 enriched rows after a test batch:**
+
+- Bios ≤ 250 chars (`length(bio) <= 250` in Supabase)
+- No banned hype words: `legendary`, `world-class`, `amazing`, `soul-stirring`, `incredible`, `electrifying`, `unforgettable`, `mind-blowing`, `jaw-dropping`, `high-energy`, `captivating`, `mesmerizing`, `powerhouse`, `showstopping`, `breathtaking`
+- `image_url` resolves to an actual artist photo — not an Unsplash placeholder (check for `unsplash.com` substring)
+- `image_source` is one of `AI (Perplexity) / AI (Serper) / AI (gemini)` — reflects real provider
+- `genres` is a subset of `ALLOWED_GENRES` (see `src/lib/aiLookup.js`)
+- For VENUE_EVENT names (trivia, karaoke, drink specials), `genres` should be empty — the Classification Fork skips Pass 2
+
+**Prod rollout:** deploy via normal git push → Vercel auto-deploys. Backfill UI lives at `/admin` → Enrichment tab. Start with batchSize 2, audit, then bump to 20-25 once confidence is established. Download snapshot between major batches.
+
+### 6. Files Changed (April 20, enrichment work)
+
+| File | Change |
+|------|--------|
+| `src/lib/aiLookup.js` | Import from `llmRouter`; Pass 1 uses `callLLMWebGrounded`, Pass 2 uses `callLLM`; relaxed PERPLEXITY_API_KEY hard-require to any-provider-set; marked `callPerplexity()` DEPRECATED in docstring |
+| `src/lib/llmRouter.js` | **NEW** (from prior session) — multi-provider abstraction with 429 fallback |
+| `src/lib/enrichmentPriority.js` | **NEW** (from prior session) — priority scoring for unenriched artists |
+| `src/app/api/admin/enrich-backfill/route.js` | **NEW** — batch endpoint; this session fixed duplicate-bio bug, fixed `image_source` label, added pre-write snapshot capture + /tmp dump + response payload |
+| `src/components/admin/AdminEnrichmentTab.js` | **NEW** — admin UI tab with loop runner, progress, logs, and snapshot download |
+| `src/app/admin/page.js` | Wired the new tab into the tab array and render block |
+| `HANDOVER.md` | This section |
+| `SCRAPERS.md` | Cross-reference to enrichment pipeline |
+

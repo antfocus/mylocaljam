@@ -360,13 +360,54 @@ After upserting events, sync-events automatically runs (in order):
 2. **Price Extractor** — pulls cover charges from bios and descriptions
 3. **Scraper-First Artist Enrichment** — seeds `artists` table with scraper-provided bios/images
 4. **Artist-ID Linking (Pass 1)** — links ALL unlinked events to `artists.id` by name match, including `is_human_edited` / `is_locked` rows. Non-destructive (only sets null FK).
-5. **Bio/Image Enrichment (Pass 2)** — Last.fm / MusicBrainz / Discogs lookups for unlocked events only. Writes bio, image, genre, category.
+5. **Bio/Image Enrichment (Pass 2)** — `enrichArtist.js` waterfall (MusicBrainz → Discogs → Last.fm → AI fallback via `aiLookupArtist`). Skips locked fields. Cap is 50 uncached artists per sync (raised from 30 in April 2026).
 6. **Event-Template Matcher** — links raw events to master templates by (venue, title)
 7. **Follower Notifications** — fires POST to `/api/notify` for new events
 
 These are all wrapped in try/catch — enrichment failures never break the sync.
 
 **Important (April 2026 fix):** Artist-ID linking was previously bundled into Pass 2, which skipped `is_human_edited` rows entirely. This meant OCR-scraped and manually edited events never got linked to their artist records (no image/bio cascade). The fix splits into two passes so linking always happens.
+
+---
+
+## Metadata Enrichment Backfill (pre-launch sprint)
+
+The nightly sync enrichment at step 5 has a 50-artist cap, so artists that entered the database long ago (before enrichment was wired, before AI fallback, or during a stretch where Last.fm missed them) can sit indefinitely with no bio or image. The backfill pipeline is the admin-triggered catch-up path that chews through this backlog in priority order.
+
+**Entry point:** `POST /api/admin/enrich-backfill` — admin auth via `Authorization: Bearer {ADMIN_PASSWORD}`.
+
+**Priority scoring** — `src/lib/enrichmentPriority.js` ranks unenriched artists by:
+
+- **Day-of-week weight** — Thu–Sun events × 2.0 (the nights people actually go out)
+- **Completeness weight** — bare rows (no bio AND no image) × 2.0
+- **Recency weight** — `10 / daysAway`, capped at 10 for tomorrow's shows
+- **Artist-level dedup** — one artist playing 4 venues = 1 call
+
+Rows with `is_locked` or `is_human_edited === true` are filtered before scoring — never backfilled.
+
+**LLM Router** — `src/lib/llmRouter.js` is the multi-provider abstraction used by `aiLookupArtist`:
+
+- **Pass 1** (bio + image research) → `callLLMWebGrounded()` → Perplexity → Gemini → Grok. Web grounding is material for artist research.
+- **Pass 2** (genre + vibe tagging) → `callLLM()` → Gemini → Perplexity → Grok. Pure classification from bio text; Gemini-first saves Perplexity quota.
+- Router handles 429s by falling through; missing-key providers are skipped silently.
+- Env: at least one of `GOOGLE_AI_KEY`, `PERPLEXITY_API_KEY`, `XAI_API_KEY`. Grok is NOT configured in prod as of April 2026.
+
+**Batch loop** — Vercel Hobby has a 60s function timeout. Each POST processes up to 20-25 artists (`MAX_BATCH = 25`, default 20), then returns `{ enriched, remaining, errors, usageStats, snapshot }`. The admin UI re-fires until `remaining === 0`.
+
+**Pre-write snapshots** — every row's current state is captured BEFORE the write and returned in the response body as `snapshot.entries[]`. Each entry has `pre_state` and `post_state`, so a batch is fully reversible via `supabase.artists.upsert(pre_state, { onConflict: 'id' })`. Server also dumps to `/tmp/mylocaljam-enrich-<ISO>.json` (ephemeral, survives the request — useful for `vercel logs` post-mortem).
+
+**Admin UI** — `src/components/admin/AdminEnrichmentTab.js`, mounted at `/admin` → Enrichment tab. Runs the loop client-side, renders progress + LLM usage + per-artist log + errors, and exposes a "Download snapshot" button that serialises every batch in the session into one JSON file for rollback. Default batchSize is 2 for safe first runs; bump to 20-25 after verifying quality.
+
+**Quality contract** (enforced by `aiLookupArtist` + prompt):
+
+- Bios ≤ 250 characters (client-side trim on sentence boundary as backup)
+- No banned hype words: legendary, world-class, amazing, soul-stirring, incredible, electrifying, unforgettable, mind-blowing, jaw-dropping, high-energy, captivating, mesmerizing, powerhouse, showstopping, breathtaking
+- `kind` classification: MUSICIAN or VENUE_EVENT (trivia, karaoke, food specials classified as VENUE_EVENT; no fake band bios written)
+- `genres` ⊆ `ALLOWED_GENRES` — hallucinated labels are stripped client-side
+- `image_url` validated against hotlink blacklist (no Instagram CDN, no SVGs, no placeholder hits)
+- Real images preferred over Serper Google hits preferred over Unsplash placeholders; `autoMode` refuses placeholders
+
+**Safe ordering — always download the snapshot before firing the next session.** Vercel's `/tmp` copy evaporates on cold-boot, so the response JSON is the durable backup.
 
 ---
 
