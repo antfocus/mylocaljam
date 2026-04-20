@@ -6,13 +6,13 @@
 ---
 
 ## Current Event Count
-**~1500+ events** across 39 active scrapers (as of March 24, 2026)
+**~1500+ events** across 44 active scrapers + 2 Playwright scrapers (as of April 20, 2026)
 
 ---
 
 ## Sync Infrastructure (complete ✅)
 - **Route:** `src/app/api/sync-events/route.js` — runs all scrapers in parallel, maps to Supabase schema, batches upserts (50 at a time) with `onConflict: 'external_id'`
-- **Cron:** `vercel.json` at root — runs at 6am & 6pm Eastern (UTC 11:00 and 23:00)
+- **Cron:** `vercel.json` at root — runs nightly at 10 PM Eastern (UTC 02:00). `maxDuration = 60` on the route (Vercel Hobby default is 10s).
 - **Auth:** `SYNC_SECRET` env var on Vercel — Bearer token required for GET/POST
 - **Manual trigger from browser console (on mylocaljam.com):**
   ```javascript
@@ -72,7 +72,9 @@
 | 43 | Captain's Inn | `captainsInn.js` | Vision OCR (Gemini) | ✅ Working — Wix site, month-name matching for flyer | ~4 |
 | 44 | Charley's Ocean Bar & Grill | `charleysOceanGrill.js` | Vision OCR (Gemini) | ✅ Working — WP JSON API fetch for flyer | ~5 |
 | ~~45~~ | ~~Starland Ballroom~~ | ~~`starlandBallroom.js`~~ | ~~AXS/Carbonhouse AJAX~~ | ❌ Disabled — proxy connects but AJAX returns empty (browser fingerprinting). Needs headless browser. | — |
-| ~~46~~ | ~~House of Independents~~ | ~~`houseOfIndependents.js`~~ | ~~Etix JSON-LD~~ | ❌ Disabled — proxy connects but Etix serves 2KB shell (browser fingerprinting). Needs headless browser. | — |
+| ~~46~~ | ~~House of Independents~~ | ~~`houseOfIndependents.js`~~ | ~~Etix JSON-LD~~ | ❌ Disabled — Etix removed JSON-LD entirely. Replaced by Playwright scraper. | — |
+| 47 | House of Independents | `houseOfIndependents.playwright.js` | Playwright (Etix SPA) | ⚠️ Built, verified locally, blocked by AWS WAF on GH Actions IPs | 0 |
+| 48 | Brielle House | `brielleHouse.playwright.js` | Playwright (FullCalendar) | ✅ Running via GitHub Actions nightly | ~3 |
 
 ---
 
@@ -4184,3 +4186,77 @@ All prior Safety Locks remain in force. This session adds:
 ### Roadmap — Added April 18, 2026
 
 - **Retroactive QA Audit System (build in ~2 weeks).** A Gemini Flash-powered audit system at `/api/admin/qa-audit` that evaluates all existing live data. Three phases: Phase 1 — programmatic checks (hype words, char limits, dead URLs, missing fields) at zero API cost. Phase 2 — LLM quality scoring on bios that passed Phase 1 but may still be fluff. Phase 3 — vision-based image QA (detect text-heavy flyers, generic stock photos, irrelevant images). Results surface in a "QA Review" queue in the admin dashboard. Use Gemini Flash (not Perplexity) to keep enrichment and audit on separate billing. Wait until the improved enrichment pipeline (hype word filters, citation stripping, date-priority ordering) has run for 2 weeks before auditing, so new data comes in clean.
+
+---
+
+## Session — April 19, 2026
+
+### 1. Spotlight Runner-Up Promotion Fix
+
+**Problem:** Runner-ups (positions 6-8) were vanishing on admin page load and not promoting when a main spotlight was deleted. Random autopilot events appeared instead.
+
+**Root cause:** `GET /api/spotlight` capped at `MAX_SLOTS = 5`, dropping pins 6-8 on every fetch. Additionally, autopilot filled all slots up to MAX_SLOTS, overwriting runner-up positions.
+
+**Fix (3 files):**
+- `src/app/api/spotlight/route.js` — Added `all_pins=true` query param that raises MAX_SLOTS to 8 for admin fetches. Added separate `AUTOPILOT_CAP = 5` so autopilot never fills runner-up slots. POST validation changed from 10 to 8 max.
+- `src/hooks/useAdminSpotlight.js` — Changed `MAX_PINS` from 10 to 8. Fetch URL now includes `?all_pins=true`. `removePin` works correctly — list shrinks and runner-ups slide up.
+- `src/components/admin/AdminSpotlightTab.js` — Default prop updated to `MAX_PINS = 8`. UI splits at index 5: positions 0-4 are main (#1-#5), positions 5-7 are runner-ups (R1-R3).
+
+### 2. Artist-ID Linking Fix for Human-Edited Events
+
+**Problem:** OCR-scraped and manually edited events (e.g., Howl at Palmetto) never got linked to their artist records, so no image/bio cascaded.
+
+**Root cause:** The enrichment loop's `is_human_edited || is_locked` filter blocked ALL processing including non-destructive artist_id FK linking.
+
+**Fix:** Split enrichment into two passes in `src/app/api/sync-events/route.js`:
+- **Pass 1 (Artist-ID Linking):** Runs on ALL unlinked events regardless of lock status. Only sets null `artist_id` FK — non-destructive.
+- **Pass 2 (Bio/Image Enrichment):** Runs only on unlocked events. Writes bio, image, genre, category from Last.fm/MusicBrainz/Discogs.
+
+**Backfill:** Ran migration to link 270 orphaned events to existing artist records.
+
+### 3. Cron Sync Timeout Fix
+
+**Problem:** Nightly Vercel cron hadn't run since April 7. All venue sync dates stuck.
+
+**Root cause:** `sync-events/route.js` had no `maxDuration` export, defaulting to Vercel Hobby's 10-second limit. 44+ scrapers in `Promise.all` always exceed 10s.
+
+**Fix:** Added `export const maxDuration = 60;` to `src/app/api/sync-events/route.js`. Verified `CRON_SECRET` env var exists in Vercel. Cron schedule confirmed at `0 2 * * *` (10 PM ET).
+
+---
+
+## Session — April 20, 2026
+
+### 4. House of Independents Playwright Scraper
+
+**Problem:** Old fetch-based scraper (`houseOfIndependents.js`) relied on Etix server-rendering JSON-LD structured data. Etix removed that — page returns a 2KB empty shell with 0 ld+json blocks.
+
+**Investigation:** Navigated to Etix calendar page in Chrome. Confirmed it's a React SPA (Material UI) behind AWS WAF. Events load via `POST /ticket/api/online/search`. DOM structure is clean: each event card (`.css-1j1ov2l`) contains date, time, title link, venue, and price.
+
+**New scraper:** `src/lib/scrapers/houseOfIndependents.playwright.js`
+- Launches headless Chromium with stealth args + `playwright-extra` stealth plugin
+- Waits for event links to render, clicks "Show More" to paginate all ~60 events
+- Extracts title, date ("Apr 23" → YYYY-MM-DD with year inference), time, price, ticket URL
+- Uses same `hoi-{performanceId}` external_id format as old scraper for DB continuity
+
+**Registration:** Added to `scripts/playwright-sync.mjs` SCRAPERS array alongside Brielle House.
+
+**Status:** Scraper logic verified against live DOM (30/30 events extracted correctly in Chrome). However, Etix AWS WAF blocks headless Chromium on GitHub Actions IPs — even with stealth plugin. Tabled for now. Options for future: residential proxy via Playwright, API token interception, or self-hosted runner.
+
+**GitHub token scope:** Had to add `workflow` scope to GitHub PAT to push `.github/workflows/` changes.
+
+**GitHub Actions secrets:** Added `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` as repository secrets for the Playwright runner.
+
+### Files Changed (April 19-20)
+
+| File | Change |
+|------|--------|
+| `src/app/api/spotlight/route.js` | `all_pins=true` param, `AUTOPILOT_CAP = 5`, POST max 8 |
+| `src/hooks/useAdminSpotlight.js` | `MAX_PINS = 8`, fetch with `all_pins=true` |
+| `src/components/admin/AdminSpotlightTab.js` | Default prop `MAX_PINS = 8` |
+| `src/app/api/sync-events/route.js` | `maxDuration = 60`, two-pass enrichment split |
+| `src/lib/scrapers/houseOfIndependents.playwright.js` | **NEW** — Playwright scraper for Etix SPA |
+| `src/lib/scrapers/brielleHouse.playwright.js` | **NEW** (from earlier) — Playwright scraper for FullCalendar |
+| `src/lib/scrapers/brielleHouse.js` | Updated header comments (legacy/fallback label) |
+| `scripts/playwright-sync.mjs` | **NEW** — Playwright sync runner with HOI + Brielle House |
+| `.github/workflows/playwright-scrapers.yml` | **NEW** — Nightly GH Actions cron for Playwright scrapers |
+| `package.json` | Added `playwright`, `playwright-extra`, `puppeteer-extra-plugin-stealth` to devDependencies |
