@@ -917,22 +917,29 @@ export default function HomePage() {
   useEffect(() => { loadMoreRef.current = loadMore; }, [loadMore]);
 
   // ── IntersectionObserver for infinite scroll ──────────────────────────────
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
+  // Uses a callback ref so the observer attaches as soon as the sentinel mounts.
+  const sentinelObserver = useRef(null);
+  const sentinelCallbackRef = useCallback((node) => {
+    // Disconnect previous observer if any
+    if (sentinelObserver.current) {
+      sentinelObserver.current.disconnect();
+      sentinelObserver.current = null;
+    }
+    sentinelRef.current = node;
+    if (!node) return;
     const observer = new IntersectionObserver(
       ([entry]) => { if (entry.isIntersecting) loadMoreRef.current(); },
-      { rootMargin: '400px' }   // trigger 400px before sentinel is visible
+      { rootMargin: '400px' }
     );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, []);  // single observer for the lifetime of the component
+    observer.observe(node);
+    sentinelObserver.current = observer;
+  }, []);
 
   // Re-check after each fetch in case sentinel is still in view
   useEffect(() => {
     if (!loadingMore && hasMore && sentinelRef.current) {
       const rect = sentinelRef.current.getBoundingClientRect();
-      const inView = rect.top < window.innerHeight + 400; // matches rootMargin
+      const inView = rect.top < window.innerHeight + 400;
       if (inView) loadMoreRef.current();
     }
   }, [loadingMore, hasMore]);
@@ -3295,7 +3302,7 @@ export default function HomePage() {
                   </div>
                 )}
                 {/* Invisible sentinel — IntersectionObserver triggers loadMore when this enters the viewport */}
-                <div ref={sentinelRef} style={{ height: '1px' }} />
+                <div ref={sentinelCallbackRef} style={{ height: '1px' }} />
               </div>
             )}
           </div>
