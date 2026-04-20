@@ -59,7 +59,10 @@ export async function GET(request) {
   }
 
   const supabase = getAdminClient();
-  const MAX_SLOTS = 5;
+  // `all_pins=true` → admin caller wants all saved pins (up to 10) so
+  // runner-ups survive page loads. Public hero uses the default MAX_SLOTS=5.
+  const allPins = searchParams.get('all_pins') === 'true';
+  const MAX_SLOTS = allPins ? 8 : 5;
   const collected = [];          // event IDs in priority order
   const seen = new Set();        // dedup by event ID
   const seenArtists = new Set(); // dedup by artist (across tiers)
@@ -155,7 +158,10 @@ export async function GET(request) {
   }
 
   // ── Autopilot (Tiers 1–3) — runs only if Tier 0 didn't fill 5 ─────────
-  if (collected.length < MAX_SLOTS && tonight.length > 0) {
+  // Autopilot always caps at 5 visible hero slots, even when the admin
+  // requested all_pins (runner-ups are admin-curated, not auto-filled).
+  const AUTOPILOT_CAP = 5;
+  if (collected.length < AUTOPILOT_CAP && tonight.length > 0) {
     // Favorite counts — used as the within-tier ranker. Pulled in one bulk
     // call across all of tonight's events and aggregated in memory.
     const favCount = {};
@@ -215,7 +221,7 @@ export async function GET(request) {
       });
 
     for (const { e } of candidates) {
-      if (collected.length >= MAX_SLOTS) break;
+      if (collected.length >= AUTOPILOT_CAP) break;
       const k = artistKey(e);
       // Artist de-dup: skip if this artist is already represented.
       if (k && seenArtists.has(k)) continue;
@@ -348,8 +354,8 @@ export async function POST(request) {
     return NextResponse.json({ error: 'date and event_ids[] required' }, { status: 400 });
   }
 
-  if (event_ids.length > 10) {
-    return NextResponse.json({ error: 'Maximum 10 spotlight events per day' }, { status: 400 });
+  if (event_ids.length > 8) {
+    return NextResponse.json({ error: 'Maximum 8 spotlight events per day' }, { status: 400 });
   }
 
   // Delete existing pins for this date

@@ -45,7 +45,7 @@ export default function AdminSpotlightTab({
   setSpotlightImageWarning,
   fetchSpotlight, fetchSpotlightEvents,
   saveSpotlight, clearSpotlight, toggleSpotlightPin,
-  insertPin, reorderPins, removePin, MAX_PINS = 10,
+  insertPin, reorderPins, removePin, MAX_PINS = 8,
   // Magic Wand — bulk AI enrichment (POST /api/admin/enrich-date).
   // When the user clicks ✨ Auto-Fill, every event on spotlightDate that
   // is missing bio/image AND isn't admin-locked runs through the full

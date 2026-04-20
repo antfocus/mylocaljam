@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 
-const MAX_PINS = 10; // 5 main spotlight + 5 runner-ups
+const MAX_PINS = 8; // 5 main spotlight + 3 runner-ups
 
 // NOTE: intentionally does NOT depend on the parent's `fetchAll`. Calling
 // `fetchAll()` after an auto-save causes the admin page's global `loading`
@@ -122,7 +122,7 @@ export default function useAdminSpotlight({ password }) {
     let pinIds = [];
     let sourceMap = {};
     try {
-      const res = await fetch(`/api/spotlight?date=${date}`, { signal: controller.signal });
+      const res = await fetch(`/api/spotlight?date=${date}&all_pins=true`, { signal: controller.signal });
       const data = await res.json();
       if (Array.isArray(data)) {
         pinIds = data.map(d => d.event_id);
