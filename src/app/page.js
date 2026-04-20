@@ -910,17 +910,32 @@ export default function HomePage() {
     fetchEvents(currentPage + 1, true);
   }, [loadingMore, hasMore, currentPage, fetchEvents]);
 
+  // Keep a ref to the latest loadMore so the IntersectionObserver callback
+  // never holds a stale closure (avoids "stuck scroll" when the sentinel
+  // stays visible after a batch loads and the observer doesn't re-fire).
+  const loadMoreRef = useRef(loadMore);
+  useEffect(() => { loadMoreRef.current = loadMore; }, [loadMore]);
+
   // ── IntersectionObserver for infinite scroll ──────────────────────────────
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) loadMore(); },
+      ([entry]) => { if (entry.isIntersecting) loadMoreRef.current(); },
       { rootMargin: '400px' }   // trigger 400px before sentinel is visible
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loadMore]);
+  }, []);  // single observer for the lifetime of the component
+
+  // Re-check after each fetch in case sentinel is still in view
+  useEffect(() => {
+    if (!loadingMore && hasMore && sentinelRef.current) {
+      const rect = sentinelRef.current.getBoundingClientRect();
+      const inView = rect.top < window.innerHeight + 400; // matches rootMargin
+      if (inView) loadMoreRef.current();
+    }
+  }, [loadingMore, hasMore]);
   useEffect(() => { rehydrateReminders(); }, []);
 
   // ── Fetch dynamic shortcut pills from Supabase ────────────────────────────
