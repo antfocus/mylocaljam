@@ -15,6 +15,7 @@ import AdminVenuesTab from '@/components/admin/AdminVenuesTab';
 // AdminFestivalsTab consolidated into AdminEventsTab (Phase 4 nav refactor)
 import AdminSubmissionsTab from '@/components/admin/AdminSubmissionsTab';
 import AdminReportsTab from '@/components/admin/AdminReportsTab';
+import AdminEnrichmentTab from '@/components/admin/AdminEnrichmentTab';
 import AdminArtistModals from '@/components/admin/AdminArtistModals';
 import AdminLoginScreen from '@/components/admin/AdminLoginScreen';
 import ModalWrapper from '@/components/ui/ModalWrapper';
@@ -282,6 +283,7 @@ export default function AdminPage() {
           { key: 'venues', label: 'Venues', count: ve.scraperHealth.filter(s => s.status === 'fail').length },
           { key: 'submissions', label: 'Submissions', count: q.queue.length },
           { key: 'reports', label: 'User Flags', count: re.reports.filter((r) => r.status === 'pending').length },
+          { key: 'enrichment', label: 'Enrichment', count: 0 },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -519,6 +521,14 @@ export default function AdminPage() {
           setImageCandidates={ar.setImageCandidates} setImageCarouselIdx={ar.setImageCarouselIdx}
           setActiveTab={setActiveTab} setReturnToTab={setReturnToTab}
           fetchArtists={ar.fetchArtists} showQueueToast={showQueueToast}
+        />
+      )}
+
+      {/* Enrichment Tab — metadata backfill pipeline ───────────────────── */}
+      {activeTab === 'enrichment' && !loading && (
+        <AdminEnrichmentTab
+          password={password}
+          showQueueToast={showQueueToast}
         />
       )}
 
