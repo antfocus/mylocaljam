@@ -49,9 +49,21 @@ const PROVIDERS = {
 // (web-grounded), Grok third (overflow).
 const DEFAULT_ROUTE = ['gemini', 'perplexity', 'grok'];
 
-// For web-grounded queries (bio research, artist lookup), Perplexity goes first
-// because it has live web access built in.
-const WEB_GROUNDED_ROUTE = ['perplexity', 'gemini', 'grok'];
+// For web-grounded queries (bio research, artist lookup), Gemini goes first.
+//
+// Historical note: this was ['perplexity', 'gemini', 'grok'] because
+// Perplexity's sonar-pro has live web access built in, which is ideal for
+// artist-bio research. Flipped on 2026-04-20 because the $5/month Perplexity
+// Pro API credit gets exhausted well before draining our ~1800-artist
+// queue, and every Perplexity-first attempt during exhaustion wastes ~2s
+// on a guaranteed-fail call before falling through to Gemini.
+//
+// Paid-tier Gemini 2.5 Flash (~$0.0007/call, 1000 RPM) handles most of the
+// workload cheaply and fast. Perplexity stays as fallback — when its $5
+// credit refills monthly, it'll catch the obscure Jersey Shore locals
+// Gemini may ambiguate on. Revisit this order if Perplexity gets topped up
+// to cover the full queue, or if Gemini quality drops on specific genres.
+const WEB_GROUNDED_ROUTE = ['gemini', 'perplexity', 'grok'];
 
 // ─── Usage Tracking (in-memory, resets on cold start) ─────────────────────────
 

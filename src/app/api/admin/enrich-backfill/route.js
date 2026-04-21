@@ -261,11 +261,18 @@ export async function POST(request) {
         : {};
       const nextFieldStatus = { ...prevFieldStatus };
       let fieldStatusChanged = false;
-      if (canWriteBio && !upsertData.bio && !prevFieldStatus.bio) {
+      // Guard against re-writing an existing 'no_data' sentinel (idempotent)
+      // but DO overwrite legacy 'live' markers. The original guard used
+      // `!prevFieldStatus.bio` which treated ANY truthy prior value — 'live',
+      // 'manual', etc. — as "already sentineled", blocking the no_data write
+      // and leaving the row to re-enter the queue every batch (the James
+      // Dalton loop trap from 2026-04-20 where field_status.image_url='live'
+      // kept him in the priority pool even after repeated AI-null attempts).
+      if (canWriteBio && !upsertData.bio && prevFieldStatus.bio !== 'no_data') {
         nextFieldStatus.bio = 'no_data';
         fieldStatusChanged = true;
       }
-      if (canWriteImage && !upsertData.image_url && !prevFieldStatus.image_url) {
+      if (canWriteImage && !upsertData.image_url && prevFieldStatus.image_url !== 'no_data') {
         nextFieldStatus.image_url = 'no_data';
         fieldStatusChanged = true;
       }
