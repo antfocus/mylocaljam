@@ -88,6 +88,10 @@ async function callGeminiRawForDiag(systemPrompt, userPrompt) {
           temperature: 0.1,
           maxOutputTokens: 800,
           responseMimeType: 'application/json',
+          // Mirror the router's thinkingConfig so this probe stays an
+          // honest shadow of production Gemini behavior. See the comment
+          // in src/lib/llmRouter.js callGemini for the full rationale.
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
       signal: controller.signal,

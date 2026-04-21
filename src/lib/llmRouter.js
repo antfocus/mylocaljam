@@ -99,6 +99,24 @@ async function callGemini(systemPrompt, userPrompt, apiKey, { model, timeout }) 
       temperature: 0.1,
       maxOutputTokens: 800,
       responseMimeType: 'application/json',
+      // Gemini 2.5 Flash is a reasoning model — by default it spends
+      // 600–800 invisible "thoughts" tokens before emitting any output,
+      // and those tokens count against maxOutputTokens. Our bio prompt
+      // is ~1.7k prompt tokens and needs ~100 tokens of bio output;
+      // with default thinking on, ~765 thoughts tokens drain the 800
+      // budget, candidates only get ~35 tokens, JSON truncates mid-bio,
+      // the router's parseJSON returns null, falls through to Perplexity
+      // (exhausted credits), and the artist errors out "no usable
+      // bio/image". Confirmed 2026-04-20 via enrich-probe on "Blue
+      // Abyss" — finishReason=MAX_TOKENS, thoughtsTokens=764,
+      // candidatesTokens=21, text truncated mid-word.
+      //
+      // Setting thinkingBudget=0 disables thinking entirely. Fine for
+      // this task — it's classification + retrieval from web knowledge,
+      // not math or multi-step reasoning. Side benefits: lower latency
+      // (~300ms saved) and lower cost (thoughts tokens bill at output
+      // rate, so removing them cuts ~95% of per-call output tokens).
+      thinkingConfig: { thinkingBudget: 0 },
     },
   };
 
