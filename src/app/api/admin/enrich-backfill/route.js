@@ -359,6 +359,22 @@ export async function POST(request) {
 
       // Also backfill event-level denormalized columns — only when we have
       // real bio/image content. Sentinel-only writes don't touch events.
+      //
+      // CRITICAL: template_id IS NULL guard (added 2026-04-21). Without it,
+      // the cascade shotgunned AI-fetched images onto every event sharing
+      // this artist_name — including template-linked recurring events like
+      // "Karaoke" at Jamian's and "Snow Crabs" at Sun Harbor. Those events
+      // have an event_template with its own curated image; overwriting
+      // event_image_url pushed the stale AI image above the template image
+      // in the waterfall (because is_human_edited=true flips the ladder
+      // priority in waterfall.js). Result: live site showed a "Live Band
+      // Karaoke at Blind Owl" flyer on Karaoke-at-Jamian's events overnight.
+      //
+      // Template-linked events don't need the event-level bio/image
+      // denormalization anyway — waterfall.js reads the template tier
+      // first. So skipping them here is both safe and correct. For
+      // template-less events (the common case — one-off shows by a named
+      // artist), the cascade still runs as before.
       if (hasNewData && (result?.bio || result?.image_url)) {
         const eventUpdates = {};
         if (result.bio) eventUpdates.artist_bio = result.bio;
@@ -369,7 +385,8 @@ export async function POST(request) {
           .from('events')
           .update(eventUpdates)
           .eq('artist_name', artist.artist_name)
-          .is('artist_bio', null);
+          .is('artist_bio', null)
+          .is('template_id', null);
 
         if (evErr) {
           console.warn(`[EnrichBackfill] Event backfill warning for ${artist.artist_name}:`, evErr.message);
