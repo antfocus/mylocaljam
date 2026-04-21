@@ -58,6 +58,79 @@ import { NextResponse } from 'next/server';
 import { callLLM, callLLMWebGrounded, getUsageStats } from '@/lib/llmRouter';
 import { normalizeBio, isHypeFree, validateImageUrl } from '@/lib/aiLookup';
 
+// Raw Gemini call that BYPASSES the router — needed because the router
+// collapses finishReason/usageMetadata/error-body into a single null when
+// anything goes wrong. For diagnosis we need those fields verbatim.
+//
+// Mirrors callGemini() in src/lib/llmRouter.js (model, endpoint, config)
+// but returns the full parsed response so we can see:
+//   - finishReason (STOP | MAX_TOKENS | SAFETY | RECITATION)
+//   - usageMetadata.promptTokenCount / candidatesTokenCount / thoughtsTokenCount
+//   - content.parts[0].text (truncated text, if any)
+//   - HTTP status + body snippet on non-200
+async function callGeminiRawForDiag(systemPrompt, userPrompt) {
+  const key = process.env.GOOGLE_AI_KEY;
+  if (!key) return { configured: false };
+  const model = 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  const t0 = Date.now();
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemPrompt }] },
+        contents: [{ parts: [{ text: userPrompt }] }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 800,
+          responseMimeType: 'application/json',
+        },
+      }),
+      signal: controller.signal,
+    });
+    const bodyText = await res.text();
+    const elapsedMs = Date.now() - t0;
+    let parsed = null;
+    try { parsed = JSON.parse(bodyText); } catch { /* body is not JSON — surface as snippet */ }
+
+    const candidate = parsed?.candidates?.[0];
+    const finishReason = candidate?.finishReason || null;
+    const partsText = candidate?.content?.parts?.[0]?.text ?? null;
+    const usage = parsed?.usageMetadata || null;
+
+    return {
+      configured: true,
+      model,
+      status: res.status,
+      elapsedMs,
+      finishReason,
+      promptTokens: usage?.promptTokenCount ?? null,
+      candidatesTokens: usage?.candidatesTokenCount ?? null,
+      thoughtsTokens: usage?.thoughtsTokenCount ?? null,
+      totalTokens: usage?.totalTokenCount ?? null,
+      text: partsText,
+      textLength: typeof partsText === 'string' ? partsText.length : 0,
+      // On non-200 or malformed JSON, include the body so we can see Google's error payload.
+      bodySnippet: !res.ok || !parsed
+        ? (bodyText.length > 1500 ? bodyText.slice(0, 1500) + '…[truncated]' : bodyText)
+        : null,
+    };
+  } catch (err) {
+    return {
+      configured: true,
+      status: null,
+      elapsedMs: Date.now() - t0,
+      error: err?.name === 'AbortError' ? 'Timeout after 30000ms' : (err?.message || String(err)),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // getUsageStats() returns a SHALLOW copy of the counter map, so
 // snapshot.provider.calls is the same object as usage.provider.calls.
 // Reading before/after the LLM call and subtracting returns 0 every time
@@ -238,15 +311,26 @@ Return the strict JSON object defined in STEP 5. Obey every rule for the chosen 
   // When preferProvider is set, use callLLM with that provider pinned so we
   // can isolate failures per provider. Otherwise use the default
   // web-grounded route (Perplexity → Gemini → Grok).
+  //
+  // Fire the router call AND a raw Gemini call in parallel. The raw call
+  // bypasses the router so we always get finishReason/usageMetadata back
+  // even when the router swallows the error — that's exactly the info we
+  // need to diagnose "why did Gemini fail?" when the router returns null.
   const t0 = Date.now();
   let llmResult = null;
   let llmError = null;
+  let geminiRaw = null;
   try {
-    if (preferProvider) {
-      llmResult = await callLLM(BIO_SYSTEM_PROMPT, userPrompt, { preferProvider });
-    } else {
-      llmResult = await callLLMWebGrounded(BIO_SYSTEM_PROMPT, userPrompt);
-    }
+    const routerPromise = preferProvider
+      ? callLLM(BIO_SYSTEM_PROMPT, userPrompt, { preferProvider })
+      : callLLMWebGrounded(BIO_SYSTEM_PROMPT, userPrompt);
+    const rawGeminiPromise = callGeminiRawForDiag(BIO_SYSTEM_PROMPT, userPrompt);
+    const [routerRes, rawRes] = await Promise.all([
+      routerPromise.catch(err => { llmError = err?.message || String(err); return null; }),
+      rawGeminiPromise,
+    ]);
+    llmResult = routerRes;
+    geminiRaw = rawRes;
   } catch (err) {
     llmError = err?.message || String(err);
   }
@@ -272,7 +356,8 @@ Return the strict JSON object defined in STEP 5. Obey every rule for the chosen 
       config,
       statsDelta,
       llm: { elapsedMs, error: llmError || 'callLLMWebGrounded returned null' },
-      note: 'All LLM providers failed or unconfigured. If `config` shows a key as true but `statsDelta.<provider>.calls` is 0, the router may have skipped it. If `calls > 0` and `rateLimits > 0`, the provider is throttling us. If `calls > 0` and `failures > 0`, it errored — check Vercel logs within the 1-hour window.',
+      geminiRaw,
+      note: 'All LLM providers failed or unconfigured. Inspect `geminiRaw.finishReason` — MAX_TOKENS means the thinking budget consumed the 800-token output cap (fix: raise maxOutputTokens or set thinkingConfig.thinkingBudget:0). SAFETY means a content filter blocked it. If `status` is 4xx, check `bodySnippet` for Google\'s error payload. `thoughtsTokens` shows how many tokens were spent on hidden reasoning.',
     }, { status: 502 });
   }
 
