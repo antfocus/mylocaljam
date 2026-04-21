@@ -412,6 +412,7 @@ Return the strict JSON object defined in STEP 5. Obey every rule for the chosen 
       elapsedMs,
       raw: llmResult,
     },
+    geminiRaw,
     classification: { rawKind, kind },
     bio: {
       raw: rawBio,
