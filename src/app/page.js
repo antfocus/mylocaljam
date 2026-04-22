@@ -452,11 +452,11 @@ export default function HomePage() {
   //     Trivia, Open-Mic, etc.
   //   • Rows whose title matches a drink/food-special pattern ($2 pints,
   //     Happy Hour, BOGO, wing night, power hour, Miller/Coors/Bud Lite
-  //     variants, …) are filtered out entirely — they're scraper debris,
-  //     not something users meaningfully search for.
+  //     variants, …) → badge "SPECIAL". Users do search for these by
+  //     name; they just shouldn't be mis-labeled ARTIST or FESTIVAL.
   //   • Rows whose artist FK isn't linked but have a reasonable-looking
-  //     event_title/artist_name (not a drink special, <=50 chars, no event
-  //     keyword match) fall through to the ARTIST bucket. This is the
+  //     event_title/artist_name (<=50 chars, no event keyword match, not
+  //     a drink special) fall through to the ARTIST bucket. This is the
   //     common case for scraper rows that haven't been enriched yet —
   //     without it, the dropdown stays empty for most searches.
   const autoCompleteSuggestions = useMemo(() => {
@@ -485,7 +485,11 @@ export default function HomePage() {
 
     function classifyTitle(title) {
       if (!title) return null;
-      if (DRINK_SPECIAL_RE.test(title)) return null;
+      // Drink/food specials get their own badge instead of being dropped.
+      // They're real events users search for (Happy Hour, BOGO, $2 Miller);
+      // the original problem was mis-labeling them FESTIVAL, not their
+      // presence in the dropdown.
+      if (DRINK_SPECIAL_RE.test(title)) return 'special';
       for (const { re, label } of EVENT_TYPE_LABELS) {
         if (re.test(title)) return label;
       }
@@ -2169,12 +2173,14 @@ export default function HomePage() {
                                   s.type === 'venue'    ? MATERIAL_ICON_PATHS.location_on
                                 : s.type === 'artist'   ? MATERIAL_ICON_PATHS.music_note
                                 : s.type === 'festival' ? MATERIAL_ICON_PATHS.local_fire_department
+                                : s.type === 'special'  ? MATERIAL_ICON_PATHS.restaurant
                                 :                         MATERIAL_ICON_PATHS.calendar_month
                                 }
                                 fill={
                                   s.type === 'venue'    ? '#a78bfa'
                                 : s.type === 'artist'   ? '#E8722A'
                                 : s.type === 'festival' ? '#f59e0b'
+                                : s.type === 'special'  ? '#ec4899'
                                 :                         '#10b981'
                                 }
                               />
