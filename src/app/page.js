@@ -1647,8 +1647,10 @@ export default function HomePage() {
 
   // ── Shared styles ────────────────────────────────────────────────────────────
   const dateSeparatorStyle = {
-    fontSize: '20px', fontWeight: 900, textTransform: 'uppercase',
-    letterSpacing: '0.5px', color: darkMode ? '#E0E0F0' : '#1F2937',
+    // Column-label treatment: smaller + tighter so the label reads as a
+    // divider anchored to the ticket-stub column below, not a page title.
+    fontSize: '14px', fontWeight: 700, textTransform: 'uppercase',
+    letterSpacing: '1.2px', color: darkMode ? '#A0A0BE' : '#6B7280',
     fontFamily: "'DM Sans', sans-serif",
   };
 
@@ -3365,14 +3367,16 @@ export default function HomePage() {
                         aria-label="Pick a date"
                         title="Pick a date"
                         style={{
+                          // Sized to match the 14px column-label treatment —
+                          // a 32px button would dwarf the shrunk header.
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          width: '32px', height: '32px', padding: 0, flexShrink: 0,
-                          background: 'transparent', border: 'none', borderRadius: '8px',
+                          width: '24px', height: '24px', padding: 0, flexShrink: 0,
+                          background: 'transparent', border: 'none', borderRadius: '6px',
                           cursor: 'pointer',
                           color: darkMode ? '#A0A0BE' : '#6B7280',
                         }}
                       >
-                        <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                           <rect x="1" y="2.5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
                           <path d="M1 6.5h14" stroke="currentColor" strokeWidth="1.5"/>
                           <path d="M4.5 1v3M11.5 1v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>

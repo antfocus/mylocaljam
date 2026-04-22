@@ -231,7 +231,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             background: isCanceled ? '#DC2626' : config.bg,
             color: isCanceled ? '#FFFFFF' : '#1C1917',
             fontWeight: 700,
-            width: '52px', minHeight: '48px',
+            width: '50px', minHeight: '48px',
             borderRadius: '12px 0 0 12px', flexShrink: 0,
             borderRight: '2px dashed rgba(0,0,0,0.12)',
             display: 'flex', flexDirection: 'column',
