@@ -276,7 +276,7 @@ The sync route's `mapEvent()` does these transforms on every scraper event:
 ### events (scraper-relevant columns)
 `artist_name`, `venue_name`, `venue_id` (FK), `event_date` (ISO timestamp), `is_time_tbd`, `event_image_url`, `ticket_link`, `cover`, `source`, `external_id` (UNIQUE), `status`, `category`, `template_id` (FK), `artist_id` (FK), `is_human_edited`, `is_locked`
 
-> **Note:** `events` also has `series_id` (FK → `event_series`, ON DELETE SET NULL), `event_title`, and `is_festival`. These columns are admin-only — scrapers MUST NOT set them. The `series_id` link is written exclusively by the approval flow in `POST /api/admin/queue` when the admin ticks the "Part of a series / festival" checkbox. See `HANDOVER.md` — Session April 21, 2026 for the full schema.
+> **Note:** `events` also has `series_id` (FK → `event_series`, ON DELETE SET NULL), `event_title`, and `is_festival`. These columns are admin-only — scrapers MUST NOT set them. The `series_id` link is written exclusively by the approval flow in `POST /api/admin/queue` when the admin ticks the "Part of a series / festival" checkbox. See `HANDOVER.md` — Session April 21, 2026 for the full schema and Session April 22, 2026 for the prod-verification test record (Tests A/B/C all passing).
 
 ### venues
 `id`, `name` (UNIQUE — scrapers match on this), `address`, `website`, `default_start_time`, `color`, `photo_url`

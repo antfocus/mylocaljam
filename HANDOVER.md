@@ -4464,3 +4464,90 @@ All prior Safety Locks remain in force. This session adds:
 - **`event_series.category` is required.** NOT NULL with CHECK `IN ('festival','concert_series','parade','other')`. `'other'` is the safe fallback. Admin UI defaults to `'festival'` — change the default only if a majority of approvals shift to another category.
 - **`is_festival` is scoped to `category === 'festival'`.** Concert series, parades, and other named umbrellas get a `series_id` link but NOT `is_festival = true`. This keeps the public-feed "festival" badge meaningful.
 
+---
+
+## Session — April 22, 2026 — Event Series Phase 1 Prod Verification
+
+### Summary
+
+Three-test verification pass on the Series Phase 1 admin approval flow shipped April 21 (commit `5e0548a`). All three tests passed, confirming the admin-gated opt-in works as designed end-to-end — unticked submissions stay clean, ticked submissions correctly stamp `event_title` and create/reuse `event_series` parent rows. Two admin UX gaps surfaced during testing and were logged as new tasks (#36 venue aliases, #37 series name typeahead). Test data cleaned from prod. No code changes this session — verification + docs only.
+
+### 1. Test A — Unticked Checkbox (Negative Case)
+
+**Setup:** Approved a real user submission (Uncle Ebenezer) with the "Part of a series / festival" checkbox left OFF.
+
+**Expected:** `event_title`, `is_festival`, `series_id` all remain null on the resulting events row; no `event_series` row created.
+
+**Result:** Confirmed via SQL — `event_title = NULL`, `is_festival = false`, `series_id = NULL` on the new events row. The April 21 `populateQueueForm` reset correctly defaults to OFF per submission; no series metadata leaks in without an explicit opt-in.
+
+### 2. Test B — Ticked Checkbox, New Series (Creation Path)
+
+**Setup:** Approved Dakota Diehl (single show on 2026-04-19, from an EvenTide Grille April flyer). Ticked the checkbox with series name `"EvenTide Grille April Events TEST"` and category `"Other named umbrella"`.
+
+**Expected:** One new `events` row with `event_title` stamped and `is_festival = false` (category is `other`, not `festival`). One new `event_series` row with slug `eventide-grille-april-events-test`, category `other`. Event's `series_id` = the new series row's ID.
+
+**Result:** Confirmed. event_series row `ddd23763-1380-4950-9313-bc4f00d46eb6` created with correct slug and category. Events row linked via `series_id`. Artist enrichment also fired successfully post-publish — Dakota Diehl now has bio + image populated.
+
+**Feed visibility note:** Event date was 2026-04-19 (3 days in the past on approval day), so it did NOT appear on the public feed — the feed filters `event_date >= today`. Not a bug; expected behavior for past shows.
+
+### 3. Test C — Ticked Checkbox, Existing Series (Find-or-Create Dedup)
+
+**Setup:** Approved Kenny & Rich (upcoming show on 2026-04-26) with the same series name as Test B — `"EvenTide Grille April Events TEST"`, same category (`"Other named umbrella"`). Venue field was manually edited from the OCR-produced `"EvenTide Grille, Navesink Marina"` down to `"Eventide Grille"` to match the existing venue row (see Finding #36 below).
+
+**Expected:** The find-or-create logic in `POST /api/admin/queue` should SELECT the existing `event_series` row by slug and reuse it — NOT create a duplicate. The new events row's `series_id` should equal Test B's series ID. `event_series` table should still contain only one row with slug `eventide-grille-april-events-test`.
+
+**Result:** Confirmed. The new Kenny & Rich events row has `series_id = ddd23763-1380-4950-9313-bc4f00d46eb6` — **identical to Dakota Diehl from Test B**. `event_series` count for that slug remains 1. Venue linkage worked: `venue_id = cd7f6d2c-...` (real Eventide Grille row).
+
+**Feed visibility:** Apr 26 is upcoming, so the event DID appear on the public feed — rendered with the flyer image and the series name as the headline. The pre-existing scraper-sourced Kenny & Rich event on the same date also rendered separately; see Finding #4 (duplicate events on approval) below.
+
+### 4. Incidental Findings
+
+**Task #36 — Venue autocomplete is exact-string only.** The venue field in the approval modal doesn't fuzzy-match or check aliases. The real venue row is named `"Eventide Grille"`, but scraper/OCR output produces `"EvenTide Grille, Navesink Marina"` — these don't match, so the admin either manually trims the string (as in Test C) or accidentally creates a duplicate venue row by clicking "+ Create New Venue". That's exactly how the stray test venue row `8047cffd-...` was created before it was cleaned up. Fix path: mirror the artist-aliases pattern — add a `venue_aliases` column (or table) and update the admin lookup to match canonical name OR any alias.
+
+**Task #37 — Series name field has no typeahead.** The "Event / Series Name" input in `AdminSubmissionsTab.js` is a plain `<input type="text">`. Admins must manually retype the series name for dedup to hit. Slug normalization (`toLowerCase → replace non-alphanumeric with dashes → trim → slice(80)`) is case- and punctuation-tolerant, but not word-tolerant — `"EvenTide Grille April Events TEST 2"` slugs differently than `"EvenTide Grille April Events TEST"` and would create a duplicate parent. Fix path: debounced typeahead against `event_series.name` (ILIKE) that surfaces matches and on-select pre-populates both the name field and the `series_category` dropdown. Could ship standalone or fold into Phase 3 AdminSeriesTab (#35).
+
+**Artist enrichment gaps (fits #27).** Kenny & Rich's artist row post-approval had `image_url` populated (via Wikimedia Commons) but `bio` and `genres` empty. Same partial-enrichment pattern as Uncle Ebenezer from April 21. Possible causes: (a) the artist row pre-existed from a scraper pass so `enrichArtist` short-circuited, (b) the LLM lookup returned a usable image but no bio, (c) a silent `.catch(err => console.warn)` in the queue route swallowed an error. Worth a `vercel logs` check or a manual backfill kick from the Enrichment tab. Folds into the existing cascade-damage audit task.
+
+**Duplicate events on approval (deferred, not logged as a task).** The approval flow creates a new events row without checking for duplicates against existing scraper-sourced events on the same date + artist + venue. Test C produced two Kenny & Rich events on Apr 26 — one from the April 7 scraper run, one from the April 22 approval. Tony opted NOT to log this as a formal task — the submission flow is primarily his own flyer uploads and he'll manually dedup pre-approval. Revisit once volume grows.
+
+### 5. Test Data Cleanup (task #38, completed)
+
+Test rows removed via surgical DELETE by specific ID:
+
+```sql
+DELETE FROM events WHERE id IN (
+  'a10f13a0-028b-4219-95b2-6b99913696eb',  -- Dakota Diehl Test B
+  'aad125a5-16e3-4f40-aa8a-83397677be89'   -- Kenny & Rich Test C
+);
+DELETE FROM event_series WHERE id = 'ddd23763-1380-4950-9313-bc4f00d46eb6';
+DELETE FROM venues WHERE id = '8047cffd-428e-447a-be2f-3859f67c16ab';  -- already gone, no-op
+DELETE FROM submissions 
+WHERE artist_name IN ('Dakota Diehl', 'Kenny & Rich')
+  AND created_at >= '2026-04-21 23:00'
+  AND created_at < '2026-04-22 00:30';
+```
+
+Verification (all counts returned 0):
+
+```sql
+SELECT COUNT(*) FROM events WHERE event_title = 'EvenTide Grille April Events TEST';
+SELECT COUNT(*) FROM event_series WHERE slug = 'eventide-grille-april-events-test';
+SELECT COUNT(*) FROM submissions WHERE artist_name IN ('Dakota Diehl','Kenny & Rich') 
+  AND created_at >= '2026-04-21 23:00' AND created_at < '2026-04-22 00:30';
+```
+
+Supabase SQL editor note: the editor returns "Success. No rows returned" for DELETE/UPDATE statements and only shows the last SELECT's result when multiple SELECTs are stacked. Use subquery-column pattern (`SELECT (SELECT COUNT…) AS a, (SELECT COUNT…) AS b`) to get multiple counts in one row.
+
+### 6. Files Changed (April 22)
+
+No code changes this session — verification + documentation only.
+
+| File | Change |
+|------|--------|
+| `HANDOVER.md` | This section |
+| `Agent_SOP.md` | Roadmap entry for tasks #36, #37; Phase 1 prod-verified note |
+
+### Safety Locks — Reaffirmed (No Changes)
+
+All Safety Locks from April 21 remain in force — admin-gated linkage, slug as dedup key, required category, festival scoping. This session adds no new locks; it verifies the existing ones hold under real-data tests.
+
