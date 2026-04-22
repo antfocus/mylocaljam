@@ -186,6 +186,36 @@ export default function AdminEventsTab({
   const [aiCategorizeLoading, setAiCategorizeLoading] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
+  // ── Search-mode fetch boost (quick win, April 22, 2026) ─────────────────
+  // The search input below filters CLIENT-side over the rows already loaded
+  // (default 100 per page via Load More). On a 1,800-row Event Feed this
+  // means searches silently miss matches the admin can see in the DB but
+  // hasn't paged into. Quick fix: when the search box is non-empty, debounce
+  // 300 ms and refetch page 1 with limit=5000 so the client-side filter
+  // sees the whole filtered universe in one shot. The Load More button is
+  // also hidden while search is active (see the JSX guard further down) so
+  // the admin doesn't get a confusing "Load More" while looking at what is
+  // effectively the full table. Long-term fix is server-side search — tracked
+  // separately. The 5000 cap matches the new server-side `limit` ceiling
+  // bumped in /api/admin/route.js as part of this same change.
+  useEffect(() => {
+    const search = eventsSearch.trim();
+    if (!search) return;
+    const handle = setTimeout(() => {
+      fetchEvents(
+        1,
+        eventsSortField,
+        eventsSortOrder,
+        eventsStatusFilter,
+        eventsMissingTime,
+        eventsRecentlyAdded,
+        eventsMissingImage,
+        5000
+      );
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [eventsSearch, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime, eventsRecentlyAdded, eventsMissingImage, fetchEvents]);
+
   // ── Template matcher dry-run wiring ───────────────────────────────────
   // Two lookup tables, both memoised so we don't recompute per row:
   //
@@ -1125,8 +1155,10 @@ export default function AdminEventsTab({
             {filtered.length === 0 && <p className="text-center py-8 text-brand-text-muted">{eventsSearch ? 'No matching events.' : 'No events in this view.'}</p>}
           </div>
 
-          {/* Load More */}
-          {eventsPage < eventsTotalPages && (
+          {/* Load More — hidden in search mode (the search-boost effect above
+              already pulls the full filtered slice in one fetch, so paging
+              would just confuse). */}
+          {eventsPage < eventsTotalPages && !eventsSearch.trim() && (
             <div className="text-center mt-4">
               <button
                 className="px-6 py-2.5 rounded-lg text-sm font-display font-semibold"

@@ -69,9 +69,12 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
   const [newEvents24h, setNewEvents24h] = useState(0);
   const [eventsRecentlyAdded, setEventsRecentlyAdded] = useState(false);
 
-  const fetchEvents = useCallback(async (page = 1, sort = eventsSortField, order = eventsSortOrder, status = eventsStatusFilter, missingTime = eventsMissingTime, recentlyAdded = eventsRecentlyAdded, missingImage = eventsMissingImage) => {
+  // `limit` (8th arg) is overridable so the search-mode quick-win can pull a
+  // larger slice when the admin types in the search box. Default 100 keeps
+  // the normal Load-More pagination behavior unchanged.
+  const fetchEvents = useCallback(async (page = 1, sort = eventsSortField, order = eventsSortOrder, status = eventsStatusFilter, missingTime = eventsMissingTime, recentlyAdded = eventsRecentlyAdded, missingImage = eventsMissingImage, limit = 100) => {
     try {
-      const params = new URLSearchParams({ page: String(page), limit: '100', sort, order });
+      const params = new URLSearchParams({ page: String(page), limit: String(limit), sort, order });
       if (status) params.set('status', status);
       if (missingTime) params.set('missingTime', 'true');
       if (missingImage) params.set('missingImage', 'true');

@@ -271,36 +271,81 @@ export default function AdminPage() {
         )}
       </header>
 
-      {/* Tabs — horizontally scrollable on mobile */}
+      {/* Tabs — horizontally scrollable on mobile.
+          Tabs are grouped into 4 logical sections (Review, Content, Entities,
+          Tools) with thin vertical dividers between groups. The grouping is a
+          visual organization layer only — every tab still renders as a flat
+          peer button so the active-tab styling, mobile horizontal scroll, and
+          onClick handlers stay identical to the pre-grouping version. Long-term
+          plan is a sidebar layout once the admin is happier with the site;
+          for now this is the lighter "Option A" pass (April 22, 2026). */}
       <div className="admin-tabs flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'var(--bg-secondary)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-        {[
-          { key: 'dashboard', label: 'Dashboard', count: 0 },
-          { key: 'triage', label: 'Triage', count: tr.triageEvents.length },
-          { key: 'events', label: 'Event Feed', count: ev.eventsTotal || ev.events.length },
-          { key: 'artists', label: 'Artists', count: ar.artists.length },
-          { key: 'templates', label: 'Event Templates', count: et.templates.length },
-          { key: 'spotlight', label: 'Spotlight', count: sp.spotlightPins.length },
-          { key: 'venues', label: 'Venues', count: ve.scraperHealth.filter(s => s.status === 'fail').length },
-          { key: 'submissions', label: 'Submissions', count: q.queue.length },
-          { key: 'reports', label: 'User Flags', count: re.reports.filter((r) => r.status === 'pending').length },
-          { key: 'enrichment', label: 'Enrichment', count: 0 },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            className={`py-2.5 rounded-lg font-display font-semibold text-sm transition-all ${
-              activeTab === tab.key ? 'text-white' : 'text-brand-text-muted'
-            }`}
-            style={{
-              whiteSpace: 'nowrap', flexShrink: 0, padding: '10px 14px',
-              ...(activeTab === tab.key
-                ? { background: 'var(--bg-card)', borderBottom: '2px solid #E8722A', color: '#FFFFFF' }
-                : { opacity: 0.6 }),
-            }}
-            onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); re.fetchReports(); ve.fetchScraperHealth(); } if (tab.key === 'events') { ev.fetchEvents(); fe.fetchFestivalNames(); } if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'templates') et.fetchTemplates(et.templatesSearch, et.templatesNeedsInfo); if (tab.key === 'venues') ve.fetchScraperHealth(); if (tab.key === 'reports') { re.setFlagsViewFilter('pending'); re.fetchReports(); } }}
-          >
-            {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? '#1C1917' : 'var(--text-secondary)' }}>{tab.count}</span>}
-          </button>
-        ))}
+        {(() => {
+          const TAB_GROUPS = [
+            // Review — daily-driver inboxes that the admin scans first thing.
+            { label: 'Review', tabs: [
+              { key: 'dashboard',   label: 'Dashboard',    count: 0 },
+              { key: 'submissions', label: 'Submissions',  count: q.queue.length },
+              { key: 'triage',      label: 'Triage',       count: tr.triageEvents.length },
+              { key: 'reports',     label: 'User Flags',   count: re.reports.filter((r) => r.status === 'pending').length },
+            ]},
+            // Content — what's actually published on the live feed.
+            { label: 'Content', tabs: [
+              { key: 'events',      label: 'Event Feed',      count: ev.eventsTotal || ev.events.length },
+              { key: 'spotlight',   label: 'Spotlight',       count: sp.spotlightPins.length },
+              { key: 'templates',   label: 'Event Templates', count: et.templates.length },
+            ]},
+            // Entities — the canonical rows that events reference.
+            { label: 'Entities', tabs: [
+              { key: 'artists', label: 'Artists', count: ar.artists.length },
+              { key: 'venues',  label: 'Venues',  count: ve.scraperHealth.filter(s => s.status === 'fail').length },
+            ]},
+            // Tools — background jobs and maintenance utilities.
+            { label: 'Tools', tabs: [
+              { key: 'enrichment', label: 'Enrichment', count: 0 },
+            ]},
+          ];
+          return TAB_GROUPS.flatMap((group, gIdx) => {
+            const buttons = group.tabs.map((tab) => (
+              <button
+                key={tab.key}
+                className={`py-2.5 rounded-lg font-display font-semibold text-sm transition-all ${
+                  activeTab === tab.key ? 'text-white' : 'text-brand-text-muted'
+                }`}
+                style={{
+                  whiteSpace: 'nowrap', flexShrink: 0, padding: '10px 14px',
+                  ...(activeTab === tab.key
+                    ? { background: 'var(--bg-card)', borderBottom: '2px solid #E8722A', color: '#FFFFFF' }
+                    : { opacity: 0.6 }),
+                }}
+                onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); re.fetchReports(); ve.fetchScraperHealth(); } if (tab.key === 'events') { ev.fetchEvents(); fe.fetchFestivalNames(); } if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'templates') et.fetchTemplates(et.templatesSearch, et.templatesNeedsInfo); if (tab.key === 'venues') ve.fetchScraperHealth(); if (tab.key === 'reports') { re.setFlagsViewFilter('pending'); re.fetchReports(); } }}
+              >
+                {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? '#1C1917' : 'var(--text-secondary)' }}>{tab.count}</span>}
+              </button>
+            ));
+            // Insert a thin vertical divider AFTER every group except the last.
+            // Pure visual element — aria-hidden so screen-readers still announce
+            // tabs as a single flat list (the labels themselves carry the
+            // semantic grouping if we ever migrate to a real ARIA tablist).
+            if (gIdx < TAB_GROUPS.length - 1) {
+              buttons.push(
+                <div
+                  key={`tab-divider-${gIdx}`}
+                  aria-hidden="true"
+                  style={{
+                    width: '1px',
+                    alignSelf: 'stretch',
+                    background: 'var(--border)',
+                    margin: '6px 6px',
+                    flexShrink: 0,
+                    opacity: 0.6,
+                  }}
+                />
+              );
+            }
+            return buttons;
+          });
+        })()}
       </div>
 
       {/* Scrollbar-hide for mobile tabs */}

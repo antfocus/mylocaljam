@@ -52,7 +52,12 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url);
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
-  const limit = Math.min(500, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
+  // Cap raised from 500 → 5000 (April 22, 2026) so the Event Feed admin tab
+  // can fetch the full table when an admin types in the search box. The
+  // client-side search filter only sees rows already loaded, so the prior
+  // 500-row cap meant searches over a 1800-row table silently missed matches
+  // beyond row 500. Quick-win — proper server-side search is the long-term fix.
+  const limit = Math.min(5000, Math.max(1, parseInt(searchParams.get('limit') || '100', 10)));
   const sort = searchParams.get('sort') || 'event_date';
   const order = searchParams.get('order') === 'desc' ? false : true; // ascending by default
   const from = (page - 1) * limit;
