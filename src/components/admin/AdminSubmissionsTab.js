@@ -359,19 +359,61 @@ export default function AdminSubmissionsTab({
                         <input style={qInputStyle} value={queueForm.artist_name} onChange={e => updateQueueForm('artist_name', e.target.value)} placeholder="e.g. The Gaslight Anthem" />
                       </div>
                       <div>
-                        <label style={qLabelStyle}>Event / Festival Name</label>
+                        <label style={qLabelStyle}>Event / Series Name</label>
                         <input list="queue-festival-options" style={{
                           ...qInputStyle,
-                          borderColor: queueForm.event_name ? '#f59e0b' : qInputStyle.borderColor || 'var(--border)',
-                        }} value={queueForm.event_name} onChange={e => updateQueueForm('event_name', e.target.value)} placeholder="Start typing to search or create new..." />
+                          borderColor: queueForm.is_series ? '#f59e0b' : qInputStyle.borderColor || 'var(--border)',
+                        }} value={queueForm.event_name} onChange={e => updateQueueForm('event_name', e.target.value)} placeholder="e.g. Sea Hear Now 2026, Manasquan Beach Concerts…" />
                         <datalist id="queue-festival-options">
                           {festivalNames.map(f => <option key={f} value={f} />)}
                         </datalist>
-                        {queueForm.event_name && (
-                          <div style={{ fontSize: '11px', color: '#f59e0b', fontFamily: "'DM Sans', sans-serif", marginTop: '4px' }}>
-                            🔥 Festival mode — this event will be tagged &amp; searchable as &ldquo;{queueForm.event_name}&rdquo;
-                          </div>
-                        )}
+
+                        {/* ── Series opt-in — admin must explicitly promote this event into a named series/festival ── */}
+                        <div style={{
+                          marginTop: '8px', padding: '10px 12px', borderRadius: '8px',
+                          background: queueForm.is_series ? 'rgba(245,158,11,0.08)' : 'transparent',
+                          border: queueForm.is_series ? '1px solid rgba(245,158,11,0.25)' : `1px dashed ${qBorder}`,
+                          fontFamily: "'DM Sans', sans-serif",
+                        }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', color: qText, fontWeight: 600 }}>
+                            <input
+                              type="checkbox"
+                              checked={!!queueForm.is_series}
+                              onChange={e => updateQueueForm('is_series', e.target.checked)}
+                              disabled={!queueForm.event_name}
+                              style={{ width: '16px', height: '16px', accentColor: '#f59e0b', cursor: queueForm.event_name ? 'pointer' : 'not-allowed' }}
+                            />
+                            <span style={{ color: queueForm.event_name ? qText : qTextMuted }}>
+                              Part of a series / festival
+                            </span>
+                          </label>
+                          {!queueForm.event_name && (
+                            <div style={{ fontSize: '10px', color: qTextMuted, marginTop: '4px', marginLeft: '24px' }}>
+                              Fill in the name above to enable
+                            </div>
+                          )}
+                          {queueForm.is_series && queueForm.event_name && (
+                            <div style={{ marginTop: '8px', marginLeft: '24px' }}>
+                              <label style={{ ...qLabelStyle, fontSize: '10px', marginBottom: '4px' }}>
+                                Category *
+                              </label>
+                              <select
+                                style={{ ...qInputStyle, cursor: 'pointer', fontSize: '13px', padding: '6px 10px' }}
+                                value={queueForm.series_category || 'festival'}
+                                onChange={e => updateQueueForm('series_category', e.target.value)}
+                              >
+                                <option value="festival">Festival (Sea Hear Now, AP Reggae Fest…)</option>
+                                <option value="concert_series">Concert Series (Manasquan Beach, Belmar Summer…)</option>
+                                <option value="parade">Parade</option>
+                                <option value="other">Other named umbrella</option>
+                              </select>
+                              <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '6px' }}>
+                                🔥 Will link this event to a parent series row (new or existing) on approval.
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
                         {batchApplyPrompt && batchApplyPrompt.field === 'event_name' && (
                           <div style={{
                             marginTop: '8px', padding: '10px 12px', borderRadius: '8px',

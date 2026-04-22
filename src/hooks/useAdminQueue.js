@@ -41,6 +41,11 @@ export default function useAdminQueue({ password, venues, setVenues, fetchAll, s
     artist_name: '', venue_name: '', event_date: '', event_time: '',
     genre: '', vibe: '', cover: '', ticket_link: '', event_name: '',
     category: '', confidence_score: 0,
+    // Series/festival linkage (admin-controlled; defaults OFF so OCR
+    // event_name suggestions don't silently promote every submission
+    // into a festival/series — the old bug). See queue/route.js for
+    // the find-or-create-and-link logic.
+    is_series: false, series_category: 'festival',
   });
   const [queueDuplicates, setQueueDuplicates] = useState([]);
   const [queueDupLoading, setQueueDupLoading] = useState(false);
@@ -67,6 +72,10 @@ export default function useAdminQueue({ password, venues, setVenues, fetchAll, s
       event_name: sub.event_name || '',
       category: sub.category || '',
       confidence_score: sub.confidence_score || 0,
+      // Always reset series linkage to OFF per-submission — admin must
+      // explicitly opt in. Prevents cross-contamination between queue rows.
+      is_series: false,
+      series_category: 'festival',
     });
     setQueueDuplicates([]);
   };

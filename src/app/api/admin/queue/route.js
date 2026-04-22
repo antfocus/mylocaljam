@@ -45,9 +45,15 @@ export async function POST(request) {
     .eq('id', submission_id)
     .single();
 
-  // Detect festival: if submission has an event_name, flag it
-  const eventName = submission?.event_name || event_data.event_name || null;
-  const isFestival = !!eventName;
+  // ── Series / festival linkage (admin-gated) ─────────────────────────────
+  // Old behavior: any OCR-extracted event_name auto-promoted the event into
+  // the "Festivals" bucket. That polluted the admin UI with every flyer
+  // title (e.g. "Kevin Hill and Sandy Mack"). Now the admin must explicitly
+  // tick the "Part of a series / festival" checkbox in the approval modal,
+  // which sets event_data.is_series = true.
+  const seriesName = (event_data.event_name || '').trim() || null;
+  const isSeries = !!event_data.is_series && !!seriesName;
+  const seriesCategory = isSeries ? (event_data.series_category || 'festival') : null;
 
   // Create the event with image_url from the submission's uploaded poster
   const { data: newEvent, error: eventError } = await supabase
@@ -67,8 +73,10 @@ export async function POST(request) {
       image_url: submission?.image_url || event_data.image_url || null,
       // NOTE: `is_featured` retired Phase 5 — Spotlight curation lives
       // exclusively in the `spotlight_events` table.
-      ...(eventName ? { event_title: eventName } : {}),
-      ...(isFestival ? { is_festival: true } : {}),
+      // Only stamp event_title / is_festival when admin opted in via the
+      // series checkbox. series_id is set in the follow-up step below.
+      ...(isSeries ? { event_title: seriesName } : {}),
+      ...(isSeries && seriesCategory === 'festival' ? { is_festival: true } : {}),
       status: 'published',
       source: 'Community Submitted',
       verified_at: new Date().toISOString(),
@@ -78,6 +86,54 @@ export async function POST(request) {
 
   if (eventError) {
     return NextResponse.json({ error: eventError.message }, { status: 500 });
+  }
+
+  // ── Find-or-create the parent event_series row ──────────────────────────
+  // Slug is the stable unique key used for dedup across approvals. If a
+  // series with the same slug already exists (case-insensitive name match),
+  // we reuse it; otherwise we insert a new row with the admin-picked
+  // category. Failures are logged but don't block the approval — the event
+  // is already published, so series linkage is a best-effort follow-up.
+  if (isSeries && newEvent?.id) {
+    try {
+      const slug = seriesName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 80);
+
+      let seriesId = null;
+      if (slug) {
+        const { data: existing } = await supabase
+          .from('event_series')
+          .select('id')
+          .eq('slug', slug)
+          .maybeSingle();
+        seriesId = existing?.id || null;
+
+        if (!seriesId) {
+          const { data: created, error: seriesErr } = await supabase
+            .from('event_series')
+            .insert({ name: seriesName, slug, category: seriesCategory })
+            .select('id')
+            .single();
+          if (seriesErr) {
+            console.warn('[queue] event_series insert failed:', seriesErr.message);
+          } else {
+            seriesId = created?.id || null;
+          }
+        }
+      }
+
+      if (seriesId) {
+        await supabase
+          .from('events')
+          .update({ series_id: seriesId })
+          .eq('id', newEvent.id);
+      }
+    } catch (seriesErr) {
+      console.warn('[queue] Series linkage error:', seriesErr.message);
+    }
   }
 
   // Update submission status
