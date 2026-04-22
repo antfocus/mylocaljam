@@ -282,27 +282,27 @@ export default function AdminPage() {
       <div className="admin-tabs flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'var(--bg-secondary)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
         {(() => {
           const TAB_GROUPS = [
-            // Review — daily-driver inboxes that the admin scans first thing.
-            { label: 'Review', tabs: [
-              { key: 'dashboard',   label: 'Dashboard',    count: 0 },
-              { key: 'submissions', label: 'Submissions',  count: q.queue.length },
-              { key: 'triage',      label: 'Triage',       count: tr.triageEvents.length },
-              { key: 'reports',     label: 'User Flags',   count: re.reports.filter((r) => r.status === 'pending').length },
+            // Operations — at-a-glance + the two queues that need triage attention.
+            { label: 'Operations', tabs: [
+              { key: 'dashboard',  label: 'Dashboard',  count: 0 },
+              { key: 'triage',     label: 'Triage',     count: tr.triageEvents.length },
+              { key: 'enrichment', label: 'Enrichment', count: 0 },
             ]},
             // Content — what's actually published on the live feed.
             { label: 'Content', tabs: [
-              { key: 'events',      label: 'Event Feed',      count: ev.eventsTotal || ev.events.length },
-              { key: 'spotlight',   label: 'Spotlight',       count: sp.spotlightPins.length },
-              { key: 'templates',   label: 'Event Templates', count: et.templates.length },
+              { key: 'spotlight', label: 'Spotlight',       count: sp.spotlightPins.length },
+              { key: 'events',    label: 'Event Feed',      count: ev.eventsTotal || ev.events.length },
+              { key: 'templates', label: 'Event Templates', count: et.templates.length },
             ]},
             // Entities — the canonical rows that events reference.
             { label: 'Entities', tabs: [
               { key: 'artists', label: 'Artists', count: ar.artists.length },
               { key: 'venues',  label: 'Venues',  count: ve.scraperHealth.filter(s => s.status === 'fail').length },
             ]},
-            // Tools — background jobs and maintenance utilities.
-            { label: 'Tools', tabs: [
-              { key: 'enrichment', label: 'Enrichment', count: 0 },
+            // Inbox — user-submitted content awaiting admin attention.
+            { label: 'Inbox', tabs: [
+              { key: 'submissions', label: 'Submissions', count: q.queue.length },
+              { key: 'reports',     label: 'User Flags',  count: re.reports.filter((r) => r.status === 'pending').length },
             ]},
           ];
           return TAB_GROUPS.flatMap((group, gIdx) => {
