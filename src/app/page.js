@@ -3318,14 +3318,66 @@ export default function HomePage() {
               </div>
             ) : (
               <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {/* Hidden native date input — triggered by the calendar icon
+                    button inside each sticky date header. Single instance,
+                    referenced by ref so every header button targets it. */}
+                <input
+                  ref={datePickRef}
+                  type="date"
+                  min={new Date().toISOString().slice(0, 10)}
+                  value={pickedDate || ''}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (!v) return;
+                    setPickedDate(v);
+                    setDateKey('pick');
+                  }}
+                  style={{
+                    position: 'absolute', width: '1px', height: '1px',
+                    padding: 0, margin: '-1px', overflow: 'hidden',
+                    clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0,
+                  }}
+                  aria-hidden="true"
+                  tabIndex={-1}
+                />
                 {groupedEvents.map(group => (
                   <div key={group.date}>
                     <div data-date-header={group.date} style={{
                       position: 'sticky', top: 0, zIndex: 50,
                       padding: '16px 0 8px',
                       background: t.bg,
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
                     }}>
                       <span style={dateSeparatorStyle}>{group.label}</span>
+                      <button
+                        onClick={() => {
+                          const el = datePickRef.current;
+                          if (!el) return;
+                          // showPicker() is the modern way (Chrome 99+, Safari
+                          // 16+, Firefox 101+); fall back to focus+click for
+                          // older browsers.
+                          if (typeof el.showPicker === 'function') {
+                            try { el.showPicker(); return; } catch {}
+                          }
+                          el.focus();
+                          el.click();
+                        }}
+                        aria-label="Pick a date"
+                        title="Pick a date"
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: '32px', height: '32px', padding: 0, flexShrink: 0,
+                          background: 'transparent', border: 'none', borderRadius: '8px',
+                          cursor: 'pointer',
+                          color: darkMode ? '#A0A0BE' : '#6B7280',
+                        }}
+                      >
+                        <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+                          <rect x="1" y="2.5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+                          <path d="M1 6.5h14" stroke="currentColor" strokeWidth="1.5"/>
+                          <path d="M4.5 1v3M11.5 1v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </button>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {group.events.map((event, i) => (
