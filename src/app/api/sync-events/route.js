@@ -56,6 +56,12 @@ import { scrapeCharleysOceanGrill } from '@/lib/scrapers/charleysOceanGrill';
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
 import { enrichArtist } from '@/lib/enrichArtist';
 import { matchTemplate } from '@/lib/matchTemplate';
+// Shared classifier — single source of truth with /api/admin/auto-categorize.
+// We invoke it here so newly scraped events get a confidence-bar pass at the
+// tail end of the sync, after templates + keyword routing + artist_default
+// inheritance have had their shots. Everything still sitting in triage after
+// those passes is a genuine unknown — that's what the LLM earns its keep on.
+import { classifyEvent, ALLOWED_CATEGORIES, CONFIDENCE_THRESHOLD } from '@/lib/eventClassifier';
 
 
 export const dynamic = 'force-dynamic';
@@ -289,6 +295,12 @@ export async function POST(request) {
   }
 
   const start = Date.now();
+  // Wall-clock stamp used by the Step 4 AI fallback below to scope its
+  // confidence-bar pass to events that were inserted by THIS sync run —
+  // so we never silently re-classify yesterday's stuck triage rows
+  // (those stay admin-visible; they can still be picked up from the
+  // Event Feed "AI Categorize" button).
+  const syncStartedAt = new Date().toISOString();
   const supabase = getAdminClient();
 
   // Load venue map and default times
@@ -1083,9 +1095,9 @@ export async function POST(request) {
       const cachedMap = {};
       for (const a of (cached || [])) cachedMap[a.name.toLowerCase()] = a;
 
-      // Look up uncached artists (max 30 per sync — Pro plan allows longer function execution)
+      // Look up uncached artists (max 50 per sync — raised from 30 for launch readiness)
       // Uses the Universal Enrichment Hook: MusicBrainz → Discogs → Last.fm
-      const uncached = cleanNames.filter(n => !cachedMap[n.toLowerCase()]).slice(0, 30);
+      const uncached = cleanNames.filter(n => !cachedMap[n.toLowerCase()]).slice(0, 50);
       for (const name of uncached) {
         try {
           await enrichArtist(name, supabase, { blacklist: blacklistedNames });
@@ -1208,6 +1220,128 @@ export async function POST(request) {
     enrichResult.errors.push(`Enrichment failed: ${enrichErr.message}`);
   }
 
+  // --- Step 4: AI Categorization Fallback (Confidence Cascade tail) ──────
+  // Runs AFTER the keyword Auto-Sorter (Step 1–3 above) and the enrichment
+  // pass (which applies artist_default_category). Any event still in
+  // triage_status='pending' at this point is a true unknown — neither its
+  // title nor its linked artist told us what category to use. Hand it to
+  // Perplexity with the confidence bar set at 0.85:
+  //   • ≥0.85 + whitelisted category  → write category, mark reviewed
+  //   • <0.85 or off-list category    → flag for Manual Review, stay pending
+  //   • LLM transport/parse failure   → leave row untouched (next sync retries)
+  //
+  // Scope: created_at >= syncStartedAt so we only classify rows inserted
+  // by this run. Legacy triage rows stay admin-visible; the admin can still
+  // trigger /api/admin/auto-categorize manually for those.
+  //
+  // Cost cap: 50 events/run × ~$0.005/call ≈ $0.25/sync. With ~2 syncs/day
+  // that's <$0.50/day worst case. Kill switch: set
+  // SYNC_AI_CATEGORIZE_ENABLED=false to disable the whole block without a
+  // deploy.
+  let aiCategorizeResult = {
+    attempted: 0,
+    updated: 0,
+    flagged: 0,
+    skipped_artist_default: 0,
+    failed: 0,
+    context_injected: 0,
+    enabled: true,
+  };
+  const aiEnabled = (process.env.SYNC_AI_CATEGORIZE_ENABLED || 'true').toLowerCase() !== 'false';
+  aiCategorizeResult.enabled = aiEnabled;
+  const perplexityKey = process.env.PERPLEXITY_API_KEY;
+  if (aiEnabled && perplexityKey) {
+    try {
+      // Pull still-pending events created by this sync that haven't been
+      // locked by templates / admin verification / artist default.
+      const { data: pending } = await supabase
+        .from('events')
+        .select('id, title, artist_name, venue_name, event_date, description, custom_description, category, template_id, is_category_verified, category_source, artist_id')
+        .eq('triage_status', 'pending')
+        .is('template_id', null)
+        .eq('is_category_verified', false)
+        .neq('category_source', 'artist_default')
+        .gte('created_at', syncStartedAt)
+        .gte('event_date', new Date().toISOString())
+        .limit(50);
+
+      if (pending?.length) {
+        // Tier 2 Confidence Cascade: batch-load bio/genres for every linked
+        // artist so we can inject context into the prompt without per-event
+        // round-trips. Mirrors /api/admin/auto-categorize.
+        const artistIds = [...new Set(pending.map(e => e.artist_id).filter(Boolean))];
+        const artistContextMap = {};
+        if (artistIds.length > 0) {
+          const { data: artistRows } = await supabase
+            .from('artists')
+            .select('id, bio, genres, default_category')
+            .in('id', artistIds);
+          for (const a of (artistRows || [])) artistContextMap[a.id] = a;
+        }
+
+        for (const ev of pending) {
+          // Defense-in-depth: if enrichment just set default_category on the
+          // artist but didn't get to write it back to this event, let the
+          // next sync handle it rather than burning an LLM call.
+          const linkedArtist = ev.artist_id ? artistContextMap[ev.artist_id] : null;
+          if (linkedArtist?.default_category) {
+            aiCategorizeResult.skipped_artist_default++;
+            continue;
+          }
+
+          aiCategorizeResult.attempted++;
+          const artistContext = linkedArtist && (linkedArtist.bio || (Array.isArray(linkedArtist.genres) && linkedArtist.genres.length > 0))
+            ? { bio: linkedArtist.bio, genres: linkedArtist.genres }
+            : null;
+          if (artistContext) aiCategorizeResult.context_injected++;
+
+          const ai = await classifyEvent(ev, perplexityKey, artistContext);
+          if (!ai) { aiCategorizeResult.failed++; continue; }
+
+          const category = ALLOWED_CATEGORIES.includes(ai.category) ? ai.category : null;
+          const confidence = Math.max(0, Math.min(1, Number(ai.confidence) || 0));
+
+          if (!category || confidence < CONFIDENCE_THRESHOLD) {
+            // Below the bar — flag for manual review. Don't overwrite the
+            // category field; the admin sees the suggested value via
+            // category_ai_flagged_at + category_confidence in the triage UI.
+            const { error: flagErr } = await supabase
+              .from('events')
+              .update({
+                category_source: 'manual_review',
+                category_confidence: confidence,
+                category_ai_flagged_at: new Date().toISOString(),
+                triage_status: 'pending',
+              })
+              .eq('id', ev.id);
+            if (flagErr) aiCategorizeResult.failed++;
+            else aiCategorizeResult.flagged++;
+          } else {
+            // Happy path: high-confidence + whitelisted → write it. Never
+            // sets is_category_verified=true; only humans verify.
+            const { error: updErr } = await supabase
+              .from('events')
+              .update({
+                category,
+                category_source: 'ai',
+                category_confidence: confidence,
+                category_ai_flagged_at: null,
+                triage_status: 'reviewed',
+              })
+              .eq('id', ev.id);
+            if (updErr) aiCategorizeResult.failed++;
+            else aiCategorizeResult.updated++;
+          }
+
+          // Gentle rate limit — matches /api/admin/auto-categorize.
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+    } catch (aiErr) {
+      console.error('[Sync AI Categorize] Error:', aiErr.message);
+    }
+  }
+
   // --- Trigger B: Notify followers about newly added events ---
   let notifyResult = { newEvents: 0, notified: false };
   try {
@@ -1276,6 +1410,15 @@ export async function POST(request) {
       blacklistedSkipped: enrichResult.blacklisted,
       humanEditedSkipped: enrichResult.humanSkipped,
       errors: enrichResult.errors.length ? enrichResult.errors : null,
+    },
+    aiCategorize: {
+      enabled: aiCategorizeResult.enabled,
+      attempted: aiCategorizeResult.attempted,
+      updated: aiCategorizeResult.updated,
+      flagged: aiCategorizeResult.flagged,
+      skippedArtistDefault: aiCategorizeResult.skipped_artist_default,
+      contextInjected: aiCategorizeResult.context_injected,
+      failed: aiCategorizeResult.failed,
     },
     notifications: notifyResult,
     errors: upsertErrors.length ? upsertErrors : null,

@@ -17,8 +17,13 @@
  * Pricing: Free tier (gemini-2.5-flash)
  */
 
-const GEMINI_MODEL = 'gemini-2.5-flash';
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const GEMINI_PRIMARY_MODEL = 'gemini-2.5-flash';
+const GEMINI_FALLBACK_MODEL = 'gemini-2.5-pro';
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+// Legacy alias kept for backward-compat references in comments
+const GEMINI_MODEL = GEMINI_PRIMARY_MODEL;
+const GEMINI_API_URL = `${GEMINI_API_BASE}/${GEMINI_PRIMARY_MODEL}:generateContent`;
 
 /**
  * The system instruction tells Gemini to act as a strict OCR extractor.
@@ -114,57 +119,89 @@ export async function extractEventsFromFlyer(imageUrl, { venueName, year, month 
 
   const userMessage = `Today is ${dayName}, ${monthName} ${currentDay}, ${currentYear} (${todayISO}). This is a live music event poster${venueName ? ` for ${venueName}` : ''}. Extract all live music events from this image.`;
 
-  // Gemini REST API request
-  const res = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: {
-        parts: [{ text: SYSTEM_INSTRUCTION }],
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: userMessage },
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: base64Data,
-              },
+  // Gemini REST API request — with 429 retry + model fallback
+  const requestBody = {
+    system_instruction: {
+      parts: [{ text: SYSTEM_INSTRUCTION }],
+    },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: userMessage },
+          {
+            inline_data: {
+              mime_type: mimeType,
+              data: base64Data,
             },
-          ],
-        },
-      ],
-      generationConfig: {
-        response_mime_type: 'application/json',
-        response_schema: {
-          type: 'ARRAY',
-          items: {
-            type: 'OBJECT',
-            properties: {
-              event_name: { type: 'STRING', description: 'Festival or event name (e.g. Sea.Hear.Now)' },
-              venue: { type: 'STRING', description: 'Venue name or city (e.g. Asbury Park, NJ)' },
-              date: { type: 'STRING', description: 'Event date in YYYY-MM-DD format' },
-              artist_name: { type: 'STRING', description: 'Artist or band name exactly as written on the poster' },
-              time: { type: 'STRING', nullable: true, description: 'Start time in 24-hour HH:MM format (e.g. "16:00") or null if not shown' },
-              category: { type: 'STRING', description: 'Event category: Live Music, DJ, Comedy, Festival, or Other' },
-              confidence_score: { type: 'INTEGER', description: 'AI confidence 1-100 that the category is correct' },
-            },
-            required: ['artist_name', 'date', 'category', 'confidence_score'],
           },
-        },
-        temperature: 0.1, // Low temperature for precise OCR extraction
+        ],
       },
-    }),
-  });
+    ],
+    generationConfig: {
+      response_mime_type: 'application/json',
+      response_schema: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            event_name: { type: 'STRING', description: 'Festival or event name (e.g. Sea.Hear.Now)' },
+            venue: { type: 'STRING', description: 'Venue name or city (e.g. Asbury Park, NJ)' },
+            date: { type: 'STRING', description: 'Event date in YYYY-MM-DD format' },
+            artist_name: { type: 'STRING', description: 'Artist or band name exactly as written on the poster' },
+            time: { type: 'STRING', nullable: true, description: 'Start time in 24-hour HH:MM format (e.g. "16:00") or null if not shown' },
+            category: { type: 'STRING', description: 'Event category: Live Music, DJ, Comedy, Festival, or Other' },
+            confidence_score: { type: 'INTEGER', description: 'AI confidence 1-100 that the category is correct' },
+          },
+          required: ['artist_name', 'date', 'category', 'confidence_score'],
+        },
+      },
+      temperature: 0.1, // Low temperature for precise OCR extraction
+    },
+  };
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`[VisionOCR] Gemini API error ${res.status}: ${body.slice(0, 300)}`);
+  // Try primary model (Flash), retry once on 429, then fall back to Pro
+  const modelsToTry = [GEMINI_PRIMARY_MODEL, GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL];
+  let data;
+
+  for (let attempt = 0; attempt < modelsToTry.length; attempt++) {
+    const model = modelsToTry[attempt];
+    const url = `${GEMINI_API_BASE}/${model}:generateContent?key=${apiKey}`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (res.status === 429) {
+      const retryAfter = res.headers.get('retry-after');
+      const waitMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : (attempt === 0 ? 2000 : 5000);
+      console.warn(`[VisionOCR] ${model} rate-limited (429), waiting ${waitMs}ms before ${attempt < 2 ? 'retry' : 'giving up'}…`);
+      if (attempt < modelsToTry.length - 1) {
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      throw new Error(`[VisionOCR] All Gemini models rate-limited — tried Flash (2x) and Pro`);
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      // On 500/503, try next model
+      if ((res.status >= 500) && attempt < modelsToTry.length - 1) {
+        console.warn(`[VisionOCR] ${model} returned ${res.status}, falling back…`);
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw new Error(`[VisionOCR] Gemini API error ${res.status}: ${body.slice(0, 300)}`);
+    }
+
+    data = await res.json();
+    if (attempt > 0) {
+      console.log(`[VisionOCR] Succeeded on attempt ${attempt + 1} with model ${model}`);
+    }
+    break;
   }
-
-  const data = await res.json();
 
   // Extract the text content from Gemini's response
   const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
