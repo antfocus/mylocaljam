@@ -442,54 +442,99 @@ export default function HomePage() {
   }, [searchQuery]);
 
   // ── Autocomplete suggestions from in-memory events (debounced) ─────────────
+  //
+  // Classification rules (2026-04-21):
+  //   • Rows with a real joined artist (e.artists?.name) → badge "ARTIST",
+  //     unless the name itself looks like an event title or drink special.
+  //   • Rows whose title matches an event-type keyword → badge reflects the
+  //     event type (karaoke, trivia, bingo, festival, …). We used to label
+  //     every event-type title "FESTIVAL" which mis-represented Karaoke,
+  //     Trivia, Open-Mic, etc.
+  //   • Rows whose title matches a drink/food-special pattern ($2 pints,
+  //     Happy Hour, BOGO, wing night, power hour, Miller/Coors/Bud Lite
+  //     variants, …) are filtered out entirely — they're scraper debris,
+  //     not something users meaningfully search for.
+  //   • Rows that fall through all of the above and aren't a real artist
+  //     are dropped rather than mis-labeled "ARTIST".
   const autoCompleteSuggestions = useMemo(() => {
     const rawQ = (debouncedSearch ?? '').trim().toLowerCase();
     if (!rawQ || rawQ.length < 2 || !events.length) return [];
     const q = normalizeVenue(debouncedSearch);
 
-    const artistSet = new Map();   // normalized → display name
-    const venueSet = new Map();    // normalized → display name
-    const festivalSet = new Map(); // normalized → display name
+    // Keyword → display-label map. Order matters: first match wins, so put
+    // the most specific patterns (karaoke, trivia) above the generic
+    // catch-all ones (event, festival).
+    const EVENT_TYPE_LABELS = [
+      { re: /\bkaraoke\b/i,                                                          label: 'karaoke' },
+      { re: /\btrivia\b/i,                                                           label: 'trivia' },
+      { re: /\bbingo\b/i,                                                            label: 'bingo' },
+      { re: /\bopen\s+mic\b/i,                                                       label: 'open mic' },
+      { re: /\bcomedy(\s+show|\s+night)?\b/i,                                        label: 'comedy' },
+      { re: /\b(festival|fest\b|fair|carnival|jamboree|block\s+party)\b/i,           label: 'festival' },
+      { re: /\b(fundraiser|benefit(\s+show|\s+concert)?|charity\s+drive)\b/i,        label: 'fundraiser' },
+      { re: /\b(parade|rodeo|5k|fireworks|car\s+show|craft\s+fair|memorial|recreation)\b/i, label: 'event' },
+    ];
 
-    // Words/phrases that indicate an event title, not an artist name
-    const EVENT_TITLE_RE = /\b(presents?|featuring|feat\.|fest(ival)?|parade|rodeo|celebration|fundraiser|benefit|memorial|comedy show|bingo|trivia|karaoke|open mic|recreation|block party|car show|craft fair|flea market|fireworks|5k|run walk|jams presents)\b/i;
+    // Drink/food specials — never suggest these. They pollute the dropdown
+    // because the scraper parks raw promo copy in `artist_name`/`event_title`
+    // when it can't extract a real headliner.
+    const DRINK_SPECIAL_RE = /(\$\s*\d|\bhappy\s+hour\b|\bbogo\b|\bhalf[-\s]price\b|\b2\s*for\s*1\b|\bwing\s+night\b|\btaco\s+tuesday\b|\bburger\s+night\b|\bladies\s+night\b|\bpower\s+hour\b|\bbottomless\b|\b(?:miller|coors|bud|yuengling|high\s+noons?)\s+(?:lite|light|draft|pints?)?\b|\bdraft\s+beers?\b|\bpints?\s+til\b|\bdrink\s+special\b|\bfood\s*&?\s*drink\s+special\b)/i;
+
+    function classifyTitle(title) {
+      if (!title) return null;
+      if (DRINK_SPECIAL_RE.test(title)) return null;
+      for (const { re, label } of EVENT_TYPE_LABELS) {
+        if (re.test(title)) return label;
+      }
+      return null;
+    }
+
+    const artistSet = new Map();   // normalized → display name
+    const venueSet  = new Map();   // normalized → display name
+    const eventSet  = new Map();   // normalized → { label, display }
 
     for (const e of events) {
-      // Artists: use joined artists table data — skip event titles masquerading as artists
-      // Filters: must have enrichment, must be ≤50 chars, must not contain event-title keywords
+      // Artists: require a real linked artist row (the `artists` join only
+      // populates when artist_id FK is set). Skip names that look like
+      // event titles or drink specials so mis-placed scraper rows never
+      // get mis-labeled "ARTIST".
       const artistName = (e.artists?.name ?? '').trim();
-      if (artistName && artistName.length <= 50 && !EVENT_TITLE_RE.test(artistName)) {
+      if (artistName
+          && artistName.length <= 50
+          && !classifyTitle(artistName)
+          && !DRINK_SPECIAL_RE.test(artistName)) {
         const key = artistName.toLowerCase();
         if (key.includes(q) && !artistSet.has(key)) artistSet.set(key, artistName);
       }
+
       // Venues: from joined venue data
       const venue = (e.venue ?? '').trim();
       if (venue) {
         const key = venue.toLowerCase();
         if (key.includes(q) && !venueSet.has(key)) venueSet.set(key, venue);
       }
-      // Event titles: only treat as "festival" if it contains event-type keywords;
-      // otherwise it's just an artist name from an event template → add to artistSet
-      const eventTitle = (e.event_title ?? '').trim();
-      if (eventTitle) {
-        const key = normalizeVenue(eventTitle);
+
+      // Event titles (with `artist_name` fallback for un-linked scraper
+      // rows where the descriptive name lives there instead of
+      // `event_title`). Classify by keyword; drop anything we can't
+      // classify — we no longer default to the "artist" bucket.
+      const rawTitle = (e.event_title ?? '').trim() || (e.artist_name ?? '').trim();
+      if (rawTitle) {
+        const key = normalizeVenue(rawTitle);
         if (key.includes(q)) {
-          if (EVENT_TITLE_RE.test(eventTitle)) {
-            // Actual festival/event name
-            if (!festivalSet.has(key)) festivalSet.set(key, eventTitle);
-          } else {
-            // Artist name used as event title (from template) — add to artist list
-            if (!artistSet.has(key)) artistSet.set(key, eventTitle);
+          const label = classifyTitle(rawTitle);
+          if (label && !eventSet.has(key)) {
+            eventSet.set(key, { label, display: rawTitle });
           }
         }
       }
     }
 
     const results = [];
-    // Festivals first (most specific), then venues, then artists
-    for (const [, display] of festivalSet) {
+    // Event-type matches first (most specific), then venues, then artists.
+    for (const [, entry] of eventSet) {
       if (results.length >= 6) break;
-      results.push({ type: 'festival', label: display });
+      results.push({ type: entry.label, label: entry.display });
     }
     for (const [, display] of venueSet) {
       if (results.length >= 6) break;
@@ -2103,8 +2148,18 @@ export default function HomePage() {
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                               <path
-                                d={s.type === 'festival' ? MATERIAL_ICON_PATHS.local_fire_department : s.type === 'venue' ? MATERIAL_ICON_PATHS.location_on : MATERIAL_ICON_PATHS.music_note}
-                                fill={s.type === 'festival' ? '#f59e0b' : s.type === 'venue' ? '#a78bfa' : '#E8722A'}
+                                d={
+                                  s.type === 'venue'    ? MATERIAL_ICON_PATHS.location_on
+                                : s.type === 'artist'   ? MATERIAL_ICON_PATHS.music_note
+                                : s.type === 'festival' ? MATERIAL_ICON_PATHS.local_fire_department
+                                :                         MATERIAL_ICON_PATHS.calendar_month
+                                }
+                                fill={
+                                  s.type === 'venue'    ? '#a78bfa'
+                                : s.type === 'artist'   ? '#E8722A'
+                                : s.type === 'festival' ? '#f59e0b'
+                                :                         '#10b981'
+                                }
                               />
                             </svg>
                             <span style={{

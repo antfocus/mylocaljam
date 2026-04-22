@@ -469,11 +469,24 @@ export async function DELETE(request) {
   // artist.name) which reached into past rows and future rows at other
   // dates — exact shape of the 2026-04-14 "7:12 PM Ghost" that falsely
   // locked 5 April 21 rows. See HANDOVER 2026-04-16 postmortem.
+  //
+  // 2026-04-21: DO NOT set `is_human_edited: true` here. This flag means
+  // "a human curated this event's fields, so event-level data beats
+  // template-level data in the waterfall." Reclassifying an artist as a
+  // drink special is a machine-level categorization, not a human curation.
+  // Setting the flag caused the enrichment cascade to clobber template
+  // images on Karaoke / Snow Crabs / Trivia rows overnight (see HANDOVER
+  // 2026-04-20 postmortem). Category + artist_name=null are sufficient to
+  // skip this event in the enrichment queue; the lock flag is unnecessary.
+  //
+  // Also: the correct category string is "Food & Drink Special" (matches
+  // the enum used elsewhere); the old "Drink/Food Special" is a typo and
+  // never surfaced in the UI filters.
   if (action === 'convert-to-special' && eventCount > 0) {
     const eventIds = linkedEvents.map(e => e.id);
     await supabase
       .from('events')
-      .update({ category: 'Drink/Food Special', artist_name: null, artist_bio: null, is_human_edited: true })
+      .update({ category: 'Food & Drink Special', artist_name: null, artist_bio: null })
       .in('id', eventIds);
   }
 
@@ -492,11 +505,16 @@ export async function DELETE(request) {
   //   • Other venues / other dates matching by name coincidence: untouched
   //     unless they're also upcoming-published-linked (which is the whole
   //     point — that's when they'd be legitimately affected).
+  // 2026-04-21: DO NOT set `is_human_edited: true` here either — same
+  // reason as convert-to-special above. Nulling `artist_id` is enough to
+  // sever the link; the scraper can't re-attach because the artist row is
+  // about to be deleted AND added to ignored_artists below. The lock flag
+  // was the root cause of the waterfall poisoning.
   if (eventCount > 0) {
     const eventIds = linkedEvents.map(e => e.id);
     await supabase
       .from('events')
-      .update({ artist_id: null, is_human_edited: true })
+      .update({ artist_id: null })
       .in('id', eventIds);
   }
 
