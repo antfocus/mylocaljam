@@ -1647,10 +1647,10 @@ export default function HomePage() {
 
   // ── Shared styles ────────────────────────────────────────────────────────────
   const dateSeparatorStyle = {
-    // Column-label treatment: smaller + tighter so the label reads as a
-    // divider anchored to the ticket-stub column below, not a page title.
-    fontSize: '14px', fontWeight: 700, textTransform: 'uppercase',
-    letterSpacing: '1.2px', color: darkMode ? '#A0A0BE' : '#6B7280',
+    // Section-divider treatment: big enough that users notice the date
+    // change on scroll but still quieter than card titles.
+    fontSize: '17px', fontWeight: 800, textTransform: 'uppercase',
+    letterSpacing: '1px', color: darkMode ? '#D8D8F0' : '#1F2937',
     fontFamily: "'DM Sans', sans-serif",
   };
 
@@ -3320,68 +3320,58 @@ export default function HomePage() {
               </div>
             ) : (
               <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {/* Hidden native date input — triggered by the calendar icon
-                    button inside each sticky date header. Single instance,
-                    referenced by ref so every header button targets it. */}
-                <input
-                  ref={datePickRef}
-                  type="date"
-                  min={new Date().toISOString().slice(0, 10)}
-                  value={pickedDate || ''}
-                  onChange={e => {
-                    const v = e.target.value;
-                    if (!v) return;
-                    setPickedDate(v);
-                    setDateKey('pick');
-                  }}
-                  style={{
-                    position: 'absolute', width: '1px', height: '1px',
-                    padding: 0, margin: '-1px', overflow: 'hidden',
-                    clip: 'rect(0,0,0,0)', whiteSpace: 'nowrap', border: 0,
-                  }}
-                  aria-hidden="true"
-                  tabIndex={-1}
-                />
                 {groupedEvents.map(group => (
                   <div key={group.date}>
                     <div data-date-header={group.date} style={{
                       position: 'sticky', top: 0, zIndex: 50,
                       padding: '16px 0 8px',
                       background: t.bg,
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+                      display: 'flex', alignItems: 'center', gap: '8px',
                     }}>
                       <span style={dateSeparatorStyle}>{group.label}</span>
-                      <button
-                        onClick={() => {
-                          const el = datePickRef.current;
-                          if (!el) return;
-                          // showPicker() is the modern way (Chrome 99+, Safari
-                          // 16+, Firefox 101+); fall back to focus+click for
-                          // older browsers.
-                          if (typeof el.showPicker === 'function') {
-                            try { el.showPicker(); return; } catch {}
-                          }
-                          el.focus();
-                          el.click();
-                        }}
-                        aria-label="Pick a date"
-                        title="Pick a date"
-                        style={{
-                          // Sized to match the 14px column-label treatment —
-                          // a 32px button would dwarf the shrunk header.
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          width: '24px', height: '24px', padding: 0, flexShrink: 0,
-                          background: 'transparent', border: 'none', borderRadius: '6px',
-                          cursor: 'pointer',
-                          color: darkMode ? '#A0A0BE' : '#6B7280',
-                        }}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      {/* Calendar pick-a-date target: a real (but visually
+                          transparent) <input type="date"> overlaid on top of
+                          the icon. Tapping the icon IS tapping the input, so
+                          iOS Safari fires its native bottom-sheet date picker
+                          reliably — showPicker() alone is flaky on mobile.
+                          One input per header is fine; they all write the
+                          same pickedDate state. */}
+                      <span style={{
+                        position: 'relative', display: 'inline-flex',
+                        alignItems: 'center', justifyContent: 'center',
+                        width: '28px', height: '28px', flexShrink: 0,
+                        color: darkMode ? '#A0A0BE' : '#6B7280',
+                        cursor: 'pointer',
+                      }}>
+                        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                           <rect x="1" y="2.5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
                           <path d="M1 6.5h14" stroke="currentColor" strokeWidth="1.5"/>
                           <path d="M4.5 1v3M11.5 1v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                         </svg>
-                      </button>
+                        <input
+                          type="date"
+                          min={new Date().toISOString().slice(0, 10)}
+                          value={pickedDate || ''}
+                          onChange={e => {
+                            const v = e.target.value;
+                            if (!v) return;
+                            setPickedDate(v);
+                            setDateKey('pick');
+                          }}
+                          aria-label="Pick a date"
+                          title="Pick a date"
+                          style={{
+                            position: 'absolute', inset: 0,
+                            width: '100%', height: '100%',
+                            opacity: 0, cursor: 'pointer',
+                            padding: 0, margin: 0, border: 'none',
+                            background: 'transparent',
+                            // 16px font prevents iOS Safari from auto-zooming
+                            // the viewport when the input gets focus.
+                            fontSize: '16px',
+                          }}
+                        />
+                      </span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {group.events.map((event, i) => (
