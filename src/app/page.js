@@ -443,7 +443,7 @@ export default function HomePage() {
 
   // ── Autocomplete suggestions from in-memory events (debounced) ─────────────
   //
-  // Classification rules (2026-04-21):
+  // Classification rules (2026-04-21, revised):
   //   • Rows with a real joined artist (e.artists?.name) → badge "ARTIST",
   //     unless the name itself looks like an event title or drink special.
   //   • Rows whose title matches an event-type keyword → badge reflects the
@@ -454,8 +454,11 @@ export default function HomePage() {
   //     Happy Hour, BOGO, wing night, power hour, Miller/Coors/Bud Lite
   //     variants, …) are filtered out entirely — they're scraper debris,
   //     not something users meaningfully search for.
-  //   • Rows that fall through all of the above and aren't a real artist
-  //     are dropped rather than mis-labeled "ARTIST".
+  //   • Rows whose artist FK isn't linked but have a reasonable-looking
+  //     event_title/artist_name (not a drink special, <=50 chars, no event
+  //     keyword match) fall through to the ARTIST bucket. This is the
+  //     common case for scraper rows that haven't been enriched yet —
+  //     without it, the dropdown stays empty for most searches.
   const autoCompleteSuggestions = useMemo(() => {
     const rawQ = (debouncedSearch ?? '').trim().toLowerCase();
     if (!rawQ || rawQ.length < 2 || !events.length) return [];
@@ -516,15 +519,27 @@ export default function HomePage() {
 
       // Event titles (with `artist_name` fallback for un-linked scraper
       // rows where the descriptive name lives there instead of
-      // `event_title`). Classify by keyword; drop anything we can't
-      // classify — we no longer default to the "artist" bucket.
+      // `event_title`). Classify by keyword; otherwise fall through to
+      // the ARTIST bucket so un-enriched rows still surface — but only
+      // if they pass the drink-special filter and look like a real name.
       const rawTitle = (e.event_title ?? '').trim() || (e.artist_name ?? '').trim();
       if (rawTitle) {
         const key = normalizeVenue(rawTitle);
         if (key.includes(q)) {
           const label = classifyTitle(rawTitle);
-          if (label && !eventSet.has(key)) {
-            eventSet.set(key, { label, display: rawTitle });
+          if (label) {
+            if (!eventSet.has(key)) {
+              eventSet.set(key, { label, display: rawTitle });
+            }
+          } else if (
+            rawTitle.length <= 50
+            && !DRINK_SPECIAL_RE.test(rawTitle)
+          ) {
+            // Un-classified, non-special rawTitle → treat as artist so the
+            // dropdown still surfaces scraper rows where the artist FK
+            // hasn't been linked yet.
+            const akey = rawTitle.toLowerCase();
+            if (!artistSet.has(akey)) artistSet.set(akey, rawTitle);
           }
         }
       }
