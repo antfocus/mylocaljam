@@ -4363,3 +4363,104 @@ curl -X POST http://localhost:3000/api/admin/enrich-backfill \
 | `HANDOVER.md` | This section |
 | `SCRAPERS.md` | Cross-reference to enrichment pipeline |
 
+---
+
+## Session — April 21, 2026 — Autocomplete Fix, Event Series Phase 1
+
+### Summary
+
+Two discrete work streams. First, patched an autocomplete regression where drink specials and orphaned artist rows were being dropped from search suggestions. Second, shipped Phase 1 of the Event Series architecture — a first-class parent entity for festivals, town concert series, parades, and other named multi-event umbrellas, with an admin-gated checkbox in the approval modal that opts a submission into a series row. Phases 2 (backfill audit) and 3 (parent/child admin UI) are queued.
+
+### 1. Autocomplete Regression — Drink Specials + Artist Fallback
+
+**Problem:** Searching for strings like `"$2 miller"`, `"bogo burger"`, or `"extended happy hour"` returned no suggestions even though events existed. Additionally, events whose `artist_name` had no row in the `artists` table (un-linked) never populated as search candidates.
+
+**Root cause (two bugs introduced in commit `e0d0ef4`):**
+- `classifyTitle()` in `src/app/page.js` returned `null` for drink special strings, so they were filtered out of all three autocomplete buckets (artist / venue / event-type).
+- The event bucket dropped any un-classified `rawTitle` instead of falling back to the artist set.
+
+**Fix (committed `103e7b3` + `abe2d4c`):**
+- Added a `'special'` classification branch so drink specials get their own badge instead of being silently dropped. `classifyTitle()` now returns `'special'` when `DRINK_SPECIAL_RE` matches.
+- Added an artist-set fallback: if a rawTitle has no classification and is ≤ 50 chars, it flows into the artist bucket.
+- Added a new dropdown icon (`MATERIAL_ICON_PATHS.restaurant`, pink `#ec4899`) for the `'special'` type so the UI distinguishes a happy-hour match from an artist match.
+
+**Verification:** Typed `"bogo"` and `"$2 miller"` — both return matching events with the pink restaurant icon. Typed an orphan artist name — now shows in results.
+
+### 2. Event Series — Phase 1A: `event_series` Table + `events.series_id` FK
+
+**Problem:** The "Festivals & Event Titles" admin tab grouped events by the free-text `events.event_title` field. Because every admin-approved submission with an OCR-extracted `event_name` ended up with `event_title` populated, the tab surfaced every flyer title as a "festival" — a show called "Kevin Hill and Sandy Mack" showed up as one. Parent-level metadata (banner, description, date range, ticket URL) had no place to live.
+
+**Design (committed `a2513a9`):** New `event_series` parent table with:
+- `id`, `name`, `slug` (UNIQUE), `category` (NOT NULL CHECK `IN ('festival','concert_series','parade','other')`)
+- `banner_url`, `description`, `start_date`, `end_date`
+- `venue_id` (FK → venues, ON DELETE SET NULL), `ticket_url`, `website_url`
+- `tags` (text[] NOT NULL DEFAULT `ARRAY[]::text[]`), `status` (`published | draft | canceled`)
+- `created_at`, `updated_at` (with `trg_event_series_updated_at` BEFORE UPDATE trigger)
+- Indexes: `idx_event_series_name_lower` for case-insensitive find-or-create, plus `status` and `category`
+- RLS: `event_series_public_read USING (true)` — matches sibling tables (artists, venues, event_templates); writes gated by the service role
+
+Plus `events.series_id uuid` column with FK `fk_events_series_id ON DELETE SET NULL` and a partial index (`WHERE series_id IS NOT NULL`) since most events won't have a parent series.
+
+**Migration file:** `supabase/migrations/20260421_event_series.sql` (fully commented — category taxonomy, design rationale, post-migration steps). Applied to prod via Supabase MCP `apply_migration` after verifying (a) `pgcrypto` is installed for `gen_random_uuid()` and (b) the `venues` table is safe to FK-reference.
+
+**Category taxonomy:**
+- `festival` — Sea Hear Now, Asbury Park Reggae Fest
+- `concert_series` — Manasquan Beach Concerts, Belmar Summer Sounds (local town events that fit the umbrella pattern without literally being festivals)
+- `parade` — Belmar Parade Day, St. Patrick's Day Parade
+- `other` — catch-all for named umbrellas that don't fit above
+
+Category is required. `'other'` is the safe fallback.
+
+### 3. Event Series — Phase 1B: Admin-Gated Opt-In Checkbox
+
+**Problem:** Until the approval code was updated, every OCR-extracted `event_name` would still auto-promote to `event_title` and `is_festival=true`, defeating the purpose of the new schema.
+
+**Fix (committed `5e0548a`):** Three-file change to gate series/festival linkage behind an explicit admin action in the approval modal. The checkbox lives ONLY on the admin page — public submissions never see it.
+
+**`src/hooks/useAdminQueue.js`:**
+- Added `is_series: false`, `series_category: 'festival'` to `queueForm` initial state
+- `populateQueueForm` now resets these to OFF on every submission load — no cross-contamination between queue rows
+
+**`src/components/admin/AdminSubmissionsTab.js`:**
+- Renamed label `"Event / Festival Name"` → `"Event / Series Name"`
+- Removed the auto-firing "🔥 Festival mode" hint (it fired on every populated `event_name`, training the admin to ignore it)
+- Added a dashed-border opt-in panel below the name field with a "Part of a series / festival" checkbox, disabled until the name field is filled
+- When checked, reveals a required category dropdown (festival / concert_series / parade / other) and a reveal hint explaining that a parent series row will be linked on approval
+
+**`src/app/api/admin/queue/route.js` (POST handler):**
+- Replaced unconditional `event_title = eventName; is_festival = true` with admin-gated `isSeries = !!event_data.is_series && !!seriesName`
+- `event_title` is only stamped when `isSeries` is true
+- `is_festival` is only set when `isSeries && seriesCategory === 'festival'` — concert_series / parade / other do NOT get the festival flag
+- After the event insert, a find-or-create block slugifies the name, SELECTs `event_series` by slug, INSERTs a new row with the admin-picked category if needed, then UPDATEs `events.series_id` on the just-created event. Failures log and continue — the event stays published even if series linkage fails (try/catch wrapped)
+
+**Slug rule:** `name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)`. "Sea Hear Now 2026" → `sea-hear-now-2026`. Case-insensitive dedup is guaranteed by the UNIQUE constraint on `event_series.slug`.
+
+**Deployment:** Pushed to `main`; Vercel built deployment `8BSCWNRCv` (commit `5e0548a`) in 29s. UI verified live — checkbox appears with dashed border when name is populated, ticks into a filled amber panel with category dropdown.
+
+### 4. Phase 2 + Phase 3 (Deferred)
+
+- **Phase 2 — `event_title` backfill audit (task #34).** Existing events with non-null `event_title` need a manual pass: real series/festivals get promoted into `event_series` rows and their events re-linked via `series_id`; non-series values (e.g. "Kevin Hill and Sandy Mack") get NULLed. Start from `SELECT DISTINCT event_title, COUNT(*) FROM events WHERE event_title IS NOT NULL GROUP BY 1 ORDER BY 2 DESC`.
+- **Phase 3 — `AdminSeriesTab` parent/child UI (task #35).** Replace the current `AdminFestivalsTab` (which groups by free-text `event_title`) with a proper parent-entity view: series listed as cards, click to expand the child event list with inline spotlight-style metadata. Inline edit for name / banner / description / dates / category.
+
+### 5. Files Changed (April 21)
+
+| File | Change |
+|------|--------|
+| `src/app/page.js` | `classifyTitle()` returns `'special'` for drink specials; event bucket falls back to artist set for un-classified rawTitles ≤ 50 chars; autocomplete dropdown renders `'special'` type with pink restaurant icon |
+| `supabase/migrations/20260421_event_series.sql` | **NEW** — `event_series` table + `events.series_id` FK + RLS + indexes + updated_at trigger. Applied to prod via MCP. |
+| `src/hooks/useAdminQueue.js` | `queueForm` adds `is_series` + `series_category`; `populateQueueForm` resets them per submission |
+| `src/components/admin/AdminSubmissionsTab.js` | Label renamed; auto-firing festival hint removed; opt-in checkbox + category dropdown panel added |
+| `src/app/api/admin/queue/route.js` | `event_title` / `is_festival` writes gated behind `is_series`; find-or-create `event_series` by slug; update `events.series_id` post-insert |
+| `HANDOVER.md` | This section |
+| `Agent_SOP.md` | Roadmap entry for Event Series Phase 2/3 |
+| `SCRAPERS.md` | `series_id` footnote on events column list |
+
+### Safety Locks — Additions
+
+All prior Safety Locks remain in force. This session adds:
+
+- **Series linkage is admin-gated.** `event_title`, `is_festival`, and `series_id` on an `events` row MUST only be set when an admin explicitly ticks the "Part of a series / festival" checkbox in the approval modal. Automation (scrapers, OCR auto-promotion, cron) must NEVER set these fields. The gate lives in `POST /api/admin/queue` — `event_data.is_series === true` is required. Existing scrapers do not touch `series_id`.
+- **`event_series.slug` is the dedup key.** Find-or-create uses `slug = lowercase(name).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)`. Do not change this rule — existing series rows rely on it for lookup. If the rule changes, existing slugs must be backfilled to the new format in the same migration.
+- **`event_series.category` is required.** NOT NULL with CHECK `IN ('festival','concert_series','parade','other')`. `'other'` is the safe fallback. Admin UI defaults to `'festival'` — change the default only if a majority of approvals shift to another category.
+- **`is_festival` is scoped to `category === 'festival'`.** Concert series, parades, and other named umbrellas get a `series_id` link but NOT `is_festival = true`. This keeps the public-feed "festival" badge meaningful.
+
