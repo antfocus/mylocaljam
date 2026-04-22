@@ -184,6 +184,7 @@ export default function AdminEventsTab({
 }) {
   const headers = { Authorization: 'Bearer ' + password };
   const [aiCategorizeLoading, setAiCategorizeLoading] = useState(false);
+  const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
 
   // ── Template matcher dry-run wiring ───────────────────────────────────
   // Two lookup tables, both memoised so we don't recompute per row:
@@ -763,6 +764,66 @@ export default function AdminEventsTab({
                 >
                   <span style={{ fontSize: '13px', lineHeight: 1 }}>{'\uD83E\uDD16'}</span>
                   {aiCategorizeLoading ? `Classifying ${selectedEvents.size}...` : `AI Categorize (${selectedEvents.size})`}
+                </button>
+                {/* Bulk Delete — hard delete matching the per-row trash-can
+                    button. Loops DELETE /api/admin?id=X in parallel (the
+                    same endpoint the single-event button uses) so we don't
+                    need a new batch route. Optimistically removes rows from
+                    local state; on any failure we refetch to resync. */}
+                <button
+                  disabled={bulkDeleteLoading}
+                  onClick={async () => {
+                    const ids = Array.from(selectedEvents);
+                    if (ids.length === 0) return;
+                    if (!confirm(`Permanently delete ${ids.length} event${ids.length !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+                    setBulkDeleteLoading(true);
+                    const prev = events;
+                    // Optimistic removal
+                    if (typeof setEvents === 'function') {
+                      const idSet = new Set(ids);
+                      setEvents(list => list.filter(e => !idSet.has(e.id)));
+                    }
+                    setSelectedEvents(new Set());
+                    try {
+                      const results = await Promise.allSettled(
+                        ids.map(id =>
+                          fetch(`/api/admin?id=${encodeURIComponent(id)}`, { method: 'DELETE', headers })
+                            .then(r => { if (!r.ok) throw new Error('delete_failed:' + id); return r; })
+                        )
+                      );
+                      const failed = results.filter(r => r.status === 'rejected').length;
+                      if (failed > 0) {
+                        // Partial failure — refetch to get the true state back
+                        if (typeof showQueueToast === 'function') {
+                          showQueueToast({ type: 'error', msg: `${failed} of ${ids.length} deletes failed — refreshing list` });
+                        }
+                        await fetchEvents(1);
+                      } else if (typeof showQueueToast === 'function') {
+                        showQueueToast(`Deleted ${ids.length} event${ids.length !== 1 ? 's' : ''}`);
+                      }
+                    } catch (err) {
+                      console.error('Bulk delete failed:', err);
+                      // Rollback optimistic removal
+                      if (typeof setEvents === 'function') setEvents(prev);
+                      if (typeof showQueueToast === 'function') {
+                        showQueueToast({ type: 'error', msg: 'Bulk delete failed — no changes applied' });
+                      }
+                    } finally {
+                      setBulkDeleteLoading(false);
+                    }
+                  }}
+                  style={{
+                    padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
+                    background: bulkDeleteLoading ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.12)',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239,68,68,0.3)',
+                    cursor: bulkDeleteLoading ? 'wait' : 'pointer',
+                    opacity: bulkDeleteLoading ? 0.7 : 1,
+                    fontFamily: "'DM Sans', sans-serif", display: 'flex', alignItems: 'center', gap: '5px',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" /></svg>
+                  {bulkDeleteLoading ? `Deleting ${selectedEvents.size}...` : `Delete (${selectedEvents.size})`}
                 </button>
               </div>
             ) : (
