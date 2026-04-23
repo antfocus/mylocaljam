@@ -23,6 +23,7 @@ import { scrapeIdleHour } from '@/lib/scrapers/idleHour';
 import { scrapeAsburyLanes } from '@/lib/scrapers/asburyLanes';
 import { scrapeBakesBrewing } from '@/lib/scrapers/bakesBrewing';
 import { scrapeRiverRock } from '@/lib/scrapers/riverRock';
+import { scrapeJenksClub } from '@/lib/scrapers/jenksClub';
 import { scrapeWildAir } from '@/lib/scrapers/wildAir';
 import { scrapeAsburyParkBrewery } from '@/lib/scrapers/asburyParkBrewery';
 import { scrapeBoatyard401 } from '@/lib/scrapers/boatyard401';
@@ -303,6 +304,32 @@ export async function POST(request) {
   const syncStartedAt = new Date().toISOString();
   const supabase = getAdminClient();
 
+  // ── Tier-based scraper selection ──────────────────────────────────────────
+  // Default 'fast' for backward compatibility with the existing nightly cron.
+  // The 9 slow scrapers (7 Vision OCR + 2 proxy-routed) are split out to a
+  // weekly cron via /api/sync-events?tier=slow because they collectively eat
+  // ~30s of the 60s Vercel Hobby function budget. 'all' runs everything
+  // (manual diagnostic use; safe to invoke any time without colliding with
+  // the weekly slow-tier health row).
+  const tier = new URL(request.url).searchParams.get('tier') || 'fast';
+  if (!['fast', 'slow', 'all'].includes(tier)) {
+    return NextResponse.json(
+      { error: `Invalid tier: ${tier}. Use fast|slow|all.` },
+      { status: 400 }
+    );
+  }
+  const SLOW_SCRAPER_KEYS = new Set([
+    'TenthAveBurrito', 'Palmetto', 'MjsRestaurant', 'PaganosUva',
+    'CaptainsInn', 'CharleysOcean', 'EventideGrille',
+    'AlgonquinArts', 'TimMcLoones',
+  ]);
+  const includeSlow = tier === 'slow' || tier === 'all';
+  const includeFast = tier === 'fast' || tier === 'all';
+  // No-op stub for skipped scrapers — keeps array positions stable in the
+  // big destructure below so we don't have to refactor the whole orchestration.
+  const skip = async () => ({ events: [], error: null });
+  console.log(`[sync-events] Tier=${tier} (fast=${includeFast}, slow=${includeSlow})`);
+
   // Load venue map and default times
   const { data: venues } = await supabase.from('venues').select('id, name, default_start_time');
   const venueMap = {};
@@ -313,53 +340,54 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
-    scrapePigAndParrot(),
-    scrapeTicketmaster(),
-    scrapeJoesSurfShack(),
-    scrapeStStephensGreen(),
-    scrapeMcCanns(),
-    scrapeBeachHaus(),
-    scrapeMartells(),
-    scrapeBarAnticipation(),
-    scrapeJacksOnTheTracks(),
-    scrapeMarinaGrille(),
-    scrapeAnchorTavern(),
-    scrapeRBar(),
-    scrapeBrielleHouse(),
-    scrapeTenthAveBurrito(),
-    scrapeReefAndBarrel(),
-    scrapePalmetto(),
-    scrapeIdleHour(),
-    scrapeAsburyLanes(),
-    scrapeBakesBrewing(),
-    scrapeRiverRock(),
-    scrapeWildAir(),
-    scrapeAsburyParkBrewery(),
-    scrapeBoatyard401(),
-    scrapeWindwardTavern(),
-    scrapeJamians(),
-    scrapeTheCabin(),
-    scrapeTheVogel(),
-    scrapeSunHarbor(),
-    scrapeBumRogers(),
-    scrapeTheColumns(),
-    scrapeTheRoost(),
-    scrapeDealLakeBar(),
-    scrapeCrabsClaw(),
-    scrapeWaterStreet(),
-    scrapeCrossroads(),
-    scrapeEventideGrille(),
-    scrapeTriumphBrewing(),
-    scrapeBlackSwan(),
-    // Proxy-routed scrapers (IPRoyal residential proxy)
-    scrapeAlgonquinArts(),
-    scrapeTimMcLoones(),
-    // Vision OCR scrapers (Perplexity Sonar — image flyer extraction)
-    scrapeMjsRestaurant(),
-    scrapePaganosUva(),
-    scrapeCaptainsInn(),
-    scrapeCharleysOceanGrill(),
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
+    includeFast ? scrapePigAndParrot() : skip(),
+    includeFast ? scrapeTicketmaster() : skip(),
+    includeFast ? scrapeJoesSurfShack() : skip(),
+    includeFast ? scrapeStStephensGreen() : skip(),
+    includeFast ? scrapeMcCanns() : skip(),
+    includeFast ? scrapeBeachHaus() : skip(),
+    includeFast ? scrapeMartells() : skip(),
+    includeFast ? scrapeBarAnticipation() : skip(),
+    includeFast ? scrapeJacksOnTheTracks() : skip(),
+    includeFast ? scrapeMarinaGrille() : skip(),
+    includeFast ? scrapeAnchorTavern() : skip(),
+    includeFast ? scrapeRBar() : skip(),
+    includeFast ? scrapeBrielleHouse() : skip(),
+    includeSlow ? scrapeTenthAveBurrito() : skip(),     // Vision OCR
+    includeFast ? scrapeReefAndBarrel() : skip(),
+    includeSlow ? scrapePalmetto() : skip(),            // Vision OCR
+    includeFast ? scrapeIdleHour() : skip(),
+    includeFast ? scrapeAsburyLanes() : skip(),
+    includeFast ? scrapeBakesBrewing() : skip(),
+    includeFast ? scrapeRiverRock() : skip(),
+    includeFast ? scrapeJenksClub() : skip(),
+    includeFast ? scrapeWildAir() : skip(),
+    includeFast ? scrapeAsburyParkBrewery() : skip(),
+    includeFast ? scrapeBoatyard401() : skip(),
+    includeFast ? scrapeWindwardTavern() : skip(),
+    includeFast ? scrapeJamians() : skip(),
+    includeFast ? scrapeTheCabin() : skip(),
+    includeFast ? scrapeTheVogel() : skip(),
+    includeFast ? scrapeSunHarbor() : skip(),
+    includeFast ? scrapeBumRogers() : skip(),
+    includeFast ? scrapeTheColumns() : skip(),
+    includeFast ? scrapeTheRoost() : skip(),
+    includeFast ? scrapeDealLakeBar() : skip(),
+    includeFast ? scrapeCrabsClaw() : skip(),
+    includeFast ? scrapeWaterStreet() : skip(),
+    includeFast ? scrapeCrossroads() : skip(),
+    includeSlow ? scrapeEventideGrille() : skip(),      // Vision OCR
+    includeFast ? scrapeTriumphBrewing() : skip(),
+    includeFast ? scrapeBlackSwan() : skip(),
+    // Proxy-routed scrapers (IPRoyal residential proxy) — slow tier
+    includeSlow ? scrapeAlgonquinArts() : skip(),
+    includeSlow ? scrapeTimMcLoones() : skip(),
+    // Vision OCR scrapers (Perplexity Sonar — image flyer extraction) — slow tier
+    includeSlow ? scrapeMjsRestaurant() : skip(),
+    includeSlow ? scrapePaganosUva() : skip(),
+    includeSlow ? scrapeCaptainsInn() : skip(),
+    includeSlow ? scrapeCharleysOceanGrill() : skip(),
   ]);
 
   const scraperResults = {
@@ -383,6 +411,7 @@ export async function POST(request) {
     AsburyLanes: { count: asburyLanes.events.length, error: asburyLanes.error },
     BakesBrewing: { count: bakesBrewing.events.length, error: bakesBrewing.error },
     RiverRock: { count: riverRock.events.length, error: riverRock.error },
+    JenksClub: { count: jenksClub.events.length, error: jenksClub.error },
     WildAir: { count: wildAir.events.length, error: wildAir.error },
     AsburyParkBrewery: { count: asburyParkBrewery.events.length, error: asburyParkBrewery.error },
     Boatyard401: { count: boatyard401.events.length, error: boatyard401.error },
@@ -433,6 +462,7 @@ export async function POST(request) {
     AsburyLanes: { venue: 'Asbury Lanes', url: 'https://www.asburylanes.com', source: 'HTML Scrape' },
     BakesBrewing: { venue: 'Bakes Brewing', url: 'https://www.bakesbrewing.com', source: 'HTML Scrape (Webflow)' },
     RiverRock: { venue: 'River Rock', url: 'https://riverrockbricknj.com', source: 'WordPress AJAX' },
+    JenksClub: { venue: 'Jenks Club', url: 'https://jenksclub.com', source: 'WordPress AJAX (Calendarize It)' },
     WildAir: { venue: 'Wild Air Beerworks', url: 'https://www.wildairbeer.com', source: 'Squarespace' },
     AsburyParkBrewery: { venue: 'Asbury Park Brewery', url: 'https://www.asburyparkbrewery.com', source: 'Squarespace' },
     Boatyard401: { venue: 'Boatyard 401', url: 'https://boatyard401.com', source: 'WordPress AJAX' },
@@ -462,28 +492,41 @@ export async function POST(request) {
   };
 
   try {
-    const healthRows = Object.entries(scraperResults).map(([key, result]) => {
-      const reg = VENUE_REGISTRY[key] || { venue: key, url: '', source: 'Unknown' };
-      return {
-        scraper_key: key,
-        venue_name: reg.venue,
-        website_url: reg.url || null,
-        platform: reg.source || 'Unknown',
-        events_found: result.count || 0,
-        last_sync_count: result.count || 0,
-        status: result.error ? 'fail' : (result.count === 0 ? 'warning' : 'success'),
-        error_message: result.error || null,
-        last_sync: new Date().toISOString(),
-      };
-    });
+    // Only write health rows for scrapers that actually ran in this tier.
+    // Skipped scrapers' rows stay untouched (preserving their last successful
+    // sync timestamp from whichever tier they belong to).
+    const healthRows = Object.entries(scraperResults)
+      .filter(([key]) => SLOW_SCRAPER_KEYS.has(key) ? includeSlow : includeFast)
+      .map(([key, result]) => {
+        const reg = VENUE_REGISTRY[key] || { venue: key, url: '', source: 'Unknown' };
+        return {
+          scraper_key: key,
+          venue_name: reg.venue,
+          website_url: reg.url || null,
+          platform: reg.source || 'Unknown',
+          events_found: result.count || 0,
+          last_sync_count: result.count || 0,
+          status: result.error ? 'fail' : (result.count === 0 ? 'warning' : 'success'),
+          error_message: result.error || null,
+          last_sync: new Date().toISOString(),
+        };
+      });
 
-    // Global summary row — reflects TOTAL events processed across all scrapers.
-    // If the sync reached this point (no fatal error), status is SUCCESS.
-    const totalScrapedCount = Object.values(scraperResults).reduce((sum, r) => sum + (r.count || 0), 0);
-    const failedScrapers = Object.values(scraperResults).filter(r => r.error).length;
+    // Global summary row — reflects TOTAL events processed across all scrapers
+    // that ran in this tier. Slow tier writes to a separate key so the daily
+    // fast cron's last_sync timestamp on _global_sync isn't clobbered weekly.
+    const ranScraperResults = Object.fromEntries(
+      Object.entries(scraperResults).filter(
+        ([key]) => SLOW_SCRAPER_KEYS.has(key) ? includeSlow : includeFast
+      )
+    );
+    const totalScrapedCount = Object.values(ranScraperResults).reduce((sum, r) => sum + (r.count || 0), 0);
+    const failedScrapers = Object.values(ranScraperResults).filter(r => r.error).length;
     healthRows.push({
-      scraper_key: '_global_sync',
-      venue_name: 'All Venues (Sync Summary)',
+      scraper_key: tier === 'slow' ? '_global_sync_slow' : '_global_sync',
+      venue_name: tier === 'slow'
+        ? 'All Venues (Slow Tier — Weekly)'
+        : 'All Venues (Sync Summary)',
       website_url: null,
       platform: 'System',
       events_found: totalUpserted,               // total events upserted, not just new
@@ -522,6 +565,7 @@ export async function POST(request) {
     ...asburyLanes.events,
     ...bakesBrewing.events,
     ...riverRock.events,
+    ...jenksClub.events,
     ...wildAir.events,
     ...asburyParkBrewery.events,
     ...boatyard401.events,

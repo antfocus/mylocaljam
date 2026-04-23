@@ -5,6 +5,10 @@
       "schedule": "0 2 * * *"
     },
     {
+      "path": "/api/sync-events?tier=slow",
+      "schedule": "0 11 * * 0"
+    },
+    {
       "path": "/api/notify?trigger=tracked_show",
       "schedule": "0 14 * * *"
     },
