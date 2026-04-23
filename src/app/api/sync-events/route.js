@@ -756,6 +756,20 @@ export async function POST(request) {
     }
   }
 
+  // Default is_category_verified=false on every row before upsert. The column
+  // is NOT NULL in Postgres (added with the Confidence Cascade work). Template
+  // matches above already flipped this to true at line 742 when appropriate;
+  // everything else is an unverified row awaiting AI categorize or human review,
+  // which is the semantic meaning of false. Without this default the field is
+  // `undefined` on the object, Supabase writes it as NULL, and the row gets
+  // rejected with "null value in column is_category_verified ... violates
+  // not-null constraint" — silently dropping ~50/1460 events per sync.
+  for (const ev of validEvents) {
+    if (ev.is_category_verified === undefined || ev.is_category_verified === null) {
+      ev.is_category_verified = false;
+    }
+  }
+
   // Split events: unprotected get full upsert, protected only get safe fields updated
   const unprotectedEvents = validEvents.filter(ev => !protectedIds.has(ev.external_id));
   const protectedEvents = validEvents.filter(ev => protectedIds.has(ev.external_id));
