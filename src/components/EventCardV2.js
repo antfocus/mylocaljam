@@ -317,11 +317,29 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 style={{ transition: 'all 0.2s ease' }}
               >
                 {isFavorited ? (
-                  /* Filled ticket — solid orange */
-                  <path d="M22 10V6a2 2 0 00-2-2H4a2 2 0 00-2 2v4a2 2 0 100 4v4a2 2 0 002 2h16a2 2 0 002-2v-4a2 2 0 100-4z" fill="#E8722A" />
+                  /* Filled ticket stub — tilted, solid orange, white perforation */
+                  <g transform="rotate(-18 12 12)">
+                    <path
+                      d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z"
+                      fill="#E8722A"
+                    />
+                    <line
+                      x1="8" y1="8.5" x2="8" y2="15.5"
+                      stroke="rgba(255,255,255,0.85)" strokeWidth="1.25"
+                      strokeLinecap="round" strokeDasharray="1.25 1.25"
+                    />
+                  </g>
                 ) : (
-                  /* Outlined ticket — ghost stub */
-                  <path d="M22 10V6a2 2 0 00-2-2H4a2 2 0 00-2 2v4a2 2 0 100 4v4a2 2 0 002 2h16a2 2 0 002-2v-4a2 2 0 100-4zm-2-1.46a4 4 0 000 6.92V18H4v-2.54a4 4 0 000-6.92V6h16v2.54z" fill={darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'} />
+                  /* Outlined ticket stub — ghost, tilted, inward end-notches, dashed perforation */
+                  <g transform="rotate(-18 12 12)"
+                     fill="none"
+                     stroke={darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)'}
+                     strokeWidth="1.75"
+                     strokeLinecap="round"
+                     strokeLinejoin="round">
+                    <path d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z"/>
+                    <line x1="8" y1="8.5" x2="8" y2="15.5" strokeDasharray="1.25 1.25"/>
+                  </g>
                 )}
               </svg>
             </button>
