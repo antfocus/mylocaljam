@@ -305,27 +305,83 @@ export async function POST(request) {
   const syncStartedAt = new Date().toISOString();
   const supabase = getAdminClient();
 
-  // ── Tier-based scraper selection ──────────────────────────────────────────
-  // Default 'fast' for backward compatibility with the existing nightly cron.
-  // The 9 slow scrapers (7 Vision OCR + 2 proxy-routed) are split out to a
-  // weekly cron via /api/sync-events?tier=slow because they collectively eat
-  // ~30s of the 60s Vercel Hobby function budget. 'all' runs everything
-  // (manual diagnostic use; safe to invoke any time without colliding with
-  // the weekly slow-tier health row).
-  const tier = new URL(request.url).searchParams.get('tier') || 'fast';
-  if (!['fast', 'slow', 'all'].includes(tier)) {
+  // ── Shard/tier-based scraper selection ────────────────────────────────────
+  // There are three execution modes, selected by `?shard=` or `?tier=`:
+  //
+  //   ?shard=1         → run FAST_SHARD_1 only (daily cron, ~25-30s budget)
+  //   ?shard=2         → run FAST_SHARD_2 only (daily cron, ~25-30s budget)
+  //   ?tier=slow       → run SLOW_SCRAPER_KEYS only (weekly cron, Vision OCR + proxy)
+  //   ?tier=fast       → run BOTH fast shards (legacy; manual diagnostic)
+  //   ?tier=all        → run everything (manual diagnostic only)
+  //   (no param)       → defaults to tier=fast (legacy behavior)
+  //
+  // Why shards: as the venue list grew past ~35 scrapers the combined fast-tier
+  // sync hit ~59s/60s on the Vercel Hobby cap. Splitting into two halves gives
+  // each cron ~30s breathing room and scales linearly as new venues are added
+  // (drop each new scraper into whichever shard is lighter). Post-scrape steps
+  // (templateMatcher, autoSort, scraperArtistEnrich, upsert) naturally scope to
+  // the shard because they operate on `allEvents`, which only contains events
+  // from scrapers that actually ran. Slow-tier stays untouched in its weekly
+  // cron.
+  //
+  // Shard assignment is tuned for balance by event volume (≈845 vs ≈850
+  // events/run as of April 2026). RiverRock is intentionally in shard 2 with
+  // its 11s of detail fetches kept apart from Martells's 257 events in shard 1.
+  const shardParam = new URL(request.url).searchParams.get('shard');
+  const tierParam = new URL(request.url).searchParams.get('tier');
+  const tier = tierParam || (shardParam ? null : 'fast');
+  if (tier && !['fast', 'slow', 'all'].includes(tier)) {
     return NextResponse.json(
       { error: `Invalid tier: ${tier}. Use fast|slow|all.` },
       { status: 400 }
     );
   }
+  if (shardParam && !['1', '2'].includes(shardParam)) {
+    return NextResponse.json(
+      { error: `Invalid shard: ${shardParam}. Use 1|2.` },
+      { status: 400 }
+    );
+  }
+
   const SLOW_SCRAPER_KEYS = new Set([
     'TenthAveBurrito', 'Palmetto', 'MjsRestaurant', 'PaganosUva',
     'CaptainsInn', 'CharleysOcean', 'EventideGrille',
     'AlgonquinArts', 'TimMcLoones',
   ]);
+
+  // Fast-tier shard 1 — higher-volume venues + lighter scrapers. ~845 events.
+  const FAST_SHARD_1 = new Set([
+    'Ticketmaster', 'Martells', 'AsburyParkBrewery', 'IdleHour', 'TheVogel',
+    'WindwardTavern', 'JenksClub', 'StStephensGreen', 'Crossroads',
+    'DealLakeBar', 'WildAir', 'TheRoost', 'JacksOnTheTracks', 'BumRogers',
+    'TheColumns', 'TheCabin', 'AnchorTavern', 'Boatyard401',
+  ]);
+
+  // Fast-tier shard 2 — paired with RiverRock (detail-fetch heavy) and the new
+  // ParkerHouse scraper. ~850 events.
+  const FAST_SHARD_2 = new Set([
+    'BarAnticipation', 'ParkerHouse', 'RiverRock', 'McCanns', 'BakesBrewing',
+    'PigAndParrot', 'JoesSurfShack', 'Jamians', 'BeachHaus', 'AsburyLanes',
+    'TriumphBrewing', 'ReefAndBarrel', 'SunHarbor', 'BlackSwan', 'RBar',
+    'WaterStreet', 'CrabsClaw', 'MarinaGrille', 'BrielleHouse',
+  ]);
+
   const includeSlow = tier === 'slow' || tier === 'all';
   const includeFast = tier === 'fast' || tier === 'all';
+  const includeShard1 = shardParam === '1' || includeFast;
+  const includeShard2 = shardParam === '2' || includeFast;
+
+  // Central gate used by every scraper entry in the Promise.all below plus the
+  // per-scraper health-row filter at the end of the run. Slow scrapers are only
+  // gated on tier; fast scrapers check whichever shard they belong to.
+  function shouldRunScraper(key) {
+    if (SLOW_SCRAPER_KEYS.has(key)) return includeSlow;
+    if (FAST_SHARD_1.has(key)) return includeShard1;
+    if (FAST_SHARD_2.has(key)) return includeShard2;
+    // Unknown key — shouldn't happen if the shard sets stay in sync with the
+    // scraper list, but default to falsy rather than silently running it.
+    return false;
+  }
 
   // Skip the post-scrape artist-bio enrichment + AI categorization blocks
   // when this run needs to fit under the 60s Vercel Hobby cap. Cron calls pass
@@ -341,7 +397,10 @@ export async function POST(request) {
   // No-op stub for skipped scrapers — keeps array positions stable in the
   // big destructure below so we don't have to refactor the whole orchestration.
   const skip = async () => ({ events: [], error: null });
-  console.log(`[sync-events] Tier=${tier} (fast=${includeFast}, slow=${includeSlow})`);
+  console.log(
+    `[sync-events] shard=${shardParam || '-'} tier=${tier || '-'} ` +
+    `(shard1=${includeShard1}, shard2=${includeShard2}, slow=${includeSlow})`
+  );
 
   // Load venue map and default times
   const { data: venues } = await supabase.from('venues').select('id, name, default_start_time');
@@ -354,54 +413,54 @@ export async function POST(request) {
 
   // Run all scrapers in parallel
   const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, parkerHouse, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
-    includeFast ? scrapePigAndParrot() : skip(),
-    includeFast ? scrapeTicketmaster() : skip(),
-    includeFast ? scrapeJoesSurfShack() : skip(),
-    includeFast ? scrapeStStephensGreen() : skip(),
-    includeFast ? scrapeMcCanns() : skip(),
-    includeFast ? scrapeBeachHaus() : skip(),
-    includeFast ? scrapeMartells() : skip(),
-    includeFast ? scrapeBarAnticipation() : skip(),
-    includeFast ? scrapeJacksOnTheTracks() : skip(),
-    includeFast ? scrapeMarinaGrille() : skip(),
-    includeFast ? scrapeAnchorTavern() : skip(),
-    includeFast ? scrapeRBar() : skip(),
-    includeFast ? scrapeBrielleHouse() : skip(),
-    includeSlow ? scrapeTenthAveBurrito() : skip(),     // Vision OCR
-    includeFast ? scrapeReefAndBarrel() : skip(),
-    includeSlow ? scrapePalmetto() : skip(),            // Vision OCR
-    includeFast ? scrapeIdleHour() : skip(),
-    includeFast ? scrapeAsburyLanes() : skip(),
-    includeFast ? scrapeBakesBrewing() : skip(),
-    includeFast ? scrapeRiverRock() : skip(),
-    includeFast ? scrapeJenksClub() : skip(),
-    includeFast ? scrapeParkerHouse() : skip(),
-    includeFast ? scrapeWildAir() : skip(),
-    includeFast ? scrapeAsburyParkBrewery() : skip(),
-    includeFast ? scrapeBoatyard401() : skip(),
-    includeFast ? scrapeWindwardTavern() : skip(),
-    includeFast ? scrapeJamians() : skip(),
-    includeFast ? scrapeTheCabin() : skip(),
-    includeFast ? scrapeTheVogel() : skip(),
-    includeFast ? scrapeSunHarbor() : skip(),
-    includeFast ? scrapeBumRogers() : skip(),
-    includeFast ? scrapeTheColumns() : skip(),
-    includeFast ? scrapeTheRoost() : skip(),
-    includeFast ? scrapeDealLakeBar() : skip(),
-    includeFast ? scrapeCrabsClaw() : skip(),
-    includeFast ? scrapeWaterStreet() : skip(),
-    includeFast ? scrapeCrossroads() : skip(),
-    includeSlow ? scrapeEventideGrille() : skip(),      // Vision OCR
-    includeFast ? scrapeTriumphBrewing() : skip(),
-    includeFast ? scrapeBlackSwan() : skip(),
+    shouldRunScraper('PigAndParrot')   ? scrapePigAndParrot()       : skip(),
+    shouldRunScraper('Ticketmaster')   ? scrapeTicketmaster()       : skip(),
+    shouldRunScraper('JoesSurfShack')  ? scrapeJoesSurfShack()      : skip(),
+    shouldRunScraper('StStephensGreen')? scrapeStStephensGreen()    : skip(),
+    shouldRunScraper('McCanns')        ? scrapeMcCanns()            : skip(),
+    shouldRunScraper('BeachHaus')      ? scrapeBeachHaus()          : skip(),
+    shouldRunScraper('Martells')       ? scrapeMartells()           : skip(),
+    shouldRunScraper('BarAnticipation')? scrapeBarAnticipation()    : skip(),
+    shouldRunScraper('JacksOnTheTracks')? scrapeJacksOnTheTracks()  : skip(),
+    shouldRunScraper('MarinaGrille')   ? scrapeMarinaGrille()       : skip(),
+    shouldRunScraper('AnchorTavern')   ? scrapeAnchorTavern()       : skip(),
+    shouldRunScraper('RBar')           ? scrapeRBar()               : skip(),
+    shouldRunScraper('BrielleHouse')   ? scrapeBrielleHouse()       : skip(),
+    shouldRunScraper('TenthAveBurrito')? scrapeTenthAveBurrito()    : skip(),  // Vision OCR (slow)
+    shouldRunScraper('ReefAndBarrel')  ? scrapeReefAndBarrel()      : skip(),
+    shouldRunScraper('Palmetto')       ? scrapePalmetto()           : skip(),  // Vision OCR (slow)
+    shouldRunScraper('IdleHour')       ? scrapeIdleHour()           : skip(),
+    shouldRunScraper('AsburyLanes')    ? scrapeAsburyLanes()        : skip(),
+    shouldRunScraper('BakesBrewing')   ? scrapeBakesBrewing()       : skip(),
+    shouldRunScraper('RiverRock')      ? scrapeRiverRock()          : skip(),
+    shouldRunScraper('JenksClub')      ? scrapeJenksClub()          : skip(),
+    shouldRunScraper('ParkerHouse')    ? scrapeParkerHouse()        : skip(),
+    shouldRunScraper('WildAir')        ? scrapeWildAir()            : skip(),
+    shouldRunScraper('AsburyParkBrewery')? scrapeAsburyParkBrewery(): skip(),
+    shouldRunScraper('Boatyard401')    ? scrapeBoatyard401()        : skip(),
+    shouldRunScraper('WindwardTavern') ? scrapeWindwardTavern()     : skip(),
+    shouldRunScraper('Jamians')        ? scrapeJamians()            : skip(),
+    shouldRunScraper('TheCabin')       ? scrapeTheCabin()           : skip(),
+    shouldRunScraper('TheVogel')       ? scrapeTheVogel()           : skip(),
+    shouldRunScraper('SunHarbor')      ? scrapeSunHarbor()          : skip(),
+    shouldRunScraper('BumRogers')      ? scrapeBumRogers()          : skip(),
+    shouldRunScraper('TheColumns')     ? scrapeTheColumns()         : skip(),
+    shouldRunScraper('TheRoost')       ? scrapeTheRoost()           : skip(),
+    shouldRunScraper('DealLakeBar')    ? scrapeDealLakeBar()        : skip(),
+    shouldRunScraper('CrabsClaw')      ? scrapeCrabsClaw()          : skip(),
+    shouldRunScraper('WaterStreet')    ? scrapeWaterStreet()        : skip(),
+    shouldRunScraper('Crossroads')     ? scrapeCrossroads()         : skip(),
+    shouldRunScraper('EventideGrille') ? scrapeEventideGrille()     : skip(),  // Vision OCR (slow)
+    shouldRunScraper('TriumphBrewing') ? scrapeTriumphBrewing()     : skip(),
+    shouldRunScraper('BlackSwan')      ? scrapeBlackSwan()          : skip(),
     // Proxy-routed scrapers (IPRoyal residential proxy) — slow tier
-    includeSlow ? scrapeAlgonquinArts() : skip(),
-    includeSlow ? scrapeTimMcLoones() : skip(),
+    shouldRunScraper('AlgonquinArts')  ? scrapeAlgonquinArts()      : skip(),
+    shouldRunScraper('TimMcLoones')    ? scrapeTimMcLoones()        : skip(),
     // Vision OCR scrapers (Perplexity Sonar — image flyer extraction) — slow tier
-    includeSlow ? scrapeMjsRestaurant() : skip(),
-    includeSlow ? scrapePaganosUva() : skip(),
-    includeSlow ? scrapeCaptainsInn() : skip(),
-    includeSlow ? scrapeCharleysOceanGrill() : skip(),
+    shouldRunScraper('MjsRestaurant')  ? scrapeMjsRestaurant()      : skip(),
+    shouldRunScraper('PaganosUva')     ? scrapePaganosUva()         : skip(),
+    shouldRunScraper('CaptainsInn')    ? scrapeCaptainsInn()        : skip(),
+    shouldRunScraper('CharleysOcean')  ? scrapeCharleysOceanGrill() : skip(),
   ]);
 
   const scraperResults = {
@@ -819,12 +878,12 @@ export async function POST(request) {
   // ── Write scraper health to database ──────────────────────────────────────
   // Must run AFTER the upsert loops because the global summary row reads
   // `totalUpserted` and `upsertErrors`. Per-scraper rows are filtered to the
-  // scrapers that actually ran in this tier — skipped scrapers keep their
+  // scrapers that actually ran in this shard/tier — skipped scrapers keep their
   // previous health row untouched (preserving their last successful sync
-  // timestamp from the other tier).
+  // timestamp from the run that actually exercised them).
   try {
     const healthRows = Object.entries(scraperResults)
-      .filter(([key]) => SLOW_SCRAPER_KEYS.has(key) ? includeSlow : includeFast)
+      .filter(([key]) => shouldRunScraper(key))
       .map(([key, result]) => {
         const reg = VENUE_REGISTRY[key] || { venue: key, url: '', source: 'Unknown' };
         return {
@@ -840,19 +899,32 @@ export async function POST(request) {
         };
       });
 
-    // Global summary row — slow tier writes to a separate key so the daily
-    // fast cron's last_sync timestamp on _global_sync isn't clobbered weekly.
+    // Global summary row — each shard and the slow tier write to distinct
+    // scraper_key values so the admin "last sync" timestamps don't clobber each
+    // other across shards. `_global_sync` is preserved for the legacy
+    // full-fast-tier invocation (?tier=fast or no param) used by manual runs.
     const ranScraperResults = Object.fromEntries(
-      Object.entries(scraperResults).filter(
-        ([key]) => SLOW_SCRAPER_KEYS.has(key) ? includeSlow : includeFast
-      )
+      Object.entries(scraperResults).filter(([key]) => shouldRunScraper(key))
     );
     const failedScrapers = Object.values(ranScraperResults).filter(r => r.error).length;
+    let globalKey;
+    let globalLabel;
+    if (shardParam === '1') {
+      globalKey = '_global_sync_shard_1';
+      globalLabel = 'All Venues (Shard 1 — Daily)';
+    } else if (shardParam === '2') {
+      globalKey = '_global_sync_shard_2';
+      globalLabel = 'All Venues (Shard 2 — Daily)';
+    } else if (tier === 'slow') {
+      globalKey = '_global_sync_slow';
+      globalLabel = 'All Venues (Slow Tier — Weekly)';
+    } else {
+      globalKey = '_global_sync';
+      globalLabel = 'All Venues (Sync Summary)';
+    }
     healthRows.push({
-      scraper_key: tier === 'slow' ? '_global_sync_slow' : '_global_sync',
-      venue_name: tier === 'slow'
-        ? 'All Venues (Slow Tier — Weekly)'
-        : 'All Venues (Sync Summary)',
+      scraper_key: globalKey,
+      venue_name: globalLabel,
       website_url: null,
       platform: 'System',
       events_found: totalUpserted,
