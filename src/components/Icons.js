@@ -1,5 +1,3 @@
-import { Ticket } from 'lucide-react';
-
 export const Icons = {
   calendar: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -13,11 +11,19 @@ export const Icons = {
   clock: (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
   ),
-  // Lucide's Ticket icon — cleaner ticket-stub outline than the old custom
-  // path, inherits currentColor from its parent so it still picks up text
-  // color in both light and dark modes. Default strokeWidth matches the
-  // other icons in this set.
-  ticket: <Ticket size={14} strokeWidth={2} />,
+  // Custom ticket-stub outline — tilted ~18° with semicircular notches
+  // on the short left/right ends (classic "admit one" silhouette) and
+  // an off-center dashed perforation line dividing the stub from the
+  // ticket body. Rendered at 16px so the notches stay legible; inherits
+  // currentColor like the other icons in this set.
+  ticket: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <g transform="rotate(-18 12 12)">
+        <path d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z"/>
+        <line x1="8" y1="8.5" x2="8" y2="15.5" strokeDasharray="1.25 1.25"/>
+      </g>
+    </svg>
+  ),
   plus: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
   ),
