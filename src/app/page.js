@@ -542,6 +542,14 @@ export default function HomePage() {
       // `event_title`). Classify by keyword; otherwise fall through to
       // the ARTIST bucket so un-enriched rows still surface — but only
       // if they pass the drink-special filter and look like a real name.
+      //
+      // DEDUP GUARD: when the row has a linked canonical artist
+      // (e.artists?.name set), its canonical was already added to
+      // artistSet above. We must NOT also fall through to the ARTIST
+      // bucket here using the stale/scraper `artist_name` — that was
+      // the post-merge bug where ghost strings like "Mike Dalton 6pm"
+      // and "MIKE DALTON BAND WITH HORNS" surfaced as separate ARTIST
+      // entries alongside canonical "Mike Dalton".
       const rawTitle = (e.event_title ?? '').trim() || (e.artist_name ?? '').trim();
       if (rawTitle) {
         const key = normalizeVenue(rawTitle);
@@ -554,6 +562,7 @@ export default function HomePage() {
           } else if (
             rawTitle.length <= 50
             && !DRINK_SPECIAL_RE.test(rawTitle)
+            && !artistName                       // ← guard: don't double-add when a canonical is already attached
           ) {
             // Un-classified, non-special rawTitle → treat as artist so the
             // dropdown still surfaces scraper rows where the artist FK

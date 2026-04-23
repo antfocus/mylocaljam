@@ -151,24 +151,47 @@ export async function POST(request) {
     return NextResponse.json({ error: deleteErr.message }, { status: 500 });
   }
 
-  // Step E: Clear stale denormalized images on merged events so the waterfall
-  // falls through to the master artist's (now authoritative) image.
-  // Only clears event_image_url (scraper/AI snapshot) — never touches
-  // custom_image_url (admin override, higher tier).
-  let staleImagesCleaned = 0;
+  // Step E: Heal stale denormalized cache on merged events so the waterfall
+  // falls through to the master artist's (now authoritative) bio + image.
+  //
+  // Every event that just got repointed to `masterId` may still carry
+  // scraper-era values on FOUR cache columns that drift out of sync:
+  //   • artist_name      — often a ghost string like "Mike Dalton 6pm"
+  //                        that surfaces in autocomplete + card subtext
+  //   • artist_bio       — the duplicate's AI-generated bio
+  //   • image_url        — legacy column (early scraper snapshots)
+  //   • event_image_url  — scraper/AI snapshot (new column)
+  //
+  // Pre-2026-04: this step only nulled event_image_url, which left
+  // ghost bios + legacy images + stale artist_name displayed on the
+  // public feed until the next scrape. The Mike Dalton / E-Boro merges
+  // hit exactly this bug — Boatyard 401 showed a fireplace photo for a
+  // week after the merge.
+  //
+  // Locks honored:
+  //   • Event-level lock (events.is_human_edited = true) → row skipped
+  //     entirely (admin intentionally pinned its fields).
+  //   • custom_image_url / custom_bio never touched (higher tier than
+  //     the scraper cache; admin override always wins).
+  let staleCacheCleaned = 0;
   try {
     const { data: cleaned } = await supabase
       .from('events')
-      .update({ event_image_url: null })
+      .update({
+        artist_name:     master.name,   // canonical label for autocomplete + waterfall fallback
+        artist_bio:      null,           // let waterfall fall through to artists.bio
+        image_url:       null,           // legacy column
+        event_image_url: null,           // scraper/AI snapshot
+      })
       .eq('artist_id', masterId)
-      .not('event_image_url', 'is', null)
+      .eq('is_human_edited', false)     // never overwrite event-level locks
       .select('id');
-    staleImagesCleaned = cleaned?.length || 0;
-    if (staleImagesCleaned > 0) {
-      console.log(`[Merge] Cleared stale event_image_url on ${staleImagesCleaned} events for master artist ${master.name}`);
+    staleCacheCleaned = cleaned?.length || 0;
+    if (staleCacheCleaned > 0) {
+      console.log(`[Merge] Healed stale cache (artist_name/bio/image_url/event_image_url) on ${staleCacheCleaned} unlocked events for master ${master.name}`);
     }
   } catch (err) {
-    console.warn('[Merge] Stale image cleanup failed (non-fatal):', err.message);
+    console.warn('[Merge] Stale cache cleanup failed (non-fatal):', err.message);
   }
 
   revalidatePath('/');
@@ -181,6 +204,6 @@ export async function POST(request) {
     master: master.name,
     merged: duplicates.map(d => d.name),
     eventsTransferred: totalEventsTransferred,
-    staleImagesCleaned,
+    staleCacheCleaned,
   });
 }
