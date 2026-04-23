@@ -1,7 +1,10 @@
 # myLocalJam — Scraper Reference
 
 > **Purpose:** Standalone technical reference for building, debugging, and maintaining venue scrapers.
-> Read this + `Agent_SOP.md` (Workflow 4) before building any new scraper.
+>
+> Last meaningful update: April 2026 — sharded crons, added Jenks + Parker House, folded in the scraper-health cache gotcha.
+>
+> Read `Agent_SOP.md` (Workflow 4) alongside this doc for behavioral guardrails when adding new scrapers.
 
 ---
 
@@ -9,13 +12,27 @@
 
 **Pipeline:** Scraper files → `sync-events/route.js` (parallel execution) → `mapEvent()` transform → Supabase upsert → post-sync enrichment
 
-**Cron:** Nightly at 10 PM Eastern via Vercel (`vercel.json` → `0 2 * * *` UTC). Playwright scrapers run ~90 min later via GitHub Actions.
+**Crons:** The old single fast-tier run overshot the Vercel Hobby 60s cap as the venue list grew past ~35 scrapers, so as of April 2026 the daily run is split into two staggered shards plus a weekly slow tier (`vercel.json`):
+
+| Cron | Schedule (UTC) | Eastern (EST) | Runtime budget | What runs |
+|------|---------------|---------------|-----------------|-----------|
+| `/api/sync-events?shard=1&skipEnrich=true` | `0 2 * * *`  | 9 PM daily   | ~18s / 60s cap | ~18 fast-tier scrapers (shard 1) |
+| `/api/sync-events?shard=2&skipEnrich=true` | `15 2 * * *` | 9:15 PM daily | ~21s / 60s cap | ~19 fast-tier scrapers (shard 2) |
+| `/api/sync-events?tier=slow&skipEnrich=true` | `0 11 * * 0` | 6 AM Sundays | longer ok      | 9 slow scrapers (Vision OCR + proxy) |
+
+`skipEnrich=true` is set on cron to keep each run under the 60s cap — enrichment runs are scheduled separately (see `notify` crons in `vercel.json`). Playwright scrapers (Brielle House, HOI) run ~90 min after shard 2 via GitHub Actions.
+
+Shard membership is defined in `src/app/api/sync-events/route.js` (`FAST_SHARD_1`, `FAST_SHARD_2`, `SLOW_SCRAPER_KEYS`). See "Sharding & Tier Assignment" below.
 
 **Auth:** `CRON_SECRET` (Vercel cron) or `SYNC_SECRET` (manual trigger) as Bearer token.
 
 **Manual trigger (browser console on mylocaljam.com):**
 ```javascript
+// All scrapers (both shards + slow tier) — only safe locally or on demand
 fetch('/api/sync-events', {method:'POST', headers:{'Authorization':'Bearer ' + atob('JCp7RyxiJCREZEpseCNDTw==')}}).then(r=>r.json()).then(d => console.log(JSON.stringify(d, null, 2)))
+
+// Single shard (mirrors the cron — use for timing checks / isolated debug)
+fetch('/api/sync-events?shard=1&skipEnrich=true', {method:'POST', headers:{'Authorization':'Bearer ' + atob('JCp7RyxiJCREZEpseCNDTw==')}}).then(r=>r.json()).then(d => console.log(JSON.stringify(d, null, 2)))
 ```
 
 ---
@@ -33,6 +50,27 @@ fetch('/api/sync-events', {method:'POST', headers:{'Authorization':'Bearer ' + a
 | Vision OCR utility | `src/lib/visionOCR.js` |
 | Scraper health API | `src/app/api/admin/scraper-health/route.js` |
 | Cron config | `vercel.json` (root) |
+
+---
+
+## Sharding & Tier Assignment
+
+Source of truth: `src/app/api/sync-events/route.js` (~line 346+). When adding a new scraper, assign it to a shard/tier or the `shouldRunScraper` gate will skip it in cron.
+
+**Slow tier** (Vision OCR + proxy-routed — need more runtime, run weekly):
+`TenthAveBurrito`, `Palmetto`, `MjsRestaurant`, `PaganosUva`, `CaptainsInn`, `CharleysOcean`, `EventideGrille`, `AlgonquinArts`, `TimMcLoones`
+
+**Fast shard 1** (~18s runtime, ~845 events):
+`Ticketmaster`, `Martells`, `AsburyParkBrewery`, `IdleHour`, `TheVogel`, `WindwardTavern`, `JenksClub`, `StStephensGreen`, `Crossroads`, `DealLakeBar`, `WildAir`, `TheRoost`, `JacksOnTheTracks`, `BumRogers`, `TheColumns`, `TheCabin`, `AnchorTavern`, `Boatyard401`
+
+**Fast shard 2** (~21s runtime, ~850 events — paired with the detail-fetch-heavy RiverRock and ParkerHouse):
+`BarAnticipation`, `ParkerHouse`, `RiverRock`, `McCanns`, `BakesBrewing`, `PigAndParrot`, `JoesSurfShack`, `Jamians`, `BeachHaus`, `AsburyLanes`, `TriumphBrewing`, `ReefAndBarrel`, `SunHarbor`, `BlackSwan`, `RBar`, `WaterStreet`, `CrabsClaw`, `MarinaGrille`, `BrielleHouse`
+
+**How the gate works:** `shouldRunScraper(key)` returns true when the scraper's set matches the incoming query. `?shard=1` runs only FAST_SHARD_1; `?shard=2` runs only FAST_SHARD_2; `?tier=slow` runs only SLOW_SCRAPER_KEYS; no params runs everything.
+
+**Rebalance when a shard approaches ~40s.** We have ~20s of headroom each. When adding a new heavy scraper (detail fetches, OCR), move a light one to the other shard to keep both under 40s.
+
+**Global health row per run:** each shard writes its own `_global_sync_shard_1` / `_global_sync_shard_2` / `_global_sync_slow` row — don't read `_global_sync` expecting a combined view; the admin UI shows all three.
 
 ---
 
@@ -298,59 +336,67 @@ The sync route's `mapEvent()` does these transforms on every scraper event:
 | Recurring iCal events missing | Only parsing DTSTART, not RDATE | Parse all RDATE values, create event per date |
 | Scraper returns HTML shell but no events | Bot detection (BentoBox, Cloudflare) | Add `BROWSER_HEADERS`, try proxy |
 | Batch upsert fails | Duplicate `external_id` in same batch | Global `seen` Set deduplicates before upsert |
+| Admin Venues tab shows stale FAIL / counts after successful sync | Next.js Data Cache caching the Supabase `fetch()` read path (the DB row is correct) | `getAdminClient()` in `src/lib/supabase.js` must pass `cache: 'no-store'` — see "Scraper Health Cache Gotcha" below |
+| Scraper silently missing from cron output | New scraper not added to `FAST_SHARD_1` / `FAST_SHARD_2` / `SLOW_SCRAPER_KEYS` — `shouldRunScraper` returns false | Add key to the appropriate set in `sync-events/route.js` |
 
 ---
 
-## Active Scrapers (44 total)
+## Active Scrapers (46 fetch-based + 2 Playwright)
 
-| # | Venue | File | Platform | Status |
-|---|-------|------|----------|--------|
-| 1 | Pig & Parrot | `pigAndParrot.js` | PopMenu GraphQL | ✅ |
-| 2 | Ticketmaster Venues | `ticketmaster.js` | Ticketmaster API | ✅ |
-| 3 | Joe's Surf Shack | `joesSurfShack.js` | Custom HTML | ✅ |
-| 4 | St. Stephen's Green | `stStephensGreen.js` | Google Calendar iCal | ✅ |
-| 5 | McCann's Tavern | `mccanns.js` | Google Calendar iCal | ✅ |
-| 6 | Beach Haus | `beachHaus.js` | Custom HTML | ✅ |
-| 7 | Martell's Tiki Bar | `martells.js` | Timely API | ✅ |
-| 8 | Bar Anticipation | `barAnticipation.js` | AILEC iCal + RDATE | ✅ |
-| 9 | Jacks on the Tracks | `jacksOnTheTracks.js` | Google Calendar iCal | ✅ |
-| 10 | Marina Grille | `marinaGrille.js` | Squarespace JSON | ✅ |
-| 11 | Anchor Tavern | `anchorTavern.js` | Squarespace JSON | ✅ |
-| 12 | R Bar | `rBar.js` | Squarespace JSON | ✅ |
-| 13 | ParkStage | `parkStage.js` | WordPress HTML | ✅ |
-| 14 | 10th Ave Burrito | `tenthAveBurrito.js` | WordPress AJAX | ✅ |
-| 15 | Reef & Barrel | `reefAndBoatyard.js` | Google Calendar iCal | ✅ |
-| 16 | Palmetto | `palmetto.js` | Vision OCR | ✅ |
-| 17 | Idle Hour | `idleHour.js` | Google Calendar iCal | ✅ |
-| 18 | Asbury Lanes | `asburyLanes.js` | BentoBox HTML + AJAX | ✅ |
-| 19 | Bakes Brewing | `bakesBrewing.js` | Webflow CMS HTML | ✅ |
-| 20 | River Rock | `riverRock.js` | WordPress EventPrime AJAX | ✅ |
-| 21 | Wild Air Beerworks | `wildAir.js` | Square Online HTML + API | ✅ |
-| 22 | Asbury Park Brewery | `asburyParkBrewery.js` | Squarespace JSON | ✅ |
-| 23 | Boatyard 401 | `boatyard401.js` | WordPress Simple Calendar AJAX | ✅ |
-| 24 | Tim McLoone's | `timMcLoones.js` | Ticketbud HTML (proxy) | ✅ |
-| 25 | Windward Tavern | `windwardTavern.js` | Google Calendar iCal | ✅ |
-| 26 | Jamian's | `jamians.js` | Squarespace HTML (text) | ✅ |
-| 27 | The Cabin | `theCabin.js` | Squarespace GetItemsByMonth | ✅ |
-| 28 | The Vogel | `theVogel.js` | WordPress HTML | ✅ |
-| 29 | Sun Harbor | `sunHarbor.js` | Squarespace JSON | ✅ |
-| 30 | Bum Rogers | `bumRogers.js` | Astro/BentoBox HTML | ✅ |
-| 31 | The Columns | `theColumns.js` | WordPress HTML | ✅ |
-| 32 | The Roost | `theRoost.js` | Beacon CMS HTML | ✅ |
-| 33 | Deal Lake Bar | `dealLakeBar.js` | Squarespace JSON | ✅ |
-| 34 | Crab's Claw Inn | `crabsClaw.js` | RestaurantPassion HTML | ✅ |
-| 35 | Water Street | `waterStreet.js` | Squarespace JSON | ✅ |
-| 36 | Crossroads | `crossroads.js` | Eventbrite showmore API | ✅ |
-| 37 | Algonquin Arts | `algonquinArts.js` | PHP HTML (proxy) | ✅ |
-| 38 | MJ's Restaurant | `mjsRestaurant.js` | Vision OCR (Gemini) | ✅ |
-| 39 | Pagano's UVA | `paganosUva.js` | Vision OCR (Gemini) | ✅ |
-| 40 | Captain's Inn | `captainsInn.js` | Vision OCR (Gemini) | ✅ |
-| 41 | Charley's Ocean Grill | `charleysOceanGrill.js` | Vision OCR (Gemini) | ✅ |
-| 42 | Eventide Grille | `eventideGrille.js` | Vision OCR (Gemini) | ✅ |
-| 43 | ~~Starland Ballroom~~ | `starlandBallroom.js` | AXS/Carbonhouse | ❌ Disabled (needs headless) |
-| 44 | ~~House of Independents~~ | `houseOfIndependents.js` | Etix JSON-LD (fetch) | ❌ Disabled (Etix removed JSON-LD) |
-| 45 | House of Independents | `houseOfIndependents.playwright.js` | Playwright (Etix SPA) | ⚠️ Built but blocked by AWS WAF on GH Actions IPs |
-| 46 | Brielle House | `brielleHouse.playwright.js` | Playwright (FullCalendar) | ✅ Running via GitHub Actions |
+Status legend: ✅ working · ⚠️ working but intermittent / degraded · ❌ disabled
+
+| # | Venue | File | Platform | Shard / Tier | Status |
+|---|-------|------|----------|-------------|--------|
+| 1 | Pig & Parrot | `pigAndParrot.js` | PopMenu GraphQL | Fast 2 | ✅ |
+| 2 | Ticketmaster Venues | `ticketmaster.js` | Ticketmaster API | Fast 1 | ✅ |
+| 3 | Joe's Surf Shack | `joesSurfShack.js` | Custom HTML | Fast 2 | ✅ |
+| 4 | St. Stephen's Green | `stStephensGreen.js` | Google Calendar iCal | Fast 1 | ✅ |
+| 5 | McCann's Tavern | `mccanns.js` | Google Calendar iCal | Fast 2 | ✅ |
+| 6 | Beach Haus | `beachHaus.js` | Custom HTML | Fast 2 | ✅ |
+| 7 | Martell's Tiki Bar | `martells.js` | Timely API | Fast 1 | ✅ |
+| 8 | Bar Anticipation | `barAnticipation.js` | AILEC iCal + RDATE | Fast 2 | ✅ |
+| 9 | Jacks on the Tracks | `jacksOnTheTracks.js` | Google Calendar iCal | Fast 1 | ✅ |
+| 10 | Marina Grille | `marinaGrille.js` | Squarespace JSON | Fast 2 | ✅ |
+| 11 | Anchor Tavern | `anchorTavern.js` | Squarespace JSON | Fast 1 | ✅ |
+| 12 | R Bar | `rBar.js` | Squarespace JSON | Fast 2 | ✅ |
+| 13 | 10th Ave Burrito | `tenthAveBurrito.js` | WordPress AJAX | Slow | ✅ |
+| 14 | Reef & Barrel | `reefAndBoatyard.js` | Google Calendar iCal | Fast 2 | ✅ |
+| 15 | Palmetto | `palmetto.js` | Vision OCR (Gemini) | Slow | ✅ |
+| 16 | Idle Hour | `idleHour.js` | Google Calendar iCal | Fast 1 | ✅ |
+| 17 | Asbury Lanes | `asburyLanes.js` | BentoBox HTML + AJAX | Fast 2 | ✅ |
+| 18 | Bakes Brewing | `bakesBrewing.js` | Webflow CMS HTML | Fast 2 | ✅ |
+| 19 | River Rock | `riverRock.js` | WordPress EventPrime AJAX | Fast 2 | ✅ |
+| 20 | Jenks Club | `jenksClub.js` | Custom HTML | Fast 1 | ✅ (added April 2026) |
+| 21 | Parker House | `parkerHouse.js` | Custom HTML + detail fetch | Fast 2 | ✅ (added April 2026) |
+| 22 | Wild Air Beerworks | `wildAir.js` | Square Online HTML + API | Fast 1 | ✅ |
+| 23 | Asbury Park Brewery | `asburyParkBrewery.js` | Squarespace JSON | Fast 1 | ✅ |
+| 24 | Boatyard 401 | `boatyard401.js` | WordPress Simple Calendar AJAX | Fast 1 | ⚠️ Returning 0 events (Task #53 — investigate parser, upstream may have changed markup) |
+| 25 | Tim McLoone's | `timMcLoones.js` | Ticketbud HTML (proxy) | Slow | ✅ |
+| 26 | Windward Tavern | `windwardTavern.js` | Google Calendar iCal | Fast 1 | ✅ |
+| 27 | Jamian's | `jamians.js` | Squarespace HTML (text) | Fast 2 | ✅ |
+| 28 | The Cabin | `theCabin.js` | Squarespace GetItemsByMonth | Fast 1 | ✅ |
+| 29 | The Vogel | `theVogel.js` | WordPress HTML | Fast 1 | ✅ |
+| 30 | Sun Harbor | `sunHarbor.js` | Squarespace JSON | Fast 2 | ✅ |
+| 31 | Bum Rogers | `bumRogers.js` | Astro/BentoBox HTML | Fast 1 | ✅ |
+| 32 | The Columns | `theColumns.js` | WordPress HTML | Fast 1 | ✅ |
+| 33 | The Roost | `theRoost.js` | Beacon CMS HTML | Fast 1 | ✅ |
+| 34 | Deal Lake Bar | `dealLakeBar.js` | Squarespace JSON | Fast 1 | ✅ |
+| 35 | Crab's Claw Inn | `crabsClaw.js` | RestaurantPassion HTML | Fast 2 | ✅ |
+| 36 | Water Street | `waterStreet.js` | Squarespace JSON | Fast 2 | ✅ |
+| 37 | Crossroads | `crossroads.js` | Eventbrite showmore API | Fast 1 | ✅ |
+| 38 | Black Swan | `blackSwan.js` | Custom | Fast 2 | ✅ |
+| 39 | Triumph Brewing | `triumphBrewing.js` | Custom | Fast 2 | ✅ |
+| 40 | Algonquin Arts | `algonquinArts.js` | PHP HTML (proxy) | Slow | ✅ |
+| 41 | MJ's Restaurant | `mjsRestaurant.js` | Vision OCR (Gemini) | Slow | ✅ |
+| 42 | Pagano's UVA | `paganosUva.js` | Vision OCR (Gemini) | Slow | ✅ |
+| 43 | Captain's Inn | `captainsInn.js` | Vision OCR (Gemini) | Slow | ✅ |
+| 44 | Charley's Ocean Grill | `charleysOceanGrill.js` | Vision OCR (Gemini) | Slow | ✅ |
+| 45 | Eventide Grille | `eventideGrille.js` | Vision OCR (Gemini) | Slow | ✅ |
+| 46 | ~~ParkStage~~ | `parkStage.js` | WordPress HTML | — | ❌ Disabled (missing from shard sets) |
+| 47 | ~~Starland Ballroom~~ | `starlandBallroom.js` | AXS/Carbonhouse | — | ❌ Disabled (needs headless) |
+| 48 | ~~House of Independents~~ | `houseOfIndependents.js` | Etix JSON-LD (fetch) | — | ❌ Disabled (Etix removed JSON-LD) |
+| P1 | House of Independents | `houseOfIndependents.playwright.js` | Playwright (Etix SPA) | GH Actions | ⚠️ Blocked by AWS WAF on GH Actions IPs |
+| P2 | Brielle House | `brielleHouse.playwright.js` | Playwright (FullCalendar) | GH Actions | ⚠️ Intermittent HTTP 500 from admin-ajax (Task #54) |
 
 ---
 
@@ -433,7 +479,7 @@ up headless Chromium.
 
 | Venue | File | Status | Notes |
 |-------|------|--------|-------|
-| Brielle House | `brielleHouse.playwright.js` | ✅ Working | FullCalendar — AJAX path blocked from Vercel IPs |
+| Brielle House | `brielleHouse.playwright.js` | ⚠️ HTTP 500 (Task #54) | FullCalendar admin-ajax endpoint returning intermittent 500s — parser is solid, upstream is flaky. Might need to retry with backoff or fall back to full-page fetch + HTML parse |
 | House of Independents | `houseOfIndependents.playwright.js` | ⚠️ WAF blocked | Etix React SPA with AWS WAF. Stealth plugin loads but GH Actions IPs still blocked. Needs residential proxy or API interception. |
 
 **Migration candidates (future):**
@@ -450,3 +496,56 @@ up headless Chromium.
 Other candidates to monitor (currently working via `proxyFetch` but one block away from needing Playwright): `algonquinArts.js`, `asburyLanes.js`, `timMcLoones.js`, `triumphBrewing.js`.
 
 **Cost note:** one nightly run takes ~1–2 min including Chromium install (cached). Well under the 2,000-minute/month free tier even if we add several more venues.
+
+---
+
+## Scraper Health Cache Gotcha
+
+**Symptom:** Admin Venues tab shows "FAIL" for scrapers that actually ran successfully. Status, event counts, and `last_sync` timestamps appear stale. Force-sync response says `"ok": true` with the right counts, but the UI doesn't reflect it. Querying `scraper_health` directly via the Supabase MCP or dashboard shows the correct data.
+
+**Root cause:** Next.js auto-caches every `fetch()` made in server-side code — including the `fetch()` calls Supabase-js uses internally. So the admin read path returned a cached response from a previous request instead of hitting the DB. The data was always correct in the DB; the problem was entirely in the read path.
+
+**Fix** — `src/lib/supabase.js` must pass `cache: 'no-store'` on the admin client:
+
+```javascript
+export function getAdminClient() {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return createClient(supabaseUrl, serviceRoleKey, {
+    global: {
+      fetch: (url, options = {}) => fetch(url, { ...options, cache: 'no-store' }),
+    },
+  });
+}
+```
+
+**If it happens again, diagnose in this order:**
+
+1. Check the DB directly. Supabase MCP or dashboard:
+   ```sql
+   SELECT scraper_key, status, events_found, last_sync
+   FROM scraper_health
+   WHERE scraper_key = 'BakesBrewing'
+   ORDER BY last_sync DESC;
+   ```
+   Prod project ID: `ugmyqucizialapfulens`. Staging: `arjswrmsissnsqksjtht`. `.env.local` points to staging; deployed Vercel app uses prod.
+
+2. If the DB has correct data but the UI doesn't — caching regression. Verify `cache: 'no-store'` is still on `getAdminClient()`.
+
+3. If the DB also has stale data — check for missing columns on `scraper_health`. A missing column silently fails the entire upsert. Required columns as of April 2026: `scraper_key`, `venue_name`, `website_url`, `platform`, `events_found`, `status`, `error_message`, `last_sync`, `last_sync_count`.
+
+**Related gotchas:**
+
+- Supabase MCP `execute_sql` does NOT commit — it rolls back. Use `apply_migration` for DDL that needs to persist.
+- `scraper_health` has a unique index on `scraper_key`; upserts use `onConflict: 'scraper_key'`. Duplicates won't happen, but don't try to INSERT without `onConflict`.
+- RLS is enabled on `scraper_health` with no policies — only the service_role key (used by `getAdminClient()`) can read/write. The anon key cannot.
+
+---
+
+## Open Scraper Bugs (as of April 2026)
+
+| # | Venue | Issue | Notes |
+|---|-------|-------|-------|
+| 53 | Boatyard 401 | Returning 0 events (shard 1) | Scraper is running (no error), just parsing nothing. Likely upstream WordPress Simple Calendar markup change. Investigate by fetching the URL locally and comparing to the parser. |
+| 54 | Brielle House | HTTP 500 from admin-ajax (Playwright) | Upstream intermittent. Consider: retry-with-backoff in the scraper, or switch to parsing the rendered FullCalendar grid directly instead of hitting admin-ajax. |
+
+When either is fixed, update the "Active Scrapers" table above and drop the row here.
