@@ -61,7 +61,7 @@ Source of truth: `src/app/api/sync-events/route.js` (~line 346+). When adding a 
 `TenthAveBurrito`, `Palmetto`, `MjsRestaurant`, `PaganosUva`, `CaptainsInn`, `CharleysOcean`, `EventideGrille`, `AlgonquinArts`, `TimMcLoones`
 
 **Fast shard 1** (~18s runtime, ~845 events):
-`Ticketmaster`, `Martells`, `AsburyParkBrewery`, `IdleHour`, `TheVogel`, `WindwardTavern`, `JenksClub`, `StStephensGreen`, `Crossroads`, `DealLakeBar`, `WildAir`, `TheRoost`, `JacksOnTheTracks`, `BumRogers`, `TheColumns`, `TheCabin`, `AnchorTavern`, `Boatyard401`
+`Ticketmaster`, `Martells`, `AsburyParkBrewery`, `IdleHour`, `TheVogel`, `WindwardTavern`, `JenksClub`, `Djais`, `StStephensGreen`, `Crossroads`, `DealLakeBar`, `WildAir`, `TheRoost`, `JacksOnTheTracks`, `BumRogers`, `TheColumns`, `TheCabin`, `AnchorTavern`, `Boatyard401`
 
 **Fast shard 2** (~21s runtime, ~850 events — paired with the detail-fetch-heavy RiverRock and ParkerHouse):
 `BarAnticipation`, `ParkerHouse`, `RiverRock`, `McCanns`, `BakesBrewing`, `PigAndParrot`, `JoesSurfShack`, `Jamians`, `BeachHaus`, `AsburyLanes`, `TriumphBrewing`, `ReefAndBarrel`, `SunHarbor`, `BlackSwan`, `RBar`, `WaterStreet`, `CrabsClaw`, `MarinaGrille`, `BrielleHouse`
@@ -205,6 +205,10 @@ For venues that only post JPEG/PNG monthly flyers with no structured data. Uses 
 Some WordPress sites expose calendar data via AJAX endpoints.
 **Example:** `riverRock.js`
 
+### The Events Calendar (Modern Tribe) REST
+Sites using the "The Events Calendar" WordPress plugin (URL pattern `/events/list/`, `/events/month/`, `/events/day/<date>/`) expose a clean public REST endpoint at `/wp-json/tribe/events/v1/events?per_page=50&page=N`. No auth, no nonce. Response includes `title`, `description`, `start_date` (venue-local), `start_date_details`, `image.url`, `cost`, `url`. Paginate via `page` up to `total_pages`; a 400 with `rest-no-results` means you've paged past the end.
+**Example:** `djais.js`
+
 ### PopMenu GraphQL
 Venues using PopMenu have a GraphQL endpoint at their domain. Query `customPageCalendarSection`.
 **Example:** `pigAndParrot.js`
@@ -341,7 +345,7 @@ The sync route's `mapEvent()` does these transforms on every scraper event:
 
 ---
 
-## Active Scrapers (46 fetch-based + 2 Playwright)
+## Active Scrapers (47 fetch-based + 2 Playwright)
 
 Status legend: ✅ working · ⚠️ working but intermittent / degraded · ❌ disabled
 
@@ -366,8 +370,9 @@ Status legend: ✅ working · ⚠️ working but intermittent / degraded · ❌ 
 | 17 | Asbury Lanes | `asburyLanes.js` | BentoBox HTML + AJAX | Fast 2 | ✅ |
 | 18 | Bakes Brewing | `bakesBrewing.js` | Webflow CMS HTML | Fast 2 | ✅ |
 | 19 | River Rock | `riverRock.js` | WordPress EventPrime AJAX | Fast 2 | ✅ |
-| 20 | Jenks Club | `jenksClub.js` | Custom HTML | Fast 1 | ✅ (added April 2026) |
+| 20 | Jenks Club | `jenksClub.js` | WordPress AJAX (Calendarize It) | Fast 1 | ✅ (added April 2026) |
 | 21 | Parker House | `parkerHouse.js` | Custom HTML + detail fetch | Fast 2 | ✅ (added April 2026) |
+| 21a | D'Jais | `djais.js` | WordPress REST (The Events Calendar) | Fast 1 | ✅ (added April 2026) |
 | 22 | Wild Air Beerworks | `wildAir.js` | Square Online HTML + API | Fast 1 | ✅ |
 | 23 | Asbury Park Brewery | `asburyParkBrewery.js` | Squarespace JSON | Fast 1 | ✅ |
 | 24 | Boatyard 401 | `boatyard401.js` | WordPress Simple Calendar AJAX | Fast 1 | ⚠️ Returning 0 events (Task #53 — investigate parser, upstream may have changed markup) |

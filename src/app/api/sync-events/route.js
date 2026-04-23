@@ -24,6 +24,7 @@ import { scrapeAsburyLanes } from '@/lib/scrapers/asburyLanes';
 import { scrapeBakesBrewing } from '@/lib/scrapers/bakesBrewing';
 import { scrapeRiverRock } from '@/lib/scrapers/riverRock';
 import { scrapeJenksClub } from '@/lib/scrapers/jenksClub';
+import { scrapeDjais } from '@/lib/scrapers/djais';
 import { scrapeParkerHouse } from '@/lib/scrapers/parkerHouse';
 import { scrapeWildAir } from '@/lib/scrapers/wildAir';
 import { scrapeAsburyParkBrewery } from '@/lib/scrapers/asburyParkBrewery';
@@ -354,7 +355,7 @@ export async function POST(request) {
     'Ticketmaster', 'Martells', 'AsburyParkBrewery', 'IdleHour', 'TheVogel',
     'WindwardTavern', 'JenksClub', 'StStephensGreen', 'Crossroads',
     'DealLakeBar', 'WildAir', 'TheRoost', 'JacksOnTheTracks', 'BumRogers',
-    'TheColumns', 'TheCabin', 'AnchorTavern', 'Boatyard401',
+    'TheColumns', 'TheCabin', 'AnchorTavern', 'Boatyard401', 'Djais',
   ]);
 
   // Fast-tier shard 2 — paired with RiverRock (detail-fetch heavy) and the new
@@ -412,7 +413,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, parkerHouse, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, djais, parkerHouse, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
     shouldRunScraper('PigAndParrot')   ? scrapePigAndParrot()       : skip(),
     shouldRunScraper('Ticketmaster')   ? scrapeTicketmaster()       : skip(),
     shouldRunScraper('JoesSurfShack')  ? scrapeJoesSurfShack()      : skip(),
@@ -434,6 +435,7 @@ export async function POST(request) {
     shouldRunScraper('BakesBrewing')   ? scrapeBakesBrewing()       : skip(),
     shouldRunScraper('RiverRock')      ? scrapeRiverRock()          : skip(),
     shouldRunScraper('JenksClub')      ? scrapeJenksClub()          : skip(),
+    shouldRunScraper('Djais')          ? scrapeDjais()              : skip(),
     shouldRunScraper('ParkerHouse')    ? scrapeParkerHouse()        : skip(),
     shouldRunScraper('WildAir')        ? scrapeWildAir()            : skip(),
     shouldRunScraper('AsburyParkBrewery')? scrapeAsburyParkBrewery(): skip(),
@@ -485,6 +487,7 @@ export async function POST(request) {
     BakesBrewing: { count: bakesBrewing.events.length, error: bakesBrewing.error },
     RiverRock: { count: riverRock.events.length, error: riverRock.error },
     JenksClub: { count: jenksClub.events.length, error: jenksClub.error },
+    Djais: { count: djais.events.length, error: djais.error },
     ParkerHouse: { count: parkerHouse.events.length, error: parkerHouse.error },
     WildAir: { count: wildAir.events.length, error: wildAir.error },
     AsburyParkBrewery: { count: asburyParkBrewery.events.length, error: asburyParkBrewery.error },
@@ -537,6 +540,7 @@ export async function POST(request) {
     BakesBrewing: { venue: 'Bakes Brewing', url: 'https://www.bakesbrewing.com', source: 'HTML Scrape (Webflow)' },
     RiverRock: { venue: 'River Rock', url: 'https://riverrockbricknj.com', source: 'WordPress AJAX' },
     JenksClub: { venue: 'Jenks Club', url: 'https://jenksclub.com', source: 'WordPress AJAX (Calendarize It)' },
+    Djais: { venue: "D'Jais", url: 'https://djais.com', source: 'WordPress REST (The Events Calendar)' },
     ParkerHouse: { venue: 'The Parker House', url: 'https://parkerhousenj.com', source: 'HTML Scrape (WordPress SSR)' },
     WildAir: { venue: 'Wild Air Beerworks', url: 'https://www.wildairbeer.com', source: 'Squarespace' },
     AsburyParkBrewery: { venue: 'Asbury Park Brewery', url: 'https://www.asburyparkbrewery.com', source: 'Squarespace' },
@@ -596,6 +600,7 @@ export async function POST(request) {
     ...bakesBrewing.events,
     ...riverRock.events,
     ...jenksClub.events,
+    ...djais.events,
     ...parkerHouse.events,
     ...wildAir.events,
     ...asburyParkBrewery.events,
