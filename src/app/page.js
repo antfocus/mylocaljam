@@ -424,7 +424,8 @@ export default function HomePage() {
   const datePickRef = useRef(null);
   const savedDatePickRef = useRef(null);
   const datePickOpenVal = useRef('');       // value when picker opened — guards iOS auto-fire
-  const [showCalendar, setShowCalendar] = useState(false);  // custom calendar grid visibility
+  const [showCalendar, setShowCalendar] = useState(false);  // custom calendar grid visibility (filter card)
+  const [showHeaderCalendar, setShowHeaderCalendar] = useState(false); // same grid, opened from the date-group header icon
   const [calViewDate, setCalViewDate] = useState(() => new Date()); // month being viewed (not selected)
   const savedDatePickOpenVal = useRef('');
   const searchInputRef = useRef(null);
@@ -3350,49 +3351,39 @@ export default function HomePage() {
                       display: 'flex', alignItems: 'center', gap: '8px',
                     }}>
                       <span style={dateSeparatorStyle}>{group.label}</span>
-                      {/* Calendar pick-a-date target: a real (but visually
-                          transparent) <input type="date"> overlaid on top of
-                          the icon. Tapping the icon IS tapping the input, so
-                          iOS Safari fires its native bottom-sheet date picker
-                          reliably — showPicker() alone is flaky on mobile.
-                          One input per header is fine; they all write the
-                          same pickedDate state. */}
-                      <span style={{
-                        position: 'relative', display: 'inline-flex',
-                        alignItems: 'center', justifyContent: 'center',
-                        width: '28px', height: '28px', flexShrink: 0,
-                        color: darkMode ? '#A0A0BE' : '#6B7280',
-                        cursor: 'pointer',
-                      }}>
+                      {/* Calendar pick-a-date button: opens the same custom
+                          calendar grid used by the "Date" filter card (via a
+                          bottom-sheet modal rendered once at page level). The
+                          previous implementation used a hidden <input
+                          type="date"> overlay, which on iOS Safari would
+                          auto-select the focused date on first tap and then
+                          dismiss — "knocking the user out" before they could
+                          actually choose. */}
+                      <button
+                        onClick={e => {
+                          e.preventDefault(); e.stopPropagation();
+                          // Jump the month view to the currently-picked date
+                          // (or today) so the modal opens on a useful month.
+                          setCalViewDate(pickedDate ? new Date(pickedDate + 'T12:00:00') : new Date());
+                          setShowHeaderCalendar(true);
+                        }}
+                        aria-label="Pick a date"
+                        title="Pick a date"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center', justifyContent: 'center',
+                          width: '28px', height: '28px', flexShrink: 0,
+                          color: darkMode ? '#A0A0BE' : '#6B7280',
+                          background: 'transparent', border: 'none',
+                          cursor: 'pointer', padding: 0,
+                        }}
+                      >
                         <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                           <rect x="1" y="2.5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
                           <path d="M1 6.5h14" stroke="currentColor" strokeWidth="1.5"/>
                           <path d="M4.5 1v3M11.5 1v3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                         </svg>
-                        <input
-                          type="date"
-                          min={new Date().toISOString().slice(0, 10)}
-                          value={pickedDate || ''}
-                          onChange={e => {
-                            const v = e.target.value;
-                            if (!v) return;
-                            setPickedDate(v);
-                            setDateKey('pick');
-                          }}
-                          aria-label="Pick a date"
-                          title="Pick a date"
-                          style={{
-                            position: 'absolute', inset: 0,
-                            width: '100%', height: '100%',
-                            opacity: 0, cursor: 'pointer',
-                            padding: 0, margin: 0, border: 'none',
-                            background: 'transparent',
-                            // 16px font prevents iOS Safari from auto-zooming
-                            // the viewport when the input gets focus.
-                            fontSize: '16px',
-                          }}
-                        />
-                      </span>
+                      </button>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       {group.events.map((event, i) => (
@@ -3430,6 +3421,153 @@ export default function HomePage() {
           </div>
         )}
       </div>
+
+      {/* ── Header Calendar Modal (bottom-sheet) ─────────────────────────
+          Same custom calendar grid that lives in the Date filter card,
+          opened by the small calendar icon next to each sticky date header.
+          Replaces the old native <input type="date"> overlay (which iOS
+          Safari would auto-fire + dismiss on first tap). */}
+      {showHeaderCalendar && (() => {
+        const vYear = calViewDate.getFullYear();
+        const vMonth = calViewDate.getMonth();
+        const firstDay = new Date(vYear, vMonth, 1).getDay();
+        const daysInMonth = new Date(vYear, vMonth + 1, 0).getDate();
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const cells = [];
+        for (let i = 0; i < firstDay; i++) cells.push(null);
+        for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+        const monthLabel = calViewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        const canPrev = vYear > today.getFullYear() || (vYear === today.getFullYear() && vMonth > today.getMonth());
+
+        return (
+          <>
+            {/* Backdrop */}
+            <div
+              onClick={() => setShowHeaderCalendar(false)}
+              style={{
+                position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200,
+              }}
+            />
+            {/* Sheet */}
+            <div style={{
+              position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+              width: '100%', maxWidth: '480px', zIndex: 201,
+              background: t.bg,
+              borderTopLeftRadius: '16px', borderTopRightRadius: '16px',
+              padding: '12px 12px calc(12px + env(safe-area-inset-bottom))',
+              boxShadow: '0 -4px 20px rgba(0,0,0,0.25)',
+            }}>
+              {/* Sheet header */}
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '4px 4px 10px',
+              }}>
+                <span style={{ fontSize: '15px', fontWeight: 700, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
+                  Pick a Date
+                </span>
+                <button
+                  onClick={() => setShowHeaderCalendar(false)}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: t.textMuted, fontSize: '14px', fontWeight: 600,
+                    padding: '6px 10px', fontFamily: "'DM Sans', sans-serif",
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+
+              {/* Calendar grid (same structure as the filter card) */}
+              <div style={{
+                borderRadius: '10px', overflow: 'hidden',
+                background: darkMode ? '#1E1E2E' : '#FFFFFF',
+                border: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
+              }}>
+                {/* Month nav */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  background: darkMode ? '#262636' : '#F9F9FB',
+                  borderBottom: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
+                }}>
+                  <button
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); if (canPrev) setCalViewDate(new Date(vYear, vMonth - 1, 1)); }}
+                    style={{
+                      background: 'none', border: 'none', cursor: canPrev ? 'pointer' : 'default',
+                      padding: '6px 8px', borderRadius: '6px', opacity: canPrev ? 1 : 0.3,
+                      color: t.text, lineHeight: 1,
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
+                    {monthLabel}
+                  </span>
+                  <button
+                    onClick={e => { e.preventDefault(); e.stopPropagation(); setCalViewDate(new Date(vYear, vMonth + 1, 1)); }}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      padding: '6px 8px', borderRadius: '6px',
+                      color: t.text, lineHeight: 1,
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                </div>
+                {/* DOW headers */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', padding: '6px 8px 0', gap: '2px' }}>
+                  {['S','M','T','W','T','F','S'].map((d, i) => (
+                    <div key={i} style={{
+                      textAlign: 'center', fontSize: '11px', fontWeight: 600,
+                      color: darkMode ? '#6B6B8A' : '#9CA3AF', padding: '2px 0',
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}>{d}</div>
+                  ))}
+                </div>
+                {/* Day cells */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', padding: '4px 8px 8px', gap: '2px' }}>
+                  {cells.map((day, i) => {
+                    if (day === null) return <div key={`blank-${i}`} />;
+                    const cellDate = new Date(vYear, vMonth, day);
+                    const cellStr = `${vYear}-${String(vMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const isPast = cellDate < today;
+                    const isToday = cellStr === todayStr;
+                    const isSelected = cellStr === pickedDate;
+                    return (
+                      <button
+                        key={cellStr}
+                        disabled={isPast}
+                        onClick={e => {
+                          e.preventDefault(); e.stopPropagation();
+                          setPickedDate(cellStr);
+                          setDateKey('pick');
+                          setShowHeaderCalendar(false);
+                        }}
+                        style={{
+                          width: '100%', height: '40px', borderRadius: '8px',
+                          border: isToday && !isSelected
+                            ? `1.5px solid ${darkMode ? '#555570' : '#CCCCCC'}`
+                            : isSelected ? '1.5px solid #E8722A' : '1.5px solid transparent',
+                          background: isSelected ? '#E8722A' : 'transparent',
+                          color: isSelected ? '#FFFFFF' : isPast ? (darkMode ? '#444460' : '#C0C0C0') : isToday ? '#E8722A' : t.text,
+                          fontWeight: isSelected || isToday ? 700 : 500,
+                          fontSize: '14px', fontFamily: "'DM Sans', sans-serif",
+                          cursor: isPast ? 'default' : 'pointer',
+                          opacity: isPast ? 0.4 : 1,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'background 0.1s, border-color 0.1s',
+                        }}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* ── Bottom Nav ──────────────────────────────────────────────────── */}
       <nav style={{
