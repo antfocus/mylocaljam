@@ -440,7 +440,7 @@ export async function POST(request) {
     CharleysOcean: { count: charleysOceanGrill.events.length, error: charleysOceanGrill.error },
   };
 
-  // ── Write scraper health to database ──────────────────────────────────────
+  // ── Venue registry (used by both scraper health writing and admin UI) ─────
   const VENUE_REGISTRY = {
     PigAndParrot: { venue: 'Pig & Parrot Brielle', url: 'https://www.thepigandparrot.com', source: 'GraphQL' },
     Ticketmaster: { venue: 'Ticketmaster Venues', url: 'https://ticketmaster.com', source: 'Ticketmaster API' },
@@ -491,57 +491,12 @@ export async function POST(request) {
     CharleysOcean: { venue: "Charley's Ocean Bar & Grill", url: 'https://www.charleysoceangrill.com/events.php', source: 'Vision OCR (Gemini)' },
   };
 
-  try {
-    // Only write health rows for scrapers that actually ran in this tier.
-    // Skipped scrapers' rows stay untouched (preserving their last successful
-    // sync timestamp from whichever tier they belong to).
-    const healthRows = Object.entries(scraperResults)
-      .filter(([key]) => SLOW_SCRAPER_KEYS.has(key) ? includeSlow : includeFast)
-      .map(([key, result]) => {
-        const reg = VENUE_REGISTRY[key] || { venue: key, url: '', source: 'Unknown' };
-        return {
-          scraper_key: key,
-          venue_name: reg.venue,
-          website_url: reg.url || null,
-          platform: reg.source || 'Unknown',
-          events_found: result.count || 0,
-          last_sync_count: result.count || 0,
-          status: result.error ? 'fail' : (result.count === 0 ? 'warning' : 'success'),
-          error_message: result.error || null,
-          last_sync: new Date().toISOString(),
-        };
-      });
-
-    // Global summary row — reflects TOTAL events processed across all scrapers
-    // that ran in this tier. Slow tier writes to a separate key so the daily
-    // fast cron's last_sync timestamp on _global_sync isn't clobbered weekly.
-    const ranScraperResults = Object.fromEntries(
-      Object.entries(scraperResults).filter(
-        ([key]) => SLOW_SCRAPER_KEYS.has(key) ? includeSlow : includeFast
-      )
-    );
-    const totalScrapedCount = Object.values(ranScraperResults).reduce((sum, r) => sum + (r.count || 0), 0);
-    const failedScrapers = Object.values(ranScraperResults).filter(r => r.error).length;
-    healthRows.push({
-      scraper_key: tier === 'slow' ? '_global_sync_slow' : '_global_sync',
-      venue_name: tier === 'slow'
-        ? 'All Venues (Slow Tier — Weekly)'
-        : 'All Venues (Sync Summary)',
-      website_url: null,
-      platform: 'System',
-      events_found: totalUpserted,               // total events upserted, not just new
-      last_sync_count: totalUpserted,             // alias for admin UI compatibility
-      status: upsertErrors.length ? 'fail' : 'success',  // SUCCESS if no fatal upsert errors
-      error_message: upsertErrors.length
-        ? `${upsertErrors.length} upsert batch error(s); ${failedScrapers} scraper(s) errored`
-        : null,
-      last_sync: new Date().toISOString(),
-    });
-
-    await supabase.from('scraper_health').upsert(healthRows, { onConflict: 'scraper_key' });
-  } catch (healthErr) {
-    console.error('Failed to write scraper health:', healthErr);
-  }
+  // NOTE: scraper_health writing was moved to AFTER the upsert loops (search
+  // for "Write scraper health") because the global summary row references
+  // `totalUpserted` and `upsertErrors`, which are declared below in the upsert
+  // step. Reading them here threw a TDZ ReferenceError that was swallowed by
+  // the surrounding try/catch — which is why only 2/45 scrapers ever wrote
+  // health rows historically. Keep the health write where it is now.
 
   // Combine all events
   const allEvents = [
@@ -828,6 +783,59 @@ export async function POST(request) {
       }
       totalUpserted++;
     } catch { /* skip on error */ }
+  }
+
+  // ── Write scraper health to database ──────────────────────────────────────
+  // Must run AFTER the upsert loops because the global summary row reads
+  // `totalUpserted` and `upsertErrors`. Per-scraper rows are filtered to the
+  // scrapers that actually ran in this tier — skipped scrapers keep their
+  // previous health row untouched (preserving their last successful sync
+  // timestamp from the other tier).
+  try {
+    const healthRows = Object.entries(scraperResults)
+      .filter(([key]) => SLOW_SCRAPER_KEYS.has(key) ? includeSlow : includeFast)
+      .map(([key, result]) => {
+        const reg = VENUE_REGISTRY[key] || { venue: key, url: '', source: 'Unknown' };
+        return {
+          scraper_key: key,
+          venue_name: reg.venue,
+          website_url: reg.url || null,
+          platform: reg.source || 'Unknown',
+          events_found: result.count || 0,
+          last_sync_count: result.count || 0,
+          status: result.error ? 'fail' : (result.count === 0 ? 'warning' : 'success'),
+          error_message: result.error || null,
+          last_sync: new Date().toISOString(),
+        };
+      });
+
+    // Global summary row — slow tier writes to a separate key so the daily
+    // fast cron's last_sync timestamp on _global_sync isn't clobbered weekly.
+    const ranScraperResults = Object.fromEntries(
+      Object.entries(scraperResults).filter(
+        ([key]) => SLOW_SCRAPER_KEYS.has(key) ? includeSlow : includeFast
+      )
+    );
+    const failedScrapers = Object.values(ranScraperResults).filter(r => r.error).length;
+    healthRows.push({
+      scraper_key: tier === 'slow' ? '_global_sync_slow' : '_global_sync',
+      venue_name: tier === 'slow'
+        ? 'All Venues (Slow Tier — Weekly)'
+        : 'All Venues (Sync Summary)',
+      website_url: null,
+      platform: 'System',
+      events_found: totalUpserted,
+      last_sync_count: totalUpserted,
+      status: upsertErrors.length ? 'fail' : 'success',
+      error_message: upsertErrors.length
+        ? `${upsertErrors.length} upsert batch error(s); ${failedScrapers} scraper(s) errored`
+        : null,
+      last_sync: new Date().toISOString(),
+    });
+
+    await supabase.from('scraper_health').upsert(healthRows, { onConflict: 'scraper_key' });
+  } catch (healthErr) {
+    console.error('Failed to write scraper health:', healthErr);
   }
 
   // --- Phase 1: Auto-Sorter Pipeline — categorize events before triage --------
