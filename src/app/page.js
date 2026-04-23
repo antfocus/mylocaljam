@@ -426,6 +426,9 @@ export default function HomePage() {
   const datePickOpenVal = useRef('');       // value when picker opened — guards iOS auto-fire
   const [showCalendar, setShowCalendar] = useState(false);  // custom calendar grid visibility (filter card)
   const [showHeaderCalendar, setShowHeaderCalendar] = useState(false); // same grid, opened from the date-group header icon
+  // Viewport y-position to anchor the header calendar popup to (captured from
+  // the triggering date header's bottom edge). null when closed.
+  const [calAnchorTop, setCalAnchorTop] = useState(null);
   const [calViewDate, setCalViewDate] = useState(() => new Date()); // month being viewed (not selected)
   const savedDatePickOpenVal = useRef('');
   const searchInputRef = useRef(null);
@@ -441,6 +444,18 @@ export default function HomePage() {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // ── App-shell scroll lock (pairs with body.app-shell-lock in globals.css) ──
+  // The home app is a fixed-height flex column (`100svh`) with an inner scroll
+  // container (homeScrollRef). Without this lock, iOS Safari can body-scroll
+  // the wrapper via the 100vh/100svh gap (keyboard open, URL-bar collapse,
+  // overscroll rubber-band) and drag the sticky top header off screen — and
+  // scrolling the inner container can't bring it back. Scoped to this page
+  // so /admin (document scroll) is unaffected.
+  useEffect(() => {
+    document.body.classList.add('app-shell-lock');
+    return () => document.body.classList.remove('app-shell-lock');
+  }, []);
 
   // ── Autocomplete suggestions from in-memory events (debounced) ─────────────
   //
@@ -3365,6 +3380,16 @@ export default function HomePage() {
                           // Jump the month view to the currently-picked date
                           // (or today) so the modal opens on a useful month.
                           setCalViewDate(pickedDate ? new Date(pickedDate + 'T12:00:00') : new Date());
+                          // Anchor the popup directly below whichever date-group
+                          // header was clicked. We measure the full sticky row
+                          // (not just the icon) so the popup sits flush under
+                          // the entire "TOMORROW · FRI, APR 24" line. The
+                          // popup's max-height clamp keeps it from running off
+                          // screen when the user clicks a later-date header
+                          // lower in the list.
+                          const headerEl = e.currentTarget.closest('[data-date-header]');
+                          const rect = (headerEl || e.currentTarget).getBoundingClientRect();
+                          setCalAnchorTop(Math.max(8, rect.bottom + 6));
                           setShowHeaderCalendar(true);
                         }}
                         aria-label="Pick a date"
@@ -3422,11 +3447,16 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* ── Header Calendar Modal (bottom-sheet) ─────────────────────────
+      {/* ── Header Calendar Popup (anchored dropdown) ────────────────────
           Same custom calendar grid that lives in the Date filter card,
           opened by the small calendar icon next to each sticky date header.
           Replaces the old native <input type="date"> overlay (which iOS
-          Safari would auto-fire + dismiss on first tap). */}
+          Safari would auto-fire + dismiss on first tap). Positioned directly
+          below whichever date header triggered it (calAnchorTop), with a
+          clamp in the style calc to keep the full popup on-screen even when
+          a late-in-list date header is tapped — popup height estimates to
+          ~430px so we clamp anchorY to leave at least that much room above
+          the bottom nav (~80px reserved). */}
       {showHeaderCalendar && (() => {
         const vYear = calViewDate.getFullYear();
         const vMonth = calViewDate.getMonth();
@@ -3439,6 +3469,17 @@ export default function HomePage() {
         const monthLabel = calViewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         const canPrev = vYear > today.getFullYear() || (vYear === today.getFullYear() && vMonth > today.getMonth());
 
+        // Clamp the anchor so the popup never overflows the viewport's bottom
+        // area (reserve ~480px for popup + bottom nav + margin). If
+        // calAnchorTop is null (e.g. opened via keyboard without a rect),
+        // fall back to 80px which puts it just below the top header.
+        const POPUP_RESERVE = 480;
+        const anchorY = calAnchorTop ?? 80;
+        const maxTop = typeof window !== 'undefined'
+          ? Math.max(8, window.innerHeight - POPUP_RESERVE)
+          : anchorY;
+        const popupTop = Math.min(anchorY, maxTop);
+
         return (
           <>
             {/* Backdrop */}
@@ -3448,16 +3489,19 @@ export default function HomePage() {
                 position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200,
               }}
             />
-            {/* Sheet */}
+            {/* Popup */}
             <div style={{
-              position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-              width: '100%', maxWidth: '480px', zIndex: 201,
+              position: 'fixed', top: popupTop, left: '50%', transform: 'translateX(-50%)',
+              width: 'calc(100% - 24px)', maxWidth: '360px', zIndex: 201,
               background: t.bg,
-              borderTopLeftRadius: '16px', borderTopRightRadius: '16px',
-              padding: '12px 12px calc(12px + env(safe-area-inset-bottom))',
-              boxShadow: '0 -4px 20px rgba(0,0,0,0.25)',
+              borderRadius: '14px',
+              padding: '12px',
+              boxShadow: darkMode
+                ? '0 8px 28px rgba(0,0,0,0.55)'
+                : '0 8px 24px rgba(0,0,0,0.18)',
+              border: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
             }}>
-              {/* Sheet header */}
+              {/* Popup header */}
               <div style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '4px 4px 10px',

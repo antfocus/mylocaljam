@@ -39,6 +39,24 @@ body {
   overflow-x: hidden;
 }
 
+/* ── App-shell scroll lock (applied by src/app/page.js on mount only) ────
+   The home app is a fixed-height flex column (`100svh`) with an inner
+   scroll container (homeScrollRef). If the body can scroll — even a
+   little, via the 100vh/100svh gap on iOS Safari — the wrapper can get
+   pushed up when iOS auto-scrolls the body (keyboard open, URL-bar
+   collapse, overscroll rubber-band), dragging the sticky top header off
+   screen. Scrolling the inner container can't bring it back; refresh or
+   pull-down-from-top was the only way to reset. Scoped to the home route
+   via this class so the admin/queue pages (which do use document scroll)
+   are unaffected. */
+body.app-shell-lock,
+html:has(body.app-shell-lock) {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
