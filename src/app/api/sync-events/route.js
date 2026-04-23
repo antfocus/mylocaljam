@@ -24,6 +24,7 @@ import { scrapeAsburyLanes } from '@/lib/scrapers/asburyLanes';
 import { scrapeBakesBrewing } from '@/lib/scrapers/bakesBrewing';
 import { scrapeRiverRock } from '@/lib/scrapers/riverRock';
 import { scrapeJenksClub } from '@/lib/scrapers/jenksClub';
+import { scrapeParkerHouse } from '@/lib/scrapers/parkerHouse';
 import { scrapeWildAir } from '@/lib/scrapers/wildAir';
 import { scrapeAsburyParkBrewery } from '@/lib/scrapers/asburyParkBrewery';
 import { scrapeBoatyard401 } from '@/lib/scrapers/boatyard401';
@@ -352,7 +353,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, parkerHouse, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
     includeFast ? scrapePigAndParrot() : skip(),
     includeFast ? scrapeTicketmaster() : skip(),
     includeFast ? scrapeJoesSurfShack() : skip(),
@@ -374,6 +375,7 @@ export async function POST(request) {
     includeFast ? scrapeBakesBrewing() : skip(),
     includeFast ? scrapeRiverRock() : skip(),
     includeFast ? scrapeJenksClub() : skip(),
+    includeFast ? scrapeParkerHouse() : skip(),
     includeFast ? scrapeWildAir() : skip(),
     includeFast ? scrapeAsburyParkBrewery() : skip(),
     includeFast ? scrapeBoatyard401() : skip(),
@@ -424,6 +426,7 @@ export async function POST(request) {
     BakesBrewing: { count: bakesBrewing.events.length, error: bakesBrewing.error },
     RiverRock: { count: riverRock.events.length, error: riverRock.error },
     JenksClub: { count: jenksClub.events.length, error: jenksClub.error },
+    ParkerHouse: { count: parkerHouse.events.length, error: parkerHouse.error },
     WildAir: { count: wildAir.events.length, error: wildAir.error },
     AsburyParkBrewery: { count: asburyParkBrewery.events.length, error: asburyParkBrewery.error },
     Boatyard401: { count: boatyard401.events.length, error: boatyard401.error },
@@ -475,6 +478,7 @@ export async function POST(request) {
     BakesBrewing: { venue: 'Bakes Brewing', url: 'https://www.bakesbrewing.com', source: 'HTML Scrape (Webflow)' },
     RiverRock: { venue: 'River Rock', url: 'https://riverrockbricknj.com', source: 'WordPress AJAX' },
     JenksClub: { venue: 'Jenks Club', url: 'https://jenksclub.com', source: 'WordPress AJAX (Calendarize It)' },
+    ParkerHouse: { venue: 'The Parker House', url: 'https://parkerhousenj.com', source: 'HTML Scrape (WordPress SSR)' },
     WildAir: { venue: 'Wild Air Beerworks', url: 'https://www.wildairbeer.com', source: 'Squarespace' },
     AsburyParkBrewery: { venue: 'Asbury Park Brewery', url: 'https://www.asburyparkbrewery.com', source: 'Squarespace' },
     Boatyard401: { venue: 'Boatyard 401', url: 'https://boatyard401.com', source: 'WordPress AJAX' },
@@ -533,6 +537,7 @@ export async function POST(request) {
     ...bakesBrewing.events,
     ...riverRock.events,
     ...jenksClub.events,
+    ...parkerHouse.events,
     ...wildAir.events,
     ...asburyParkBrewery.events,
     ...boatyard401.events,
