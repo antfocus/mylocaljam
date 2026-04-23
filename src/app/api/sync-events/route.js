@@ -325,6 +325,18 @@ export async function POST(request) {
   ]);
   const includeSlow = tier === 'slow' || tier === 'all';
   const includeFast = tier === 'fast' || tier === 'all';
+
+  // Skip the post-scrape artist-bio enrichment + AI categorization blocks
+  // when this run needs to fit under the 60s Vercel Hobby cap. Cron calls pass
+  // ?skipEnrich=true because those blocks can eat 20-30s on nights with many
+  // new events, running out the function clock before AI categorize finishes.
+  // When skipped, new events land in the DB with triage_status=null/pending;
+  // the separate /api/enrich-backfill and /api/admin/auto-categorize paths
+  // (or a dedicated enrichment cron — TODO) pick them up out-of-band.
+  // Default false so manual/diagnostic invocations of this route still run
+  // the full pipeline end-to-end.
+  const skipEnrich = new URL(request.url).searchParams.get('skipEnrich') === 'true';
+  if (skipEnrich) console.log('[sync-events] skipEnrich=true — enrichment + AI categorize will be skipped');
   // No-op stub for skipped scrapers — keeps array positions stable in the
   // big destructure below so we don't have to refactor the whole orchestration.
   const skip = async () => ({ events: [], error: null });
@@ -1103,8 +1115,11 @@ export async function POST(request) {
   }
 
   // --- Auto-enrich new artists via Last.fm + link events → artists via artist_id ---
-  let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, eventsLinked: 0, blacklisted: 0, humanSkipped: 0, defaultCategoryApplied: 0, errors: [] };
-  try {
+  // Gated by skipEnrich so the cron run can fit under the 60s Hobby cap.
+  // When skipped, the struct below stays at zeros and a separate backfill
+  // cron (/api/enrich-backfill) picks up the unenriched rows out-of-band.
+  let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, eventsLinked: 0, blacklisted: 0, humanSkipped: 0, defaultCategoryApplied: 0, errors: [], skipped: skipEnrich };
+  if (!skipEnrich) try {
     // Fetch all future published LIVE MUSIC events for enrichment + artist linking
     // Only enrich events categorized as Live Music (or uncategorized) — skip drink specials, trivia, etc.
     // Order by event_date ASC so artists playing soonest get enriched first.
@@ -1301,8 +1316,9 @@ export async function POST(request) {
   };
   const aiEnabled = (process.env.SYNC_AI_CATEGORIZE_ENABLED || 'true').toLowerCase() !== 'false';
   aiCategorizeResult.enabled = aiEnabled;
+  aiCategorizeResult.skipped = skipEnrich;
   const perplexityKey = process.env.PERPLEXITY_API_KEY;
-  if (aiEnabled && perplexityKey) {
+  if (!skipEnrich && aiEnabled && perplexityKey) {
     try {
       // Pull still-pending events created by this sync that haven't been
       // locked by templates / admin verification / artist default.

@@ -1,11 +1,11 @@
 {
   "crons": [
     {
-      "path": "/api/sync-events",
+      "path": "/api/sync-events?skipEnrich=true",
       "schedule": "0 2 * * *"
     },
     {
-      "path": "/api/sync-events?tier=slow",
+      "path": "/api/sync-events?tier=slow&skipEnrich=true",
       "schedule": "0 11 * * 0"
     },
     {
