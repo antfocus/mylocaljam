@@ -27,10 +27,26 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 
 export default function ArtistSpotlight({ event, onClose, darkMode = false }) {
   const [sheetVisible, setSheetVisible] = useState(false);
+  // Responsive mode: 'sheet' (mobile bottom-drawer) | 'modal' (desktop centered).
+  // The mobile bottom-sheet pattern slides up from viewport bottom — on a tall
+  // desktop window that puts the bio hundreds of px below the hero the user
+  // just clicked, feeling like "nothing happened, screen just blurred."
+  // Breakpoint: 640px (Tailwind sm:). Start as null to avoid SSR/first-paint
+  // mismatch; decide on mount.
+  const [mode, setMode] = useState(null);
   const sheetRef = useRef(null);
   const sheetDragY = useRef(0);
   const sheetStartY = useRef(0);
   const sheetDragging = useRef(false);
+
+  // ── Choose mode based on viewport width ──
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const pick = () => setMode(window.innerWidth >= 640 ? 'modal' : 'sheet');
+    pick();
+    window.addEventListener('resize', pick);
+    return () => window.removeEventListener('resize', pick);
+  }, []);
 
   // ── Theme tokens ──
   const t = darkMode ? {
@@ -76,10 +92,10 @@ export default function ArtistSpotlight({ event, onClose, darkMode = false }) {
     }, 300);
   }, [onClose]);
 
-  // ── Swipe-to-dismiss ──
+  // ── Swipe-to-dismiss (mobile bottom-sheet only) ──
   useEffect(() => {
     const el = sheetRef.current;
-    if (!el || !event) return;
+    if (!el || !event || mode !== 'sheet') return;
 
     const onStart = (e) => {
       sheetDragging.current = true;
@@ -121,7 +137,7 @@ export default function ArtistSpotlight({ event, onClose, darkMode = false }) {
       el.removeEventListener('touchend', onEnd);
       el.removeEventListener('touchcancel', onEnd);
     };
-  }, [event, handleClose]);
+  }, [event, handleClose, mode]);
 
   // ── Don't render anything if no event ──
   if (!event) return null;
@@ -139,10 +155,35 @@ export default function ArtistSpotlight({ event, onClose, darkMode = false }) {
           transition: 'background 0.3s ease, backdrop-filter 0.3s ease',
         }}
       />
-      {/* Sheet */}
+      {/* Sheet (mobile) / Modal (desktop) — same DOM, different positioning.
+          Mobile: bottom-drawer, slides up from bottom of viewport.
+          Desktop (≥640px): centered card, scales in from 95% → 100%. */}
       <div
         ref={sheetRef}
-        style={{
+        onClick={(e) => e.stopPropagation()}
+        style={mode === 'modal' ? {
+          // Desktop centered modal
+          position: 'fixed',
+          top: '50%', left: '50%',
+          zIndex: 9001,
+          background: t.sheetBg,
+          borderRadius: '20px',
+          width: 'calc(100% - 48px)',
+          maxWidth: '520px',
+          maxHeight: 'min(70vh, 640px)',
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          transform: sheetVisible
+            ? 'translate(-50%, -50%) scale(1)'
+            : 'translate(-50%, -50%) scale(0.96)',
+          opacity: sheetVisible ? 1 : 0,
+          transition: 'transform 0.22s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.22s ease',
+          boxShadow: darkMode
+            ? '0 20px 60px rgba(0,0,0,0.55), 0 4px 20px rgba(0,0,0,0.4)'
+            : '0 20px 60px rgba(0,0,0,0.18), 0 4px 20px rgba(0,0,0,0.08)',
+          paddingBottom: '8px',
+        } : {
+          // Mobile bottom-sheet (original)
           position: 'fixed',
           bottom: 0, left: 0, right: 0,
           zIndex: 9001,
@@ -155,20 +196,45 @@ export default function ArtistSpotlight({ event, onClose, darkMode = false }) {
           transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
           boxShadow: t.shadow,
           paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
+          // Hide until mode is resolved on mount to avoid first-frame flash
+          // at wrong position if client width is actually desktop.
+          visibility: mode === null ? 'hidden' : 'visible',
         }}
       >
-        {/* Drag handle */}
-        <div style={{
-          display: 'flex', justifyContent: 'center', padding: '12px 0 4px',
-          cursor: 'grab', position: 'sticky', top: 0,
-          background: t.sheetBg, zIndex: 2,
-          borderRadius: '20px 20px 0 0',
-        }}>
+        {/* Drag handle (mobile only — implies swipe-to-dismiss) */}
+        {mode !== 'modal' && (
           <div style={{
-            width: '36px', height: '4px', borderRadius: '2px',
-            background: t.handleBg,
-          }} />
-        </div>
+            display: 'flex', justifyContent: 'center', padding: '12px 0 4px',
+            cursor: 'grab', position: 'sticky', top: 0,
+            background: t.sheetBg, zIndex: 2,
+            borderRadius: '20px 20px 0 0',
+          }}>
+            <div style={{
+              width: '36px', height: '4px', borderRadius: '2px',
+              background: t.handleBg,
+            }} />
+          </div>
+        )}
+
+        {/* Close button (desktop modal — no drag handle, need explicit dismiss) */}
+        {mode === 'modal' && (
+          <button
+            onClick={handleClose}
+            aria-label="Close"
+            style={{
+              position: 'absolute', top: 12, right: 12,
+              width: 32, height: 32, borderRadius: '50%',
+              background: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+              border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: t.venueColor, zIndex: 3,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        )}
 
         <div style={{ padding: '8px 24px 24px' }}>
           {/* Artist header */}
