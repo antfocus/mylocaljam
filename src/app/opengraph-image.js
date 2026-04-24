@@ -27,8 +27,21 @@ export const contentType = 'image/png';
 // CSS2 API return only the glyphs we need — much faster than loading full font.
 async function loadGoogleFont(family, text) {
   const url = `https://fonts.googleapis.com/css2?family=${family}&text=${encodeURIComponent(text)}`;
-  const css = await (await fetch(url)).text();
-  const match = css.match(/src: url\((.+?)\) format\('(opentype|truetype)'\)/);
+  // Google Fonts requires a real browser-like User-Agent or it returns an
+  // older CSS format pointing to TTF files instead of WOFF2. Either format
+  // works with Satori, but we match both below anyway as belt-and-suspenders.
+  const css = await (await fetch(url, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+    },
+  })).text();
+  // Accept any of the formats Google returns: woff2 (modern browsers) / woff
+  // (legacy) / truetype / opentype. Previous version was opentype|truetype
+  // only, which silently failed — Google returned woff2 and the regex didn't
+  // match, triggering a 500 at the edge and falling back to the favicon as
+  // iMessage's link-preview image.
+  const match = css.match(/src: url\((.+?)\) format\('(woff2|woff|opentype|truetype)'\)/);
   if (!match) throw new Error(`Font load failed for ${family}`);
   const resp = await fetch(match[1]);
   if (!resp.ok) throw new Error(`Font fetch failed for ${family}`);
