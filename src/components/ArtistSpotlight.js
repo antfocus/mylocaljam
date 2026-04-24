@@ -20,12 +20,14 @@
  * Props:
  *   event    — The event object to display (or null to hide).
  *   onClose  — Callback to clear the event and close the overlay.
+ *   onFlag   — Toast callback used by the share button fallback (same contract
+ *              as EventCardV2's `onFlag`). Optional.
  *   darkMode — Boolean, defaults to false (light mode first).
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-export default function ArtistSpotlight({ event, onClose, darkMode = false }) {
+export default function ArtistSpotlight({ event, onClose, onFlag, darkMode = false }) {
   const [sheetVisible, setSheetVisible] = useState(false);
   // Responsive mode: 'sheet' (mobile bottom-drawer) | 'modal' (desktop centered).
   // The mobile bottom-sheet pattern slides up from viewport bottom — on a tall
@@ -91,6 +93,38 @@ export default function ArtistSpotlight({ event, onClose, darkMode = false }) {
       if (onClose) onClose();
     }, 300);
   }, [onClose]);
+
+  // ── Share handler ──
+  // Ported verbatim from EventCardV2.js (~L533). Step 5 in SPOTLIGHT-HANDOFF.md
+  // factors this into /src/lib/ since it'll be the 4th duplicate call site.
+  // Native share sheet first; clipboard fallback with toast via onFlag; AbortError
+  // (user dismissed share sheet) is swallowed so it doesn't look like a failure.
+  const handleShare = useCallback(async () => {
+    if (!event) return;
+    const name = event.event_title || event.name || event.artist_name || '';
+    const venue = event.venue || event.venue_name || '';
+    const shareText = `${name} at ${venue}`;
+    const shareUrl = event.id
+      ? `https://mylocaljam.com/event/${event.id}`
+      : (event.ticket_link || event.source || window.location.href);
+    const copyFallback = async () => {
+      try {
+        await navigator.clipboard.writeText(`${shareText} — ${shareUrl}`);
+        onFlag?.('Link copied to clipboard!');
+      } catch {
+        onFlag?.('Could not copy link — try again');
+      }
+    };
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: shareText, text: shareText, url: shareUrl });
+      } catch (err) {
+        if (err.name !== 'AbortError') await copyFallback();
+      }
+    } else {
+      await copyFallback();
+    }
+  }, [event, onFlag]);
 
   // ── Swipe-to-dismiss (mobile bottom-sheet only) ──
   useEffect(() => {
@@ -201,26 +235,51 @@ export default function ArtistSpotlight({ event, onClose, darkMode = false }) {
           visibility: mode === null ? 'hidden' : 'visible',
         }}
       >
-        {/* Drag handle (mobile only — implies swipe-to-dismiss) */}
+        {/* Drag handle + share button (mobile only — handle implies swipe-to-dismiss).
+            The row is sticky so both the handle and the share button pin to the top of the
+            sheet even when a long bio is scrolled. minHeight 40 gives the 32px share button
+            enough vertical room to sit entirely inside the bar's tinted background instead
+            of hanging over scrolling content. */}
         {mode !== 'modal' && (
           <div style={{
-            display: 'flex', justifyContent: 'center', padding: '12px 0 4px',
-            cursor: 'grab', position: 'sticky', top: 0,
-            background: t.sheetBg, zIndex: 2,
+            position: 'sticky', top: 0, zIndex: 2,
+            display: 'flex', justifyContent: 'center', alignItems: 'center',
+            padding: '8px 12px',
+            minHeight: 40,
+            background: t.sheetBg,
             borderRadius: '20px 20px 0 0',
+            cursor: 'grab',
           }}>
             <div style={{
               width: '36px', height: '4px', borderRadius: '2px',
               background: t.handleBg,
             }} />
+            <button
+              onClick={(e) => { e.stopPropagation(); handleShare(); }}
+              aria-label="Share"
+              style={{
+                position: 'absolute',
+                top: '50%', right: 12, transform: 'translateY(-50%)',
+                width: 32, height: 32, borderRadius: '50%',
+                background: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: t.venueColor,
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" />
+              </svg>
+            </button>
           </div>
         )}
 
-        {/* Close button (desktop modal — no drag handle, need explicit dismiss) */}
+        {/* Share button (desktop modal). No close button — the backdrop is already
+            click-to-dismiss, which keeps the two modes consistent (mobile uses swipe). */}
         {mode === 'modal' && (
           <button
-            onClick={handleClose}
-            aria-label="Close"
+            onClick={(e) => { e.stopPropagation(); handleShare(); }}
+            aria-label="Share"
             style={{
               position: 'absolute', top: 12, right: 12,
               width: 32, height: 32, borderRadius: '50%',
@@ -230,8 +289,8 @@ export default function ArtistSpotlight({ event, onClose, darkMode = false }) {
               color: t.venueColor, zIndex: 3,
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M18 6L6 18M6 6l12 12" />
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" />
             </svg>
           </button>
         )}

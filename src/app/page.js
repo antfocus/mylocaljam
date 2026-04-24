@@ -1636,6 +1636,16 @@ export default function HomePage() {
     setHeroSlide(prev => (prev.active === active && prev.total === total) ? prev : { active, total });
   }, []);
 
+  // ── Pause hero auto-rotate while ArtistSpotlight modal is open ──
+  // Optional chaining guards against heroRef being null when filters unmount HeroSection.
+  useEffect(() => {
+    if (spotlightEvent) {
+      heroRef.current?.pauseAutoRotate();
+    } else {
+      heroRef.current?.resumeAutoRotate();
+    }
+  }, [spotlightEvent]);
+
   // Venue list with event counts (for venue filter)
   const venueListWithCounts = useMemo(() => {
     const map = {};
@@ -3321,37 +3331,8 @@ export default function HomePage() {
                   />
                 </HeroPiston>
 
-                {/* ── Pagination dots — rendered OUTSIDE HeroPiston's clipping chain ── */}
-                {heroSlide.total > 1 && (
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '10px',
-                    right: '20px',
-                    display: 'flex',
-                    gap: '5px',
-                    zIndex: 50,
-                    pointerEvents: 'none',
-                  }}>
-                    {Array.from({ length: heroSlide.total }, (_, i) => (
-                      <button
-                        key={i}
-                        onClick={() => heroRef.current?.goToSlide(i)}
-                        style={{
-                          height: '7px',
-                          borderRadius: '4px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          pointerEvents: 'auto',
-                          width: i === heroSlide.active ? '18px' : '7px',
-                          background: i === heroSlide.active ? '#E8722A' : 'rgba(255,255,255,0.4)',
-                          transition: 'all 0.3s',
-                          WebkitTapHighlightColor: 'transparent',
-                          padding: 0,
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
+                {/* Pager dots removed per Spotlight redesign spec — carousel is swipe-discoverable.
+                    heroRef / onSlideChange plumbing kept in case later steps need goToSlide(). */}
               </div>
             )}
             {loading ? (
@@ -3756,7 +3737,7 @@ export default function HomePage() {
       <BetaWelcome />
 
       {/* ── Artist Spotlight Overlay (detached from HeroSection, z-9000) ── */}
-      <ArtistSpotlight event={spotlightEvent} onClose={() => setSpotlightEvent(null)} darkMode={darkMode} />
+      <ArtistSpotlight event={spotlightEvent} onClose={() => setSpotlightEvent(null)} onFlag={handleFlag} darkMode={darkMode} />
 
       {/* ── Auth Modal ──────────────────────────────────────────────────── */}
       {showAuthModal && (

@@ -1,12 +1,16 @@
 'use client';
 
 /**
- * HeroSection.js — "Today's Spotlight" swipeable hero with auto-rotate.
+ * HeroSection.js — Spotlight hybrid-overlay hero with auto-rotate.
  *
- * Full-bleed artist imagery with gradient overlay, "Meet the Artist" pill
- * that opens a bottom-sheet bio drawer with swipe-to-dismiss.
+ * 16/10 full-bleed artist photo, bottom-heavy scrim, corner "SPOTLIGHT"
+ * sticker, Outfit 900 artist name, DM Serif Display italic event title,
+ * IBM Plex Mono meta line ("FRI · 7:00 PM · VENUE" — day-of-week in orange).
+ * "Meet Artist" text link on the right opens the ArtistSpotlight bio modal.
  *
- * Auto-rotates every 5s, loops back to start at the end.
+ * Auto-rotates every 5s and loops circularly — swiping past either end wraps
+ * to the other (no cloned slides; the wrap transition is an instant cut so the
+ * track doesn't fast-scroll across every slide in between).
  * Pauses on touch/mouse interaction, resumes 2s after release.
  * Uses custom touch handlers with translateX (proven on iOS Safari).
  */
@@ -33,6 +37,17 @@ function formatTimeFull(timeStr) {
   const h12 = h % 12 || 12;
   const mins = m ? `:${String(m).padStart(2, '0')}` : ':00';
   return `${h12}${mins} ${period}`;
+}
+
+// "2026-04-24" → "FRI" (Eastern TZ, 3-letter uppercase).
+// Uses noon-local so DST transitions can't flip the weekday off-by-one.
+function formatDayOfWeek(dateStr) {
+  if (!dateStr) return '';
+  try {
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
+      weekday: 'short', timeZone: 'America/New_York',
+    }).toUpperCase();
+  } catch { return ''; }
 }
 
 const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEvents = [], isToday = true, onArtistTap, onSlideChange }, ref) {
@@ -74,15 +89,28 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
   }, []);
 
   const snapTo = useCallback((idx, smooth = true) => {
-    const clamped = Math.max(0, Math.min(idx, featured.length - 1));
+    const n = featured.length;
+    if (n === 0) return;
+    // Wrap-around: accept any integer (incl. negative), fold into [0, n-1].
+    const wrapped = ((idx % n) + n) % n;
+    const prev = activeRef.current;
+    // When wrapping between the first and last slide the translateX delta spans the
+    // entire track — animating that produces a jarring fast-scroll through every slide.
+    // Cut instantly instead (circular-tape splice). Only a concern for n > 2; with just
+    // two slides the "wrap" is only one slide width of travel and animates fine.
+    const isWrap = n > 2 && (
+      (prev === n - 1 && wrapped === 0) ||
+      (prev === 0 && wrapped === n - 1)
+    );
+    const useSmooth = isWrap ? false : smooth;
     const sw = getSlideWidth();
-    const target = -(clamped * sw);
+    const target = -(wrapped * sw);
     currentTranslate.current = target;
     prevTranslate.current = target;
-    setActive(clamped);
-    activeRef.current = clamped;
+    setActive(wrapped);
+    activeRef.current = wrapped;
     if (trackRef.current) {
-      trackRef.current.style.transition = smooth
+      trackRef.current.style.transition = useSmooth
         ? 'transform 0.5s cubic-bezier(0.25, 1, 0.5, 1)'
         : 'none';
       trackRef.current.style.transform = `translateX(${target}px)`;
@@ -176,8 +204,9 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
 
       const movedBy = currentTranslate.current - prevTranslate.current;
       let newIdx = activeRef.current;
-      if (movedBy < -50 && activeRef.current < featured.length - 1) newIdx = activeRef.current + 1;
-      else if (movedBy > 50 && activeRef.current > 0) newIdx = activeRef.current - 1;
+      // No boundary guards — snapTo wraps via modulo, so a swipe past either end cycles.
+      if (movedBy < -50) newIdx = activeRef.current + 1;
+      else if (movedBy > 50) newIdx = activeRef.current - 1;
 
       directionLocked.current = null;
       if (animFrame.current) cancelAnimationFrame(animFrame.current);
@@ -217,10 +246,16 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
     scheduleResume();
   }, [pauseAutoRotate, snapTo, scheduleResume]);
 
-  // ── Expose goToSlide to parent via imperative handle ──
+  // ── Expose goToSlide + auto-rotate controls to parent via imperative handle ──
+  // pauseAutoRotate / resumeAutoRotate let the ArtistSpotlight modal freeze the
+  // carousel while it's open. resumeAutoRotate = startAutoRotate, which is
+  // idempotent (clears any existing timer) and bails early if canSwipe is false,
+  // so calling it at mount or while only one slide exists is safe.
   useImperativeHandle(ref, () => ({
     goToSlide: (i) => handleDotClick(i),
-  }), [handleDotClick]);
+    pauseAutoRotate,
+    resumeAutoRotate: startAutoRotate,
+  }), [handleDotClick, pauseAutoRotate, startAutoRotate]);
 
   // ── Notify parent of slide changes ──
   useEffect(() => {
@@ -251,31 +286,45 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
           }}
         >
           {featured.map((ev, i) => {
-            // Skeleton loading state
+            // Skeleton loading state — match 16/10 aspect so HeroPiston doesn't jump on hydration.
             if (ev === SKELETON) {
               return (
                 <div key="skeleton" style={{
                   width: '100%', flexShrink: 0, position: 'relative',
-                  display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-                  padding: '12px 20px 24px', minHeight: '220px',
+                  aspectRatio: '16 / 10',
+                  overflow: 'hidden',
                 }}>
                   <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #1A1A24, #2A2A3A)', animation: 'shimmer 1.5s ease-in-out infinite alternate' }} />
-                  <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ width: '60%', height: '20px', borderRadius: '6px', background: 'rgba(255,255,255,0.06)' }} />
+                  <div style={{ position: 'absolute', left: 18, right: 18, bottom: 18, zIndex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ width: '60%', height: '28px', borderRadius: '6px', background: 'rgba(255,255,255,0.06)' }} />
                     <div style={{ width: '40%', height: '14px', borderRadius: '4px', background: 'rgba(255,255,255,0.04)' }} />
                   </div>
                 </div>
               );
             }
 
-            const name = ev.event_title || ev.name || ev.artist_name || '';
+            // ── Data mapping ─────────────────────────────────────────────
+            // Artist name is the primary display line; fall back to event_title/name if we
+            // don't have an artist linked. Event title only shown as the italic subtitle when
+            // it's a distinct value (skip if it duplicates the artist name).
+            const artistName = ev.artist_name || ev.event_title || ev.name || '';
+            const rawTitle = ev.event_title && ev.event_title.trim();
+            const eventTitle = (rawTitle && rawTitle !== ev.artist_name) ? rawTitle : '';
+
             const venue = ev.venue || ev.venue_name || '';
             const timeStr = formatTimeFull(ev.start_time);
+            const dayStr = formatDayOfWeek(ev.date);
             const realImage = ev.event_image || ev.artist_image || ev.image_url || ev.venues?.photo_url || null;
             const brandedGradient = BRANDED_GRADIENTS[i % BRANDED_GRADIENTS.length];
             const hasBio = !!(ev.description && ev.description.trim());
-            // const hasGenres = ev.artist_genres && ev.artist_genres.length > 0; // Hidden until genre data is audited
             const showMeetArtist = hasBio;
+
+            // Meta row assembly — filter empty segments so separators don't dangle.
+            const metaSegments = [
+              dayStr && <span key="d" style={{ color: '#E8722A', fontWeight: 600 }}>{dayStr}</span>,
+              timeStr && <span key="t" style={{ color: '#FFFFFF', fontWeight: 600 }}>{timeStr}</span>,
+              venue && <span key="v" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{venue}</span>,
+            ].filter(Boolean);
 
             return (
               <div
@@ -285,11 +334,8 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                   width: '100%',
                   flexShrink: 0,
                   position: 'relative',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'flex-end',
-                  padding: '0',
-                  minHeight: '240px',
+                  aspectRatio: '16 / 10',
+                  overflow: 'hidden',
                   WebkitUserSelect: 'none',
                   userSelect: 'none',
                   cursor: showMeetArtist ? 'pointer' : 'default',
@@ -299,7 +345,7 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                 <div style={{
                   position: 'absolute', inset: 0, pointerEvents: 'none',
                   ...(realImage
-                    ? { backgroundImage: `url(${realImage})`, backgroundSize: 'cover', backgroundPosition: 'center top' }
+                    ? { backgroundImage: `url(${realImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }
                     : { background: brandedGradient }
                   ),
                 }} />
@@ -315,139 +361,161 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                   </div>
                 )}
 
-                {/* Gradient overlay — heavier at bottom for text readability */}
+                {/* Bottom-heavy scrim — per hybrid overlay spec */}
                 <div style={{
                   position: 'absolute', inset: 0, pointerEvents: 'none',
-                  background: realImage
-                    ? 'linear-gradient(to top, rgba(15,15,20,0.95) 0%, rgba(15,15,20,0.7) 35%, rgba(15,15,20,0.2) 60%, transparent 100%)'
-                    : 'linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.75) 100%)',
+                  background: 'linear-gradient(180deg, rgba(19,19,28,0.15) 0%, rgba(19,19,28,0) 35%, rgba(19,19,28,0.55) 60%, rgba(19,19,28,0.92) 100%)',
                 }} />
 
-                {/* Subtle warm glow accents */}
+                {/* Radial orange glow, lower-left — brand accent */}
                 <div style={{
                   position: 'absolute', inset: 0, pointerEvents: 'none',
-                  backgroundImage: `
-                    radial-gradient(circle at 10% 80%, rgba(232,114,42,0.1) 0%, transparent 45%),
-                    radial-gradient(circle at 90% 20%, rgba(58,173,160,0.06) 0%, transparent 40%)`,
+                  background: 'radial-gradient(ellipse at 15% 100%, rgba(232,114,42,0.22) 0%, transparent 55%)',
                 }} />
 
-                {/* Content — positioned at bottom */}
-                <div style={{ position: 'relative', zIndex: 10, padding: '16px 20px 24px' }}>
-                  {/* Spotlight badge — grouped above text with breathing room */}
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '24px' }}>
-                    <span style={{
-                      background: 'rgba(94,42,132,0.9)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-                      color: '#FFFFFF', fontSize: '10px', fontWeight: 900,
-                      textTransform: 'uppercase', letterSpacing: '1.5px', padding: '5px 11px 5px 8px', borderRadius: '999px',
-                      display: 'inline-flex', alignItems: 'center', gap: '4px', lineHeight: 1,
-                      fontFamily: "'Arial Black', 'Anton', 'Archivo Black', sans-serif",
-                      textShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                    }}>
-                      {/* Material: bolt */}
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#FFFFFF" style={{ flexShrink: 0 }}>
-                        <path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.48 10.94 10.42 7.54 13.01 3h1l-1 7h3.51c.4 0 .62.19.4.66C12.97 17.55 11 21 11 21z" />
-                      </svg>
-                      {isToday ? "Today's Spotlight" : 'Coming Up'}
-                    </span>
-                  </div>
+                {/* Corner sticker — orange, tilted, with pulsing dark dot */}
+                <div style={{
+                  position: 'absolute', top: 14, right: 14, zIndex: 3,
+                  background: '#E8722A', color: '#13131C',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: 10, fontWeight: 600,
+                  letterSpacing: '0.18em',
+                  padding: '6px 10px', borderRadius: 3,
+                  transform: 'rotate(4deg)',
+                  textTransform: 'uppercase',
+                  lineHeight: 1,
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
+                }}>
+                  <span style={{
+                    display: 'inline-block',
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: '#13131C',
+                    marginRight: 6,
+                    verticalAlign: '1px',
+                    animation: 'spotlightPulse 2s ease-in-out infinite',
+                  }} />
+                  Spotlight
+                </div>
 
-                  {/* Artist name — responsive clamp, balanced wrapping, 3-line max */}
+                {/* Body — anchored bottom, per .ov-body spec */}
+                <div style={{
+                  position: 'absolute', left: 18, right: 18, bottom: 14, zIndex: 2,
+                }}>
+                  {/* Artist name — Outfit 900, uppercase, tight */}
                   <h2 style={{
-                    color: 'white', fontSize: 'clamp(18px, 5vw, 26px)', fontWeight: 900, lineHeight: 1.2,
-                    margin: '0 0 6px 0',
-                    display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden', textOverflow: 'ellipsis',
-                    textWrap: 'balance', WebkitTextWrap: 'balance',
-                    textShadow: '0 2px 12px rgba(0,0,0,0.6)',
-                    fontFamily: "'DM Sans', sans-serif",
+                    fontFamily: "'Outfit', sans-serif",
+                    fontWeight: 900,
+                    fontSize: 32,
+                    letterSpacing: '-0.03em',
+                    color: '#FFFFFF',
+                    textTransform: 'uppercase',
+                    lineHeight: 0.95,
+                    margin: 0,
+                    // Clamp long names to 2 lines so the meta row never gets pushed off
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    textShadow: '0 2px 12px rgba(0,0,0,0.5)',
+                    wordBreak: 'break-word',
                   }}>
-                    {name}
+                    {artistName}
                   </h2>
 
-                  {/* Venue + Time */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '0', flexWrap: 'nowrap',
-                    color: 'rgba(255,255,255,0.8)', fontSize: '13px', fontWeight: 500,
-                    textShadow: '0 1px 4px rgba(0,0,0,0.4)',
-                    fontFamily: "'DM Sans', sans-serif",
-                  }}>
-                    {timeStr && (
-                      <>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                          {/* Material: schedule */}
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0, opacity: 0.85 }}>
-                            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" />
-                          </svg>
-                          {timeStr}
-                        </span>
-                        <span style={{ margin: '0 8px', opacity: 0.4 }}>•</span>
-                      </>
-                    )}
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {/* Material: place */}
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0, opacity: 0.85 }}>
-                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-                      </svg>
-                      {venue}
-                    </span>
-                  </div>
+                  {/* Event title — DM Serif Display italic with orange Outfit quote marks */}
+                  {eventTitle && (
+                    <p style={{
+                      fontFamily: "'DM Serif Display', serif",
+                      fontStyle: 'italic',
+                      fontWeight: 400,
+                      fontSize: 19,
+                      color: '#E8E8F0',
+                      margin: '6px 0 0',
+                      letterSpacing: '-0.005em',
+                      lineHeight: 1.2,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 1,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      textShadow: '0 1px 6px rgba(0,0,0,0.5)',
+                    }}>
+                      <span style={{
+                        color: '#E8722A', fontStyle: 'normal',
+                        fontFamily: "'Outfit', sans-serif",
+                        fontWeight: 700, fontSize: 17,
+                        verticalAlign: '1px',
+                      }}>&ldquo;</span>
+                      {eventTitle}
+                      <span style={{
+                        color: '#E8722A', fontStyle: 'normal',
+                        fontFamily: "'Outfit', sans-serif",
+                        fontWeight: 700, fontSize: 17,
+                        verticalAlign: '1px',
+                      }}>&rdquo;</span>
+                    </p>
+                  )}
 
-                  {/* Genre pills — hidden until genre data is audited
-                  {hasGenres && (
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
-                      {ev.artist_genres.slice(0, 3).map((g, gi) => (
-                        <span key={gi} style={{
-                          padding: '3px 10px', borderRadius: '999px',
-                          fontSize: '10px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
-                          textTransform: 'uppercase', letterSpacing: '0.5px',
-                          background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.75)',
-                          backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                        }}>
-                          {g}
+                  {/* Meta row — IBM Plex Mono caps, day-of-week in orange, with right-aligned Meet Artist link */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    marginTop: 10,
+                  }}>
+                    <div style={{
+                      flex: 1, minWidth: 0,
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontSize: 11, fontWeight: 500,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                      color: '#D8D8E8',
+                      lineHeight: 1.2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      overflow: 'hidden',
+                      textShadow: '0 1px 4px rgba(0,0,0,0.5)',
+                    }}>
+                      {metaSegments.map((seg, idx) => (
+                        <span key={`seg-${idx}`} style={{ display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
+                          {idx > 0 && <span style={{ color: '#6B6B85', margin: '0 6px' }}>·</span>}
+                          {seg}
                         </span>
                       ))}
                     </div>
-                  )} */}
 
-                  {/* Meet the Artist — ghost pill hint (entire hero is clickable) */}
-                  {showMeetArtist && (
-                    <span
-                      onClick={(e) => { e.stopPropagation(); if (onArtistTap) onArtistTap(ev); }}
-                      style={{
-                        marginTop: '12px',
-                        display: 'inline-flex', alignItems: 'center', gap: '5px',
-                        padding: '6px 14px', borderRadius: '999px',
-                        background: 'transparent',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        color: 'rgba(255,255,255,0.6)', fontSize: '11px', fontWeight: 600,
-                        fontFamily: "'DM Sans', sans-serif",
-                        letterSpacing: '0.3px',
-                        cursor: 'pointer',
-                        WebkitTapHighlightColor: 'transparent',
-                      }}
-                    >
-                      Meet the Artist
-                      {/* Chevron right */}
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0, opacity: 0.7 }}>
-                        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z" />
-                      </svg>
-                    </span>
-                  )}
+                    {showMeetArtist && (
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          flexShrink: 0,
+                          color: 'rgba(255,255,255,0.55)',
+                          fontFamily: "'IBM Plex Mono', monospace",
+                          fontWeight: 500,
+                          fontSize: 11,
+                          letterSpacing: '0.1em',
+                          textTransform: 'uppercase',
+                          whiteSpace: 'nowrap',
+                          pointerEvents: 'none',
+                          textShadow: '0 1px 4px rgba(0,0,0,0.5)',
+                        }}
+                      >
+                        Meet Artist →
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* Dots removed — rendered in page.js as a sibling overlay of HeroPiston
-            to escape the overflow:hidden + contain:layout paint clipping chain */}
+        {/* Pager dots removed per Spotlight redesign spec — swipe-discoverable. */}
       </div>
 
       {/* ── Bio Bottom Sheet — MOVED to ArtistSpotlight (root level in page.js) ── */}
 
-      <style>{`@keyframes shimmer { from { opacity: 0.6; } to { opacity: 1; } }`}</style>
+      <style>{`
+        @keyframes shimmer { from { opacity: 0.6; } to { opacity: 1; } }
+        @keyframes spotlightPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      `}</style>
     </div>
   );
 });
