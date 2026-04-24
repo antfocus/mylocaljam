@@ -114,14 +114,14 @@ const MATERIAL_ICON_PATHS = {
 
 // ── Hardcoded shortcut pills (replaces DB-driven dbPills for these categories) ──
 const SHORTCUT_PILLS = [
-  { id: 'live-music',   label: 'Live Music',   icon: 'music_note',    filter_type: 'keyword', filter_config: { terms: ['live music'] } },
-  { id: 'happy-hour',   label: 'Happy Hour',   icon: 'sports_bar',    filter_type: 'keyword', filter_config: { terms: ['happy hour'] } },
-  { id: 'nightlife',    label: 'Nightlife',    icon: 'nightlife',     filter_type: 'time',    filter_config: { after_hour: 21 } },
-  { id: 'breweries',    label: 'Breweries',    icon: 'sports_bar',    filter_type: 'venue_type', filter_config: { venue_types: ['Brewery', 'Brewpub'] } },
-  { id: 'karaoke',      label: 'Karaoke',      icon: 'karaoke_mic',   filter_type: 'keyword', filter_config: { terms: ['karaoke'] } },
-  { id: 'trivia',       label: 'Trivia',       icon: 'quiz',          filter_type: 'keyword', filter_config: { terms: ['trivia', 'quiz'] } },
-  { id: 'outdoor',      label: 'Outdoor',      icon: 'deck',          filter_type: 'venue_tag', filter_config: { tags: ['Outdoor', 'Outdoor Seating', 'Patio', 'Rooftop'] } },
-  { id: 'dog-friendly', label: 'Dog Friendly', icon: 'pets',          filter_type: 'venue_tag', filter_config: { tags: ['Dog Friendly', 'Pet Friendly'] } },
+  { id: 'live-music',   label: 'Live Music',   icon: 'music_note',    filter_type: 'category',            filter_config: { categories: ['Live Music'] } },
+  { id: 'food-drink',   label: 'Food & Drink', icon: 'sports_bar',    filter_type: 'category',            filter_config: { categories: ['Food & Drink Special'] } },
+  { id: 'nightlife',    label: 'Nightlife',    icon: 'nightlife',     filter_type: 'time',                filter_config: { after_hour: 21 } },
+  { id: 'breweries',    label: 'Breweries',    icon: 'sports_bar',    filter_type: 'venue_type',          filter_config: { venue_types: ['Brewery', 'Brewpub'] } },
+  { id: 'karaoke',      label: 'Karaoke',      icon: 'karaoke_mic',   filter_type: 'category_or_keyword', filter_config: { categories: ['Karaoke'], terms: ['karaoke'] } },
+  { id: 'trivia',       label: 'Trivia',       icon: 'quiz',          filter_type: 'category_or_keyword', filter_config: { categories: ['Trivia', 'Trivia & Games'], terms: ['trivia', 'quiz'] } },
+  { id: 'outdoor',      label: 'Outdoor',      icon: 'deck',          filter_type: 'venue_tag',           filter_config: { tags: ['Outdoor', 'Outdoor Seating', 'Patio', 'Rooftop'] } },
+  { id: 'dog-friendly', label: 'Dog Friendly', icon: 'pets',          filter_type: 'venue_tag',           filter_config: { tags: ['Dog Friendly', 'Pet Friendly'] } },
 ];
 
 // ── Haversine distance (miles) between two lat/lng points ──────────────────
@@ -1572,6 +1572,29 @@ export default function HomePage() {
               const desc = (e.description || '').toLowerCase();
               const category = (e.category || '').toLowerCase();
               return terms.some(s => title.includes(s) || name.includes(s) || desc.includes(s) || category.includes(s));
+            });
+            break;
+          }
+          // Strict match against the event's `category` field (case-insensitive, IN list).
+          // Use this for pills that map cleanly to a single canonical category value
+          // (Live Music, Food & Drink). Relies on events.category being well-populated.
+          case 'category': {
+            const categories = (cfg.categories || []).map(c => c.toLowerCase());
+            list = list.filter(e => categories.includes((e.category || '').toLowerCase()));
+            break;
+          }
+          // Hybrid: match events where `category` is in the list OR where title/name/description
+          // contain any of the keyword terms. Use for pills where inventory is split between
+          // properly-categorized events and title-only events (Karaoke, Trivia).
+          case 'category_or_keyword': {
+            const categories = (cfg.categories || []).map(c => c.toLowerCase());
+            const terms = (cfg.terms || []).map(s => s.toLowerCase());
+            list = list.filter(e => {
+              if (categories.includes((e.category || '').toLowerCase())) return true;
+              const title = (e.event_title || '').toLowerCase();
+              const name = (e.name || '').toLowerCase();
+              const desc = (e.description || '').toLowerCase();
+              return terms.some(s => title.includes(s) || name.includes(s) || desc.includes(s));
             });
             break;
           }
