@@ -1750,8 +1750,8 @@ export default function HomePage() {
           <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
             <span style={{
               fontFamily: "'Outfit', sans-serif",
-              fontSize: '20px',
-              fontWeight: 900,
+              fontSize: '17px',
+              fontWeight: 700,
               letterSpacing: '-0.035em',
               lineHeight: 1,
               whiteSpace: 'nowrap',
