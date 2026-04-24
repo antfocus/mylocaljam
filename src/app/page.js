@@ -1728,14 +1728,13 @@ export default function HomePage() {
             <span style={{
               fontFamily: "'Outfit', sans-serif",
               fontSize: '20px',
-              fontWeight: 800,
-              letterSpacing: '-0.5px',
+              fontWeight: 900,
+              letterSpacing: '-0.035em',
               lineHeight: 1,
               whiteSpace: 'nowrap',
             }}>
-              <span style={{ color: darkMode ? '#FFFFFF' : '#1F2937' }}>my</span>
-              <span style={{ color: '#E8722A' }}>Local</span>
-              <span style={{ color: '#3AADA0' }}>Jam</span>
+              <span style={{ color: darkMode ? '#FFFFFF' : '#1F2937' }}>myLocal</span>
+              <span style={{ fontStyle: 'italic', color: '#E8722A' }}>Jam</span>
             </span>
           </div>
 
