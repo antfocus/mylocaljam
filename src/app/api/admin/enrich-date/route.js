@@ -770,15 +770,14 @@ export async function POST(request) {
       if (Object.keys(update).length === 0) continue;
 
       // Promote the event to a locked row so the next scraper cron
-      // respects this as admin intent. The scraper's split query at
-      // sync-events/route.js:501-506 is:
+      // respects this as admin intent. The scraper's split query is:
       //   .or('is_human_edited.eq.true,is_locked.eq.true')
-      // so flipping is_human_edited to true puts the row in the
-      // "protected" bucket on the next sync-events run. The admin can
-      // still edit via the normal admin UI; this flag only locks out
-      // automated writers. (If the row was already locked — e.g. a
-      // rogue-locked rescue case — this is a no-op on the flag itself.)
+      // Phase-1 dual-write (Task #60): set both columns during the transition
+      // week. Readers are flipping to `is_locked`; writing both avoids a
+      // window where the lock looks absent to any reader still on the old
+      // column. (If the row was already locked, this is a no-op.)
       update.is_human_edited = true;
+      update.is_locked = true;
 
       const { error: updateErr } = await supabase
         .from('events')

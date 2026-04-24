@@ -103,7 +103,11 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
     return `${hh.padStart(2, '0')}:${mm.padStart(2, '0')}`;
   })();
   const templateCategory = template?.category || '';
-  const isHumanEdited = !!event?.is_human_edited;
+  // Phase-1 reader flip (Task #60): `is_locked` is the new canonical row
+  // lock. OR in `is_human_edited` during the transition week so the modal
+  // still treats pre-flip rows as locked. Rename to `isLocked` after the
+  // is_human_edited column is dropped.
+  const isHumanEdited = !!(event?.is_locked || event?.is_human_edited);
 
   // ── The "12:00 AM Exception" ──────────────────────────────────────────
   // Every Jersey Shore scraper we integrate with defaults missing start

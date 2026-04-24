@@ -34,7 +34,9 @@ export function isMidnight(t) {
  */
 export function shouldTreatEventTimeAsEmpty(event) {
   if (!event) return false;
-  if (event.is_human_edited) return false;   // human lock wins
+  // Phase-1 reader flip (Task #60): check both columns during the transition
+  // week so locks from unpatched writers still win.
+  if (event.is_locked || event.is_human_edited) return false;   // human lock wins
   if (!event.template_id) return false;      // no template → nothing to clobber with
   return isMidnight(event.start_time);
 }
@@ -106,7 +108,12 @@ export function applyWaterfall(event, opts = {}) {
   const tpl = e.event_templates || opts.template || null;
   const artist = e.artists || opts.artist || null;
   const venue = e.venues || opts.venue || null;
-  const humanEdited = !!e.is_human_edited;
+  // Phase-1 reader flip (Task #60): `is_locked` is the new canonical row
+  // lock. During the transition week we still OR in `is_human_edited` so
+  // rows written by any not-yet-patched code path are still honored as
+  // locked. After the dual-write week and the is_human_edited column drop,
+  // simplify to `!!e.is_locked` (and rename `humanEdited` → `locked`).
+  const humanEdited = !!(e.is_locked || e.is_human_edited);
 
   // Title — custom → (human ? event → template : template → event).
   const title =

@@ -1380,16 +1380,21 @@ function sourceLabel(event, template, field) {
   const e = event || {};
   const t = template || null;
   const has = (v) => v !== null && v !== undefined && v !== '' && v !== 'None';
+  // Phase-1 reader flip (Task #60): row lock lives on `is_locked` now.
+  // We OR in the legacy `is_human_edited` column during the transition week
+  // so pre-flip rows still surface as locked in the source badges. Collapse
+  // to `!!e.is_locked` after Phase-1 cleanup drops is_human_edited.
+  const isLocked = !!(e.is_locked || e.is_human_edited);
   switch (field) {
     case 'category':
-      if (e.is_human_edited && has(e.category)) return 'event (human-locked)';
+      if (isLocked && has(e.category)) return 'event (human-locked)';
       if (has(t?.category)) return 'template';
       if (has(e.category)) return 'event';
       return 'fallback';
     case 'start_time': {
       const eventMidnight = isMidnight(e.start_time);
-      const shouldClobber = !e.is_human_edited && !!e.template_id && eventMidnight;
-      if (e.is_human_edited && has(e.start_time)) return 'event (human-locked)';
+      const shouldClobber = !isLocked && !!e.template_id && eventMidnight;
+      if (isLocked && has(e.start_time)) return 'event (human-locked)';
       if (shouldClobber && has(t?.start_time)) return 'template (midnight exception)';
       if (has(t?.start_time)) return 'template';
       if (has(e.start_time)) return 'event';
@@ -1397,13 +1402,13 @@ function sourceLabel(event, template, field) {
     }
     case 'title':
       if (has(e.custom_title)) return 'custom override';
-      if (e.is_human_edited && has(e.event_title)) return 'event (human-locked)';
+      if (isLocked && has(e.event_title)) return 'event (human-locked)';
       if (has(t?.template_name)) return 'template';
       if (has(e.event_title)) return 'event';
       return 'fallback';
     case 'bio':
       if (has(e.custom_bio)) return 'custom override';
-      if (e.is_human_edited && has(e.artist_bio)) return 'event (human-locked)';
+      if (isLocked && has(e.artist_bio)) return 'event (human-locked)';
       if (has(t?.bio)) return 'template';
       if (has(e.artist_bio)) return 'event';
       if (has(e.artists?.bio)) return 'artist';

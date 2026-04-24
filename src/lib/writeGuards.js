@@ -23,11 +23,23 @@
  */
 
 /**
- * Returns true if `field` is locked on `existingRow.is_human_edited`,
- * handling both boolean and JSONB shapes.
+ * Returns true if `field` is locked on `existingRow`.
+ *
+ * Checks `is_locked` first (the new canonical row-level lock for both events
+ * and artists after Phase-1 backfill) and then falls back to the legacy
+ * `is_human_edited` column, handling both its boolean and JSONB shapes.
+ * Callers should pass rows that SELECT both columns during the transition
+ * week; after `is_human_edited` is dropped, the fallback branch becomes a
+ * safe no-op.
  */
 export function isFieldLocked(existingRow, field) {
   if (!existingRow) return false;
+  // Phase-1 canonical: row-level `is_locked` boolean. Applies to both the
+  // events table (where it's the only lock column going forward) and the
+  // artists table (where it already existed as a row-level lock alongside
+  // the JSONB). If set, the row is fully locked end-to-end.
+  if (existingRow.is_locked === true) return true;
+  // Legacy fallback during transition (to be removed post-Phase-1):
   const flag = existingRow.is_human_edited;
   if (flag === true) return true;                 // end-to-end lock
   if (flag && typeof flag === 'object') {         // per-field JSONB

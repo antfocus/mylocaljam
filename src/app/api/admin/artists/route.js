@@ -418,7 +418,11 @@ export async function DELETE(request) {
       const eventIds = linkedEvents.map(e => e.id);
       await supabase
         .from('events')
-        .update({ status: 'archived', artist_id: null, artist_bio: null, is_human_edited: true })
+        // Phase-1 dual-write (Task #60): writing both lock columns during the
+        // transition week. Readers are flipping to `is_locked`; keeping
+        // `is_human_edited` writes avoids a window where archived rows look
+        // unlocked to any reader that hasn't been updated yet.
+        .update({ status: 'archived', artist_id: null, artist_bio: null, is_human_edited: true, is_locked: true })
         .in('id', eventIds);
     }
   }
@@ -442,7 +446,9 @@ export async function DELETE(request) {
         for (const ev of fullEvents) {
           const patch = {
             artist_id: null,
+            // Phase-1 dual-write (Task #60): see archive path above.
             is_human_edited: true,
+            is_locked: true,
           };
           // Bake artist bio → event.artist_bio if the event doesn't already
           // have its own bio at a higher tier (custom_bio).

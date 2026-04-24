@@ -336,7 +336,10 @@ export async function POST(request) {
         .from('events')
         .select('external_id')
         .in('external_id', chunk)
-        .eq('is_human_edited', true);
+        // Phase-1 reader flip (Task #60): match either lock column during the
+        // transition week. Simplify to `.eq('is_locked', true)` once
+        // is_human_edited is dropped.
+        .or('is_locked.eq.true,is_human_edited.eq.true');
       for (const row of (locked || [])) protectedIds.add(row.external_id);
     }
   } catch { /* proceed */ }

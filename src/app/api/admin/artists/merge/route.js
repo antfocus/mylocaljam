@@ -184,7 +184,14 @@ export async function POST(request) {
         event_image_url: null,           // scraper/AI snapshot
       })
       .eq('artist_id', masterId)
-      .eq('is_human_edited', false)     // never overwrite event-level locks
+      // Phase-1 reader flip (Task #60): skip rows locked by either column.
+      // Post-backfill the two columns are in sync, but during the transition
+      // week (while dual-writes bake) we read both to be belt-and-suspenders
+      // — a future writer that only updates `is_locked` must still be
+      // honored here. Simplify to `.eq('is_locked', false)` after the
+      // is_human_edited column is dropped.
+      .eq('is_human_edited', false)
+      .eq('is_locked', false)
       .select('id');
     staleCacheCleaned = cleaned?.length || 0;
     if (staleCacheCleaned > 0) {

@@ -281,7 +281,11 @@ export async function PUT(request) {
     if (!old_name || !new_name) return NextResponse.json({ error: 'Missing old_name or new_name' }, { status: 400 });
     const { data, error } = await supabase
       .from('events')
-      .update({ event_title: new_name, is_human_edited: true })
+      // Phase-1 dual-write (Task #60): `is_locked` is the new canonical row
+      // lock; `is_human_edited` stays during the transition week so readers
+      // that haven't flipped yet still see the lock. Drop `is_human_edited`
+      // writes after one incident-free week.
+      .update({ event_title: new_name, is_human_edited: true, is_locked: true })
       .eq('event_title', old_name)
       .select('id');
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -295,7 +299,8 @@ export async function PUT(request) {
     if (!festival_name) return NextResponse.json({ error: 'Missing festival_name' }, { status: 400 });
     const { data, error } = await supabase
       .from('events')
-      .update({ event_title: null, is_festival: false, is_human_edited: true })
+      // Phase-1 dual-write (Task #60): see bulk_rename_festival comment above.
+      .update({ event_title: null, is_festival: false, is_human_edited: true, is_locked: true })
       .eq('event_title', festival_name)
       .select('id');
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -340,8 +345,10 @@ export async function PUT(request) {
     ...(body.custom_genres !== undefined && { custom_genres: body.custom_genres || null }),
     ...(body.custom_vibes !== undefined && { custom_vibes: body.custom_vibes || null }),
     ...(body.custom_image_url !== undefined && { custom_image_url: body.custom_image_url ? validateUrl(body.custom_image_url) : null }),
-    // Always mark as human-edited on any admin save — protects from scraper overwrites
+    // Always mark as locked on any admin save — protects from scraper overwrites.
+    // Phase-1 dual-write (Task #60): both columns until the reader flip bakes.
     is_human_edited: true,
+    is_locked: true,
     verified_at: new Date().toISOString(),
   };
 
@@ -423,7 +430,7 @@ export async function PUT(request) {
   try {
     const { data: existing } = await supabase
       .from('events')
-      .select('is_human_edited')
+      .select('is_human_edited, is_locked')
       .eq('id', id)
       .single();
     if (existing) {

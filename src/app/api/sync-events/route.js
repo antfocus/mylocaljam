@@ -647,8 +647,11 @@ export async function POST(request) {
 
   // ── Community-submission dedup: drop scraped events that duplicate a
   //    human-submitted row at the same venue + date + artist (case-insensitive).
-  //    Community submissions have external_id = NULL and is_human_edited = true,
-  //    so they never collide on the external_id upsert — we must catch them here.
+  //    Community submissions have external_id = NULL and are locked
+  //    (is_locked=true after Phase-1 backfill; the legacy is_human_edited
+  //    boolean is still written in parallel during the transition week),
+  //    so they never collide on the external_id upsert — we must catch
+  //    them here.
   let communityDupeCount = 0;
   try {
     // Collect unique venue+date pairs from this sync batch
@@ -664,7 +667,10 @@ export async function POST(request) {
         .in('venue_id', venueIds)
         .gte('event_date', minDate)
         .lte('event_date', maxDate + 'T23:59:59')
-        .eq('is_human_edited', true)
+        // Phase-1 reader flip (Task #60): match both lock columns while
+        // dual-writes bake. After is_human_edited is dropped this becomes
+        // just `.eq('is_locked', true)`.
+        .or('is_locked.eq.true,is_human_edited.eq.true')
         .is('external_id', null);
       if (communityRows?.length) {
         // Build a Set of normalized keys for fast lookup
