@@ -3360,8 +3360,8 @@ export default function HomePage() {
                           in a muted tone so it reads as part of the same date unit. */}
                       <span style={{
                         fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
-                        fontSize: '13px', fontWeight: 500,
-                        letterSpacing: '0.15em', textTransform: 'uppercase',
+                        fontSize: '15px', fontWeight: 500,
+                        letterSpacing: '0.14em', textTransform: 'uppercase',
                         color: darkMode ? '#D8D8F0' : '#1F2937',
                       }}>{group.label}</span>
                       {/* Calendar pick-a-date button: opens the same custom
@@ -3668,8 +3668,11 @@ export default function HomePage() {
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor" /></svg>
               )}
               {tab.key === 'saved' && (
-                /* Ticket stub — matches save button metaphor */
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M22 10V6a2 2 0 00-2-2H4a2 2 0 00-2 2v4a2 2 0 100 4v4a2 2 0 002 2h16a2 2 0 002-2v-4a2 2 0 100-4z" fill="currentColor" /></svg>
+                /* Ticket stub — matches the save button in EventCardV2 (horizontal, not tilted) */
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z" fill="currentColor" />
+                  <line x1="8" y1="8.5" x2="8" y2="15.5" stroke="rgba(255,255,255,0.85)" strokeWidth="1.25" strokeLinecap="round" strokeDasharray="1.25 1.25" />
+                </svg>
               )}
               {tab.key === 'profile' && (
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" fill="currentColor" /></svg>

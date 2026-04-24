@@ -321,7 +321,7 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
 
             // Meta row assembly — filter empty segments so separators don't dangle.
             const metaSegments = [
-              dayStr && <span key="d" style={{ color: '#E8722A', fontWeight: 600 }}>{dayStr}</span>,
+              dayStr && <span key="d" style={{ fontWeight: 500 }}>{dayStr}</span>,
               timeStr && <span key="t" style={{ color: '#FFFFFF', fontWeight: 600 }}>{timeStr}</span>,
               venue && <span key="v" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{venue}</span>,
             ].filter(Boolean);
