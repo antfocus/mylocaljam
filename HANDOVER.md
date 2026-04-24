@@ -688,10 +688,12 @@ CREATE TABLE IF NOT EXISTS artists (
 1. Create `src/lib/scrapers/venueName.js` — export `async function scrapeVenueName() { return { events: [], error: null } }`
 2. Each event object needs: `title`, `venue` (must match DB venue name exactly), `date` (YYYY-MM-DD), `time` (12h format OK), `external_id`, optionally `ticket_url`, `price`, `description`, `source_url`
 3. Import and add to `sync-events/route.js` — add to `Promise.all`, spread into `allEvents`, add to `scraperResults`
-4. Add venue row to Supabase `venues` table if not already there
-5. Deploy and run manual sync to verify
-6. **For Squarespace sites:** Use `?format=json` on the collection URL. Click an event to find the collection name from the URL path.
-7. **For iCal feeds:** Use Eastern time for date comparisons. Handle RDATE if the feed uses recurring events. Include date in external_id for recurring events.
+4. Add venue row to Supabase `venues` table if not already there. **MUST populate `latitude` + `longitude`** — `src/app/page.js` filters out any event whose venue has null coords (silent UI failure: events disappear from feed + venue-filter dropdown). Address + website + default_start_time on the same insert.
+5. Also add the scraper key to FAST_SHARD_1 or FAST_SHARD_2 (or SLOW_SCRAPER_KEYS) in `sync-events/route.js` — unknown keys are skipped by `shouldRunScraper` so the scraper silently runs 0 times if this step is missed.
+6. Also add a `VENUE_REGISTRY` entry in `sync-events/route.js` so the scraper shows up in the admin health panel.
+7. Deploy and run manual sync to verify (check event count, then check a venue event actually surfaces in the home-page venue dropdown).
+8. **For Squarespace sites:** Use `?format=json` on the collection URL. Click an event to find the collection name from the URL path.
+9. **For iCal feeds:** Use Eastern time for date comparisons. Handle RDATE if the feed uses recurring events. Include date in external_id for recurring events.
 
 ---
 
@@ -4550,4 +4552,152 @@ No code changes this session — verification + documentation only.
 ### Safety Locks — Reaffirmed (No Changes)
 
 All Safety Locks from April 21 remain in force — admin-gated linkage, slug as dedup key, required category, festival scoping. This session adds no new locks; it verifies the existing ones hold under real-data tests.
+
+---
+
+## Session — April 23, 2026 — Ghost-merge cache-drift fix
+
+**Symptom Tony spotted.** Boatyard 401 Apr 30 Mike Dalton event rendered with a fireplace photo and a ghost AI bio instead of the locked canonical Mike Dalton's popmenucloud image + curated bio. After he merged 4 Mike Dalton ghost rows into the canonical, the display was still wrong and autocomplete still showed the ghost variants ("Mike Dalton 6pm", "MIKE DALTON BAND w/ Horns", etc.) as separate ARTIST entries.
+
+**Root cause.** The merge endpoint (`src/app/api/admin/artists/merge/route.js`) correctly repointed events to the canonical artist and wrote aliases, but Step E only nulled `event_image_url` on the repointed event rows. Three other cache columns on `events` — `artist_name`, `artist_bio`, and the legacy `image_url` — kept the ghost values. The waterfall reads those event-row caches before falling through to the artist join, so every merged event kept displaying ghost data until the next scrape. This is the same class of bug that Phase 3 of the Trust Refactor is designed to eliminate structurally (dropping the event-row cache columns).
+
+**Compounding bug in autocomplete.** `src/app/page.js` `autoCompleteSuggestions` added `e.artists?.name` to the ARTIST bucket via one path AND fell through to `e.artist_name` via the rawTitle path (line 545). When a linked event still carried a stale `artist_name`, both paths fired and surfaced the canonical name AND every ghost variant as separate ARTIST rows in the dropdown.
+
+**Fixes shipped (deployed).**
+
+1. **DB heal** (one-off SQL, already applied to prod Supabase):
+   ```sql
+   UPDATE events e
+   SET artist_name = a.name, artist_bio = NULL, image_url = NULL, event_image_url = NULL
+   FROM artists a
+   WHERE e.artist_id = a.id
+     AND e.artist_id IN ('<mike_dalton_id>','<eboro_id>','<ocean_ave_stompers_id>')
+     AND e.is_human_edited = false
+     AND (e.artist_name IS DISTINCT FROM a.name
+          OR e.artist_bio IS NOT NULL
+          OR e.image_url IS NOT NULL
+          OR e.event_image_url IS NOT NULL);
+   ```
+   Rows healed: 48 Mike Dalton, 1 E-Boro Bandits, 3 Ocean Avenue Stompers. Event-level locks (4 Mike Dalton rows with `is_human_edited = true`) left untouched. Also linked two orphan "Mike Dalton Trio" event rows (artist_id was NULL, is_human_edited was true) to canonical — safe because `artist_id` is not in the lockable-fields list in `writeGuards.js`.
+
+2. **Merge endpoint Step E rewrite** — `src/app/api/admin/artists/merge/route.js`. Was: `.update({ event_image_url: null })`. Now: `.update({ artist_name: master.name, artist_bio: null, image_url: null, event_image_url: null })` scoped to `is_human_edited = false` so event-level locks are honored. Response key renamed `staleImagesCleaned → staleCacheCleaned` (no frontend consumers of old key). Future ghost merges won't leave drift.
+
+3. **Autocomplete dedup guard** — `src/app/page.js`. Added `!artistName` guard on the rawTitle-fallback ARTIST bucket. When an event has a linked canonical (`e.artists?.name` populated), the rawTitle path no longer falls through and double-adds the stale scraper `artist_name`. Un-linked scraper rows still surface via rawTitle as before (preserves #30's original intent).
+
+**Ghost clusters swept.** Mike Dalton (#64), E-Boro Bandits (#64), Ocean Avenue Stompers (Tony's earlier merge, cache healed retroactively). HOWL and 9 South confirmed already merged at the artist-row level — no drift residue.
+
+**Why this keeps mattering.** Every future artist merge will leave the same kind of cache behind on events unless Phase 3 of the Trust Refactor lands (drop `events.artist_bio` and `events.event_image_url`, read live from the artist join). Until then, the Step E fix is the patch — it heals at merge time, but scrapers can still write stale cache. Track in #62.
+
+### Files Changed (April 23)
+
+| File | Change |
+|------|--------|
+| `src/app/api/admin/artists/merge/route.js` | Step E now heals 4 cache columns (artist_name, artist_bio, image_url, event_image_url), scoped to unlocked events only |
+| `src/app/page.js` | Autocomplete `!artistName` guard on rawTitle ARTIST fallback |
+| `HANDOVER.md` | This section |
+| `TRUST_REFACTOR.md` | Status bump + cache-drift incident postmortem added as Phase 3 motivation |
+
+### Tasks closed this session
+
+- #59 QA enrichment lock logic on 4 named artists
+- #64 Dedupe Mike Dalton and E-Boro Bandits ghost artist rows
+- #65 Heal stale events cache from ghost merges
+- #66 Fix merge endpoint to clear all event cache columns
+- #67 Stop autocomplete double-adding stale artist_name
+- #68 Sweep remaining ghost clusters
+
+## Session — April 23/24, 2026 — Hero scroll-jump #2, Osprey scraper, venue-row backfill
+
+### 1. Hero collapse scroll jump #2 — rAF throttle dropped (#69 shipped)
+
+**Symptom Tony spotted.** After the April 23 ResizeObserver fix shipped, a second jump appeared when scrolling UP toward the hero: a thin band of whitespace flashed above the first event card (Mike Dalton, Thu Apr 23) before snapping back into place.
+
+**Root cause.** The `onScroll` handler in `HeroPiston.js` wrapped `applyScrollState` in `requestAnimationFrame` to batch scroll events. On fast reverse flicks, the ~16 ms delay between "last processed scrollTop" and "next scroll event triggering a new rAF" left the wrapper holding its stale collapsed height while the scroll had already moved back up. The next paint snapped to the correct height — that snap is the jump users saw.
+
+**Validation before shipping.** Monkey-patched the live deployment with a synchronous handler + sampler that captured 9 data points during a scroll-down-and-up gesture. 8 of 9 samples showed `delta = 0` from the expected 1:1 scroll math; the 1 outlier was interference from the still-running original rAF-throttled handler (gone post-deploy).
+
+**Fix shipped.** `src/components/HeroPiston.js`. Dropped the `rafPending` ref and made `onScroll` synchronous: `const onScroll = () => applyScrollState();`. `applyScrollState` is pure math + three style writes; running it synchronously on every scroll event (at most ~120/s on high-refresh displays) is cheaper than one frame of jank. Browser batches style writes into paint anyway. Header docblock updated with 2026-04-23b fix notes.
+
+Commit `05d02b9` — "Drop rAF throttle in HeroPiston for true 1:1 scroll tracking."
+
+### 2. Osprey Nightclub scraper (#70 shipped)
+
+**Target.** `https://www.ospreynightclub.com/events` — Manasquan nightclub, ~48 upcoming events across April–December 2026.
+
+**Site profile.** Custom-built single-page listing. No WordPress / Squarespace / Wix / Dice / SeeTickets / Prekindle / bandsintown / JSON-LD. One server-rendered HTML response, no AJAX, no pagination, no detail fetches required. Event rows are `.c-single-event` blocks inside `.c-events-list`, with the DOM shape:
+
+```html
+<div class="c-single-event none">
+  <a href="detailsevent/<slug>">
+    <div class="row align-items-center">
+      <div class="col-lg-6"><p>TITLE</p></div>
+      <div class="col-lg-6 text-lg-end"><p>DATE TIME</p></div>
+    </div>
+  </a>
+</div>
+```
+
+**Two gotchas worth remembering.**
+
+1. **Date formats.** Two shapes in the wild — `"April 25, 2026 5:00-9:00 PM"` (range) and `"May 02, 2026 9:00 PM"` (single). `parseDateTime` takes the START time for ranges; our schema doesn't carry end-time. The `am/pm` only appears once at the tail of ranges, so we match `\b(am|pm)\b` anywhere after the date and apply it to whichever h:mm we picked. Defaults to PM if absent — this is a nightclub.
+2. **Title concatenation.** Headliner + opener/DJ are slammed together with no separator in the DOM (`"PulseDJ Cole Pardi"`, `"The KicksChaston"`, `"Big Bang BabyJoe Nichols"`). Per Tony: store titles RAW and let the downstream AI classifier split them. No heuristics to pick a split point in the scraper.
+
+**External ID.** No stable per-event ID exposed — synthesized `osprey-<date>-<titleSlug>`, stable across runs while date + title hold.
+
+**File + wiring.**
+- New: `src/lib/scrapers/osprey.js` (175 lines, pattern-copies `parkerHouse.js`)
+- `src/app/api/sync-events/route.js` — import, FAST_SHARD_2 set, Promise.all destructure + call array (48 entries both sides, alignment verified), scraperResults map, VENUE_REGISTRY, allEvents spread
+- `SCRAPERS.md` — row 21b added
+
+**Parser tested** against mock HTML locally (sandbox proxy blocks ospreynightclub.com, but the parser logic is covered by unit tests against the exact DOM shape scraped earlier in the session). All range-format and single-format datetimes parsed correctly; absolute detail URLs resolved off `BASE_URL`.
+
+Commit `d8e98d7` — "Add Osprey Nightclub venue scraper."
+
+### 3. Venue-row and coordinate backfill — Parker House, Jenks Club, Osprey
+
+**Problem discovered mid-session.** While wiring up Osprey, I checked whether "The Osprey" existed in the `venues` table. It didn't — expected. But neither did **The Parker House** (added April 2026) or **Jenks Club** (added April 2026). Both scrapers had been upserting events with `venue_id = NULL` since their launch. 138 Parker House events and 40 Jenks events were orphaned in the DB.
+
+**Second shoe.** Even after inserting the three venue rows, events weren't appearing in the home-page venue-filter dropdown. Root cause: `src/app/page.js` line 1477 filters out any event whose venue lacks `venue_lat` / `venue_lng`:
+
+```js
+if (!e.venue_lat || !e.venue_lng) return false; // exclude venues without coords
+```
+
+I'd inserted the venue rows without coordinates. Any new venue row without lat/lng gets its events silently dropped from the feed AND the venue-filter dropdown — it just disappears from the UI entirely. Worth knowing for every future venue add.
+
+**Fixes applied (direct SQL on prod Supabase).**
+
+1. Inserted three rows into `venues`:
+   - The Parker House — 1st Ave & Beacon Blvd, Sea Girt, NJ 08750 — `c27e1be7-fd76-4bd2-8369-21fe19216492`
+   - Jenks Club — 300 Boardwalk, Point Pleasant Beach, NJ 08742 — `30e8ea16-b2e9-489a-b852-9352bd3782aa`
+   - The Osprey — 62 1st Ave, Manasquan, NJ 08736 — `0f8881ab-6d32-4dcc-8f94-898385b16359`
+2. Backfilled orphaned events: 138 Parker House + 40 Jenks → now linked to the new venue_ids. 0 orphans remain for any of the three `external_id` prefixes.
+3. Set approximate coordinates on all three (Sea Girt ~40.1313/-74.0333, PPB boardwalk ~40.0884/-74.0383, Manasquan ~40.1188/-74.0462) so events pass the lat/lng feed filter.
+
+### Pattern to add to the "Adding a New Scraper" checklist
+
+Every time a scraper ships for a brand-new venue, the `venues` table row needs THREE things, not just `name + address`:
+
+1. The row itself (name exactly matches the scraper's `VENUE` constant + `VENUE_REGISTRY` entry in route.js)
+2. `latitude` and `longitude` (or events get dropped from the home feed and filter dropdown — silent failure)
+3. Eventually a photo_url, venue_type, and default_start_time (less critical but used by cards + default-time fallbacks)
+
+Worth considering an auto-geocode step on venue insert (admin form or DB trigger) so future additions don't bite us the same way.
+
+### Files Changed (April 23/24)
+
+| File | Change |
+|------|--------|
+| `src/components/HeroPiston.js` | Dropped rAF throttle on scroll handler; synchronous `applyScrollState` for 1:1 tracking |
+| `src/lib/scrapers/osprey.js` | NEW — Osprey Nightclub custom HTML scraper (~48 events/year) |
+| `src/app/api/sync-events/route.js` | Wired Osprey into FAST_SHARD_2 + 6 other integration points |
+| `SCRAPERS.md` | Row 21b — The Osprey |
+| `HANDOVER.md` | This section |
+| Supabase `venues` | 3 new rows (Parker House, Jenks, Osprey) + coords |
+| Supabase `events` | 178 rows backfilled with venue_id |
+
+### Tasks closed this session
+
+- #69 Fix hero collapse scroll jump
+- #70 Build Osprey Nightclub venue scraper
 
