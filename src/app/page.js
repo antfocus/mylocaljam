@@ -1760,7 +1760,7 @@ export default function HomePage() {
               hasActiveFilters ? t.accent
               : (darkMode ? 'rgba(255, 255, 255, 0.25)' : '#D1D5DB')
             }`,
-            borderRadius: '20px', cursor: 'pointer', position: 'relative',
+            borderRadius: '12px', cursor: 'pointer', position: 'relative',
             boxShadow: hasActiveFilters
                 ? `0 0 6px ${t.accent}30, 0 0 12px ${t.accent}15`
                 : (darkMode ? '0 1px 6px rgba(0,0,0,0.3)' : '0 1px 4px rgba(0,0,0,0.08)'),
@@ -1798,14 +1798,19 @@ export default function HomePage() {
                 </span>
               </span>
             ) : (
+              /* Editorial placeholder — IBM Plex Mono caps to match the Spotlight meta,
+                 date header, and event card time labels. The "/" separator is muted so
+                 the two tokens read as a cadence rather than one string. */
               <span style={{
-                fontSize: '12px', fontWeight: 500,
-                color: darkMode ? 'rgba(255, 255, 255, 0.7)' : '#4B5563',
-                fontFamily: "'DM Sans', sans-serif", whiteSpace: 'nowrap',
+                fontSize: '11px', fontWeight: 500,
+                color: darkMode ? 'rgba(255, 255, 255, 0.85)' : '#1F2937',
+                fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+                letterSpacing: '0.1em', textTransform: 'uppercase',
+                whiteSpace: 'nowrap',
                 overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0,
                 transition: 'color 0.2s ease',
               }}>
-                Search / Filters
+                Search<span style={{ color: darkMode ? 'rgba(255, 255, 255, 0.32)' : 'rgba(0, 0, 0, 0.3)', margin: '0 3px' }}>/</span>Filters
               </span>
             )}
             {/* Active filter pills inline + passive radius indicator */}
