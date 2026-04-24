@@ -46,6 +46,7 @@ import { scrapeMjsRestaurant } from '@/lib/scrapers/mjsRestaurant';
 import { scrapePaganosUva } from '@/lib/scrapers/paganosUva';
 import { scrapeCaptainsInn } from '@/lib/scrapers/captainsInn';
 import { scrapeCharleysOceanGrill } from '@/lib/scrapers/charleysOceanGrill';
+import { scrapeOsprey } from '@/lib/scrapers/osprey';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -95,6 +96,7 @@ const SCRAPER_MAP = {
   PaganosUva: scrapePaganosUva,
   CaptainsInn: scrapeCaptainsInn,
   CharleysOcean: scrapeCharleysOceanGrill,
+  Osprey: scrapeOsprey,
 };
 
 // Platform metadata for scraper_health (mirrors VENUE_REGISTRY in sync-events/route.js)
@@ -115,6 +117,7 @@ const PLATFORM_MAP = {
   AlgonquinArts: 'PHP HTML (proxy)', TimMcLoones: 'Ticketbud HTML (proxy)',
   MjsRestaurant: 'Vision OCR (Gemini)', PaganosUva: 'Vision OCR (Gemini)',
   CaptainsInn: 'Vision OCR (Gemini)', CharleysOcean: 'Vision OCR (Gemini)',
+  Osprey: 'HTML Scrape (custom)',
 };
 
 function checkAuth(request) {
