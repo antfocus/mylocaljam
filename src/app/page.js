@@ -13,7 +13,6 @@ import SavedGigCard      from '@/components/SavedGigCard';
 import MapView           from '@/components/MapView';
 import SubmitEventModal  from '@/components/SubmitEventModal';
 import AuthModal         from '@/components/AuthModal';
-import WelcomeModal      from '@/components/WelcomeModal';
 import Toast             from '@/components/Toast';
 import FollowingTab      from '@/components/FollowingTab';
 import ArtistProfileScreen from '@/components/ArtistProfileScreen';
@@ -322,7 +321,6 @@ export default function HomePage() {
   const [authReady, setAuthReady] = useState(false);             // true once getSession resolves
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authTrigger, setAuthTrigger] = useState(null);            // 'save' | 'submit' | 'profile' | null
-  const [showWelcome, setShowWelcome] = useState(false);
   // ── Edit Profile modal state ─────────────────────────────────────────────
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -718,6 +716,11 @@ export default function HomePage() {
     if (!id) return;
     // Hard gate: require auth
     if (!isLoggedInRef.current) {
+      // Cache the event ID in localStorage so we can complete the save after
+      // the OAuth redirect round-trip (Google takes the user off-page entirely,
+      // so all in-memory state is lost). Drained on auth state change — see the
+      // "Pending save drain" effect further down.
+      try { localStorage.setItem('mlj_pending_save', id); } catch {}
       openAuth('save');
       return;
     }
@@ -1093,6 +1096,30 @@ export default function HomePage() {
     return () => subscription.unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Pending save drain ─────────────────────────────────────────────────────
+  // When a guest taps ❤️ on an event, we cache the event ID in localStorage
+  // and kick them through auth (see toggleFavorite). After OAuth redirect, the
+  // page reloads and we lose in-memory state — so we re-read the pending save
+  // here and complete it once the user is authenticated. saveEventToDb is
+  // client-side idempotent (Set-backed), so double-firing is harmless.
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    let pendingId = null;
+    try { pendingId = localStorage.getItem('mlj_pending_save'); } catch {}
+    if (!pendingId) return;
+    try { localStorage.removeItem('mlj_pending_save'); } catch {}
+    // Small delay so the favorites fetch has a chance to populate state first;
+    // if the event was already saved on another device we don't want a flash of
+    // unsaved → saved.
+    const timer = setTimeout(() => {
+      if (!favoritesRef.current.has(pendingId)) {
+        saveEventToDb(pendingId);
+        setToast('Event saved!');
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [isLoggedIn, saveEventToDb]);
+
   // ── Handle URL query params — split into auth-dependent and data-only ──────
 
   // Data deep-links: ?event=<id> — fire immediately, no auth dependency
@@ -1122,6 +1149,19 @@ export default function HomePage() {
     }
   }, [authReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auth errors: ?auth_error=<msg> — surfaced by /auth/callback when OAuth is
+  // cancelled or the code exchange fails. Show as a toast so the user gets
+  // feedback instead of being silently dropped back on the home page.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const msg = params.get('auth_error');
+    if (msg) {
+      setToast(decodeURIComponent(msg));
+      window.history.replaceState({}, '', '/');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Once events finish loading and we have a deep-link target, scroll + auto-expand
   useEffect(() => {
     if (!deepLinkEventId || loading) return;
@@ -1140,17 +1180,6 @@ export default function HomePage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [deepLinkEventId, loading]);
-
-  // ── Welcome modal for first-time visitors ──────────────────────────────────
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem('mlj_hasSeenWelcomeModal')) {
-        // Small delay so the app renders first, feels intentional
-        const timer = setTimeout(() => setShowWelcome(true), 800);
-        return () => clearTimeout(timer);
-      }
-    } catch {}
-  }, []);
 
   // ── Fetch notifications for logged-in users (poll every 60s) ────────────
   const fetchNotifications = useCallback(async () => {
@@ -3760,23 +3789,12 @@ export default function HomePage() {
         <SupportModal darkMode={darkMode} onClose={() => setShowSupport(false)} userEmail={user?.email || null} />
       )}
 
-      {/* ── Welcome Modal (first-time visitors) ─────────────────────────── */}
-      {showWelcome && (
-        <WelcomeModal
-          darkMode={darkMode}
-          onSignIn={() => {
-            try { localStorage.setItem('mlj_hasSeenWelcomeModal', 'true'); } catch {}
-            setShowWelcome(false);
-            openAuth('profile');
-          }}
-          onDismiss={() => {
-            try { localStorage.setItem('mlj_hasSeenWelcomeModal', 'true'); } catch {}
-            setShowWelcome(false);
-          }}
-        />
-      )}
-
-      {/* ── Beta Welcome Overlay (first-visit only, localStorage-gated) ── */}
+      {/* ── Beta Welcome Overlay (first-visit only, localStorage-gated) ──
+          Previously there was also a "Don't miss out" WelcomeModal that
+          appeared 800ms after mount on top of BetaWelcome. Deleted as part
+          of the login-flow simplification — the two modals were stacking
+          and asking overlapping questions. BetaWelcome is now the only
+          first-visit modal. */}
       <BetaWelcome />
 
       {/* ── Artist Spotlight Overlay (detached from HeroSection, z-9000) ── */}

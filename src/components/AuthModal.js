@@ -42,6 +42,16 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
   const [sent, setSent] = useState(false);
   const [error, setError] = useState(null);
   const [visible, setVisible] = useState(false);
+  // Resend cooldown for magic link — prevents users from spamming the endpoint
+  // but gives them an out if the email never arrives (spam filter, bounce, etc.)
+  const [resendIn, setResendIn] = useState(0); // seconds until resend allowed
+  const [resentNotice, setResentNotice] = useState(false);
+  // Keyboard offset — on iOS, tapping the email input slides up the virtual
+  // keyboard, which shrinks the visualViewport below the layout viewport. The
+  // bottom-sheet is `position: fixed; bottom: 0` relative to the layout viewport,
+  // so without this it gets hidden behind the keyboard. We listen for the
+  // visualViewport resize event and transform the sheet up by the keyboard height.
+  const [kbOffset, setKbOffset] = useState(0);
 
   // Animate in
   useEffect(() => {
@@ -49,6 +59,20 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
     // Lock body scroll
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = ''; };
+  }, []);
+
+  // Track virtual keyboard height via visualViewport API (iOS 13+, Android).
+  // Falls back gracefully on older browsers where the API doesn't exist.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const onResize = () => {
+      const offset = Math.max(0, window.innerHeight - vv.height);
+      setKbOffset(offset);
+    };
+    vv.addEventListener('resize', onResize);
+    onResize();
+    return () => vv.removeEventListener('resize', onResize);
   }, []);
 
   const handleClose = useCallback(() => {
@@ -93,8 +117,7 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
   };
 
   // ── Magic link handler ─────────────────────────────────────────────────────
-  const handleMagicLink = async (e) => {
-    e.preventDefault();
+  const sendMagicLink = useCallback(async () => {
     if (!email.trim()) return;
     setError(null);
     setSending(true);
@@ -107,12 +130,31 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
       });
       if (magicError) throw magicError;
       setSent(true);
+      setResendIn(30); // cooldown before we allow resending
     } catch (err) {
       setError(err.message || 'Could not send login link. Please try again.');
     } finally {
       setSending(false);
     }
+  }, [email]);
+
+  const handleMagicLink = (e) => {
+    e.preventDefault();
+    sendMagicLink();
   };
+
+  const handleResend = useCallback(async () => {
+    await sendMagicLink();
+    setResentNotice(true);
+    setTimeout(() => setResentNotice(false), 3000);
+  }, [sendMagicLink]);
+
+  // Countdown for resend cooldown
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const timer = setTimeout(() => setResendIn((v) => Math.max(0, v - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [resendIn]);
 
   // ── Styles ─────────────────────────────────────────────────────────────────
   const backdropStyle = {
@@ -126,14 +168,21 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
 
   const sheetStyle = {
     position: 'fixed', bottom: 0, left: '50%',
-    transform: visible ? 'translate(-50%, 0)' : 'translate(-50%, 100%)',
-    transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+    // When the iOS keyboard is open, lift the sheet by its height so the email
+    // input isn't hidden. Otherwise animate in from below as usual.
+    transform: visible
+      ? `translate(-50%, -${kbOffset}px)`
+      : 'translate(-50%, 100%)',
+    transition: 'transform 0.25s cubic-bezier(0.32, 0.72, 0, 1)',
     width: '100%', maxWidth: '480px',
-    maxHeight: '85vh', overflowY: 'auto',
+    // Shrink the sheet when keyboard is open so it still fits in the visible
+    // area above the keyboard (leave ~24px breathing room).
+    maxHeight: kbOffset ? `calc(100vh - ${kbOffset}px - 24px)` : '85vh',
+    overflowY: 'auto',
     background: t.surface,
     borderRadius: '20px 20px 0 0',
     zIndex: 10000,
-    paddingBottom: 'env(safe-area-inset-bottom, 20px)',
+    paddingBottom: kbOffset ? 0 : 'env(safe-area-inset-bottom, 20px)',
   };
 
   const oauthBtnStyle = (bg, color) => ({
@@ -181,6 +230,28 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
               >
                 Got it
               </button>
+              {/* Resend — spam filter / bounce safety net. Countdown prevents abuse. */}
+              <div style={{ marginTop: '20px', fontSize: '12px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif" }}>
+                {resentNotice ? (
+                  <span style={{ color: t.accent, fontWeight: 600 }}>Link resent.</span>
+                ) : resendIn > 0 ? (
+                  <span>Didn&apos;t get it? You can resend in {resendIn}s.</span>
+                ) : (
+                  <button
+                    onClick={handleResend}
+                    disabled={sending}
+                    style={{
+                      background: 'none', border: 'none', padding: 0,
+                      color: t.accent, fontSize: '12px', fontWeight: 600,
+                      cursor: sending ? 'wait' : 'pointer',
+                      textDecoration: 'underline', textUnderlineOffset: '3px',
+                      fontFamily: "'DM Sans', sans-serif",
+                    }}
+                  >
+                    {sending ? 'Resending…' : "Didn't get it? Resend"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -301,7 +372,11 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
             </p>
           )}
 
-          {/* Continue as Guest — subtle text link */}
+          {/* Dismiss — honest label. Previously said "Continue as Guest (limited
+              access)" but there's no guest save layer yet, so that CTA was
+              lying: any action that required auth would immediately re-prompt.
+              Swap to a neutral "Not now" until guest mode is properly
+              implemented (tracked separately as Direction B). */}
           <button
             onClick={handleClose}
             style={{
@@ -314,7 +389,7 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
               transition: 'opacity 0.15s',
             }}
           >
-            Continue as Guest (limited access)
+            Not now
           </button>
 
           {/* Fine print */}
