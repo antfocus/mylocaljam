@@ -373,6 +373,7 @@ Status legend: ✅ working · ⚠️ working but intermittent / degraded · ❌ 
 | 20 | Jenks Club | `jenksClub.js` | WordPress AJAX (Calendarize It) | Fast 1 | ✅ (added April 2026) |
 | 21 | Parker House | `parkerHouse.js` | Custom HTML + detail fetch | Fast 2 | ✅ (added April 2026) |
 | 21a | D'Jais | `djais.js` | WordPress REST (The Events Calendar) | Fast 1 | ✅ (added April 2026) |
+| 21b | The Osprey | `osprey.js` | HTML Scrape (custom site) | Fast 2 | ✅ (added April 2026) |
 | 22 | Wild Air Beerworks | `wildAir.js` | Square Online HTML + API | Fast 1 | ✅ |
 | 23 | Asbury Park Brewery | `asburyParkBrewery.js` | Squarespace JSON | Fast 1 | ✅ |
 | 24 | Boatyard 401 | `boatyard401.js` | WordPress Simple Calendar AJAX | Fast 1 | ⚠️ Returning 0 events (Task #53 — investigate parser, upstream may have changed markup) |

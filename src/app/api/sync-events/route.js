@@ -26,6 +26,7 @@ import { scrapeRiverRock } from '@/lib/scrapers/riverRock';
 import { scrapeJenksClub } from '@/lib/scrapers/jenksClub';
 import { scrapeDjais } from '@/lib/scrapers/djais';
 import { scrapeParkerHouse } from '@/lib/scrapers/parkerHouse';
+import { scrapeOsprey } from '@/lib/scrapers/osprey';
 import { scrapeWildAir } from '@/lib/scrapers/wildAir';
 import { scrapeAsburyParkBrewery } from '@/lib/scrapers/asburyParkBrewery';
 import { scrapeBoatyard401 } from '@/lib/scrapers/boatyard401';
@@ -359,12 +360,13 @@ export async function POST(request) {
   ]);
 
   // Fast-tier shard 2 — paired with RiverRock (detail-fetch heavy) and the new
-  // ParkerHouse scraper. ~850 events.
+  // ParkerHouse scraper. ~850 events. Osprey added April 2026 — single fetch,
+  // ~50 events, negligible runtime add.
   const FAST_SHARD_2 = new Set([
     'BarAnticipation', 'ParkerHouse', 'RiverRock', 'McCanns', 'BakesBrewing',
     'PigAndParrot', 'JoesSurfShack', 'Jamians', 'BeachHaus', 'AsburyLanes',
     'TriumphBrewing', 'ReefAndBarrel', 'SunHarbor', 'BlackSwan', 'RBar',
-    'WaterStreet', 'CrabsClaw', 'MarinaGrille', 'BrielleHouse',
+    'WaterStreet', 'CrabsClaw', 'MarinaGrille', 'BrielleHouse', 'Osprey',
   ]);
 
   const includeSlow = tier === 'slow' || tier === 'all';
@@ -413,7 +415,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, djais, parkerHouse, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, djais, parkerHouse, osprey, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
     shouldRunScraper('PigAndParrot')   ? scrapePigAndParrot()       : skip(),
     shouldRunScraper('Ticketmaster')   ? scrapeTicketmaster()       : skip(),
     shouldRunScraper('JoesSurfShack')  ? scrapeJoesSurfShack()      : skip(),
@@ -437,6 +439,7 @@ export async function POST(request) {
     shouldRunScraper('JenksClub')      ? scrapeJenksClub()          : skip(),
     shouldRunScraper('Djais')          ? scrapeDjais()              : skip(),
     shouldRunScraper('ParkerHouse')    ? scrapeParkerHouse()        : skip(),
+    shouldRunScraper('Osprey')         ? scrapeOsprey()             : skip(),
     shouldRunScraper('WildAir')        ? scrapeWildAir()            : skip(),
     shouldRunScraper('AsburyParkBrewery')? scrapeAsburyParkBrewery(): skip(),
     shouldRunScraper('Boatyard401')    ? scrapeBoatyard401()        : skip(),
@@ -489,6 +492,7 @@ export async function POST(request) {
     JenksClub: { count: jenksClub.events.length, error: jenksClub.error },
     Djais: { count: djais.events.length, error: djais.error },
     ParkerHouse: { count: parkerHouse.events.length, error: parkerHouse.error },
+    Osprey: { count: osprey.events.length, error: osprey.error },
     WildAir: { count: wildAir.events.length, error: wildAir.error },
     AsburyParkBrewery: { count: asburyParkBrewery.events.length, error: asburyParkBrewery.error },
     Boatyard401: { count: boatyard401.events.length, error: boatyard401.error },
@@ -542,6 +546,7 @@ export async function POST(request) {
     JenksClub: { venue: 'Jenks Club', url: 'https://jenksclub.com', source: 'WordPress AJAX (Calendarize It)' },
     Djais: { venue: "D'Jais", url: 'https://djais.com', source: 'WordPress REST (The Events Calendar)' },
     ParkerHouse: { venue: 'The Parker House', url: 'https://parkerhousenj.com', source: 'HTML Scrape (WordPress SSR)' },
+    Osprey: { venue: 'The Osprey', url: 'https://www.ospreynightclub.com', source: 'HTML Scrape (custom)' },
     WildAir: { venue: 'Wild Air Beerworks', url: 'https://www.wildairbeer.com', source: 'Squarespace' },
     AsburyParkBrewery: { venue: 'Asbury Park Brewery', url: 'https://www.asburyparkbrewery.com', source: 'Squarespace' },
     Boatyard401: { venue: 'Boatyard 401', url: 'https://boatyard401.com', source: 'WordPress AJAX' },
@@ -602,6 +607,7 @@ export async function POST(request) {
     ...jenksClub.events,
     ...djais.events,
     ...parkerHouse.events,
+    ...osprey.events,
     ...wildAir.events,
     ...asburyParkBrewery.events,
     ...boatyard401.events,
