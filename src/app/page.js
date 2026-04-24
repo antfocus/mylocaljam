@@ -3695,10 +3695,15 @@ export default function HomePage() {
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="currentColor" /></svg>
               )}
               {tab.key === 'saved' && (
-                /* Ticket stub — matches the save button in EventCardV2 (horizontal, not tilted) */
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                /* Ticket stub — simplified for nav scale. Solid silhouette with the
+                   perforation notches (matches the "ticket" silhouette) but without
+                   the internal dashed line. Sized slightly larger than the other nav
+                   icons (26 vs 22) because its horizontal aspect ratio gives it half
+                   the vertical presence — the bump equalizes perceived size. The detail
+                   (dashed perforation) lives on the larger save-button SVG in
+                   EventCardV2 where there's room for it to read. */
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
                   <path d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z" fill="currentColor" />
-                  <line x1="8" y1="8.5" x2="8" y2="15.5" stroke="rgba(255,255,255,0.85)" strokeWidth="1.25" strokeLinecap="round" strokeDasharray="1.25 1.25" />
                 </svg>
               )}
               {tab.key === 'profile' && (
