@@ -6,7 +6,7 @@ import { useEffect, useRef, memo } from 'react';
  * HeroPiston — Direct scroll-synced "piston" collapse for the Hero.
  *
  * ═══════════════════════════════════════════════════════════════════
- *  REFLOW-ARMORED 1:1 PIXEL TRACKING (2026-04-08, updated 2026-04-23)
+ *  REFLOW-ARMORED 1:1 PIXEL TRACKING (2026-04-08, updated 2026-04-23b)
  *
  *  50px of thumb movement = exactly 50px of hero movement.
  *  No ratio, no easing, no transitions, no reflow at the finish.
@@ -23,6 +23,17 @@ import { useEffect, useRef, memo } from 'react';
  *       the position of siblings (date headers, event cards).
  *    4. overflow-anchor: none forced on BOTH the wrapper AND the
  *       scroll container via JS (CSS sometimes gets ignored).
+ *
+ *  Synchronous scroll handler (2026-04-23b):
+ *    The rAF throttle on onScroll introduced a ~16ms lag between
+ *    scrollTop and the applied wrapper height. On fast reverse-scrolls
+ *    (flick up toward the hero), the wrapper stayed at its old
+ *    collapsed height for a frame while the scroll had already moved
+ *    back up — then snapped to the correct height on the next paint.
+ *    That snap is the jump users saw above the first event card.
+ *    Fix: apply styles synchronously in the scroll handler. The math
+ *    is trivial and the browser batches style writes into paint; no
+ *    reason to cost ourselves a frame of tracking latency.
  *
  *  Live height tracking (2026-04-23):
  *    Earlier versions measured `inner.scrollHeight` once synchronously
@@ -75,7 +86,6 @@ export default function HeroPiston({ children }) {
   const wrapperRef = useRef(null);
   const innerRef = useRef(null);
   const heroHeight = useRef(0);
-  const rafPending = useRef(false);
 
   useEffect(() => {
     const anchor = anchorRef.current;
@@ -141,15 +151,21 @@ export default function HeroPiston({ children }) {
       applyScrollState();
     };
 
-    // ── Scroll handler: rAF-throttled, zero React re-renders ──
-    const onScroll = () => {
-      if (rafPending.current) return;
-      rafPending.current = true;
-      requestAnimationFrame(() => {
-        rafPending.current = false;
-        applyScrollState();
-      });
-    };
+    // ── Scroll handler: SYNCHRONOUS, no rAF throttle ──
+    // Earlier versions wrapped applyScrollState in rAF to batch multiple
+    // scroll events into one paint. In practice that 1-frame delay
+    // introduced a visible "catch-up" jump on fast scroll reversals:
+    // during the gap between the last processed scrollTop and the next
+    // scroll event triggering a new rAF (~16ms), the wrapper held its
+    // stale height while the scroll had already moved. The next paint
+    // snapped to the correct height — that's the jump users saw when
+    // flicking up toward the hero.
+    //
+    // applyScrollState is pure math + three style writes; running it
+    // synchronously on every scroll event (at most ~120/s on high-
+    // refresh displays) is cheaper than one frame of jank. The browser
+    // batches style writes into the next paint anyway.
+    const onScroll = () => applyScrollState();
 
     // ── Initial measure: deferred one frame ──
     // A synchronous read during hydration often captures the skeleton
