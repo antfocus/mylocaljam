@@ -24,10 +24,16 @@
  * The anchor's `href` is relative (`detailsevent/<slug>`). We resolve to
  * an absolute ticket_url off the base origin.
  *
- * Title quirk: the site concatenates headliner + opener/DJ with no
- * separator (e.g. "PulseDJ Cole Pardi" = headliner "Pulse" + DJ "Cole
- * Pardi"; "The KicksChaston" = "The Kicks" + "Chaston"). Tony confirmed
- * we store titles raw and let downstream AI classification split them.
+ * Title structure: the site encodes headliner + supporting act in a
+ * single <p> separated by a <br>. We split on that boundary and rejoin
+ * with " · " so the feed shows "Pulse · DJ Cole Pardi" instead of the
+ * ambiguous blob "Pulse DJ Cole Pardi" (stripHtml collapsing the <br>
+ * to a space was the source of the Tier-1 readability bug fixed on
+ * 2026-04-24). Single-line titles like "Manasquan Cares Fundraiser"
+ * pass through unchanged — the split returns one piece, the join is a
+ * no-op. The dot separator is chosen because slugify() collapses any
+ * non-alphanumeric run to a single hyphen, so external_id is stable
+ * before/after this change (same slug as the old space-separated form).
  *
  * Date formats:
  *   "April 25, 2026 5:00-9:00 PM"   (range — take the start time)
@@ -168,10 +174,20 @@ function extractEvents(html) {
     const detailUrl = hrefMatch ? absolutize(hrefMatch[1]) : null;
 
     // The first two <p> tags inside the row carry title and datetime.
-    // Grab up to three in case the template ever wraps title in extra
-    // markup — the filter below drops any that parse to empty.
+    // Title <p> contains a <br> between headliner and supporting act —
+    // split on that boundary and rejoin with " · " so the feed shows
+    // "Pulse · DJ Cole Pardi" instead of stripHtml's "Pulse DJ Cole
+    // Pardi" (space-collapsed <br>). Splitting per-<p> then stripping
+    // each piece keeps the datetime paragraph unaffected (it has no
+    // <br>, so split returns one piece).
     const pMatches = [...block.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)]
-      .map(m => stripHtml(m[1]))
+      .map(m => {
+        const pieces = m[1]
+          .split(/<br\s*\/?>/i)
+          .map(piece => stripHtml(piece))
+          .filter(Boolean);
+        return pieces.join(' · ');
+      })
       .filter(Boolean);
 
     // Structurally: [title, datetime, ...optional decorative paragraphs].
