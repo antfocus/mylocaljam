@@ -16,17 +16,21 @@ import ModalWrapper from '@/components/ui/ModalWrapper';
  *   - z-index 9999.
  */
 
-const WELCOME_KEY = 'hasSeenWelcome_v2';
+// v3: bumped so returning users see the refreshed welcome (new logo, shorter
+// copy, Spotlight feature). If beta is winding down and you don't want existing
+// users to see the modal again, revert this to 'hasSeenWelcome_v2'.
+const WELCOME_KEY = 'hasSeenWelcome_v3';
 
 // ── Text hierarchy tokens ──
 const WHITE = '#FFFFFF';   // labels, headings, feature names
 const GREY  = '#D1D5DB';   // body text, descriptions
 
 const FEATURES = [
-  { emoji: '\uD83D\uDD0D', label: 'Discover', desc: 'Find live music, trivia, and specials happening around you.', tint: 'rgba(255, 165, 0, 0.15)' },
-  { emoji: null, svg: true,  label: 'Follow',   desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'transparent' },
-  { emoji: '\uD83D\uDCF2',  label: 'Share',    desc: 'Easily send event details to friends to coordinate your night out.', tint: 'rgba(30, 144, 255, 0.15)' },
-  { emoji: '\uD83D\uDCA1',  label: 'Ideas',    desc: 'Head to the Help & Feedback section in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
+  { emoji: '\u26A1',        label: 'Spotlight', desc: "Tonight's featured show, curated daily — don't miss it.", tint: 'rgba(232, 114, 42, 0.2)' },
+  { emoji: '\uD83D\uDD0D', label: 'Discover',  desc: 'Find live music, trivia, and specials happening around you.', tint: 'rgba(255, 165, 0, 0.15)' },
+  { emoji: null, svg: true, label: 'Follow',    desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'transparent' },
+  { emoji: '\uD83D\uDCF2', label: 'Share',     desc: 'Easily send event details to friends to coordinate your night out.', tint: 'rgba(30, 144, 255, 0.15)' },
+  { emoji: '\uD83D\uDCA1', label: 'Ideas',     desc: 'Head to the Help & Feedback section in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
 ];
 
 export default function BetaWelcome() {
@@ -53,7 +57,6 @@ export default function BetaWelcome() {
   const border    = '#2A2A3A';
   const featureBg = '#22222E';
   const accent    = '#E8722A';
-  const teal      = '#3AADA0';
   const font      = "'DM Sans', sans-serif";
 
   return (
@@ -74,10 +77,10 @@ export default function BetaWelcome() {
         width: '92%',
       }}
     >
-      {/* ── Accent gradient bar ── */}
+      {/* ── Accent stripe — solid brand orange (was orange→teal gradient, teal retired) ── */}
       <div style={{
         height: '4px',
-        background: `linear-gradient(90deg, ${accent}, ${teal})`,
+        background: accent,
         flexShrink: 0,
       }} />
 
@@ -96,28 +99,31 @@ export default function BetaWelcome() {
         WebkitOverflowScrolling: 'touch',
       }}>
 
-        {/* ── Header — centered wordmark + tagline ── */}
-        <div style={{ textAlign: 'center', marginBottom: '4px' }}>
-          <h2 style={{
-            margin: 0,
-            fontSize: '24px',
-            fontWeight: 800,
+        {/* ── Header — logo (smaller, supporting) + tagline (hero) ── */}
+        <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+          {/* Logo — matches the site header wordmark: Outfit 900, white "myLocal"
+              + Outfit italic orange "Jam". No more teal. Kept smaller so the
+              tagline below can earn the focus position. */}
+          <div style={{
             fontFamily: "'Outfit', sans-serif",
-            lineHeight: 1.2,
+            fontSize: '22px',
+            fontWeight: 900,
+            letterSpacing: '-0.035em',
+            lineHeight: 1,
           }}>
-            <span style={{ color: WHITE }}>my</span>
-            <span style={{ color: accent }}>local</span>
-            <span style={{ color: teal }}>jam</span>
-          </h2>
+            <span style={{ color: WHITE }}>myLocal</span>
+            <span style={{ fontStyle: 'italic', color: accent }}>Jam</span>
+          </div>
+          {/* Tagline — hero of the modal. Bigger, white, tight line-height. */}
           <p style={{
-            margin: '6px 0 0',
-            fontSize: '15px',
-            fontWeight: 500,
+            margin: '14px 0 0',
+            fontSize: '19px',
+            fontWeight: 600,
             fontFamily: font,
-            color: GREY,
-            lineHeight: 1.4,
+            color: WHITE,
+            lineHeight: 1.3,
           }}>
-            Your local source, all in one spot.
+            Your local music source,<br />all in one spot.
           </p>
         </div>
 
@@ -139,27 +145,15 @@ export default function BetaWelcome() {
           </span>
         </div>
 
-        {/* ── Intro ── */}
+        {/* ── Intro — shortened to one line, no "My Story" paragraph ── */}
         <p style={{
-          margin: '0 0 16px',
+          margin: '0 0 18px',
           fontSize: '15px',
           fontFamily: font,
           color: GREY,
-          lineHeight: 1.7,
+          lineHeight: 1.6,
         }}>
-          I appreciate you being an early user and for continuing to support local music.
-        </p>
-
-        {/* ── The Story ── */}
-        <p style={{
-          margin: '0 0 16px',
-          fontSize: '15px',
-          fontFamily: font,
-          color: GREY,
-          lineHeight: 1.7,
-        }}>
-          <strong style={{ color: WHITE, fontWeight: 700 }}>My Story:</strong>{' '}
-          I wanted to keep up with the local music scene without having to bounce around multiple sites. I built mylocaljam to put everything in one place, with one simple goal: less time searching for plans, and more time enjoying them!
+          Thanks for being an early user and supporting the local music scene.
         </p>
 
         {/* ── Territory ── */}
