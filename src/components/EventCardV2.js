@@ -162,7 +162,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
       overflow: 'hidden',
       boxShadow: shortcutOpen
         ? (darkMode ? '0 2px 16px rgba(232,114,42,0.25)' : '0 2px 12px rgba(232,114,42,0.2)')
-        : (darkMode ? '0 2px 12px rgba(0,0,0,0.35)' : '0 1px 6px rgba(0,0,0,0.07)'),
+        : (darkMode ? '0 1px 3px rgba(0,0,0,0.25)' : '0 1px 2px rgba(0,0,0,0.04)'),
       display: 'flex',
       border: shortcutOpen ? '1px solid #E8722A' : `1px solid ${borderColor}`,
       opacity: isCanceled ? 0.6 : 1,
@@ -221,47 +221,64 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
           }}
           style={{
-            display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 12px 11px 0', cursor: 'pointer',
-            background: pressed ? (darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)') : 'transparent',
+            display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 12px 12px 14px', cursor: 'pointer',
+            background: pressed ? (darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(232,114,42,0.06)') : 'transparent',
             transition: 'background 0.15s ease',
           }}
         >
-          {/* Colored time block — ticket stub with perforation */}
+          {/* Editorial time column — "6:00" in brand orange + "PM" stacked below,
+              with a dashed orange perforation line on the right edge that gives the
+              row its ticket-stub silhouette without a filled background block.
+              Time is always shown in uniform H:MM format (never bare "6") so rows
+              align rhythmically. */}
           <div style={{
-            background: isCanceled ? '#DC2626' : config.bg,
-            color: isCanceled ? '#FFFFFF' : '#1C1917',
-            fontWeight: 700,
-            width: '50px', minHeight: '48px',
-            borderRadius: '12px 0 0 12px', flexShrink: 0,
-            borderRight: '2px dashed rgba(0,0,0,0.12)',
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            padding: '4px 0',
-            fontFamily: "'DM Sans', sans-serif",
-            boxSizing: 'border-box',
+            flex: '0 0 56px',
+            alignSelf: 'stretch',
+            paddingRight: 10,
+            borderRight: `2px dashed ${isCanceled
+              ? 'rgba(220,38,38,0.45)'
+              : (darkMode ? 'rgba(232,114,42,0.4)' : 'rgba(201,87,23,0.45)')}`,
+            fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+            display: 'flex', flexDirection: 'column', justifyContent: 'center',
+            textAlign: 'left',
           }}>
-            {isCanceled ? <span style={{ fontSize: '20px', lineHeight: 1 }}>✕</span> : (() => {
+            {isCanceled ? (
+              <span style={{ fontSize: '20px', fontWeight: 500, color: '#DC2626', lineHeight: 1 }}>✕</span>
+            ) : (() => {
               const raw = timeStr || '—';
-              if (raw === '—') return <span style={{ fontSize: '20px', lineHeight: 1, fontWeight: 700 }}>—</span>;
-              // Extract period (a/p) → AM/PM
+              if (raw === '—') return <span style={{ fontSize: '16px', fontWeight: 500, color: textMuted, lineHeight: 1 }}>—</span>;
               const periodMatch = raw.match(/([apAP][mM]?)$/);
               const period = periodMatch ? (periodMatch[1].toLowerCase().startsWith('a') ? 'AM' : 'PM') : '';
-              const nums = raw.replace(/[apAP][mM]?$/, '');
-              // Smart format: strip :00 for top-of-hour, keep minutes otherwise
-              const smartTime = nums.replace(/:00$/, '');
+              const nums = raw.replace(/[apAP][mM]?$/, '').trim();
+              // Normalize to H:MM uniformly — "6" → "6:00", "6:30" stays. Keeps rows
+              // visually rhythmic across events.
+              const timeDisplay = nums.includes(':') ? nums : `${nums}:00`;
               return (
                 <>
-                  <span style={{ fontSize: smartTime.length > 4 ? '14px' : smartTime.length > 2 ? '18px' : '22px', lineHeight: 1, fontWeight: 900 }}>{smartTime}</span>
-                  {period && <span style={{ fontSize: '9px', lineHeight: 1, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', marginTop: '2px', opacity: 0.75 }}>{period}</span>}
+                  <span style={{
+                    fontSize: timeDisplay.length > 4 ? '15px' : '17px',
+                    fontWeight: 500,
+                    color: darkMode ? '#E8722A' : '#C95717',
+                    lineHeight: 1,
+                  }}>{timeDisplay}</span>
+                  {period && (
+                    <span style={{
+                      fontSize: '11px', fontWeight: 500,
+                      color: textMuted, letterSpacing: '0.14em',
+                      marginTop: 4, textTransform: 'uppercase',
+                    }}>{period}</span>
+                  )}
                 </>
               );
             })()}
           </div>
 
           {/* Event name + venue stacked */}
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
             <span style={{
-              fontSize: '17px', fontWeight: 600, color: textPrimary,
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: '15px', fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.2,
+              color: textPrimary,
               textDecoration: isCanceled ? 'line-through' : 'none',
               ...(expanded
                 ? { whiteSpace: 'normal', overflow: 'visible' }
@@ -272,7 +289,9 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             </span>
             {showArtistSubtitle && (
               <span style={{
-                fontSize: '13px', fontWeight: 500, color: darkMode ? '#C0C0D0' : '#6B7280',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '12px', fontWeight: 500,
+                color: darkMode ? '#C0C0D0' : '#6B7280',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
                 {artistName}
@@ -280,7 +299,9 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             )}
             {venue && (
               <span style={{
-                fontSize: '13px', fontWeight: 500, color: darkMode ? '#A0A0B8' : '#6B7280',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '13px', fontWeight: 400,
+                color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.58)',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
                 {venue}

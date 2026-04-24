@@ -3355,7 +3355,15 @@ export default function HomePage() {
                       background: t.bg,
                       display: 'flex', alignItems: 'center', gap: '8px',
                     }}>
-                      <span style={dateSeparatorStyle}>{group.label}</span>
+                      {/* Editorial date header — IBM Plex Mono caps, primary text (no orange
+                          on the label itself). Calendar icon sits inline directly after,
+                          in a muted tone so it reads as part of the same date unit. */}
+                      <span style={{
+                        fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+                        fontSize: '13px', fontWeight: 500,
+                        letterSpacing: '0.15em', textTransform: 'uppercase',
+                        color: darkMode ? '#D8D8F0' : '#1F2937',
+                      }}>{group.label}</span>
                       {/* Calendar pick-a-date button: opens the same custom
                           calendar grid used by the "Date" filter card (via a
                           bottom-sheet modal rendered once at page level). The
@@ -3387,8 +3395,8 @@ export default function HomePage() {
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center', justifyContent: 'center',
-                          width: '28px', height: '28px', flexShrink: 0,
-                          color: darkMode ? '#A0A0BE' : '#6B7280',
+                          width: '30px', height: '30px', flexShrink: 0,
+                          color: darkMode ? '#D8D8F0' : '#1F2937',
                           background: 'transparent', border: 'none',
                           cursor: 'pointer', padding: 0,
                         }}
