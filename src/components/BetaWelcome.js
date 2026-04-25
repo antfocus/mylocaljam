@@ -26,11 +26,11 @@ const WHITE = '#FFFFFF';   // labels, headings, feature names
 const GREY  = '#D1D5DB';   // body text, descriptions
 
 const FEATURES = [
-  { emoji: '\u26A1',        label: 'Spotlight', desc: "Tonight's featured show, curated daily — don't miss it.", tint: 'rgba(232, 114, 42, 0.2)' },
-  { emoji: '\uD83D\uDD0D', label: 'Discover',  desc: 'Find live music, trivia, and specials happening around you.', tint: 'rgba(255, 165, 0, 0.15)' },
-  { emoji: null, svg: true, label: 'Follow',    desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'rgba(232, 114, 42, 0.15)' },
-  { emoji: '\uD83D\uDCF2', label: 'Share',     desc: 'Easily send event details to friends to coordinate your night out.', tint: 'rgba(30, 144, 255, 0.15)' },
-  { emoji: '\uD83D\uDCA1', label: 'Ideas',     desc: 'Head to the Help & Feedback section in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
+  { dot: true,              label: 'Spotlight', desc: "Tonight's featured show, curated daily.", tint: 'rgba(232, 114, 42, 0.2)' },
+  { emoji: '\uD83D\uDD0D', label: 'Discover',  desc: 'Find live music, trivia, and specials nearby.', tint: 'rgba(255, 165, 0, 0.15)' },
+  { emoji: null, svg: true, label: 'Follow',    desc: 'Save venues and artists for gig reminders.', tint: 'rgba(232, 114, 42, 0.15)' },
+  { emoji: '\uD83D\uDCF2', label: 'Share',     desc: 'Send event details to friends in one tap.', tint: 'rgba(30, 144, 255, 0.15)' },
+  { emoji: '\uD83D\uDCA1', label: 'Ideas',     desc: 'Find Help & Feedback in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
 ];
 
 export default function BetaWelcome() {
@@ -176,7 +176,10 @@ export default function BetaWelcome() {
           color: WHITE,
           lineHeight: 1.4,
         }}>
-          Territory: Jersey Shore
+          Territory: Jersey Shore{' '}
+          <span style={{ color: GREY, fontWeight: 400, fontStyle: 'italic' }}>
+            (for now)
+          </span>
         </p>
 
         {/* ── Quick Features header ── */}
@@ -197,7 +200,7 @@ export default function BetaWelcome() {
           gap: '8px',
           marginBottom: '22px',
         }}>
-          {FEATURES.map(({ emoji, svg, label, desc, tint }) => (
+          {FEATURES.map(({ emoji, svg, dot, label, desc, tint }) => (
             <div key={label} style={{
               display: 'flex',
               gap: '12px',
@@ -219,7 +222,17 @@ export default function BetaWelcome() {
                 fontSize: '17px',
                 lineHeight: 1,
               }}>
-                {svg ? (
+                {dot ? (
+                  /* Spotlight → pulsing white dot — same affordance as the
+                      "SPOTLIGHT" sticker on the home Hero card, so the
+                      welcome and live site read as one visual system. */
+                  <span style={{
+                    display: 'inline-block',
+                    width: 10, height: 10, borderRadius: '50%',
+                    background: WHITE,
+                    animation: 'spotlightPulse 2s ease-in-out infinite',
+                  }} />
+                ) : svg ? (
                   /* Follow → ticket-stub icon (matches the Save Show icon
                       used elsewhere — the universal "saved show" affordance). */
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
@@ -309,6 +322,13 @@ export default function BetaWelcome() {
         </button>
       </div>
       </div>
+
+      {/* Pulse keyframe for the Spotlight dot — kept locally because
+          BetaWelcome may be the only thing on screen when the home Hero
+          (which also defines this keyframe) hasn't mounted yet. */}
+      <style>{`
+        @keyframes spotlightPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      `}</style>
     </ModalWrapper>
   );
 }
