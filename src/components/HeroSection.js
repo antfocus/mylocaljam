@@ -522,7 +522,35 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
           })}
         </div>
 
-        {/* Pager dots removed per Spotlight redesign spec — swipe-discoverable. */}
+        {/* Slide-count indicator — five tiny orange dashes in the top-left
+            corner, one per slide. Active dash sits at full opacity, the rest
+            dim to 35%. Static (no animation) so it stays out of the way. */}
+        {canSwipe && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: 14, left: 14,
+              display: 'flex',
+              gap: 4,
+              zIndex: 4,
+              pointerEvents: 'none',
+            }}
+          >
+            {featured.map((_, i) => (
+              <div
+                key={i}
+                style={{
+                  width: 14,
+                  height: 2,
+                  background: '#E8722A',
+                  opacity: i === active ? 1 : 0.35,
+                  transition: 'opacity 0.3s ease',
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Bio Bottom Sheet — MOVED to ArtistSpotlight (root level in page.js) ── */}
