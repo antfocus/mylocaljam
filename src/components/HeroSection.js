@@ -345,7 +345,14 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                 <div style={{
                   position: 'absolute', inset: 0, pointerEvents: 'none',
                   ...(realImage
-                    ? { backgroundImage: `url(${realImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                    // CSS url() values must be quoted when the URL can contain
+                    // characters that break tokenization — most notably the
+                    // unescaped parentheses common in scraped CDN paths
+                    // (e.g. ".../foo (2) copy.jpg"). Without quotes, browsers
+                    // silently drop the whole background-image property and
+                    // the card renders with no photo. JSON.stringify wraps
+                    // in double quotes and escapes any internal quotes.
+                    ? { backgroundImage: `url(${JSON.stringify(realImage)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
                     : { background: brandedGradient }
                   ),
                 }} />
