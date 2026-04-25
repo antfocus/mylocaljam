@@ -192,100 +192,105 @@ export default function EventPageClient({ event }) {
         flex: 1, width: '100%', maxWidth: '560px',
         margin: '0 auto', padding: '24px 20px 120px',
       }}>
-        {/* ── Title block: date stub + title centered ───────────────────── */}
-        <section style={{
-          display: 'flex', alignItems: 'center', gap: '14px',
-          marginBottom: '22px',
-        }}>
-          {/* Date stub — vertical: day / numeral / month / [perforation] / time */}
-          <div style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center',
-            padding: '10px 14px',
-            border: `1px solid ${t.border}`,
-            borderRadius: '8px',
-            flexShrink: 0,
-            background: t.dateBlockBg,
-            minWidth: '76px',
+        {/* ── Title block: editorial header ────────────────────────────────
+              Title in big Outfit black-uppercase, venue immediately below as
+              an orange Maps link, then a mono-caps date/time strip with the
+              day-of-week accented in brand orange.  Three layers, top-down,
+              no date stub competing for the title's vertical real estate. */}
+        <section style={{ marginBottom: '24px' }}>
+          <h1 style={{
+            fontFamily: "'Outfit', sans-serif",
+            fontSize: 'clamp(28px, 7vw, 44px)',
+            fontWeight: 800,
+            color: t.text,
+            lineHeight: 0.98,
+            letterSpacing: '-0.03em',
+            textTransform: 'uppercase',
+            margin: 0,
+            textDecoration: isCanceled ? 'line-through' : 'none',
+            wordBreak: 'break-word',
           }}>
-            <div style={{
-              fontSize: '10px', color: t.accent,
-              letterSpacing: '0.18em', fontFamily: "'IBM Plex Mono', monospace",
-              fontWeight: 700,
-            }}>
-              {dateBlock.day}
-            </div>
-            <div style={{
-              fontSize: '32px', color: t.text,
-              fontWeight: 800, lineHeight: 1, margin: '2px 0',
-              letterSpacing: '-0.02em',
-            }}>
-              {dateBlock.date}
-            </div>
-            <div style={{
-              fontSize: '10px', color: t.textMuted,
-              letterSpacing: '0.18em', fontFamily: "'IBM Plex Mono', monospace",
-              fontWeight: 500,
-            }}>
-              {dateBlock.month}
-            </div>
-            {timeStr && (
-              <>
-                <div style={{
-                  height: '1px', width: '32px',
-                  background: t.perforation,
-                  margin: '7px 0 6px',
-                }} />
-                <div style={{
-                  fontSize: '12px', color: t.text,
-                  fontWeight: 700, letterSpacing: '0.04em',
-                  fontFamily: "'IBM Plex Mono', monospace",
-                }}>
-                  {timeStr}
-                </div>
-              </>
-            )}
-          </div>
+            {name}
+          </h1>
 
-          {/* Title + venue */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <h1 style={{
-              fontFamily: "'Outfit', sans-serif",
-              fontSize: 'clamp(20px, 5.5vw, 28px)',
-              fontWeight: 800,
-              color: t.text,
-              lineHeight: 1.0,
-              letterSpacing: '-0.025em',
+          {/* Artist name — only when it's distinct from the displayed title
+              (e.g. an event_title like "Comedy Night" and the artist is the
+              actual headliner). Subtle, mono caps. */}
+          {eventTitle && artistName && eventTitle !== artistName && (
+            <p style={{
+              fontSize: '12px', fontWeight: 600, color: t.textDim,
+              margin: '8px 0 0',
+              fontFamily: "'IBM Plex Mono', monospace",
+              letterSpacing: '0.08em',
               textTransform: 'uppercase',
-              margin: 0,
-              textDecoration: isCanceled ? 'line-through' : 'none',
-              wordBreak: 'break-word',
             }}>
-              {name}
-            </h1>
-            {venue && (
-              <p style={{
-                fontFamily: "'DM Serif Display', Georgia, serif",
-                fontStyle: 'italic',
-                fontSize: '15px',
-                color: t.textMuted,
-                margin: '8px 0 0',
-                lineHeight: 1.3,
-              }}>
-                at {venue}
-              </p>
-            )}
-            {/* Show artist name as a subtle line if it's distinct from the title */}
-            {eventTitle && artistName && eventTitle !== artistName && (
-              <p style={{
-                fontSize: '13px', fontWeight: 600, color: t.textDim,
-                margin: '6px 0 0',
-                fontFamily: "'IBM Plex Mono', monospace",
-                letterSpacing: '0.05em',
-              }}>
-                {artistName}
-              </p>
-            )}
-          </div>
+              {artistName}
+            </p>
+          )}
+
+          {/* Venue — orange pin link to Google Maps. Outfit weight 600 so it
+              feels like part of the headline group, not metadata. */}
+          {venue && (
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                fontFamily: "'Outfit', sans-serif",
+                fontSize: '17px', fontWeight: 600,
+                color: t.accent, textDecoration: 'none',
+                margin: '12px 0 0',
+                lineHeight: 1.2,
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2.25"
+                strokeLinecap="round" strokeLinejoin="round"
+                style={{ flexShrink: 0 }}>
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              {venue}
+            </a>
+          )}
+
+          {/* Date + time strip — IBM Plex Mono caps, day-of-week in orange,
+              dot separators between fields. Reads like a magazine dateline. */}
+          {(dateBlock.day || timeStr) && (
+            <div style={{
+              display: 'flex', alignItems: 'center', flexWrap: 'wrap',
+              gap: '8px',
+              margin: '14px 0 0',
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: '13px',
+              fontWeight: 600,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+            }}>
+              {dateBlock.day && (
+                <span style={{ color: t.accent, fontWeight: 700 }}>
+                  {dateBlock.day}
+                </span>
+              )}
+              {dateBlock.day && (dateBlock.month || dateBlock.date) && (
+                <span style={{ color: t.textDim }}>·</span>
+              )}
+              {(dateBlock.month || dateBlock.date) && (
+                <span style={{ color: t.text }}>
+                  {dateBlock.month}{dateBlock.month && dateBlock.date ? ' ' : ''}{dateBlock.date}
+                </span>
+              )}
+              {timeStr && (dateBlock.day || dateBlock.month) && (
+                <span style={{ color: t.textDim }}>·</span>
+              )}
+              {timeStr && (
+                <span style={{ color: t.text }}>
+                  {timeStr}
+                </span>
+              )}
+            </div>
+          )}
         </section>
 
         {/* ── Full poster — no aspect crop. Image renders at its natural
