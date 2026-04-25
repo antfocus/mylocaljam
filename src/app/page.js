@@ -3728,10 +3728,37 @@ export default function HomePage() {
                   </div>
                 )}
                 {!hasMore && events.length > 0 && !loading && (
-                  <div style={{ textAlign: 'center', padding: '24px 0 32px', color: t.textSubtle, fontSize: '13px' }}>
+                  <div style={{ textAlign: 'center', padding: '24px 0 8px', color: t.textSubtle, fontSize: '13px' }}>
                     Showing all {totalEvents} events
                   </div>
                 )}
+                {/* Footer with policy links — Google brand verification
+                    requires the homepage to include a visible link to the
+                    privacy policy. Also satisfies general transparency norms.
+                    Rendered at the bottom of the scrollable home feed, above
+                    the sticky bottom nav. */}
+                <footer style={{
+                  textAlign: 'center',
+                  padding: '20px 16px 32px',
+                  fontSize: '12px',
+                  color: t.textSubtle || t.textMuted,
+                  fontFamily: "'DM Sans', sans-serif",
+                  borderTop: `1px solid ${darkMode ? '#1F1F2E' : '#ECE9E2'}`,
+                  marginTop: '20px',
+                }}>
+                  <div style={{ marginBottom: '4px' }}>
+                    © {new Date().getFullYear()} myLocalJam
+                  </div>
+                  <div style={{ display: 'inline-flex', gap: '14px', alignItems: 'center' }}>
+                    <a href="/privacy" style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                      Privacy
+                    </a>
+                    <span aria-hidden="true">·</span>
+                    <a href="/terms" style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+                      Terms
+                    </a>
+                  </div>
+                </footer>
                 {/* Invisible sentinel — IntersectionObserver triggers loadMore when this enters the viewport */}
                 <div ref={sentinelCallbackRef} style={{ height: '1px' }} />
               </div>
