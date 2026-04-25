@@ -28,7 +28,7 @@ const GREY  = '#D1D5DB';   // body text, descriptions
 const FEATURES = [
   { emoji: '\u26A1',        label: 'Spotlight', desc: "Tonight's featured show, curated daily — don't miss it.", tint: 'rgba(232, 114, 42, 0.2)' },
   { emoji: '\uD83D\uDD0D', label: 'Discover',  desc: 'Find live music, trivia, and specials happening around you.', tint: 'rgba(255, 165, 0, 0.15)' },
-  { emoji: null, svg: true, label: 'Follow',    desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'transparent' },
+  { emoji: null, svg: true, label: 'Follow',    desc: 'Save your favorite venues and artists to get reminders and notifications of new gigs.', tint: 'rgba(232, 114, 42, 0.15)' },
   { emoji: '\uD83D\uDCF2', label: 'Share',     desc: 'Easily send event details to friends to coordinate your night out.', tint: 'rgba(30, 144, 255, 0.15)' },
   { emoji: '\uD83D\uDCA1', label: 'Ideas',     desc: 'Head to the Help & Feedback section in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
 ];
@@ -124,29 +124,30 @@ export default function BetaWelcome() {
           {/* Tagline — hero of the modal. Bigger, white, tight line-height. */}
           <p style={{
             margin: '14px 0 0',
-            fontSize: '19px',
+            fontSize: '22px',
             fontWeight: 600,
             fontFamily: font,
             color: WHITE,
-            lineHeight: 1.3,
+            lineHeight: 1.25,
           }}>
             Your local music source,<br />all in one spot.
           </p>
         </div>
 
-        {/* ── Beta badge — centered ── */}
-        <div style={{ textAlign: 'center', marginTop: '14px', marginBottom: '20px' }}>
+        {/* ── Beta badge — centered. Solid orange bg + white text so it
+              actually pops on the dark surface (was tinted-orange-on-orange
+              which read as low contrast). */}
+        <div style={{ textAlign: 'center', marginTop: '16px', marginBottom: '22px' }}>
           <span style={{
             display: 'inline-block',
-            padding: '5px 16px',
+            padding: '7px 18px',
             borderRadius: '100px',
-            background: 'rgba(232, 114, 42, 0.2)',
-            color: accent,
-            fontSize: '12px',
-            fontWeight: 800,
+            background: accent,
+            color: WHITE,
+            fontSize: '14px',
+            fontWeight: 900,
             fontFamily: font,
-            letterSpacing: '1.2px',
-            border: '1px solid rgba(232, 114, 42, 0.4)',
+            letterSpacing: '1px',
           }}>
             OFFICIALLY IN BETA!
           </span>
@@ -154,32 +155,24 @@ export default function BetaWelcome() {
 
         {/* ── Intro — shortened to one line, no "My Story" paragraph ── */}
         <p style={{
-          margin: '0 0 18px',
-          fontSize: '15px',
+          margin: '0 0 22px',
+          fontSize: '16px',
           fontFamily: font,
           color: GREY,
-          lineHeight: 1.6,
+          lineHeight: 1.55,
         }}>
           Thanks for being an early user and supporting the local music scene.
         </p>
 
-        {/* ── Territory ── */}
-        <p style={{
-          margin: '0 0 22px',
-          fontSize: '15px',
-          fontFamily: font,
-          color: GREY,
-          lineHeight: 1.7,
-        }}>
-          <strong style={{ color: WHITE, fontWeight: 700 }}>Territory: Jersey Shore</strong>
-          <br />
-          <span style={{ color: GREY }}>Currently serving Monmouth and Ocean Counties. New territories will be added as we grow!</span>
-        </p>
+        {/* Territory paragraph removed — was "Currently serving Monmouth and
+            Ocean Counties..." Per Apr 25 redesign, the welcome is meant to be
+            short + scannable; the geographic scope is implicit in the search
+            results and isn't worth the vertical space here. */}
 
         {/* ── Quick Features header ── */}
         <h3 style={{
-          margin: '0 0 10px',
-          fontSize: '15px',
+          margin: '0 0 12px',
+          fontSize: '16px',
           fontWeight: 700,
           fontFamily: font,
           color: WHITE,
@@ -217,15 +210,16 @@ export default function BetaWelcome() {
                 lineHeight: 1,
               }}>
                 {svg ? (
-                  <div style={{
-                    width: '20px', height: '20px', borderRadius: '5px',
-                    background: '#000000',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                      <path d="M6 1v10M1 6h10" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  </div>
+                  /* Follow → ticket-stub icon (matches the Save Show icon
+                      used elsewhere — the universal "saved show" affordance). */
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                    stroke={WHITE} strokeWidth="1.75"
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <g transform="rotate(-18 12 12)">
+                      <path d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z" />
+                      <line x1="8" y1="8.5" x2="8" y2="15.5" strokeDasharray="1.25 1.25" />
+                    </g>
+                  </svg>
                 ) : (
                   <span>{emoji}</span>
                 )}
@@ -240,7 +234,7 @@ export default function BetaWelcome() {
                 paddingTop: '1px',
               }}>
                 <span style={{
-                  fontSize: '14px',
+                  fontSize: '16px',
                   fontWeight: 700,
                   fontFamily: font,
                   color: WHITE,
@@ -249,7 +243,7 @@ export default function BetaWelcome() {
                   {label}
                 </span>
                 <span style={{
-                  fontSize: '13px',
+                  fontSize: '14px',
                   fontWeight: 400,
                   fontFamily: font,
                   color: GREY,
@@ -264,8 +258,8 @@ export default function BetaWelcome() {
 
         {/* ── Sign-off — centered, white ── */}
         <p style={{
-          margin: '0 0 20px',
-          fontSize: '15px',
+          margin: '0 0 22px',
+          fontSize: '17px',
           fontWeight: 700,
           fontFamily: font,
           color: WHITE,
@@ -276,7 +270,8 @@ export default function BetaWelcome() {
 
       </div>
 
-      {/* ── CTA Button — sticky at bottom, always visible ── */}
+      {/* ── CTA Button — sticky at bottom, always visible.
+            White text on orange (was dark text — hard to read). */}
       <div style={{
         padding: '12px 24px 24px',
         flexShrink: 0,
@@ -291,8 +286,8 @@ export default function BetaWelcome() {
             borderRadius: '12px',
             border: 'none',
             background: accent,
-            color: '#1C1917',
-            fontSize: '16px',
+            color: WHITE,
+            fontSize: '17px',
             fontWeight: 700,
             fontFamily: font,
             cursor: 'pointer',
