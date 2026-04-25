@@ -21,6 +21,7 @@ import BetaWelcome       from '@/components/BetaWelcome';
 import ArtistSpotlight   from '@/components/ArtistSpotlight';
 import ModalWrapper      from '@/components/ui/ModalWrapper';
 import usePullToRefresh  from '@/hooks/usePullToRefresh';
+import useTheme          from '@/hooks/useTheme';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 // Clean HTML entities that may have leaked through scrapers (e.g. &amp; → &)
@@ -273,19 +274,12 @@ export default function HomePage() {
   const [toastActionLabel, setToastActionLabel] = useState(null); // label for upsell action button
 
   // ── Theme ────────────────────────────────────────────────────────────────────
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    const stored = localStorage.getItem('mlj_dark_mode');
-    return stored === null ? true : stored === 'true'; // dark by default
-  });
-
-  const toggleDarkMode = useCallback(() => {
-    setDarkMode(prev => {
-      const next = !prev;
-      localStorage.setItem('mlj_dark_mode', String(next));
-      return next;
-    });
-  }, []);
+  // Three-way preference managed by the useTheme hook:
+  //   'auto'  (default) — follows the OS prefers-color-scheme, updates live
+  //   'light'           — force light
+  //   'dark'            — force dark
+  // `darkMode` is the resolved boolean every downstream component reads.
+  const { darkMode, themePreference, setThemePreference } = useTheme();
 
   const t = darkMode ? DARK : LIGHT;
 
@@ -3280,10 +3274,48 @@ export default function HomePage() {
             {/* ── Section 2: Display & Discovery ── */}
             <p style={sectionLabel}>Display & Discovery</p>
             <div style={sectionCard}>
-              <button onClick={toggleDarkMode} style={rowBase(false)}>
-                <span style={rowLabel(false)}>{mIcon('dark_mode')}Dark Mode</span>
-                {toggleSwitch(darkMode)}
-              </button>
+              {/* Theme preference — 3-option segmented control. 'Auto' follows
+                  the OS color scheme (iPhone's Automatic / Dark / Light setting).
+                  'Light' / 'Dark' force the app's theme regardless of OS. */}
+              <div style={{ ...rowBase(false), cursor: 'default' }}>
+                <span style={rowLabel(false)}>{mIcon('dark_mode')}Theme</span>
+                <div style={{
+                  display: 'flex',
+                  background: darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                  borderRadius: 8,
+                  padding: 2,
+                  flexShrink: 0,
+                }}>
+                  {[
+                    { value: 'auto',  label: 'Auto'  },
+                    { value: 'light', label: 'Light' },
+                    { value: 'dark',  label: 'Dark'  },
+                  ].map(opt => {
+                    const selected = themePreference === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => setThemePreference(opt.value)}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          background: selected ? t.accent : 'transparent',
+                          color: selected ? '#1C1917' : t.textMuted,
+                          border: 'none',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          fontFamily: "'DM Sans', sans-serif",
+                          transition: 'background 0.15s, color 0.15s',
+                          WebkitTapHighlightColor: 'transparent',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <button onClick={() => setShowRadiusPicker(true)} style={rowBase(true)}>
                 <span style={rowLabel(false)}>{mIcon('location_on')}Search Radius</span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: t.textMuted, fontSize: '13px', fontWeight: 500 }}>
