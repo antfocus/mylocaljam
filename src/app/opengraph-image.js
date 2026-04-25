@@ -63,8 +63,11 @@ export default async function Image() {
         >
           <div style={{ display: 'flex' }}>Your local</div>
           <div style={{ display: 'flex' }}>music source,</div>
-          <div style={{ display: 'flex' }}>
-            <span>all in one </span>
+          {/* Satori collapses whitespace between flex children — including
+              the trailing space inside "all in one ". Use `gap` on the
+              flex container instead so "ONE" and "SPOT" stay as two words. */}
+          <div style={{ display: 'flex', gap: '0.32em' }}>
+            <span>all in one</span>
             <span style={{ color: '#E8722A' }}>spot.</span>
           </div>
         </div>
