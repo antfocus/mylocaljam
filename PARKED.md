@@ -4,6 +4,42 @@ Living list of work that came up during sessions but was deliberately deferred. 
 
 ---
 
+## Recently shipped — Apr 25 launch-prep session
+
+Major work that landed today. Listed for context so the deferred items below make sense in light of what's already built.
+
+**Brand / verification**
+- Google OAuth brand verification cleared and **published** — consent screen now shows "myLocalJam" instead of `ugmyqucizialapfulens.supabase.co`. Required: homepage title fix (`mylocaljam` → `myLocalJam`), description rewrite ("...helps you discover live music events at Jersey Shore venues..."), visually-hidden h1 in `page.js`, and a visible Privacy/Terms footer in the home feed.
+- 2-Step Verification enabled on `mylocaljam@gmail.com` (Google Cloud requirement as of March 31, 2026).
+
+**Modal refresh pass — all four major modals polished**
+- `BetaWelcome`: dark refresh, bigger text, ticket-stub Follow icon, solid orange "OFFICIALLY IN BETA!", pulsing white-dot Spotlight icon (matches the home Hero sticker), tightened copy, "Territory: Jersey Shore *(for now)*" caveat.
+- `AuthModal`: dark surface, brand wordmark inline in title, "Welcome to **myLocalJam**" universal headline with proper inline Wordmark component, Google as visual primary (white-on-dark), Magic Link as orange secondary (smaller padding/font), email input with translucent dark bg + orange focus ring, single drag-handle dismiss.
+- `SubmitEventModal`: dark refresh, bumped text, dropped the inline "Recent Submissions" list (replaced with a small `View past submissions →` link routing to `/profile`).
+- Event share page (`EventPageClient`): editorial header (Outfit Black title + orange pin venue + IBM Plex Mono date/time strip), full-bleed poster (was `objectFit: cover` 16:9 cropping portrait flyers), three-action footer (Save Show / Follow Artist / Venue), dismissible upsell banner with localStorage persistence.
+
+**Admin / data correctness**
+- Festivals tab → renamed to **Event Series** tab. Now queries the `event_series` table directly (instead of grouping events by `event_title`). Sea Hear Now 2026 migrated into `event_series` as a `festival`-category row with all 31 child events linked via `series_id`. New API actions: `rename_series`, `delete_series` (replacing `bulk_rename_festival` / `bulk_clear_festival`).
+- `useAdminFestivals` and `AdminFestivalsTab.js` deleted (dead).
+- Admin event POST/PUT now auto-resolves `artist_id` and `venue_id` from name via `resolveFkByName()` — case-insensitive with `"the "` prefix stripped. Mirrors the same fix landed in `sync-events/route.js` earlier in the session. Closes the bug class where typed-name events arrived with FKs null and broke the image waterfall (Wallnutz / Wonder Bar / Stone Pony / Pagano's all manifested this).
+- Pagano's UVA Ristorante venue row created (800 Main St, Bradley Beach) + 28 historical events backfilled.
+- Search autocomplete now includes `event_series` rows (so "sea hear now" surfaces in the dropdown year-round, not just when child events are in the loaded feed window).
+- Venue dropdown in the search modal sources from server-aggregated facets (every venue with ≥1 upcoming event), not the paginated home feed — fixed Wonder Bar / Stone Pony being invisible from the picker.
+
+**Spotlight carousel**
+- 5-dash slide indicator (orange, top-left, opacity differentiates active).
+- Smooth last→first wrap via cloned slide + post-animation snap-back.
+- Time stays on one line when venue is long (`whiteSpace: nowrap` + `flexShrink: 0` on day/time wrappers; venue absorbs the squeeze).
+
+**Search modal**
+- Symmetrical 1/2/1 trio footer (Reset ghost / Search orange primary / Close ghost with X icon).
+- Search button label simplified from "Show N events" to "Search" (the count was capped at PAGE_SIZE=20 and misleading).
+- White text on the orange Search button.
+
+---
+
+---
+
 ## ⚡ Launch priority (Apr 25 reframe)
 
 User has decided the priority before launch is **data enrichment** — getting bios, images, and tags onto the artist roster. As of Apr 25:
