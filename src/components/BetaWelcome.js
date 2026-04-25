@@ -66,7 +66,12 @@ export default function BetaWelcome() {
       blur={12}
       overlayBg="rgba(0,0,0,0.55)"
       maxWidth="420px"
-      maxHeight="90vh"
+      // dvh (dynamic viewport height) reflects the currently visible viewport.
+      // Plain `vh` on iOS Safari resolves against the *largest* viewport (URL
+      // bar hidden), so 90vh was taller than the visible area when the URL bar
+      // is up, hiding the "Let's Jam" CTA behind the Safari chrome. dvh shrinks
+      // when the URL bar appears, keeping the modal fully on-screen.
+      maxHeight="90dvh"
       padding="0"
       cardStyle={{
         background: surface,
@@ -88,7 +93,9 @@ export default function BetaWelcome() {
       <div style={{
         display: 'flex',
         flexDirection: 'column',
-        maxHeight: 'calc(90vh - 4px)',
+        // Match the outer ModalWrapper's dvh — see explanation on the
+        // maxHeight prop above. Subtracting 4px for the accent stripe.
+        maxHeight: 'calc(90dvh - 4px)',
       }}>
       {/* ── Scrollable content ── */}
       <div style={{
