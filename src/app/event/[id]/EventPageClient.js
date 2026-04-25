@@ -61,13 +61,28 @@ export default function EventPageClient({ event }) {
   const [showSignupHint, setShowSignupHint] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // Sticky upsell banner — guest users see it on first visit, but tapping
+  // the X hides it for the rest of the session and across future event-page
+  // visits on this device. Keeps the prompt available without pestering
+  // anyone who's already declined.
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session?.user);
       setAuthReady(true);
     });
+    try {
+      if (localStorage.getItem('mlj_event_banner_dismissed') === 'true') {
+        setBannerDismissed(true);
+      }
+    } catch { /* private mode / blocked storage — banner shows by default */ }
   }, []);
+
+  const dismissBanner = () => {
+    setBannerDismissed(true);
+    try { localStorage.setItem('mlj_event_banner_dismissed', 'true'); } catch {}
+  };
 
   // Theme tokens — single source of truth for every color used below. The
   // layout doesn't change between modes; only these values do.
@@ -494,8 +509,12 @@ export default function EventPageClient({ event }) {
       </main>
 
       {/* ── Sticky upsell banner — for non-logged-in users. Hidden until
-            auth state resolves so we don't flicker. */}
-      {authReady && !isLoggedIn && (
+            auth state resolves so we don't flicker, and hidden permanently
+            (per device, via localStorage) once a user dismisses it. The X
+            is the bypass we want: keeps the prompt available without making
+            it block the page experience for someone who just wants to read
+            the event. */}
+      {authReady && !isLoggedIn && !bannerDismissed && (
         <div style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
           background: `linear-gradient(180deg, transparent 0%, ${t.bg} 20%)`,
@@ -503,6 +522,7 @@ export default function EventPageClient({ event }) {
           pointerEvents: 'none',
         }}>
           <div style={{
+            position: 'relative',
             maxWidth: '560px', margin: '0 auto',
             background: t.bannerBg, borderRadius: '16px',
             border: `1px solid ${t.border}`,
@@ -514,7 +534,30 @@ export default function EventPageClient({ event }) {
               : '0 -8px 32px rgba(0,0,0,0.08)',
             pointerEvents: 'auto',
           }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Dismiss X — top-right of the banner. Sized + positioned so
+                it's visibly tappable (28×28 hit target) without competing
+                with the CTA. */}
+            <button
+              onClick={dismissBanner}
+              aria-label="Dismiss"
+              style={{
+                position: 'absolute',
+                top: '6px', right: '6px',
+                width: '28px', height: '28px',
+                background: 'none', border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: t.textDim,
+                borderRadius: '50%',
+                padding: 0,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+            <div style={{ flex: 1, minWidth: 0, paddingRight: '20px' }}>
               <p style={{
                 fontSize: '14px', fontWeight: 700, color: t.text,
                 margin: '0 0 2px',
