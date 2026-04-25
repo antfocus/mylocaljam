@@ -43,6 +43,30 @@ function validateUrl(v) {
   return trimmed;
 }
 
+// ── Foreign-key auto-resolution by name ────────────────────────────────────
+// When the admin form posts an event with `artist_name` / `venue_name` but
+// no `artist_id` / `venue_id`, look the name up in the `artists` / `venues`
+// table case-insensitively (with a leading "the " stripped, mirroring the
+// sync-events normalization). Returns the matching row's id, or null if no
+// row matches. Tables are small (<1000 rows each) so a single SELECT-all +
+// client-side find is fine and avoids a fragile multi-pattern ilike query.
+//
+// Without this, admin-created events landed with FKs null and the image
+// waterfall (event_image → artist.image_url → venue.photo_url) had nothing
+// to fall through to — e.g. a typed "Wallnutz" event missed the existing
+// "WallNutz" artist photo because of the case difference.
+async function resolveFkByName(supabase, table, name) {
+  if (!name || typeof name !== 'string') return null;
+  const normalize = (s) =>
+    s ? String(s).trim().toLowerCase().replace(/^the\s+/i, '') : '';
+  const target = normalize(name);
+  if (!target) return null;
+  const { data, error } = await supabase.from(table).select('id, name');
+  if (error || !data) return null;
+  const match = data.find((r) => normalize(r.name) === target);
+  return match?.id || null;
+}
+
 // GET events with pagination support
 // Query params: page (1-based), limit (default 100), sort (column), order (asc/desc)
 export async function GET(request) {
@@ -222,12 +246,20 @@ export async function POST(request) {
   // Auto-compute is_custom_metadata for new events
   const newHasCustom = !!(body.custom_bio || body.custom_genres?.length || body.custom_vibes?.length || body.custom_image_url);
 
+  // Auto-resolve foreign keys when only names were provided. Trust an
+  // explicit id from the client; otherwise look up by case-insensitive name.
+  const resolvedArtistId = body.artist_id
+    || (body.artist_name ? await resolveFkByName(supabase, 'artists', body.artist_name) : null);
+  const resolvedVenueId = body.venue_id
+    || (body.venue_name ? await resolveFkByName(supabase, 'venues', body.venue_name) : null);
+
   const { data, error } = await supabase
     .from('events')
     .insert({
       event_title: body.event_title || null,
       artist_name: body.artist_name,
-      venue_id: body.venue_id || null,
+      artist_id: resolvedArtistId,
+      venue_id: resolvedVenueId,
       venue_name: body.venue_name,
       event_date: body.event_date,
       genre: body.genre || null,
@@ -324,12 +356,45 @@ export async function PUT(request) {
   // the codebase still calls those legacy paths. Sea Hear Now 2026 was
   // migrated to event_series in the same change.
 
+  // ── Auto-resolve foreign keys when the admin updates only the name ───────
+  // If the client sends an explicit venue_id / artist_id (including null to
+  // clear), trust it. If they only send the name, look the name up in the
+  // FK table case-insensitively and link automatically. Mirrors the POST
+  // path and the sync-events normalization so admin-edited rows don't keep
+  // arriving with FKs unset and breaking the image waterfall.
+  let resolvedVenueId;
+  let updateVenueId = false;
+  if (body.venue_id !== undefined) {
+    resolvedVenueId = body.venue_id || null;
+    updateVenueId = true;
+  } else if (body.venue_name !== undefined) {
+    resolvedVenueId = body.venue_name
+      ? await resolveFkByName(supabase, 'venues', body.venue_name)
+      : null;
+    updateVenueId = true;
+  }
+
+  let resolvedArtistId;
+  let updateArtistId = false;
+  if (body.artist_id !== undefined) {
+    // Explicit value (UUID or null) — trust it. The ghost-link learning
+    // block below also keys off this case to avoid mis-attributing aliases
+    // when the linkage was auto-resolved rather than admin-chosen.
+    resolvedArtistId = body.artist_id;
+    updateArtistId = true;
+  } else if (body.artist_name !== undefined) {
+    resolvedArtistId = body.artist_name
+      ? await resolveFkByName(supabase, 'artists', body.artist_name)
+      : null;
+    updateArtistId = true;
+  }
+
   // Only include known database columns — extra fields like event_time would cause PostgREST errors
   const updates = {
     ...(body.event_title !== undefined && { event_title: body.event_title || null }),
     ...(body.artist_name !== undefined && { artist_name: body.artist_name }),
     ...(body.artist_bio !== undefined && { artist_bio: body.artist_bio ? capBio(body.artist_bio) : null }),
-    ...(body.venue_id !== undefined && { venue_id: body.venue_id || null }),
+    ...(updateVenueId && { venue_id: resolvedVenueId }),
     ...(body.venue_name !== undefined && { venue_name: body.venue_name }),
     ...(body.event_date !== undefined && { event_date: body.event_date }),
     ...(body.genre !== undefined && { genre: body.genre || null }),
@@ -351,7 +416,7 @@ export async function PUT(request) {
     ...(body.category_source !== undefined && { category_source: body.category_source }),
     ...(body.category_confidence !== undefined && { category_confidence: body.category_confidence }),
     ...(body.category_ai_flagged_at !== undefined && { category_ai_flagged_at: body.category_ai_flagged_at }),
-    ...(body.artist_id !== undefined && { artist_id: body.artist_id }),
+    ...(updateArtistId && { artist_id: resolvedArtistId }),
     // template_id: null clears a link (use case: "unlink from template"),
     // a UUID sets the "Safe Link" from the Discovery / Event Feed matchmaker UI.
     ...(body.template_id !== undefined && { template_id: body.template_id || null }),
