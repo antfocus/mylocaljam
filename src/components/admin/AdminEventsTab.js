@@ -5,6 +5,7 @@ import { formatDate, formatTime } from '@/lib/utils';
 import { Icons } from '@/components/Icons';
 import Badge from '@/components/ui/Badge';
 import { matchTemplate } from '@/lib/matchTemplate';
+import DuplicateEventModal from '@/components/admin/DuplicateEventModal';
 
 // ── Status options for the unified row dropdown ──────────────────────────
 // Colors mirror the old Badge palette (published = green, draft/hidden = gray)
@@ -185,6 +186,8 @@ export default function AdminEventsTab({
   const headers = { Authorization: 'Bearer ' + password };
   const [aiCategorizeLoading, setAiCategorizeLoading] = useState(false);
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  // Source event for the Duplicate-to-dates modal. Null when modal is closed.
+  const [duplicateSource, setDuplicateSource] = useState(null);
 
   // ── Search-mode fetch boost (quick win, April 22, 2026) ─────────────────
   // The search input below filters CLIENT-side over the rows already loaded
@@ -1154,6 +1157,13 @@ export default function AdminEventsTab({
                   <button className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent" onClick={() => { setEditingEvent(ev); setShowEventForm(true); }}>
                     {Icons.edit}
                   </button>
+                  <button
+                    className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent"
+                    onClick={() => setDuplicateSource(ev)}
+                    title="Duplicate to additional dates"
+                  >
+                    {Icons.duplicate}
+                  </button>
                   <button className="p-1.5 rounded text-brand-text-muted hover:text-red-400" onClick={() => deleteEvent(ev.id)} title="Permanently delete">
                     {Icons.trash}
                   </button>
@@ -1179,7 +1189,22 @@ export default function AdminEventsTab({
             </div>
           )}
           </>)}
-        </div>
 
+          {/* Duplicate-to-dates modal — shown when admin clicks the duplicate
+              icon on any event row. Refreshes the events list on success so
+              the new performances appear immediately. position:fixed so the
+              DOM placement inside the wrapper div doesn't affect rendering. */}
+          {duplicateSource && (
+            <DuplicateEventModal
+              event={duplicateSource}
+              password={password}
+              showQueueToast={showQueueToast}
+              onClose={() => setDuplicateSource(null)}
+              onSuccess={() => {
+                fetchEvents(1, eventsSortField, eventsSortOrder, eventsStatusFilter, eventsMissingTime, eventsRecentlyAdded, eventsMissingImage);
+              }}
+            />
+          )}
+        </div>
   );
 }
