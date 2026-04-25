@@ -63,11 +63,13 @@ export default async function Image() {
         >
           <div style={{ display: 'flex' }}>Your local</div>
           <div style={{ display: 'flex' }}>music source,</div>
-          {/* Satori collapses whitespace between flex children — including
-              the trailing space inside "all in one ". Use `gap` on the
-              flex container instead so "ONE" and "SPOT" stay as two words. */}
-          <div style={{ display: 'flex', gap: '0.32em' }}>
-            <span>all in one</span>
+          {/* Trailing whitespace gets collapsed by Satori between flex children,
+              and `gap: '0.32em'` (my previous fix) broke the parent's column
+              layout entirely (all three lines stacked at the same Y). Use a
+              non-breaking space (U+00A0) baked into the first span — it's a
+              real character, not whitespace, so Satori can't collapse it. */}
+          <div style={{ display: 'flex' }}>
+            <span>{'all in one\u00A0'}</span>
             <span style={{ color: '#E8722A' }}>spot.</span>
           </div>
         </div>
