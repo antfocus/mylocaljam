@@ -154,9 +154,21 @@ function stripTimeFromTitle(title) {
     .trim();
 }
 
+// Normalize a venue name for fuzzy matching against the venues table.
+// Lowercase + trim + strip a leading "the " article so the scraper's
+// "Wonder Bar" lines up with the DB's "The Wonder Bar" (and vice versa).
+// Used as the keying function for both venueMap (id lookup) and
+// defaultTimes (start-time lookup) — both sides MUST normalize the same
+// way or the lookups silently miss and events ship with venue_id NULL.
+function normalizeVenueName(name) {
+  if (!name) return '';
+  return String(name).trim().toLowerCase().replace(/^the\s+/i, '');
+}
+
 // Map scraper fields → Supabase schema
 function mapEvent(ev, venueMap, defaultTimes) {
-  const venueId = venueMap[ev.venue] || null;
+  const venueKey = normalizeVenueName(ev.venue);
+  const venueId = venueMap[venueKey] || null;
 
   // Try to extract time from title if scraper didn't provide one
   let scrapedTime = ev.time;
@@ -169,8 +181,9 @@ function mapEvent(ev, venueMap, defaultTimes) {
     }
   }
 
-  // Fallback to venue default time if still no time found
-  const venueDefaultTime = defaultTimes[ev.venue] || null;
+  // Fallback to venue default time if still no time found.
+  // Same normalized key as the venueMap above — see normalizeVenueName.
+  const venueDefaultTime = defaultTimes[venueKey] || null;
   const hasRealTime = scrapedTime && scrapedTime !== '00:00' && scrapedTime !== '12:00 AM';
 
   // Track whether we actually have a real time or are guessing
@@ -405,13 +418,19 @@ export async function POST(request) {
     `(shard1=${includeShard1}, shard2=${includeShard2}, slow=${includeSlow})`
   );
 
-  // Load venue map and default times
+  // Load venue map and default times.
+  // Both maps are keyed by the NORMALIZED venue name so the scraper's
+  // "Wonder Bar" finds the DB's "The Wonder Bar" — see normalizeVenueName().
+  // Without this, ~50 events/week were arriving with venue_id NULL, which
+  // also broke any downstream search that joins through the venues table
+  // (e.g. "Asbury Park events" — events without venue_id have no address).
   const { data: venues } = await supabase.from('venues').select('id, name, default_start_time');
   const venueMap = {};
   const defaultTimes = {};
   for (const v of venues || []) {
-    venueMap[v.name] = v.id;
-    if (v.default_start_time) defaultTimes[v.name] = v.default_start_time;
+    const key = normalizeVenueName(v.name);
+    venueMap[key] = v.id;
+    if (v.default_start_time) defaultTimes[key] = v.default_start_time;
   }
 
   // Run all scrapers in parallel
