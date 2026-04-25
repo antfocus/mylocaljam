@@ -179,9 +179,9 @@ export default function AdminEventsTab({
   password,
   // Magic Wand: cross-tab handoff for "Create Template from Event"
   setActiveTab, setEditingTemplate, setTemplateForm,
-  // Festival props (consolidated from sidebar)
-  festivalData = [], festivalSearch = '', setFestivalSearch,
-  editingFestival, setEditingFestival, fetchFestivalNames,
+  // Event-series props (formerly festivals — now reads from event_series table)
+  seriesData = [], seriesSearch = '', setSeriesSearch,
+  editingSeries, setEditingSeries, fetchSeries,
 }) {
   const headers = { Authorization: 'Bearer ' + password };
   const [aiCategorizeLoading, setAiCategorizeLoading] = useState(false);
@@ -378,7 +378,7 @@ export default function AdminEventsTab({
                 { key: 'upcoming', label: 'Upcoming' },
                 { key: 'past', label: 'Past' },
                 { key: 'hidden', label: 'Hidden' },
-                { key: 'festivals', label: 'Festivals', count: festivalData.length },
+                { key: 'series', label: 'Event Series', count: seriesData.length },
               ].map(seg => (
                 <button
                   key={seg.key}
@@ -395,8 +395,8 @@ export default function AdminEventsTab({
                     //    from the client-side search filter).
                     const nextOrder = seg.key === 'past' ? 'desc' : 'asc';
                     setEventsSortOrder(nextOrder);
-                    if (seg.key === 'festivals') {
-                      if (fetchFestivalNames) fetchFestivalNames();
+                    if (seg.key === 'series') {
+                      if (fetchSeries) fetchSeries();
                     } else {
                       setEvents([]);
                       fetchEvents(1, eventsSortField, nextOrder, seg.key, eventsMissingTime, false);
@@ -421,7 +421,7 @@ export default function AdminEventsTab({
                 </button>
               ))}
             </div>
-            {eventsStatusFilter !== 'festivals' && (
+            {eventsStatusFilter !== 'series' && (
             <button
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white"
               style={{ background: 'var(--accent)', fontFamily: "'DM Sans', sans-serif" }}
@@ -432,21 +432,26 @@ export default function AdminEventsTab({
             )}
           </div>
 
-          {/* ── Festivals Sub-View ──────────────────────────────────────────── */}
-          {eventsStatusFilter === 'festivals' && (() => {
-            const filteredFestivals = festivalSearch?.trim()
-              ? festivalData.filter(f => f.name.toLowerCase().includes(festivalSearch.toLowerCase()))
-              : festivalData;
+          {/* ── Event Series Sub-View ───────────────────────────────────────
+              Pulls from the event_series table (parent rows) and renders
+              one card per series with its child-event preview chips.
+              Rename/Delete actions hit /api/admin with { rename_series, id }
+              and { delete_series, id }. Children are preserved on delete via
+              the events.series_id FK's ON DELETE SET NULL. */}
+          {eventsStatusFilter === 'series' && (() => {
+            const filteredSeries = seriesSearch?.trim()
+              ? seriesData.filter(s => s.name.toLowerCase().includes(seriesSearch.toLowerCase()))
+              : seriesData;
             return (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
                   <h3 style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)', margin: 0 }}>
-                    Festivals &amp; Event Titles ({festivalData.length})
+                    Event Series ({seriesData.length})
                   </h3>
                   <input
-                    placeholder="Search festivals..."
-                    value={festivalSearch}
-                    onChange={e => setFestivalSearch(e.target.value)}
+                    placeholder="Search series..."
+                    value={seriesSearch}
+                    onChange={e => setSeriesSearch(e.target.value)}
                     style={{
                       padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
                       background: 'var(--bg-card)', border: '1px solid var(--border)',
@@ -456,23 +461,23 @@ export default function AdminEventsTab({
                   />
                 </div>
                 <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px', fontFamily: "'DM Sans', sans-serif" }}>
-                  Festival names come from the <code style={{ background: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px' }}>event_title</code> field on events. Renaming updates all linked events. Deleting clears the event_title (events are preserved).
+                  Series rows live in <code style={{ background: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px' }}>event_series</code>. Child events link via <code style={{ background: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px' }}>series_id</code>. Renaming updates the series row; deleting removes it (linked events are preserved).
                 </p>
-                {filteredFestivals.length === 0 && (
+                {filteredSeries.length === 0 && (
                   <p style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                    {festivalSearch ? 'No matching festivals.' : 'No festivals found.'}
+                    {seriesSearch ? 'No matching series.' : 'No series found.'}
                   </p>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {filteredFestivals.map(f => (
-                    <div key={f.name} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '16px' }}>
+                  {filteredSeries.map(s => (
+                    <div key={s.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          {editingFestival?.name === f.name ? (
+                          {editingSeries?.id === s.id ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                               <input
-                                value={editingFestival.newName}
-                                onChange={e => setEditingFestival(prev => ({ ...prev, newName: e.target.value }))}
+                                value={editingSeries.newName}
+                                onChange={e => setEditingSeries(prev => ({ ...prev, newName: e.target.value }))}
                                 style={{
                                   flex: 1, padding: '6px 10px', borderRadius: '8px', fontSize: '13px',
                                   background: 'var(--bg-secondary)', border: '1px solid var(--accent)',
@@ -488,17 +493,17 @@ export default function AdminEventsTab({
                                   fontFamily: "'DM Sans', sans-serif",
                                 }}
                                 onClick={async () => {
-                                  const newName = editingFestival.newName.trim();
-                                  if (!newName || newName === f.name) { setEditingFestival(null); return; }
+                                  const newName = editingSeries.newName.trim();
+                                  if (!newName || newName === s.name) { setEditingSeries(null); return; }
                                   try {
                                     const res = await fetch('/api/admin', {
                                       method: 'PUT',
                                       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-                                      body: JSON.stringify({ bulk_rename_festival: true, old_name: f.name, new_name: newName }),
+                                      body: JSON.stringify({ rename_series: true, id: s.id, new_name: newName }),
                                     });
                                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                                    setEditingFestival(null);
-                                    fetchFestivalNames();
+                                    setEditingSeries(null);
+                                    fetchSeries();
                                   } catch (err) { alert(`Rename failed: ${err.message}`); }
                                 }}
                               >Save</button>
@@ -508,23 +513,32 @@ export default function AdminEventsTab({
                                   background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
                                   fontFamily: "'DM Sans', sans-serif",
                                 }}
-                                onClick={() => setEditingFestival(null)}
+                                onClick={() => setEditingSeries(null)}
                               >Cancel</button>
                             </div>
                           ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)' }}>{f.name}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '15px', color: 'var(--text-primary)' }}>{s.name}</span>
                               <span style={{
                                 fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '999px',
                                 background: 'rgba(245,158,11,0.15)', color: '#F59E0B',
                                 fontFamily: "'DM Sans', sans-serif",
                               }}>
-                                {f.count} event{f.count !== 1 ? 's' : ''}
+                                {s.count} event{s.count !== 1 ? 's' : ''}
                               </span>
+                              {s.category && (
+                                <span style={{
+                                  fontSize: '11px', fontWeight: 500, padding: '2px 8px', borderRadius: '999px',
+                                  background: 'var(--bg-secondary)', color: 'var(--text-muted)',
+                                  fontFamily: "'DM Sans', sans-serif", textTransform: 'capitalize',
+                                }}>
+                                  {s.category.replace(/_/g, ' ')}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
-                        {editingFestival?.name !== f.name && (
+                        {editingSeries?.id !== s.id && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <button
                               style={{
@@ -532,8 +546,8 @@ export default function AdminEventsTab({
                                 background: 'none', border: '1px solid var(--border)', color: 'var(--text-secondary)',
                                 cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
                               }}
-                              onClick={() => setEditingFestival({ name: f.name, newName: f.name })}
-                              title="Rename this festival across all events"
+                              onClick={() => setEditingSeries({ id: s.id, name: s.name, newName: s.name })}
+                              title="Rename this series"
                             >Rename</button>
                             <button
                               style={{
@@ -542,25 +556,25 @@ export default function AdminEventsTab({
                                 cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
                               }}
                               onClick={async () => {
-                                if (!window.confirm(`Remove festival name "${f.name}" from ${f.count} event(s)? The events will remain but lose their festival tag.`)) return;
+                                if (!window.confirm(`Delete series "${s.name}"? Its ${s.count} event(s) will remain but lose their series link.`)) return;
                                 try {
                                   const res = await fetch('/api/admin', {
                                     method: 'PUT',
                                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
-                                    body: JSON.stringify({ bulk_clear_festival: true, festival_name: f.name }),
+                                    body: JSON.stringify({ delete_series: true, id: s.id }),
                                   });
                                   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                                  fetchFestivalNames();
+                                  fetchSeries();
                                 } catch (err) { alert(`Delete failed: ${err.message}`); }
                               }}
-                              title="Remove festival name from all events (events stay)"
+                              title="Delete this series (events stay, lose series link)"
                             >Delete</button>
                           </div>
                         )}
                       </div>
                       {/* Linked events preview */}
                       <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {f.events.slice(0, 5).map(ev => (
+                        {s.events.slice(0, 5).map(ev => (
                           <span key={ev.id} style={{
                             fontSize: '11px', padding: '3px 8px', borderRadius: '999px',
                             background: 'var(--bg-secondary)', color: 'var(--text-muted)',
@@ -569,12 +583,12 @@ export default function AdminEventsTab({
                             {ev.artist_name} {ev.event_date ? `· ${new Date(ev.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })}` : ''}
                           </span>
                         ))}
-                        {f.events.length > 5 && (
+                        {s.events.length > 5 && (
                           <span style={{
                             fontSize: '11px', padding: '3px 8px', borderRadius: '999px',
                             background: 'var(--bg-secondary)', color: 'var(--text-muted)',
                             fontFamily: "'DM Sans', sans-serif",
-                          }}>+{f.events.length - 5} more</span>
+                          }}>+{s.events.length - 5} more</span>
                         )}
                       </div>
                     </div>
@@ -584,8 +598,8 @@ export default function AdminEventsTab({
             );
           })()}
 
-          {/* ── Events List (hidden when Festivals sub-tab is active) ───── */}
-          {eventsStatusFilter !== 'festivals' && (<>
+          {/* ── Events List (hidden when the Event Series sub-tab is active) ───── */}
+          {eventsStatusFilter !== 'series' && (<>
           {/* Search + Sort row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '12px', marginBottom: '12px', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
             <div style={{ flex: '1 1 200px', position: 'relative' }}>

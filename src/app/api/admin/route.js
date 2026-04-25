@@ -275,38 +275,54 @@ export async function PUT(request) {
   const body = await request.json();
   const { id } = body;
 
-  // ── Bulk festival rename: update event_title across all matching events ────
-  if (body.bulk_rename_festival) {
-    const { old_name, new_name } = body;
-    if (!old_name || !new_name) return NextResponse.json({ error: 'Missing old_name or new_name' }, { status: 400 });
+  // ── Event-series rename: update event_series row by id ─────────────────────
+  // Replaces the old bulk_rename_festival (which mutated event_title across
+  // matching events). The new model treats event_series as the source of
+  // truth — child events stay linked via series_id and inherit the name
+  // through the join, so no per-event update is needed.
+  if (body.rename_series) {
+    const { id: seriesId, new_name } = body;
+    if (!seriesId || !new_name) return NextResponse.json({ error: 'Missing id or new_name' }, { status: 400 });
+    const trimmed = new_name.trim();
+    if (!trimmed) return NextResponse.json({ error: 'new_name cannot be blank' }, { status: 400 });
+    // Update the slug too so URLs stay in sync. Lowercase, alphanumerics +
+    // dashes only; multiple dashes collapsed; leading/trailing dashes stripped.
+    const slug = trimmed
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
     const { data, error } = await supabase
-      .from('events')
-      // Phase-1 dual-write (Task #60): `is_locked` is the new canonical row
-      // lock; `is_human_edited` stays during the transition week so readers
-      // that haven't flipped yet still see the lock. Drop `is_human_edited`
-      // writes after one incident-free week.
-      .update({ event_title: new_name, is_human_edited: true, is_locked: true })
-      .eq('event_title', old_name)
+      .from('event_series')
+      .update({ name: trimmed, slug })
+      .eq('id', seriesId)
       .select('id');
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     revalidatePath('/');
     return NextResponse.json({ renamed: data?.length || 0 });
   }
 
-  // ── Bulk festival delete: clear event_title from all matching events ───────
-  if (body.bulk_clear_festival) {
-    const { festival_name } = body;
-    if (!festival_name) return NextResponse.json({ error: 'Missing festival_name' }, { status: 400 });
+  // ── Event-series delete: remove the parent row ────────────────────────────
+  // The events.series_id FK is ON DELETE SET NULL, so child events are
+  // preserved — they simply lose their series link. No need to mutate the
+  // events table here.
+  if (body.delete_series) {
+    const { id: seriesId } = body;
+    if (!seriesId) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
     const { data, error } = await supabase
-      .from('events')
-      // Phase-1 dual-write (Task #60): see bulk_rename_festival comment above.
-      .update({ event_title: null, is_festival: false, is_human_edited: true, is_locked: true })
-      .eq('event_title', festival_name)
+      .from('event_series')
+      .delete()
+      .eq('id', seriesId)
       .select('id');
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     revalidatePath('/');
-    return NextResponse.json({ cleared: data?.length || 0 });
+    return NextResponse.json({ deleted: data?.length || 0 });
   }
+
+  // ── Legacy bulk_rename_festival / bulk_clear_festival removed ─────────────
+  // The old festival actions mutated event_title. The Festivals tab is now
+  // the Event Series tab and operates on the event_series table; nothing in
+  // the codebase still calls those legacy paths. Sea Hear Now 2026 was
+  // migrated to event_series in the same change.
 
   // Only include known database columns — extra fields like event_time would cause PostgREST errors
   const updates = {

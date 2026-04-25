@@ -18,7 +18,7 @@ export default function AdminSubmissionsTab({
   setQueueLightboxUrl,
   adminFlyerRef,
   queueSelected,
-  festivalNames,
+  seriesNames = [],
   batchApplyPrompt, setBatchApplyPrompt,
   qLabelStyle, qInputStyle,
   qGreen, qRed,
@@ -360,12 +360,12 @@ export default function AdminSubmissionsTab({
                       </div>
                       <div>
                         <label style={qLabelStyle}>Event / Series Name</label>
-                        <input list="queue-festival-options" style={{
+                        <input list="queue-series-options" style={{
                           ...qInputStyle,
                           borderColor: queueForm.is_series ? '#f59e0b' : qInputStyle.borderColor || 'var(--border)',
                         }} value={queueForm.event_name} onChange={e => updateQueueForm('event_name', e.target.value)} placeholder="e.g. Sea Hear Now 2026, Manasquan Beach Concerts…" />
-                        <datalist id="queue-festival-options">
-                          {festivalNames.map(f => <option key={f} value={f} />)}
+                        <datalist id="queue-series-options">
+                          {seriesNames.map(f => <option key={f} value={f} />)}
                         </datalist>
 
                         {/* ── Series opt-in — admin must explicitly promote this event into a named series/festival ── */}

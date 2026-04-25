@@ -26,7 +26,7 @@ import useAdminEventTemplates from '@/hooks/useAdminEventTemplates';
 import useAdminSpotlight from '@/hooks/useAdminSpotlight';
 import useAdminEvents from '@/hooks/useAdminEvents';
 import useAdminVenues from '@/hooks/useAdminVenues';
-import useAdminFestivals from '@/hooks/useAdminFestivals';
+import useAdminEventSeries from '@/hooks/useAdminEventSeries';
 import useAdminReports from '@/hooks/useAdminReports';
 
 const TITLE_CASE_MINOR = new Set(['a','an','the','and','but','or','nor','for','yet','so','in','on','at','to','by','of','up','as','is']);
@@ -149,7 +149,10 @@ export default function AdminPage() {
   // black-screen blink after every drop. Hook maintains its own state
   // optimistically; the public hero is invalidated server-side.
   const sp = useAdminSpotlight({ password });
-  const fe = useAdminFestivals();
+  // `se` (series) replaces the old `fe` (festivals) hook. The variable name
+  // change ripples down to AdminEventsTab + AdminSubmissionsTab via prop
+  // renames below.
+  const se = useAdminEventSeries();
 
   // ── Auto-fetch when session is restored from sessionStorage ──
   useEffect(() => {
@@ -161,7 +164,7 @@ export default function AdminPage() {
       ar.fetchArtists();
       ve.fetchScraperHealth();
       ve.fetchVenues();
-      fe.fetchFestivalNames();
+      se.fetchSeries();
     }
   }, [authenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -193,7 +196,7 @@ export default function AdminPage() {
     ve.fetchScraperHealth();
     fetchAnalytics(); // PostHog analytics for dashboard
     ve.fetchVenues(); // populate venue datalist for queue triage
-    fe.fetchFestivalNames(); // populate festival name autocomplete
+    se.fetchSeries(); // populate event-series name autocomplete
   };
 
   const deleteEvent = async (id) => {
@@ -318,7 +321,7 @@ export default function AdminPage() {
                     ? { background: 'var(--bg-card)', borderBottom: '2px solid #E8722A', color: '#FFFFFF' }
                     : { opacity: 0.6 }),
                 }}
-                onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); re.fetchReports(); ve.fetchScraperHealth(); } if (tab.key === 'events') { ev.fetchEvents(); fe.fetchFestivalNames(); } if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'templates') et.fetchTemplates(et.templatesSearch, et.templatesNeedsInfo); if (tab.key === 'venues') ve.fetchScraperHealth(); if (tab.key === 'reports') { re.setFlagsViewFilter('pending'); re.fetchReports(); } }}
+                onClick={() => { setActiveTab(tab.key); if (tab.key === 'dashboard') { ev.fetchEvents(); if (ar.artists.length === 0) ar.fetchArtists(); re.fetchReports(); ve.fetchScraperHealth(); } if (tab.key === 'events') { ev.fetchEvents(); se.fetchSeries(); } if (tab.key === 'triage') tr.fetchTriage(); if (tab.key === 'spotlight') { sp.setSpotlightSearch(''); sp.fetchSpotlight(sp.spotlightDate); if (ar.artists.length === 0) ar.fetchArtists(); } if (tab.key === 'submissions') { setMobileQueueDetail(false); q.fetchQueue(); } if (tab.key === 'artists') ar.fetchArtists(ar.artistsSearch, ar.artistsNeedsInfo); if (tab.key === 'templates') et.fetchTemplates(et.templatesSearch, et.templatesNeedsInfo); if (tab.key === 'venues') ve.fetchScraperHealth(); if (tab.key === 'reports') { re.setFlagsViewFilter('pending'); re.fetchReports(); } }}
               >
                 {tab.label} {tab.count > 0 && <span className="ml-1 text-xs px-1.5 py-0.5 rounded-full" style={{ background: tab.key !== 'events' ? 'var(--accent)' : 'var(--bg-elevated)', color: tab.key !== 'events' ? '#1C1917' : 'var(--text-secondary)' }}>{tab.count}</span>}
               </button>
@@ -418,10 +421,10 @@ export default function AdminPage() {
           // admin still confirms with the Template Save button.
           setActiveTab={setActiveTab}
           setEditingTemplate={et.setEditingTemplate} setTemplateForm={et.setTemplateForm}
-          festivalData={fe.festivalData} festivalSearch={fe.festivalSearch}
-          setFestivalSearch={fe.setFestivalSearch}
-          editingFestival={fe.editingFestival} setEditingFestival={fe.setEditingFestival}
-          fetchFestivalNames={fe.fetchFestivalNames}
+          seriesData={se.seriesData} seriesSearch={se.seriesSearch}
+          setSeriesSearch={se.setSeriesSearch}
+          editingSeries={se.editingSeries} setEditingSeries={se.setEditingSeries}
+          fetchSeries={se.fetchSeries}
         />
       )}
 
@@ -547,7 +550,7 @@ export default function AdminPage() {
           setQueueLightboxUrl={q.setQueueLightboxUrl}
           adminFlyerRef={q.adminFlyerRef}
           queueSelected={q.queueSelected}
-          festivalNames={fe.festivalNames}
+          seriesNames={se.seriesNames}
           batchApplyPrompt={q.batchApplyPrompt} setBatchApplyPrompt={q.setBatchApplyPrompt}
           qLabelStyle={q.qLabelStyle} qInputStyle={q.qInputStyle}
           qGreen={q.qGreen} qRed={q.qRed}
