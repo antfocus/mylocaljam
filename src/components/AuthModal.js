@@ -261,16 +261,17 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
     );
   }
 
-  // Title split for orange-accent treatment on the "verb" word — keeps the
-  // brand color present in the headline without overcoloring the whole line.
-  const headerParts = (() => {
-    switch (trigger) {
-      case 'save':    return ['Sign in to save', 'events'];
-      case 'submit':  return ['Sign in to', 'submit'];
-      case 'profile': return ['Welcome to', 'myLocalJam'];
-      default:        return ['Sign in to', 'continue'];
-    }
-  })();
+  // The title is universal — "Welcome to myLocalJam" — and lets the subtitle
+  // carry the trigger-specific context. The brand wordmark rendered inline
+  // in the title eats the role the standalone top-of-modal wordmark used to
+  // play, so it's removed below to avoid showing the brand twice.
+  const Wordmark = ({ size = 'inherit', accent }) => (
+    <span style={{ fontStyle: 'normal', whiteSpace: 'nowrap', fontSize: size }}>
+      <span style={{ color: t.text, fontWeight: 400 }}>my</span>
+      <span style={{ color: t.text }}>Local</span>
+      <span style={{ color: accent, fontStyle: 'italic' }}>Jam</span>
+    </span>
+  );
 
   // ── Main auth view ─────────────────────────────────────────────────────────
   return (
@@ -286,23 +287,10 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
             background: t.border, margin: '0 auto 24px',
           }} />
 
-          {/* Brand wordmark */}
-          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-            <span style={{
-              fontFamily: "'Outfit', sans-serif",
-              fontSize: '20px',
-              fontWeight: 700,
-              letterSpacing: '-0.025em',
-              lineHeight: 1,
-            }}>
-              <span style={{ color: t.text, fontWeight: 400 }}>my</span>
-              <span style={{ color: t.text }}>Local</span>
-              <span style={{ color: t.accent, fontStyle: 'italic' }}>Jam</span>
-            </span>
-          </div>
-
-          {/* Header — title in Outfit Black with orange accent on the verb,
-              subtitle in muted body text below. */}
+          {/* Header — "Welcome to myLocalJam" with the brand wordmark rendered
+              inline (myLocal + italic orange Jam) so it carries the brand
+              presence without needing a separate wordmark above the title.
+              Subtitle handles the trigger-specific context. */}
           <div style={{ textAlign: 'center', marginBottom: '28px' }}>
             <h2 style={{
               fontFamily: "'Outfit', sans-serif",
@@ -311,7 +299,7 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
               lineHeight: 1.1,
               letterSpacing: '-0.025em',
             }}>
-              {headerParts[0]} <span style={{ color: t.accent }}>{headerParts[1]}</span>
+              Welcome to <Wordmark accent={t.accent} />
             </h2>
             <p style={{
               fontSize: '14px', color: t.textMuted,
