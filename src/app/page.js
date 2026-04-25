@@ -2896,57 +2896,61 @@ export default function HomePage() {
                   borderTop: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
                   borderRadius: '0 0 12px 12px',
                 }}>
-                  {/* Reset Filters — subtle outline, hugs content */}
+                  {/* Symmetrical trio: Reset 25% (ghost) | Search 50% (primary)
+                      | Close 25% (ghost). The outer two are background-less
+                      "ghost" buttons — text + small icon in muted gray — so
+                      Search dominates by contrast. Fixed flex bases keep the
+                      row balanced regardless of label length. */}
+                  {/* Reset — ghost left, 25% */}
                   <button onClick={clearAllFilters} style={{
+                    flex: '1 1 0', minWidth: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                    padding: '10px 14px', borderRadius: '10px',
-                    background: darkMode ? 'transparent' : '#FFFFFF',
-                    border: `1px solid ${darkMode ? 'rgba(255,255,255,0.12)' : '#D1D5DB'}`,
+                    padding: '10px 8px', borderRadius: '10px',
+                    background: 'transparent',
+                    border: 'none',
                     cursor: 'pointer',
                     fontSize: '13px', fontWeight: 500,
                     color: darkMode ? '#9090A8' : '#6B7280',
                     fontFamily: "'DM Sans', sans-serif",
-                    transition: 'background 0.15s ease',
-                    whiteSpace: 'nowrap', flexShrink: 0,
+                    transition: 'opacity 0.15s ease',
+                    whiteSpace: 'nowrap',
                     minHeight: '44px',
                   }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                       <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor" />
                     </svg>
-                    Reset Filters
+                    Reset
                   </button>
-                  {/* Search — primary CTA, takes remaining space.
-                      Label is "Search" (not "Show N events") because the count
-                      was capped at PAGE_SIZE (20) and read as a hard total even
-                      when more matched. White text on orange — was dark text
-                      before and reading was rough.  */}
+                  {/* Search — primary, 50%. Slightly heavier vertical padding
+                      than the ghost buttons so it visually steps forward in
+                      the row. White text on orange. */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
-                    flex: 1, padding: '10px 24px', borderRadius: '10px', border: 'none',
+                    flex: '2 1 0', minWidth: 0,
+                    padding: '12px 24px', borderRadius: '10px', border: 'none',
                     background: t.accent, color: '#FFFFFF', cursor: 'pointer',
-                    fontSize: '13px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
-                    minHeight: '44px',
+                    fontSize: '14px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
+                    minHeight: '48px',
                   }}>
                     Search
                   </button>
-                  {/* Close — matches the Reset Filters button (outlined, icon
-                      + label) so the row reads as three uniform buttons rather
-                      than two buttons + one text link. Replaces the top-right
-                      X — still the only exit affordance, just promoted to a
-                      first-class button. */}
+                  {/* Close — ghost right, 25%. X icon kept (recognizable
+                      affordance) so Close reads as "exit this panel" rather
+                      than "discard" or "cancel." */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
+                    flex: '1 1 0', minWidth: 0,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                    padding: '10px 14px', borderRadius: '10px',
-                    background: darkMode ? 'transparent' : '#FFFFFF',
-                    border: `1px solid ${darkMode ? 'rgba(255,255,255,0.12)' : '#D1D5DB'}`,
+                    padding: '10px 8px', borderRadius: '10px',
+                    background: 'transparent',
+                    border: 'none',
                     cursor: 'pointer',
                     fontSize: '13px', fontWeight: 500,
                     color: darkMode ? '#9090A8' : '#6B7280',
                     fontFamily: "'DM Sans', sans-serif",
-                    transition: 'background 0.15s ease',
-                    whiteSpace: 'nowrap', flexShrink: 0,
+                    transition: 'opacity 0.15s ease',
+                    whiteSpace: 'nowrap',
                     minHeight: '44px',
                   }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" style={{ flexShrink: 0 }}>
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
