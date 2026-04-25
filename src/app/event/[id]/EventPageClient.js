@@ -1,20 +1,27 @@
 'use client';
 
+/**
+ * EventPageClient — public event detail page (the landing page for shared
+ * iMessage / Twitter / Slack links to /event/[id]).
+ *
+ * Layout (Option C v4 from the design pass):
+ *   - Editorial header: date stub on the left + title block on the right,
+ *     vertically centered against the stub.
+ *   - Full-width poster image (no aspect crop — was previously stuffed into
+ *     a 16:9 box with objectFit:cover, which clipped portrait flyers).
+ *   - Description.
+ *   - Three action buttons: Save Show (ticket-stub icon), Follow Artist
+ *     (person+plus), Venue (map pin → opens Google Maps).
+ *
+ * Theme: theme-aware via useTheme. Falls back to the user's Auto/Light/Dark
+ * preference like the rest of the app.
+ */
+
 import { useState, useEffect } from 'react';
-// formatTimeRange no longer needed — using local fmtTime for full "7:00 PM" display
 import { supabase } from '@/lib/supabase';
 import { posthog } from '@/lib/posthog';
-
-/** Format date for display — e.g. "Sunday, April 6" */
-function fmtDate(dateStr) {
-  if (!dateStr) return '';
-  try {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      weekday: 'long', month: 'long', day: 'numeric',
-      timeZone: 'America/New_York',
-    });
-  } catch { return ''; }
-}
+import useTheme from '@/hooks/useTheme';
+import { Icons } from '@/components/Icons';
 
 /** Format 24h time string to full display — e.g. "19:00" → "7:00 PM" */
 function fmtTime(startStr) {
@@ -27,12 +34,34 @@ function fmtTime(startStr) {
   return `${h12}:${mins} ${period}`;
 }
 
+/**
+ * Break event_date into the three lines the date stub renders:
+ *   { day: 'SAT', date: '25', month: 'APR' }
+ * Eastern TZ + noon-local so DST flips can't push the weekday off-by-one.
+ */
+function parseDateBlock(eventDate) {
+  if (!eventDate) return { day: '', date: '', month: '' };
+  try {
+    const raw = typeof eventDate === 'string' && eventDate.includes('T')
+      ? eventDate
+      : `${eventDate}T12:00:00`;
+    const d = new Date(raw);
+    return {
+      day:   d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/New_York' }).toUpperCase(),
+      date:  d.toLocaleDateString('en-US', { day: 'numeric', timeZone: 'America/New_York' }),
+      month: d.toLocaleDateString('en-US', { month: 'short', timeZone: 'America/New_York' }).toUpperCase(),
+    };
+  } catch {
+    return { day: '', date: '', month: '' };
+  }
+}
+
 export default function EventPageClient({ event }) {
+  const { darkMode } = useTheme();
   const [showSignupHint, setShowSignupHint] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // ── Check auth session once on mount ──────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsLoggedIn(!!session?.user);
@@ -40,279 +69,353 @@ export default function EventPageClient({ event }) {
     });
   }, []);
 
-  // ── Guard: if event is null/undefined, show loading (never a premature 404) ──
+  // Theme tokens — single source of truth for every color used below. The
+  // layout doesn't change between modes; only these values do.
+  const t = darkMode ? {
+    bg:           '#0D0D12',
+    headerBg:     '#1E1E2C',
+    surface:      '#181826',
+    border:       '#2A2A3A',
+    borderSubtle: '#1F1F2E',
+    text:         '#FFFFFF',
+    textMuted:    '#B8B8C8',
+    textDim:      '#7878A0',
+    accent:       '#E8722A',
+    dateBlockBg:  'rgba(232,114,42,0.04)',
+    perforation:  '#2A2A3A',
+    iconStroke:   '#B8B8C8',
+    bannerBg:     '#1E1E2C',
+  } : {
+    bg:           '#FAFAF7',
+    headerBg:     '#FFFFFF',
+    surface:      '#FFFFFF',
+    border:       '#E0DDD8',
+    borderSubtle: '#ECE9E2',
+    text:         '#1A1A24',
+    textMuted:    '#6B7280',
+    textDim:      '#7878A0',
+    accent:       '#E8722A',
+    dateBlockBg:  'rgba(232,114,42,0.06)',
+    perforation:  '#D1CFC8',
+    iconStroke:   '#6B7280',
+    bannerBg:     '#FFFFFF',
+  };
+
+  // ── Loading skeleton — preserved from before ──────────────────────────────
   if (!event) {
     return (
       <div style={{
-        minHeight: '100vh', background: '#0D0D12',
+        minHeight: '100vh', background: t.bg,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontFamily: "'DM Sans', sans-serif",
       }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{
-            width: '40px', height: '40px', border: '3px solid #2A2A3A',
-            borderTopColor: '#E8722A', borderRadius: '50%',
+            width: '40px', height: '40px', border: `3px solid ${t.border}`,
+            borderTopColor: t.accent, borderRadius: '50%',
             margin: '0 auto 16px',
             animation: 'spin 0.8s linear infinite',
           }} />
-          <p style={{ color: '#7878A0', fontSize: '14px' }}>Loading event...</p>
+          <p style={{ color: t.textDim, fontSize: '14px' }}>Loading event...</p>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       </div>
     );
   }
 
-  // ── Standalone event view — no auth redirect ──────────────────────────────
-  // All users (guest & logged-in) stay on this page when visiting /event/[id].
-
+  // ── Data ──────────────────────────────────────────────────────────────────
   const eventTitle = (event.event_title || '').trim();
   const artistName = event.artist_name || '';
-  const name = eventTitle || artistName;
-  const venue = event.venue_name || '';
+  const name       = eventTitle || artistName;
+  const venue      = event.venue_name || '';
   const venueAddress = event.venue_address || '';
-  const desc = event.description || '';
-  // Treat "" and "None" as null so the waterfall keeps falling
-  const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
-  // Waterfall: event-specific image → artist image → venue photo
-  const imageUrl = cleanImg(event.event_image) || cleanImg(event.artist_image) || cleanImg(event.venue_photo) || null;
-  const genres = event.artist_genres || [];
-  const isTribute = event.is_tribute || false;
-  const timeStr = fmtTime(event.start_time);
-  const dateStr = fmtDate(event.event_date);
+  const desc       = event.description || '';
+  const cleanImg   = (v) => (v && v !== 'None' && v !== '') ? v : null;
+  const imageUrl   = cleanImg(event.event_image) || cleanImg(event.artist_image) || cleanImg(event.venue_photo) || null;
+  const genres     = event.artist_genres || [];
+  const isTribute  = event.is_tribute || false;
+  const timeStr    = fmtTime(event.start_time);
+  const dateBlock  = parseDateBlock(event.event_date);
   const isCanceled = event.status === 'cancelled' || event.status === 'canceled';
   const sourceLink = event.source && /^https?:\/\//i.test(event.source) ? event.source : null;
-  // Google Maps link for venue
-  const mapsQuery = encodeURIComponent(`${venue}${venueAddress ? ' ' + venueAddress : ' NJ'}`);
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
+  const mapsQuery  = encodeURIComponent(`${venue}${venueAddress ? ' ' + venueAddress : ' NJ'}`);
+  const mapsUrl    = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
 
   const handleSoftCTA = () => { if (!isLoggedIn) setShowSignupHint(true); };
 
+  // ── Action button — shared style so the three reads as a row ──────────────
+  const actionBtnStyle = {
+    flex: 1, minWidth: 0,
+    padding: '12px 8px',
+    background: t.surface,
+    border: `1px solid ${t.border}`,
+    borderRadius: '12px',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
+    cursor: 'pointer',
+    fontFamily: "'DM Sans', sans-serif",
+    color: t.text,
+    textDecoration: 'none',
+  };
+
   return (
     <div style={{
-      minHeight: '100vh', background: '#0D0D12',
+      minHeight: '100vh', background: t.bg,
       display: 'flex', flexDirection: 'column',
       fontFamily: "'DM Sans', 'Helvetica Neue', Arial, sans-serif",
+      color: t.text,
     }}>
-      {/* Top bar */}
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <header style={{
         position: 'sticky', top: 0, zIndex: 50,
-        background: '#1E1E2C', borderBottom: '1px solid #2A2A3A',
+        background: t.headerBg,
+        borderBottom: `1px solid ${t.border}`,
         padding: '12px 16px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
         <a href="/" style={{ textDecoration: 'none' }}>
-          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '20px', fontWeight: 800, letterSpacing: '-0.5px' }}>
-            <span style={{ color: '#FFFFFF' }}>my</span>
-            <span style={{ color: '#E8722A' }}>Local</span>
-            <span style={{ color: '#3AADA0' }}>Jam</span>
+          <span style={{ fontFamily: "'Outfit', sans-serif", fontSize: '20px', fontWeight: 700, letterSpacing: '-0.025em' }}>
+            <span style={{ color: t.text, fontWeight: 400 }}>my</span>
+            <span style={{ color: t.text }}>Local</span>
+            <span style={{ color: t.accent, fontStyle: 'italic' }}>Jam</span>
           </span>
         </a>
         <a href="/" style={{
-          padding: '8px 20px', borderRadius: '999px', background: '#E8722A',
-          color: '#1C1917', textDecoration: 'none', fontWeight: 700, fontSize: '13px',
+          padding: '8px 16px', borderRadius: '999px', background: t.accent,
+          color: '#FFFFFF', textDecoration: 'none', fontWeight: 500, fontSize: '13px',
         }}>
           Browse Events
         </a>
       </header>
 
-      {/* Event content */}
+      {/* ── Main content ────────────────────────────────────────────────── */}
       <main style={{
         flex: 1, width: '100%', maxWidth: '560px',
-        margin: '0 auto', padding: '20px 16px 120px',
+        margin: '0 auto', padding: '24px 20px 120px',
       }}>
-        {/* ── 1. Title (dominant) ──────────────────────────────────────── */}
-        <h1 style={{
-          fontSize: '32px', fontWeight: 900, color: '#F0F0F5',
-          margin: '0 0 4px', lineHeight: 1.15, letterSpacing: '-0.5px',
-          textDecoration: isCanceled ? 'line-through' : 'none',
+        {/* ── Title block: date stub + title centered ───────────────────── */}
+        <section style={{
+          display: 'flex', alignItems: 'center', gap: '14px',
+          marginBottom: '22px',
         }}>
-          {name}
-        </h1>
-        {eventTitle && artistName && eventTitle !== artistName && (
-          <p style={{
-            fontSize: '17px', fontWeight: 600, color: '#A0A0B8',
-            margin: '0 0 2px',
+          {/* Date stub — vertical: day / numeral / month / [perforation] / time */}
+          <div style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            padding: '10px 14px',
+            border: `1px solid ${t.border}`,
+            borderRadius: '8px',
+            flexShrink: 0,
+            background: t.dateBlockBg,
+            minWidth: '76px',
           }}>
-            {artistName}
-          </p>
-        )}
-
-        {/* ── 2. Venue (high-contrast, Maps link) ────────────────────── */}
-        {venue && (
-          <a
-            href={mapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: '5px',
-              fontSize: '17px', fontWeight: 700, color: '#E8722A',
-              textDecoration: 'none', margin: '0 0 16px',
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill="#E8722A" />
-            </svg>
-            {venue}
-          </a>
-        )}
-
-        {/* ── 3. Date & Time (clean typography, icons) ────────────────── */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '16px',
-          marginBottom: '8px', flexWrap: 'wrap',
-        }}>
-          {dateStr && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
-              fontSize: '18px', fontWeight: 600, color: '#F0F0F5',
+            <div style={{
+              fontSize: '10px', color: t.accent,
+              letterSpacing: '0.18em', fontFamily: "'IBM Plex Mono', monospace",
+              fontWeight: 700,
             }}>
-              {/* Calendar icon */}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z" fill="#7878A0" />
-              </svg>
-              {dateStr}
-            </span>
-          )}
-          {timeStr && (
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
-              fontSize: '18px', fontWeight: 600, color: '#CCCCDD',
+              {dateBlock.day}
+            </div>
+            <div style={{
+              fontSize: '32px', color: t.text,
+              fontWeight: 800, lineHeight: 1, margin: '2px 0',
+              letterSpacing: '-0.02em',
             }}>
-              {/* Clock icon */}
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z" fill="#7878A0" />
-              </svg>
-              {timeStr}
-            </span>
-          )}
-          {isCanceled && (
-            <span style={{
-              fontSize: '12px', fontWeight: 900, color: '#FFFFFF',
-              background: '#DC2626', padding: '4px 12px',
-              borderRadius: '999px', letterSpacing: '1px', textTransform: 'uppercase',
+              {dateBlock.date}
+            </div>
+            <div style={{
+              fontSize: '10px', color: t.textMuted,
+              letterSpacing: '0.18em', fontFamily: "'IBM Plex Mono', monospace",
+              fontWeight: 500,
             }}>
-              Canceled
-            </span>
-          )}
-        </div>
+              {dateBlock.month}
+            </div>
+            {timeStr && (
+              <>
+                <div style={{
+                  height: '1px', width: '32px',
+                  background: t.perforation,
+                  margin: '7px 0 6px',
+                }} />
+                <div style={{
+                  fontSize: '12px', color: t.text,
+                  fontWeight: 700, letterSpacing: '0.04em',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                }}>
+                  {timeStr}
+                </div>
+              </>
+            )}
+          </div>
 
-        {/* ── 4. Spacer before hero image ─────────────────────────────── */}
-        <div style={{ height: '24px' }} />
+          {/* Title + venue */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: 'clamp(20px, 5.5vw, 28px)',
+              fontWeight: 800,
+              color: t.text,
+              lineHeight: 1.0,
+              letterSpacing: '-0.025em',
+              textTransform: 'uppercase',
+              margin: 0,
+              textDecoration: isCanceled ? 'line-through' : 'none',
+              wordBreak: 'break-word',
+            }}>
+              {name}
+            </h1>
+            {venue && (
+              <p style={{
+                fontFamily: "'DM Serif Display', Georgia, serif",
+                fontStyle: 'italic',
+                fontSize: '15px',
+                color: t.textMuted,
+                margin: '8px 0 0',
+                lineHeight: 1.3,
+              }}>
+                at {venue}
+              </p>
+            )}
+            {/* Show artist name as a subtle line if it's distinct from the title */}
+            {eventTitle && artistName && eventTitle !== artistName && (
+              <p style={{
+                fontSize: '13px', fontWeight: 600, color: t.textDim,
+                margin: '6px 0 0',
+                fontFamily: "'IBM Plex Mono', monospace",
+                letterSpacing: '0.05em',
+              }}>
+                {artistName}
+              </p>
+            )}
+          </div>
+        </section>
 
-        {/* ── Hero image ──────────────────────────────────────────────── */}
+        {/* ── Full poster — no aspect crop. Image renders at its natural
+              ratio so portrait flyers + landscape photos both display in
+              full. The previous 16:9 box with objectFit:cover was clipping
+              all portrait posters. */}
         {imageUrl && (
           <div style={{
-            borderRadius: '14px', overflow: 'hidden',
-            marginBottom: '24px', aspectRatio: '16 / 9',
-            position: 'relative',
+            borderRadius: '8px', overflow: 'hidden',
+            marginBottom: '20px', position: 'relative',
+            background: t.surface,
           }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={imageUrl}
               alt={name}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              style={{ width: '100%', height: 'auto', display: 'block' }}
             />
             {isCanceled && (
               <div style={{
-                position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                position: 'absolute', inset: 0,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: 'rgba(0,0,0,0.6)',
               }}>
                 <span style={{
                   background: '#DC2626', color: '#FFFFFF',
-                  fontSize: '18px', fontWeight: 900, letterSpacing: '2px',
+                  fontSize: '18px', fontWeight: 800, letterSpacing: '0.1em',
                   padding: '10px 24px', borderRadius: '8px', textTransform: 'uppercase',
                 }}>
-                  CANCELED
+                  Canceled
                 </span>
               </div>
             )}
           </div>
         )}
 
-        {/* Cover charge */}
-        {event.cover != null && event.cover !== 'TBA' && !isCanceled && (
+        {/* ── Cover charge / tribute / genres — supplementary metadata ───── */}
+        {(event.cover != null && event.cover !== 'TBA' && !isCanceled) || isTribute || genres.length > 0 ? (
           <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: '4px',
-            background: '#2A2A3A', color: '#CCCCDD',
-            fontSize: '12px', fontWeight: 700,
-            padding: '5px 12px', borderRadius: '999px',
+            display: 'flex', flexWrap: 'wrap', gap: '6px',
             marginBottom: '16px',
           }}>
-            {event.cover === '0' || event.cover === 'Free' ? '🎵 Free Admission' : `💵 ${event.cover.startsWith('$') ? '' : '$'}${event.cover} Cover`}
-          </div>
-        )}
-
-        {/* Description */}
-        {desc && (
-          <p style={{
-            fontSize: '14px', color: '#AAAACC', lineHeight: 1.6,
-            margin: '0 0 20px',
-          }}>
-            {desc}
-          </p>
-        )}
-
-        {/* Genre tags */}
-        {(genres.length > 0 || isTribute) && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
+            {event.cover != null && event.cover !== 'TBA' && !isCanceled && (
+              <span style={{
+                fontSize: '11px', fontWeight: 700,
+                padding: '4px 10px', borderRadius: '999px',
+                background: t.surface, color: t.textMuted,
+                border: `1px solid ${t.border}`,
+              }}>
+                {event.cover === '0' || event.cover === 'Free'
+                  ? 'Free admission'
+                  : `${event.cover.toString().startsWith('$') ? '' : '$'}${event.cover} cover`}
+              </span>
+            )}
             {isTribute && (
               <span style={{
-                fontSize: '11px', fontWeight: 700, padding: '4px 10px',
-                borderRadius: '999px', background: '#2A1A2A', color: '#F0ABFC',
+                fontSize: '11px', fontWeight: 700,
+                padding: '4px 10px', borderRadius: '999px',
+                background: 'rgba(232,114,42,0.12)', color: t.accent,
+                border: `1px solid rgba(232,114,42,0.3)`,
               }}>
-                🎭 Tribute
+                Tribute
               </span>
             )}
             {genres.map(g => (
               <span key={g} style={{
-                fontSize: '11px', fontWeight: 600, padding: '4px 10px',
-                borderRadius: '999px', background: '#1E1E2E', color: '#9898B8',
+                fontSize: '11px', fontWeight: 600,
+                padding: '4px 10px', borderRadius: '999px',
+                background: t.surface, color: t.textMuted,
+                border: `1px solid ${t.border}`,
               }}>
                 {g}
               </span>
             ))}
           </div>
+        ) : null}
+
+        {/* ── Description ───────────────────────────────────────────────── */}
+        {desc && (
+          <p style={{
+            fontSize: '14px', color: t.textMuted, lineHeight: 1.6,
+            margin: '0 0 22px',
+          }}>
+            {desc}
+          </p>
         )}
 
-        {/* Action buttons */}
+        {/* ── Divider ───────────────────────────────────────────────────── */}
+        <div style={{ height: '1px', background: t.border, margin: '0 0 16px' }} />
+
+        {/* ── Action buttons: Save Show / Follow Artist / Venue ─────────── */}
         {!isCanceled && (
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
-            <button
-              onClick={handleSoftCTA}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                fontSize: '13px', fontWeight: 700,
-                padding: '10px 20px', borderRadius: '999px',
-                border: 'none', cursor: 'pointer',
-                background: '#3A3A4A', color: '#F0F0F5',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {/* Save Show — ticket-stub icon, neutral stroke (matches the
+                other two so the row reads as a balanced action set). */}
+            <button onClick={handleSoftCTA} style={actionBtnStyle}>
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none"
+                stroke={t.iconStroke} strokeWidth="1.75"
+                strokeLinecap="round" strokeLinejoin="round"
+              >
+                <g transform="rotate(-18 12 12)">
+                  <path d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z" />
+                  <line x1="8" y1="8.5" x2="8" y2="15.5" strokeDasharray="1.25 1.25" />
+                </g>
               </svg>
-              Save Show
+              <span style={{ fontSize: '12px', fontWeight: 600 }}>Save Show</span>
             </button>
 
-            <button
-              onClick={handleSoftCTA}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                fontSize: '13px', fontWeight: 700,
-                padding: '10px 20px', borderRadius: '999px',
-                border: 'none', cursor: 'pointer',
-                background: '#3A3A4A', color: '#F0F0F5',
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 5v14M5 12h14" />
+            {/* Follow Artist — person + plus, inline SVG (no equivalent icon
+                in Icons.js, and not worth adding for a single use). */}
+            <button onClick={handleSoftCTA} style={actionBtnStyle}>
+              <svg
+                width="20" height="20" viewBox="0 0 24 24" fill="none"
+                stroke={t.iconStroke} strokeWidth="1.75"
+                strokeLinecap="round" strokeLinejoin="round"
+              >
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 21v-1a6 6 0 0 1 12 0v1" />
+                <line x1="20" y1="9" x2="20" y2="15" />
+                <line x1="17" y1="12" x2="23" y2="12" />
               </svg>
-              Follow Artist
+              <span style={{ fontSize: '12px', fontWeight: 600 }}>Follow Artist</span>
             </button>
 
-            {sourceLink && (
+            {/* Venue — opens Google Maps for the venue. Uses the existing
+                `map` icon from Icons.js (location-pin shape). */}
+            {venue && (
               <a
-                href={sourceLink}
+                href={mapsUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => {
@@ -320,38 +423,41 @@ export default function EventPageClient({ event }) {
                     venue_name: venue,
                     artist_name: artistName,
                     event_id: event.id || '',
-                    source_url: sourceLink,
+                    source_url: sourceLink || mapsUrl,
                   });
                 }}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '6px',
-                  fontSize: '13px', fontWeight: 700,
-                  padding: '10px 16px', borderRadius: '8px',
-                  background: '#2A2A3A', color: '#AAAACC',
-                  textDecoration: 'none', border: 'none',
-                }}
+                style={actionBtnStyle}
               >
-                🌐 Venue
+                <svg
+                  width="20" height="20" viewBox="0 0 24 24" fill="none"
+                  stroke={t.iconStroke} strokeWidth="1.75"
+                  strokeLinecap="round" strokeLinejoin="round"
+                >
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+                <span style={{ fontSize: '12px', fontWeight: 600 }}>Venue</span>
               </a>
             )}
           </div>
         )}
 
-        {/* Soft inline signup hint (replaces blocking modal) */}
+        {/* ── Soft signup hint — appears under the actions when a guest
+              taps Save Show or Follow Artist. */}
         {showSignupHint && (
           <div style={{
+            marginTop: '16px',
             padding: '16px', borderRadius: '12px',
-            background: '#1E1E2C', border: '1px solid #2A2A3A',
-            marginBottom: '20px',
+            background: t.surface, border: `1px solid ${t.border}`,
           }}>
             <p style={{
-              fontSize: '14px', fontWeight: 700, color: '#F0F0F5',
+              fontSize: '14px', fontWeight: 700, color: t.text,
               margin: '0 0 4px',
             }}>
               Create a free account to save shows and follow artists.
             </p>
             <p style={{
-              fontSize: '12px', color: '#7878A0', margin: '0 0 12px',
+              fontSize: '12px', color: t.textDim, margin: '0 0 12px',
             }}>
               It takes 10 seconds with Google — no spam, ever.
             </p>
@@ -360,18 +466,19 @@ export default function EventPageClient({ event }) {
                 href="/?signup=true"
                 style={{
                   padding: '10px 24px', borderRadius: '999px',
-                  background: '#E8722A', color: '#1C1917',
+                  background: t.accent, color: '#FFFFFF',
                   textDecoration: 'none', fontWeight: 700, fontSize: '13px',
                 }}
               >
-                Sign Up Free
+                Sign up free
               </a>
               <button
                 onClick={() => setShowSignupHint(false)}
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#7878A0', fontSize: '12px', fontWeight: 500,
+                  color: t.textDim, fontSize: '12px', fontWeight: 500,
                   textDecoration: 'underline', textUnderlineOffset: '3px',
+                  fontFamily: "'DM Sans', sans-serif",
                 }}
               >
                 Dismiss
@@ -381,31 +488,36 @@ export default function EventPageClient({ event }) {
         )}
       </main>
 
-      {/* ── Sticky upsell banner (bottom) — hidden until auth resolves, hidden if logged in ── */}
+      {/* ── Sticky upsell banner — for non-logged-in users. Hidden until
+            auth state resolves so we don't flicker. */}
       {authReady && !isLoggedIn && (
         <div style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
-          background: 'linear-gradient(180deg, transparent 0%, #0D0D12 20%)',
+          background: `linear-gradient(180deg, transparent 0%, ${t.bg} 20%)`,
           padding: '32px 16px 24px',
+          pointerEvents: 'none',
         }}>
           <div style={{
             maxWidth: '560px', margin: '0 auto',
-            background: '#1E1E2C', borderRadius: '16px',
-            border: '1px solid #2A2A3A',
+            background: t.bannerBg, borderRadius: '16px',
+            border: `1px solid ${t.border}`,
             padding: '16px 20px',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             gap: '16px',
-            boxShadow: '0 -8px 32px rgba(0,0,0,0.6)',
+            boxShadow: darkMode
+              ? '0 -8px 32px rgba(0,0,0,0.6)'
+              : '0 -8px 32px rgba(0,0,0,0.08)',
+            pointerEvents: 'auto',
           }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{
-                fontSize: '14px', fontWeight: 700, color: '#F0F0F5',
+                fontSize: '14px', fontWeight: 700, color: t.text,
                 margin: '0 0 2px',
               }}>
                 Never miss a local jam.
               </p>
               <p style={{
-                fontSize: '12px', color: '#7878A0', margin: 0,
+                fontSize: '12px', color: t.textDim, margin: 0,
               }}>
                 Sign up to track bands and save shows.
               </p>
@@ -414,13 +526,12 @@ export default function EventPageClient({ event }) {
               href="/?signup=true"
               style={{
                 padding: '10px 20px', borderRadius: '999px',
-                background: '#E8722A', color: '#1C1917',
+                background: t.accent, color: '#FFFFFF',
                 textDecoration: 'none', fontWeight: 700, fontSize: '13px',
                 whiteSpace: 'nowrap', flexShrink: 0,
-                boxShadow: '0 2px 12px rgba(232,114,42,0.3)',
               }}
             >
-              Create Free Account
+              Create free account
             </a>
           </div>
         </div>
