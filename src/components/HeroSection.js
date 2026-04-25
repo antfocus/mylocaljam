@@ -385,9 +385,13 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
             const showMeetArtist = hasBio;
 
             // Meta row assembly — filter empty segments so separators don't dangle.
+            // Day + time get whiteSpace: nowrap so a long venue can't squeeze
+            // them into a line break (e.g. "7:30 PM" splitting to "7:30" / "PM").
+            // The wrapper around each segment (below) handles the flex-shrink
+            // distinction — venue is the only one allowed to shrink + truncate.
             const metaSegments = [
-              dayStr && <span key="d" style={{ fontWeight: 500 }}>{dayStr}</span>,
-              timeStr && <span key="t" style={{ color: '#FFFFFF', fontWeight: 600 }}>{timeStr}</span>,
+              dayStr && <span key="d" style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{dayStr}</span>,
+              timeStr && <span key="t" style={{ color: '#FFFFFF', fontWeight: 600, whiteSpace: 'nowrap' }}>{timeStr}</span>,
               venue && <span key="v" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{venue}</span>,
             ].filter(Boolean);
 
@@ -557,12 +561,25 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                       overflow: 'hidden',
                       textShadow: '0 1px 4px rgba(0,0,0,0.5)',
                     }}>
-                      {metaSegments.map((seg, idx) => (
-                        <span key={`seg-${idx}`} style={{ display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
-                          {idx > 0 && <span style={{ color: '#6B6B85', margin: '0 6px' }}>·</span>}
-                          {seg}
-                        </span>
-                      ))}
+                      {metaSegments.map((seg, idx) => {
+                        // Only the venue segment shrinks. Day + time wrappers
+                        // hold their intrinsic width (flexShrink: 0) so the
+                        // row's space pressure routes entirely to the venue,
+                        // which truncates with ellipsis instead of forcing a
+                        // line break in the time string.
+                        const isVenue = seg.key === 'v';
+                        return (
+                          <span key={`seg-${idx}`} style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            flexShrink: isVenue ? 1 : 0,
+                            minWidth: isVenue ? 0 : undefined,
+                          }}>
+                            {idx > 0 && <span style={{ color: '#6B6B85', margin: '0 6px' }}>·</span>}
+                            {seg}
+                          </span>
+                        );
+                      })}
                     </div>
 
                     {showMeetArtist && (
