@@ -63,13 +63,16 @@ export default async function Image() {
         >
           <div style={{ display: 'flex' }}>Your local</div>
           <div style={{ display: 'flex' }}>music source,</div>
-          {/* Trailing whitespace gets collapsed by Satori between flex children,
-              and `gap: '0.32em'` (my previous fix) broke the parent's column
-              layout entirely (all three lines stacked at the same Y). Use a
-              non-breaking space (U+00A0) baked into the first span — it's a
-              real character, not whitespace, so Satori can't collapse it. */}
+          {/* Don't rely on whitespace between spans — Satori eats trailing
+              spaces, and even non-breaking-space (U+00A0) baked into a string
+              gets stripped at element boundaries. `gap` on the parent broke
+              the column layout. The reliable separator is a `marginRight` on
+              the first span — it's a layout property, not a text character,
+              so Satori treats it as guaranteed space without affecting the
+              column-flex parent's vertical layout. 36px ≈ one word space at
+              this 124px font. */}
           <div style={{ display: 'flex' }}>
-            <span>{'all in one\u00A0'}</span>
+            <span style={{ marginRight: 36 }}>all in one</span>
             <span style={{ color: '#E8722A' }}>spot.</span>
           </div>
         </div>
