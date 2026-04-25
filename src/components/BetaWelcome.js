@@ -164,10 +164,20 @@ export default function BetaWelcome() {
           Thanks for being an early user and supporting the local music scene.
         </p>
 
-        {/* Territory paragraph removed — was "Currently serving Monmouth and
-            Ocean Counties..." Per Apr 25 redesign, the welcome is meant to be
-            short + scannable; the geographic scope is implicit in the search
-            results and isn't worth the vertical space here. */}
+        {/* ── Territory header — kept the headline but dropped the explanation.
+            "Currently serving Monmouth and Ocean Counties..." was removed
+            per Apr 25 redesign for vertical-space reasons; "Territory:
+            Jersey Shore" stays as a one-line scope statement. */}
+        <p style={{
+          margin: '0 0 22px',
+          fontSize: '16px',
+          fontWeight: 700,
+          fontFamily: font,
+          color: WHITE,
+          lineHeight: 1.4,
+        }}>
+          Territory: Jersey Shore
+        </p>
 
         {/* ── Quick Features header ── */}
         <h3 style={{
