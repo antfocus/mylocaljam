@@ -78,6 +78,11 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
   // Auto-rotate refs
   const autoTimer = useRef(null);
   const resumeTimer = useRef(null);
+  // Tracks the post-wrap snap-back. We render an extra clone of slide 0 at
+  // the end of the track so the forward wrap (last → first) can animate
+  // smoothly past the last slide; once the animation lands on the clone we
+  // invisibly reset translateX to 0 so the real slide 0 is on screen.
+  const wrapTimer = useRef(null);
 
   // Keep activeRef in sync
   useEffect(() => { activeRef.current = active; }, [active]);
@@ -94,16 +99,51 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
     // Wrap-around: accept any integer (incl. negative), fold into [0, n-1].
     const wrapped = ((idx % n) + n) % n;
     const prev = activeRef.current;
-    // When wrapping between the first and last slide the translateX delta spans the
-    // entire track — animating that produces a jarring fast-scroll through every slide.
-    // Cut instantly instead (circular-tape splice). Only a concern for n > 2; with just
-    // two slides the "wrap" is only one slide width of travel and animates fine.
-    const isWrap = n > 2 && (
-      (prev === n - 1 && wrapped === 0) ||
-      (prev === 0 && wrapped === n - 1)
-    );
-    const useSmooth = isWrap ? false : smooth;
+
+    // Cancel any pending wrap snap-back — every snapTo call decides the new
+    // resting transform from scratch, so a stale timeout firing later would
+    // overwrite it.
+    if (wrapTimer.current) {
+      clearTimeout(wrapTimer.current);
+      wrapTimer.current = null;
+    }
+
     const sw = getSlideWidth();
+    const isForwardWrap = n > 2 && prev === n - 1 && wrapped === 0;
+    const isBackwardWrap = n > 2 && prev === 0 && wrapped === n - 1;
+
+    // Forward wrap (last → first) — the case the user notices most because
+    // auto-rotate triggers it every cycle. We render a clone of slide 0 at
+    // position n; animate to that clone smoothly, then after the transition
+    // completes invisibly reset translateX to 0 so the real slide 0 lives on
+    // screen. End result: the user sees the same forward slide-in animation
+    // they get for every other transition.
+    if (isForwardWrap && smooth) {
+      const cloneTarget = -(n * sw);
+      setActive(wrapped);
+      activeRef.current = wrapped;
+      currentTranslate.current = cloneTarget;
+      prevTranslate.current = cloneTarget;
+      if (trackRef.current) {
+        trackRef.current.style.transition = 'transform 0.5s cubic-bezier(0.25, 1, 0.5, 1)';
+        trackRef.current.style.transform = `translateX(${cloneTarget}px)`;
+      }
+      wrapTimer.current = setTimeout(() => {
+        if (trackRef.current) {
+          trackRef.current.style.transition = 'none';
+          trackRef.current.style.transform = 'translateX(0px)';
+        }
+        currentTranslate.current = 0;
+        prevTranslate.current = 0;
+        wrapTimer.current = null;
+      }, 500);
+      return;
+    }
+
+    // Backward wrap (first → last) is rare (auto-rotate only goes forward;
+    // only a swipe-right past slide 0 hits this). Keep the existing instant
+    // cut here so the carousel doesn't fast-scroll back through every slide.
+    const useSmooth = isBackwardWrap ? false : smooth;
     const target = -(wrapped * sw);
     currentTranslate.current = target;
     prevTranslate.current = target;
@@ -136,6 +176,18 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
   const pauseAutoRotate = useCallback(() => {
     if (autoTimer.current) { clearInterval(autoTimer.current); autoTimer.current = null; }
     if (resumeTimer.current) { clearTimeout(resumeTimer.current); resumeTimer.current = null; }
+    // If a wrap is mid-animation, commit it immediately so the user starts
+    // their drag from the real slide 0 position rather than the clone.
+    if (wrapTimer.current) {
+      clearTimeout(wrapTimer.current);
+      wrapTimer.current = null;
+      if (trackRef.current) {
+        trackRef.current.style.transition = 'none';
+        trackRef.current.style.transform = 'translateX(0px)';
+      }
+      currentTranslate.current = 0;
+      prevTranslate.current = 0;
+    }
   }, []);
 
   const scheduleResume = useCallback(() => {
@@ -151,6 +203,7 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
     return () => {
       if (autoTimer.current) clearInterval(autoTimer.current);
       if (resumeTimer.current) clearTimeout(resumeTimer.current);
+      if (wrapTimer.current) clearTimeout(wrapTimer.current);
     };
   }, [canSwipe, startAutoRotate]);
 
@@ -264,6 +317,15 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
 
   // ── Bio Bottom Sheet — MOVED to ArtistSpotlight component (root level) ──
 
+  // Render the original slides plus a clone of slide 0 at the end so the
+  // forward wrap (last → first) can animate past the last slide before being
+  // invisibly reset to position 0. Skipped for n ≤ 2 (the "wrap" there is
+  // only a single slide width of travel and animates fine without clones)
+  // and for the skeleton placeholder (n === 1, no real data yet).
+  const slidesToRender = (canSwipe && featured.length > 2 && featured[0] !== SKELETON)
+    ? [...featured, featured[0]]
+    : featured;
+
   return (
     <div style={{
       position: 'relative', flexShrink: 0,
@@ -285,7 +347,10 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
             willChange: 'transform',
           }}
         >
-          {featured.map((ev, i) => {
+          {slidesToRender.map((ev, i) => {
+            // Effective slide index — the clone at position n maps back to the
+            // original slide 0 for any index-derived styling (gradients, etc.).
+            const effectiveIndex = featured.length ? (i % featured.length) : i;
             // Skeleton loading state — match 16/10 aspect so HeroPiston doesn't jump on hydration.
             if (ev === SKELETON) {
               return (
@@ -315,7 +380,7 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
             const timeStr = formatTimeFull(ev.start_time);
             const dayStr = formatDayOfWeek(ev.date);
             const realImage = ev.event_image || ev.artist_image || ev.image_url || ev.venues?.photo_url || null;
-            const brandedGradient = BRANDED_GRADIENTS[i % BRANDED_GRADIENTS.length];
+            const brandedGradient = BRANDED_GRADIENTS[effectiveIndex % BRANDED_GRADIENTS.length];
             const hasBio = !!(ev.description && ev.description.trim());
             const showMeetArtist = hasBio;
 
@@ -327,8 +392,12 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
             ].filter(Boolean);
 
             return (
+              // Index-based key — slidesToRender contains a clone of slide 0
+              // at the end, so ev.id collides between the original and the
+              // clone. The render order is fixed (no reorderings), so a plain
+              // index key is safe and avoids the duplicate-key warning.
               <div
-                key={ev.id || i}
+                key={`slide-${i}`}
                 onClick={() => { if (showMeetArtist && !didSwipe.current && onArtistTap) onArtistTap(ev); }}
                 style={{
                   width: '100%',
