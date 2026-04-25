@@ -1,15 +1,15 @@
 import { ImageResponse } from 'next/og';
 
 /**
- * Home OG image — diagnostic v3.
+ * Home OG image — link preview card for shared mylocaljam.com links.
  *
- * v1 (gradients + fonts) and v2 (no gradients, fonts only) both returned
- * 200 OK with 0-byte bodies on Vercel. Stripping fonts entirely now to
- * isolate whether the Google Fonts fetch is the culprit. ImageResponse
- * falls back to system sans-serif when no custom fonts are provided.
- *
- * If THIS still returns empty, something more fundamental is wrong with
- * the route on Vercel and we'll need to look at function logs directly.
+ * Wordmark top, tagline hero filling the rest. No custom fonts: the
+ * earlier attempt loaded Outfit + IBM Plex Mono via Google Fonts CSS2
+ * fetch, which silently failed on Vercel's edge runtime and produced
+ * empty 200-OK responses. System sans-serif renders cleanly here. If
+ * we want true brand typography on the card later, the fix is to
+ * bundle the woff2 binary into /public and read it via fs at edge,
+ * not fetch from Google.
  */
 
 export const runtime = 'edge';
@@ -27,30 +27,34 @@ export default async function Image() {
           background: '#13131C',
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'space-between',
-          padding: '64px 80px',
+          padding: '72px 80px',
           color: '#FFFFFF',
         }}
       >
+        {/* Wordmark */}
         <div
           style={{
             display: 'flex',
             fontSize: 56,
             fontWeight: 700,
+            marginBottom: 60,
           }}
         >
           <span>myLocal</span>
           <span style={{ color: '#E8722A' }}>Jam</span>
         </div>
 
+        {/* Tagline hero — fills remaining space */}
         <div
           style={{
             display: 'flex',
             flexDirection: 'column',
-            fontSize: 110,
+            fontSize: 124,
             fontWeight: 700,
             lineHeight: 0.95,
             textTransform: 'uppercase',
+            flex: 1,
+            justifyContent: 'center',
           }}
         >
           <div style={{ display: 'flex' }}>Your local</div>
@@ -59,18 +63,6 @@ export default async function Image() {
             <span>all in one </span>
             <span style={{ color: '#E8722A' }}>spot.</span>
           </div>
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            fontSize: 22,
-            fontWeight: 500,
-            letterSpacing: '0.18em',
-            color: 'rgba(255,255,255,0.72)',
-          }}
-        >
-          JERSEY SHORE · MYLOCALJAM.COM
         </div>
       </div>
     ),
