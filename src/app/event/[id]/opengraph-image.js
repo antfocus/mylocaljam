@@ -5,25 +5,25 @@ import { createClient } from '@supabase/supabase-js';
  * Per-event OG image — the link preview card iMessage / Twitter / etc. show
  * when someone shares /event/[id].
  *
- * Aspect history:
- *   v1 — declared a static `og:image` pointing at the raw poster URL.
- *        iMessage hard-cropped portrait flyers to a 1.91:1 banner, lopping
- *        off the top (artist name) and bottom (date/venue).
- *   v2 — switched to a dynamic 1200×630 dark canvas with the poster
- *        letterboxed via objectFit:contain. Fixed portrait flyers, but
- *        iMessage's *compact* preview crops to a square (~630×630 from
- *        the center of the 1200×630), which chopped the left and right
- *        off any landscape image (e.g. an artist photo at 1080×586).
- *   v3 (current) — 1200×1200 square canvas. iMessage's square crop now
- *        equals our whole frame, so nothing is cropped further.
- *        Platforms that force 1.91:1 (Twitter) crop the dark padding off
- *        first, leaving the image content (centered) intact. Verified
- *        locally with the og-preview Satori harness before deploying.
+ * The previous implementation declared a static `og:image` pointing at the
+ * event's raw poster URL. iMessage then hard-cropped that poster to the
+ * 1.91:1 banner aspect — so any portrait poster lost its top and bottom
+ * (every venue uses a portrait flyer; the matinée date you cared about
+ * was the first thing to disappear).
+ *
+ * This dynamic version renders a 1200×630 dark canvas at the edge and
+ * letterboxes the original poster inside it via maxWidth/maxHeight. The
+ * platforms get a 1.91:1 image they don't need to crop, and the user
+ * sees the full poster framed in brand-orange-on-dark.
+ *
+ * (We tried 1200×1200 to defeat iMessage's compact-preview square crop,
+ * but the extra dark padding looked worse in practice than the small
+ * side-crop, so we reverted.)
  */
 
 export const runtime = 'edge';
 export const alt = 'myLocalJam event';
-export const size = { width: 1200, height: 1200 };
+export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
 // Treat empty / sentinel values as missing so the waterfall keeps falling.
