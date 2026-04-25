@@ -63,19 +63,20 @@ export default async function Image() {
         >
           <div style={{ display: 'flex' }}>Your local</div>
           <div style={{ display: 'flex' }}>music source,</div>
-          {/* Fourth attempt at this stupid line. Every previous fix that
-              touched the third div's flex children — trailing space, NBSP,
-              gap on the parent, marginRight on the child — either lost the
-              word break OR collapsed the parent's column-flex height calc
-              and stacked all three lines at the same Y. Apparently any
-              modification to inter-flex-child layout in the third div
-              propagates upward and breaks the column.
-              Fix: wrap the entire line in a SINGLE outer span so the flex
-              div has exactly one child. The space between "one" and "spot."
-              now lives INSIDE a span as text content (not between flex
-              children), where Satori preserves whitespace correctly. */}
+          {/* The space between "one" and "spot." kept getting collapsed by
+              Satori. Every previous fix that touched the third div's flex
+              children — trailing space, NBSP, gap on the parent, marginRight
+              on the child — either lost the word break OR collapsed the
+              parent's column-flex height calc and stacked all three lines
+              at the same Y.
+              Fix: keep the line as a single outer span (so the flex div has
+              exactly one child and the column layout stays intact), and add
+              `whiteSpace: 'pre'` so Satori preserves the literal space
+              between "all in one " and the inline orange "spot." span.
+              Verified locally with the og-preview Satori harness before
+              deploying. */}
           <div style={{ display: 'flex' }}>
-            <span>
+            <span style={{ whiteSpace: 'pre' }}>
               all in one <span style={{ color: '#E8722A' }}>spot.</span>
             </span>
           </div>
