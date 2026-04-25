@@ -4,6 +4,25 @@ Living list of work that came up during sessions but was deliberately deferred. 
 
 ---
 
+## ⚡ Launch priority (Apr 25 reframe)
+
+User has decided the priority before launch is **data enrichment** — getting bios, images, and tags onto the artist roster. As of Apr 25:
+
+- 724 artists have upcoming events
+- 172 are completely bare (no bio, no image)
+- 219 are half-enriched (bio xor image)
+- 347 are fully enriched (48%)
+
+Auto-enrichment (LLM router → Perplexity-grounded research → MusicBrainz / Discogs / Last.fm waterfall) handles the easy cases but reliably struggles to find images for local / regional artists with no major-label web presence. **Manual image upload is the safety net we don't have yet** — that's why item #2 below is bumped from "later" to launch-blocking.
+
+**Suggested order of operations:**
+1. Run the existing automated backfill (`/api/admin/enrich-backfill`) against the 172 bare artists. Free passes, may fill ~30-50% of the gap automatically.
+2. Ship image curation Phase 1 (#2 below). Without manual upload, the long tail can't be closed before launch.
+3. Add a triage view in admin: "needs enrichment, sorted by next event date." Lets the admin work the worst gaps first.
+4. Run automated backfill again on what remains.
+
+---
+
 ## 1. Admin Venues management tab
 
 **Why parked:** Came up Friday Apr 25 while adding "Pagano's UVA Ristorante" — there's no admin UI for the `venues` table, so a missing venue means dropping into SQL. User explicitly deferred to Monday.
@@ -18,6 +37,7 @@ Living list of work that came up during sessions but was deliberately deferred. 
 **Scope creep to consider:**
 - Outdoor metadata: Outdoor / Patio / Rooftop / Dog Friendly tags surface in the existing shortcut pills, so a tag editor here would unblock "Dog Friendly" filter accuracy (currently broken — see CATEGORIES-HANDOFF.md)
 - Photo upload to Supabase Storage instead of pasting URLs
+- **Scraper-source assignment per venue.** Today, Wonder Bar (and probably others in the Asbury Park Boardwalk family) is being indirectly fed by the Ticketmaster API search rather than the venue's own calendar at `wonderbarasburypark.com/calendar/`. Result: only Ticketmaster-listed shows surface; smaller direct bookings are missed. The venue admin form should expose: which scraper key feeds this venue, the source URL, and an override flag if multiple scrapers should fan in. Also need a custom HTML scraper for the APB family (`.apb-event` markup is consistent across Wonder Bar, Asbury Lanes, etc. — one scraper covers the group).
 
 **Why it matters:** Closes the loop on the venue normalization fixes from this session — admins can correct mismatches and add missing venues without touching SQL.
 
@@ -29,9 +49,9 @@ Living list of work that came up during sessions but was deliberately deferred. 
 
 ---
 
-## 2. Image curation — Phase 1 (Supabase Storage for high-profile artists)
+## 2. Image curation — Phase 1 (Supabase Storage for high-profile artists) — ⚡ LAUNCH-BLOCKING
 
-**Why parked:** Discussed Friday Apr 25. Confirmed Supabase Storage is the right home (free tier 1GB; ~5,000 artist photos at typical compression). User wanted to ship deployment fixes first.
+**Why parked:** Originally deferred Apr 25 to ship deployment fixes first. Re-prioritized later that day after user named data enrichment the launch priority and confirmed automated tools struggle with images. This is now the highest-leverage manual fallback for closing the image gap on the 172 bare artists. Confirmed Supabase Storage is the right home (free tier 1GB; ~5,000 artist photos at typical compression).
 
 **Scope (Phase 1):**
 - Create `artist-photos/` bucket in Supabase Storage with public read + admin-only write (RLS)
