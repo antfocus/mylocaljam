@@ -4,22 +4,24 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const DARK = {
-  bg:       '#0D0D12',
-  surface:  '#1A1A24',
-  border:   '#2A2A3A',
-  text:     '#F0F0F5',
-  textMuted:'#7878A0',
-  accent:   '#E8722A',
-  inputBg:  '#22222E',
+  bg:        '#0D0D12',
+  surface:   '#13131C',
+  border:    'rgba(255,255,255,0.08)',
+  borderHi:  'rgba(255,255,255,0.14)',
+  text:      '#F0F0F5',
+  textMuted: '#9090A8',
+  accent:    '#E8722A',
+  inputBg:   'rgba(255,255,255,0.04)',
 };
 const LIGHT = {
-  bg:       '#F7F5F2',
-  surface:  '#FFFFFF',
-  border:   '#E5E7EB',
-  text:     '#1F2937',
-  textMuted:'#6B7280',
-  accent:   '#E8722A',
-  inputBg:  '#F3F4F6',
+  bg:        '#F7F5F2',
+  surface:   '#FFFFFF',
+  border:    'rgba(0,0,0,0.08)',
+  borderHi:  'rgba(0,0,0,0.14)',
+  text:      '#1A1A24',
+  textMuted: '#6B7280',
+  accent:    '#E8722A',
+  inputBg:   'rgba(0,0,0,0.03)',
 };
 
 /**
@@ -259,55 +261,88 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
     );
   }
 
+  // Title split for orange-accent treatment on the "verb" word — keeps the
+  // brand color present in the headline without overcoloring the whole line.
+  const headerParts = (() => {
+    switch (trigger) {
+      case 'save':    return ['Sign in to save', 'events'];
+      case 'submit':  return ['Sign in to', 'submit'];
+      case 'profile': return ['Welcome to', 'myLocalJam'];
+      default:        return ['Sign in to', 'continue'];
+    }
+  })();
+
   // ── Main auth view ─────────────────────────────────────────────────────────
   return (
     <>
       <div style={backdropStyle} onClick={handleClose} />
       <div style={sheetStyle}>
-        <div style={{ padding: '24px' }}>
-          {/* Drag handle */}
-          <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: t.border, margin: '0 auto 20px' }} />
+        <div style={{ padding: '24px 24px 20px' }}>
+          {/* Drag handle — single dismiss affordance. Tap-outside on the
+              backdrop also closes; X removed because it competed with the
+              handle for the same job. */}
+          <div style={{
+            width: '40px', height: '4px', borderRadius: '999px',
+            background: t.border, margin: '0 auto 24px',
+          }} />
 
-          {/* Close button */}
-          <button
-            onClick={handleClose}
-            aria-label="Close"
-            style={{
-              position: 'absolute', top: '16px', right: '16px',
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: '20px', color: t.textMuted, padding: '4px',
-            }}
-          >
-            ✕
-          </button>
+          {/* Brand wordmark */}
+          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+            <span style={{
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: '20px',
+              fontWeight: 700,
+              letterSpacing: '-0.025em',
+              lineHeight: 1,
+            }}>
+              <span style={{ color: t.text, fontWeight: 400 }}>my</span>
+              <span style={{ color: t.text }}>Local</span>
+              <span style={{ color: t.accent, fontStyle: 'italic' }}>Jam</span>
+            </span>
+          </div>
 
-          {/* Header */}
+          {/* Header — title in Outfit Black with orange accent on the verb,
+              subtitle in muted body text below. */}
           <div style={{ textAlign: 'center', marginBottom: '28px' }}>
             <h2 style={{
-              fontSize: '22px', fontWeight: 800, color: t.text, margin: '0 0 6px',
+              fontFamily: "'Outfit', sans-serif",
+              fontSize: '26px', fontWeight: 800, color: t.text,
+              margin: '0 0 8px',
+              lineHeight: 1.1,
+              letterSpacing: '-0.025em',
+            }}>
+              {headerParts[0]} <span style={{ color: t.accent }}>{headerParts[1]}</span>
+            </h2>
+            <p style={{
+              fontSize: '14px', color: t.textMuted,
+              margin: 0, lineHeight: 1.5,
               fontFamily: "'DM Sans', sans-serif",
             }}>
-              {headerText}
-            </h2>
-            <p style={{ fontSize: '14px', color: t.textMuted, margin: 0, lineHeight: 1.5 }}>
               {subtitleText}
             </p>
           </div>
 
-          {/* Google — primary sign-in */}
+          {/* Google — visual primary. White-bg pill stands out hardest on the
+              dark surface; this is the path most users take, so it should
+              read first. */}
           <button
             onClick={() => handleOAuth('google')}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-              width: '100%', padding: '16px', borderRadius: '12px',
+              width: '100%', padding: '15px', borderRadius: '12px',
               border: 'none', background: '#FFFFFF', color: '#1F2937',
-              fontSize: '16px', fontWeight: 700, cursor: 'pointer',
+              fontSize: '15px', fontWeight: 600, cursor: 'pointer',
               fontFamily: "'DM Sans', sans-serif",
-              boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-              transition: 'opacity 0.15s',
+              boxShadow: darkMode
+                ? '0 2px 12px rgba(0,0,0,0.4)'
+                : '0 1px 3px rgba(0,0,0,0.08)',
+              transition: 'opacity 0.15s, transform 0.1s',
             }}
+            onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.99)'; }}
+            onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
           >
-            <svg width="20" height="20" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
               <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
               <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
               <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
@@ -316,49 +351,66 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
             Continue with Google
           </button>
 
-          {/* Divider */}
+          {/* Divider — short "OR", not "OR USE EMAIL" (the email field beneath
+              makes that obvious). Hairline rules + tiny mono caps. */}
           <div style={{
-            display: 'flex', alignItems: 'center', gap: '12px', margin: '24px 0',
+            display: 'flex', alignItems: 'center', gap: '14px', margin: '20px 0',
           }}>
             <div style={{ flex: 1, height: '1px', background: t.border }} />
-            <span style={{ fontSize: '12px', color: t.textMuted, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              or use email
+            <span style={{
+              fontSize: '11px', color: t.textMuted, fontWeight: 600,
+              textTransform: 'uppercase', letterSpacing: '0.15em',
+              fontFamily: "'IBM Plex Mono', monospace",
+            }}>
+              or
             </span>
             <div style={{ flex: 1, height: '1px', background: t.border }} />
           </div>
 
-          {/* Magic Link */}
+          {/* Magic Link — secondary path. No "Email address" label (placeholder
+              does the job); orange button sits inside the same visual cluster
+              as the input so the two read as one unit. Smaller padding and
+              font than Google so it visually steps down. */}
           <form onSubmit={handleMagicLink}>
-            <label style={{
-              display: 'block', fontSize: '13px', fontWeight: 600, color: t.textMuted,
-              marginBottom: '6px', fontFamily: "'DM Sans', sans-serif",
-            }}>
-              Email address
-            </label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              onFocus={(e) => {
+                e.target.style.borderColor = t.accent;
+                e.target.style.boxShadow = `0 0 0 3px ${t.accent}33`;
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = t.border;
+                e.target.style.boxShadow = 'none';
+              }}
               placeholder="name@example.com"
               autoComplete="email"
               autoCapitalize="none"
-              style={inputStyle}
+              style={{
+                width: '100%', padding: '14px 16px', borderRadius: '12px',
+                border: `1px solid ${t.border}`, background: t.inputBg,
+                color: t.text, fontSize: '16px', // 16px prevents iOS zoom
+                fontFamily: "'DM Sans', sans-serif",
+                outline: 'none', boxSizing: 'border-box',
+                transition: 'border-color 0.15s, box-shadow 0.15s',
+              }}
             />
             <button
               type="submit"
               disabled={sending || !email.trim()}
               style={{
-                display: 'block', width: '100%', marginTop: '12px',
-                padding: '14px', borderRadius: '12px',
-                border: `1px solid ${t.border}`, background: 'transparent',
-                color: t.text,
-                fontSize: '15px', fontWeight: 600, cursor: sending ? 'wait' : 'pointer',
+                display: 'block', width: '100%', marginTop: '10px',
+                padding: '13px', borderRadius: '12px', border: 'none',
+                background: t.accent, color: '#FFFFFF',
+                fontSize: '14px', fontWeight: 700,
+                cursor: sending ? 'wait' : 'pointer',
                 fontFamily: "'DM Sans', sans-serif",
-                opacity: (!email.trim() || sending) ? 0.5 : 1,
+                opacity: (!email.trim() || sending) ? 0.45 : 1,
                 transition: 'opacity 0.15s',
               }}
             >
-              {sending ? 'Sending...' : 'Send Magic Link'}
+              {sending ? 'Sending…' : 'Send magic link'}
             </button>
           </form>
 
@@ -367,38 +419,43 @@ export default function AuthModal({ darkMode = true, onClose, trigger = null }) 
             <p style={{
               marginTop: '12px', fontSize: '13px', color: '#EF4444',
               textAlign: 'center', lineHeight: 1.4,
+              fontFamily: "'DM Sans', sans-serif",
             }}>
               {error}
             </p>
           )}
 
-          {/* Dismiss — honest label. Previously said "Continue as Guest (limited
-              access)" but there's no guest save layer yet, so that CTA was
-              lying: any action that required auth would immediately re-prompt.
-              Swap to a neutral "Not now" until guest mode is properly
-              implemented (tracked separately as Direction B). */}
-          <button
-            onClick={handleClose}
-            style={{
-              display: 'block', width: '100%', marginTop: '24px',
-              padding: '0', background: 'none', border: 'none',
-              color: t.textMuted, fontSize: '13px', fontWeight: 500,
-              cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
-              textDecoration: 'underline', textUnderlineOffset: '3px',
-              textAlign: 'center',
-              transition: 'opacity 0.15s',
-            }}
-          >
-            Not now
-          </button>
-
-          {/* Fine print */}
-          <p style={{
-            marginTop: '16px', fontSize: '11px', color: t.textMuted,
-            textAlign: 'center', lineHeight: 1.5, paddingBottom: '8px',
+          {/* Footer — Not now + legal collapsed into one tertiary cluster.
+              Both are small/muted; Not now is a tap target with an underline
+              affordance so it's clearly clickable, while the legal copy is
+              static text below. */}
+          <div style={{
+            marginTop: '22px', textAlign: 'center',
+            fontFamily: "'DM Sans', sans-serif",
           }}>
-            By continuing, you agree to our Terms of Service and Privacy Policy.
-          </p>
+            <button
+              onClick={handleClose}
+              style={{
+                background: 'none', border: 'none', padding: '6px 12px',
+                color: t.textMuted, fontSize: '13px', fontWeight: 600,
+                cursor: 'pointer',
+                textDecoration: 'underline', textUnderlineOffset: '3px',
+                fontFamily: "'DM Sans', sans-serif",
+              }}
+            >
+              Not now
+            </button>
+            <p style={{
+              marginTop: '10px', marginBottom: 0,
+              fontSize: '11px', color: t.textMuted,
+              lineHeight: 1.5,
+            }}>
+              By continuing, you agree to our{' '}
+              <a href="/terms" style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: '2px' }}>Terms</a>
+              {' '}and{' '}
+              <a href="/privacy" style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: '2px' }}>Privacy Policy</a>.
+            </p>
+          </div>
         </div>
       </div>
     </>
