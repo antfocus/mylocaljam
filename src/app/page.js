@@ -20,6 +20,7 @@ import SupportModal      from '@/components/SupportModal';
 import BetaWelcome       from '@/components/BetaWelcome';
 import ArtistSpotlight   from '@/components/ArtistSpotlight';
 import ModalWrapper      from '@/components/ui/ModalWrapper';
+import usePullToRefresh  from '@/hooks/usePullToRefresh';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 // Clean HTML entities that may have leaked through scrapers (e.g. &amp; → &)
@@ -1001,6 +1002,20 @@ export default function HomePage() {
     if (loadingMore || !hasMore) return;
     fetchEvents(currentPage + 1, true);
   }, [loadingMore, hasMore, currentPage, fetchEvents]);
+
+  // ── Pull-to-refresh on the home tab ────────────────────────────────────────
+  // Refetches the first page from scratch when the user pulls down at the top
+  // of the home scroll container. Doesn't clear filters — the date / category
+  // / search context is preserved so users can refresh "what's on Saturday"
+  // without losing their place. Returns a promise so the hook can keep the
+  // spinner visible until the network round-trip finishes.
+  const handlePullRefresh = useCallback(async () => {
+    setCurrentPage(1);
+    setHasMore(false);
+    await fetchEvents(1, false);
+  }, [fetchEvents]);
+  const { pull: ptrPull, refreshing: ptrRefreshing, threshold: ptrThreshold } =
+    usePullToRefresh(homeScrollRef, handlePullRefresh);
 
   // Keep a ref to the latest loadMore so the IntersectionObserver callback
   // never holds a stale closure (avoids "stuck scroll" when the sentinel
@@ -3372,7 +3387,52 @@ export default function HomePage() {
 
         {/* ── Event list (home tab) ─────────────────────────────────────── */}
         {activeTab === 'home' && (
-          <div ref={homeScrollRef} style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg, WebkitOverflowScrolling: 'touch' }}>
+          <div ref={homeScrollRef} style={{ flex: 1, overflowY: 'auto', paddingBottom: '80px', background: t.bg, WebkitOverflowScrolling: 'touch', position: 'relative' }}>
+            {/* ── Pull-to-refresh indicator ──────────────────────────────────
+                Floats over the top of the scroll container. Fades and
+                "fills" the circular progress arc as the user pulls; spins
+                indefinitely once refreshing starts. position:absolute keeps
+                the existing layout undisturbed — no content shift. */}
+            {(ptrPull > 0 || ptrRefreshing) && (
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: '50%',
+                transform: `translate(-50%, ${ptrRefreshing ? 16 : Math.min(ptrPull * 0.6, 64)}px)`,
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                background: t.surface || '#1A1A24',
+                border: `1px solid ${t.border}`,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 60,
+                pointerEvents: 'none',
+                opacity: ptrRefreshing ? 1 : Math.min(1, ptrPull / 30),
+                transition: ptrRefreshing ? 'transform 0.2s ease, opacity 0.2s ease' : 'opacity 0.15s ease',
+              }}>
+                <svg width="18" height="18" viewBox="0 0 24 24"
+                  style={{
+                    animation: ptrRefreshing ? 'mlj-ptr-spin 0.8s linear infinite' : 'none',
+                    transform: ptrRefreshing ? '' : `rotate(${(Math.min(ptrPull, ptrThreshold) / ptrThreshold) * 270}deg)`,
+                    transition: ptrRefreshing ? 'none' : 'transform 0.05s linear',
+                  }}>
+                  <circle cx="12" cy="12" r="9"
+                    fill="none" stroke="#E8722A" strokeWidth="2.5" strokeLinecap="round"
+                    strokeDasharray="56.5"
+                    strokeDashoffset={
+                      ptrRefreshing
+                        ? 14   // partial arc while spinning
+                        : 56.5 - Math.min(ptrPull / ptrThreshold, 1) * 56.5
+                    }
+                  />
+                </svg>
+              </div>
+            )}
+            <style>{`@keyframes mlj-ptr-spin { to { transform: rotate(360deg); } }`}</style>
+
             {/* ── Hero (inside scroll container) — IntersectionObserver drives collapse ── */}
             {/* HeroPiston uses a sentinel + sticky positioning. No scrollRef needed. */}
             {!hasActiveFilters && (
