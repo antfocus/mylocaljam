@@ -2349,15 +2349,11 @@ export default function HomePage() {
                       </div>
                     )}
                     </div>
-                    {/* Close X — inline with search bar */}
-                    <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
-                      background: 'none', border: 'none', cursor: 'pointer', padding: '6px',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      flexShrink: 0, borderRadius: '50%',
-                      transition: 'opacity 0.15s',
-                    }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={darkMode ? '#9898B0' : '#6B7280'} /></svg>
-                    </button>
+                    {/* Close button moved to the footer (alongside Reset + Search)
+                        so the user isn't presented with two visually-similar X
+                        icons stacked next to each other (the inner X clears the
+                        input; the old outer X closed the modal). All exit/apply
+                        affordances now sit in one footer row. */}
                   </div>
                 </div>
 
@@ -2889,7 +2885,11 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* Footer — Reset Filters (secondary) + Show events (primary) */}
+                {/* Footer — Reset (outline, hugs) + Search (primary, flex) + Close (text)
+                    All three action affordances sit on one row. The old top-right
+                    X collided visually with the input's clear-X; collapsing exit
+                    into the footer lets us keep just one close action and put it
+                    next to where the user is making decisions about filters. */}
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: '10px',
                   padding: '10px 12px', background: darkMode ? '#262636' : '#FFFFFF',
@@ -2915,14 +2915,32 @@ export default function HomePage() {
                     </svg>
                     Reset Filters
                   </button>
-                  {/* Show events — primary CTA, takes remaining space */}
+                  {/* Search — primary CTA, takes remaining space.
+                      Label is "Search" (not "Show N events") because the count
+                      was capped at PAGE_SIZE (20) and read as a hard total even
+                      when more matched. White text on orange — was dark text
+                      before and reading was rough.  */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                     flex: 1, padding: '10px 24px', borderRadius: '10px', border: 'none',
-                    background: t.accent, color: '#1C1917', cursor: 'pointer',
+                    background: t.accent, color: '#FFFFFF', cursor: 'pointer',
                     fontSize: '13px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
                     minHeight: '44px',
                   }}>
-                    Show {filteredEvents.length} events
+                    Search
+                  </button>
+                  {/* Close — text-only, hugs content. Replaces the top-right X
+                      so the user has exactly one exit affordance and it doesn't
+                      compete visually with the input's clear-X. */}
+                  <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '10px 8px',
+                    fontSize: '13px', fontWeight: 500,
+                    color: darkMode ? '#9090A8' : '#6B7280',
+                    fontFamily: "'DM Sans', sans-serif",
+                    whiteSpace: 'nowrap', flexShrink: 0,
+                    minHeight: '44px',
+                  }}>
+                    Close
                   </button>
                 </div>
               </div>
