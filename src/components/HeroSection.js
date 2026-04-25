@@ -380,24 +380,32 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                   background: 'radial-gradient(ellipse at 15% 100%, rgba(232,114,42,0.22) 0%, transparent 55%)',
                 }} />
 
-                {/* Corner sticker — orange, tilted, with pulsing dark dot */}
+                {/* Corner sticker — orange, tilted, with pulsing white dot.
+                    White text + subtle dark text-shadow for definition gives
+                    the badge clean readability against the orange (dark text
+                    was washing out at this small size). Outer orange box-
+                    shadow glow makes the badge itself look "spotlit" — the
+                    subtle halo ties the visual to the spotlight metaphor. */}
                 <div style={{
                   position: 'absolute', top: 14, right: 14, zIndex: 3,
-                  background: '#E8722A', color: '#13131C',
+                  background: '#E8722A', color: '#FFFFFF',
                   fontFamily: "'IBM Plex Mono', monospace",
-                  fontSize: 10, fontWeight: 600,
+                  fontSize: 11, fontWeight: 700,
                   letterSpacing: '0.18em',
-                  padding: '6px 10px', borderRadius: 3,
+                  padding: '7px 11px', borderRadius: 3,
                   transform: 'rotate(4deg)',
                   textTransform: 'uppercase',
                   lineHeight: 1,
-                  boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.35)',
+                  boxShadow:
+                    '0 0 20px rgba(232,114,42,0.5), ' +
+                    '0 2px 10px rgba(0,0,0,0.35)',
                 }}>
                   <span style={{
                     display: 'inline-block',
                     width: 6, height: 6, borderRadius: '50%',
-                    background: '#13131C',
-                    marginRight: 6,
+                    background: '#FFFFFF',
+                    marginRight: 7,
                     verticalAlign: '1px',
                     animation: 'spotlightPulse 2s ease-in-out infinite',
                   }} />
