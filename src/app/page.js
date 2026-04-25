@@ -2928,18 +2928,28 @@ export default function HomePage() {
                   }}>
                     Search
                   </button>
-                  {/* Close — text-only, hugs content. Replaces the top-right X
-                      so the user has exactly one exit affordance and it doesn't
-                      compete visually with the input's clear-X. */}
+                  {/* Close — matches the Reset Filters button (outlined, icon
+                      + label) so the row reads as three uniform buttons rather
+                      than two buttons + one text link. Replaces the top-right
+                      X — still the only exit affordance, just promoted to a
+                      first-class button. */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    padding: '10px 8px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                    padding: '10px 14px', borderRadius: '10px',
+                    background: darkMode ? 'transparent' : '#FFFFFF',
+                    border: `1px solid ${darkMode ? 'rgba(255,255,255,0.12)' : '#D1D5DB'}`,
+                    cursor: 'pointer',
                     fontSize: '13px', fontWeight: 500,
                     color: darkMode ? '#9090A8' : '#6B7280',
                     fontFamily: "'DM Sans', sans-serif",
+                    transition: 'background 0.15s ease',
                     whiteSpace: 'nowrap', flexShrink: 0,
                     minHeight: '44px',
                   }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
                     Close
                   </button>
                 </div>
