@@ -383,11 +383,20 @@ export default function AdminEventsTab({
                     setEventsStatusFilter(seg.key);
                     setSelectedEvents(new Set());
                     setEventsRecentlyAdded(false);
+                    // Flip default sort direction based on tab semantics:
+                    //  • upcoming/hidden → ASC (soonest first — natural reading)
+                    //  • past            → DESC (most recent first; also avoids
+                    //    silent truncation when there are >1000 past events
+                    //    because Supabase caps row responses and the most-
+                    //    recent rows would drop off an ASC sort, hiding them
+                    //    from the client-side search filter).
+                    const nextOrder = seg.key === 'past' ? 'desc' : 'asc';
+                    setEventsSortOrder(nextOrder);
                     if (seg.key === 'festivals') {
                       if (fetchFestivalNames) fetchFestivalNames();
                     } else {
                       setEvents([]);
-                      fetchEvents(1, eventsSortField, eventsSortOrder, seg.key, eventsMissingTime, false);
+                      fetchEvents(1, eventsSortField, nextOrder, seg.key, eventsMissingTime, false);
                     }
                   }}
                   style={{
