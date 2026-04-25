@@ -2,31 +2,34 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import Badge from '@/components/ui/Badge';
+// Badge import removed with the recent-submissions list (Apr 25 redesign).
 
+// Palette aligned with AuthModal's recent refresh: translucent borders +
+// inputs, richer surface, cleaner muted-text scale. Keeps the modal feeling
+// part of the rest of the app instead of a generic system white box.
 const DARK = {
-  bg:       '#0D0D12',
-  surface:  '#1A1A24',
-  surfaceAlt:'#22222E',
-  border:   '#2A2A3A',
-  text:     '#F0F0F5',
-  textMuted:'#7878A0',
-  textSubtle:'#4A4A6A',
-  accent:   '#E8722A',
-  accentAlt:'#3AADA0',
-  inputBg:  '#22222E',
+  bg:        '#0D0D12',
+  surface:   '#13131C',
+  surfaceAlt:'rgba(255,255,255,0.04)',
+  border:    'rgba(255,255,255,0.08)',
+  text:      '#F0F0F5',
+  textMuted: '#9090A8',
+  textSubtle:'#6B6B85',
+  accent:    '#E8722A',
+  accentAlt: '#3AADA0',
+  inputBg:   'rgba(255,255,255,0.04)',
 };
 const LIGHT = {
-  bg:       '#F7F5F2',
-  surface:  '#FFFFFF',
-  surfaceAlt:'#F9FAFB',
-  border:   '#E5E7EB',
-  text:     '#1F2937',
-  textMuted:'#6B7280',
+  bg:        '#F7F5F2',
+  surface:   '#FFFFFF',
+  surfaceAlt:'rgba(0,0,0,0.03)',
+  border:    'rgba(0,0,0,0.08)',
+  text:      '#1A1A24',
+  textMuted: '#6B7280',
   textSubtle:'#9CA3AF',
-  accent:   '#E8722A',
-  accentAlt:'#3AADA0',
-  inputBg:  '#F3F4F6',
+  accent:    '#E8722A',
+  accentAlt: '#3AADA0',
+  inputBg:   'rgba(0,0,0,0.03)',
 };
 
 // ── Drag-and-Drop overlay helper ─────────────────────────────────────────────
@@ -262,7 +265,11 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                 &#8592;
               </button>
             )}
-            <h2 style={{ fontSize: '20px', fontWeight: 800, color: t.text, fontFamily: "'DM Sans', sans-serif", margin: 0 }}>
+            <h2 style={{
+              fontSize: '24px', fontWeight: 800, color: t.text,
+              fontFamily: "'Outfit', sans-serif", margin: 0,
+              letterSpacing: '-0.02em',
+            }}>
               {view === 'cards' ? 'Add to the Jar' : view === 'poster' ? 'Submit a Gig Poster' : 'Create Manually'}
             </h2>
           </div>
@@ -278,8 +285,8 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
 
         {view === 'cards' && (
           <p style={{
-            fontSize: '13px', color: t.textMuted, lineHeight: 1.5,
-            fontFamily: "'DM Sans', sans-serif", margin: '0 20px 16px',
+            fontSize: '15px', color: t.textMuted, lineHeight: 1.5,
+            fontFamily: "'DM Sans', sans-serif", margin: '0 20px 18px',
           }}>
             Know about a gig we missed? Drop it in the jar and we&apos;ll get it on the live feed.
           </p>
@@ -331,18 +338,18 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                 }}>
                   &#128247;
                 </div>
-                <span style={{ fontSize: '17px', fontWeight: 800, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
+                <span style={{ fontSize: '19px', fontWeight: 800, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
                   Submit a Gig Poster
                 </span>
-                <span style={{ fontSize: '13px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif", textAlign: 'center' }}>
+                <span style={{ fontSize: '14px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif", textAlign: 'center', lineHeight: 1.5 }}>
                   Drag &amp; drop a flyer, or tap to choose from your library.{'\n'}Our AI reads it automatically.
                 </span>
                 <span style={{
                   display: 'inline-flex', alignItems: 'center', gap: '4px',
-                  marginTop: '4px', padding: '4px 12px', borderRadius: '20px',
+                  marginTop: '6px', padding: '5px 13px', borderRadius: '20px',
                   background: darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.1)',
-                  fontSize: '11px', fontWeight: 700, color: t.accent,
-                  fontFamily: "'DM Sans', sans-serif", textTransform: 'uppercase', letterSpacing: '0.5px',
+                  fontSize: '12px', fontWeight: 700, color: t.accent,
+                  fontFamily: "'DM Sans', sans-serif", textTransform: 'uppercase', letterSpacing: '0.6px',
                 }}>
                   &#9889; Fastest way
                 </span>
@@ -372,86 +379,49 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
                   &#9998;
                 </div>
                 <div style={{ flex: 1 }}>
-                  <span style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
+                  <span style={{ display: 'block', fontSize: '16px', fontWeight: 700, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
                     Create Manually
                   </span>
-                  <span style={{ display: 'block', fontSize: '12px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif", marginTop: '2px' }}>
+                  <span style={{ display: 'block', fontSize: '14px', color: t.textMuted, fontFamily: "'DM Sans', sans-serif", marginTop: '3px' }}>
                     Enter artist, venue &amp; date by hand
                   </span>
                 </div>
                 <span style={{ color: t.textSubtle, fontSize: '18px' }}>&#8250;</span>
               </button>
 
-              {/* ── Recent Submissions History ─────────────────────────── */}
-              {(history.length > 0 || historyLoading) && (
-                <div style={{ marginTop: '24px' }}>
-                  <p style={{
-                    fontSize: '12px', fontWeight: 700, color: t.textMuted,
-                    textTransform: 'uppercase', letterSpacing: '0.6px',
-                    fontFamily: "'DM Sans', sans-serif", margin: '0 0 8px',
-                  }}>
-                    Your Recent Submissions
-                  </p>
-                  {historyLoading ? (
-                    <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                      <span style={{ fontSize: '12px', color: t.textSubtle, fontFamily: "'DM Sans', sans-serif" }}>Loading...</span>
-                    </div>
-                  ) : (
-                    <div style={{
-                      borderRadius: '12px', overflow: 'hidden',
-                      border: `1px solid ${t.border}`,
-                    }}>
-                      {history.map((sub, i) => (
-                        <div
-                          key={sub.id}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '10px',
-                            padding: '10px 14px',
-                            borderBottom: i < history.length - 1 ? `1px solid ${t.border}` : 'none',
-                            background: t.surfaceAlt,
-                          }}
-                        >
-                          {/* Thumbnail or icon */}
-                          <div style={{
-                            width: '32px', height: '32px', borderRadius: '6px', flexShrink: 0,
-                            background: sub.image_url ? 'none' : (darkMode ? '#2A2A3A' : '#E5E7EB'),
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            overflow: 'hidden', fontSize: '14px',
-                          }}>
-                            {sub.image_url
-                              ? <img src={sub.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              : '&#9834;'
-                            }
-                          </div>
-                          {/* Info */}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <span style={{
-                              display: 'block', fontSize: '12px', fontWeight: 600, color: t.text,
-                              fontFamily: "'DM Sans', sans-serif",
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            }}>
-                              {sub.artist_name || 'Flyer Upload'}
-                            </span>
-                            <span style={{ fontSize: '10px', color: t.textSubtle, fontFamily: "'DM Sans', sans-serif" }}>
-                              {new Date(sub.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                              {sub.venue_name ? ` \u00b7 ${sub.venue_name}` : ''}
-                            </span>
-                          </div>
-                          {(() => { const c = STATUS_CONFIGS[sub.status] || STATUS_CONFIGS.pending; return <Badge label={c.label} size="sm" bg={c.bg} color={c.color} />; })()}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Footer */}
+              {/* Footer — review note + small "View past submissions" link
+                  shown only when the user actually has past submissions to
+                  view. The inline list of recent submissions was removed
+                  here on Apr 25: it's history-mode info inside an action-
+                  mode moment, eating half the modal for limited value.
+                  Past submissions belong in Profile in a follow-up; for
+                  now this link routes to /profile so the path is at least
+                  hinted, and the user can find their submissions there
+                  once that view is built. */}
               <p style={{
-                fontSize: '12px', color: t.textSubtle, textAlign: 'center',
-                fontFamily: "'DM Sans', sans-serif", marginTop: '20px', lineHeight: 1.5,
+                fontSize: '13px', color: t.textSubtle, textAlign: 'center',
+                fontFamily: "'DM Sans', sans-serif",
+                marginTop: '24px', marginBottom: history.length > 0 ? '8px' : '0',
+                lineHeight: 1.5,
               }}>
                 Submissions are reviewed before going live.
               </p>
+              {history.length > 0 && (
+                <div style={{ textAlign: 'center', marginBottom: '4px' }}>
+                  <a
+                    href="/profile"
+                    onClick={handleClose}
+                    style={{
+                      fontSize: '13px', fontWeight: 600,
+                      color: t.textMuted,
+                      fontFamily: "'DM Sans', sans-serif",
+                      textDecoration: 'underline', textUnderlineOffset: '3px',
+                    }}
+                  >
+                    View past submissions →
+                  </a>
+                </div>
+              )}
               <div style={{ height: '24px' }} />
             </>
           )}
