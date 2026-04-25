@@ -221,7 +221,10 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
           }}
           style={{
-            display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 12px 12px 14px', cursor: 'pointer',
+            // Bumped vertical padding 12→14 and inter-column gap 12→14 to give
+            // the larger artist text room to breathe without crowding the
+            // time column or save button.
+            display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 14px 14px 14px', cursor: 'pointer',
             background: pressed ? (darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(232,114,42,0.06)') : 'transparent',
             transition: 'background 0.15s ease',
           }}
@@ -273,11 +276,15 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             })()}
           </div>
 
-          {/* Event name + venue stacked */}
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          {/* Event name + venue stacked.
+              Sizes bumped per readability feedback — at arms-length phone
+              reading the previous 15/13 felt too small. New: artist 17,
+              venue 14, subtitle 13. Inter-row gap 3→4 so the larger lines
+              don't kiss. */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <span style={{
               fontFamily: "'Outfit', sans-serif",
-              fontSize: '15px', fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.2,
+              fontSize: '17px', fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.2,
               color: textPrimary,
               textDecoration: isCanceled ? 'line-through' : 'none',
               ...(expanded
@@ -290,7 +297,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             {showArtistSubtitle && (
               <span style={{
                 fontFamily: "'DM Sans', sans-serif",
-                fontSize: '12px', fontWeight: 500,
+                fontSize: '13px', fontWeight: 500,
                 color: darkMode ? '#C0C0D0' : '#6B7280',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
@@ -300,7 +307,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             {venue && (
               <span style={{
                 fontFamily: "'DM Sans', sans-serif",
-                fontSize: '13px', fontWeight: 400,
+                fontSize: '14px', fontWeight: 400,
                 color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.58)',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
