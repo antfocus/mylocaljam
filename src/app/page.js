@@ -314,6 +314,11 @@ export default function HomePage() {
   // so a series like "Sea Hear Now 2026" surfaces year-round, even when its
   // child events aren't in the currently-loaded home feed window.
   const [eventSeries, setEventSeries] = useState([]);
+  // Venue facets — server-aggregated list of venues that have at least one
+  // upcoming event, with the true upcoming-event count per venue. Loaded
+  // once on mount so the venue dropdown doesn't depend on whichever 20
+  // events happen to be on the current page of the feed.
+  const [venueFacets, setVenueFacets] = useState([]);
   // ── Auth state ────────────────────────────────────────────────────────────
   const [user, setUser] = useState(null);                          // Supabase user object
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -1119,6 +1124,45 @@ export default function HomePage() {
     })();
   }, []);
 
+  // ── Fetch venue facets for the venue dropdown ─────────────────────────────
+  // Pulls every upcoming event's venue_name and groups on the client so the
+  // dropdown lists *every* venue with at least one upcoming event — not just
+  // venues whose events landed on the first page of the feed (which is what
+  // the previous events-derived list did, hiding ~half the catalog when the
+  // feed paginates).
+  // .range(0, 9999) overrides Supabase's default 1000-row cap. Payload is
+  // small (just venue_name per row), and we only do this once on mount.
+  useEffect(() => {
+    (async () => {
+      try {
+        const todayIso = new Date().toISOString();
+        const { data, error } = await supabase
+          .from('events')
+          .select('venue_name')
+          .gte('event_date', todayIso)
+          .not('venue_name', 'is', null)
+          .neq('venue_name', '')
+          .range(0, 9999);
+        if (error) {
+          console.error('Error fetching venue facets:', error);
+          return;
+        }
+        const counts = {};
+        for (const row of data || []) {
+          const name = row.venue_name?.trim();
+          if (!name) continue;
+          counts[name] = (counts[name] || 0) + 1;
+        }
+        const facets = Object.entries(counts)
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        setVenueFacets(facets);
+      } catch (err) {
+        console.error('Failed to load venue facets:', err);
+      }
+    })();
+  }, []);
+
   // ── Supabase Auth listener ─────────────────────────────────────────────────
   useEffect(() => {
     // Check current session on mount — identify existing users silently
@@ -1759,6 +1803,12 @@ export default function HomePage() {
 
   // Venue list with event counts (for venue filter)
   const venueListWithCounts = useMemo(() => {
+    // Prefer the server-aggregated venueFacets — every venue with at least
+    // one upcoming event, with accurate counts that don't depend on which
+    // page of the feed is loaded. Fall back to the local events array for
+    // the brief moment between mount and facets fetch returning, so the
+    // dropdown isn't empty if a user opens it instantly.
+    if (venueFacets.length > 0) return venueFacets;
     const map = {};
     events.forEach(e => {
       if (e.venue) map[e.venue] = (map[e.venue] || 0) + 1;
@@ -1766,7 +1816,7 @@ export default function HomePage() {
     return Object.entries(map)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [events]);
+  }, [venueFacets, events]);
 
   function normalizeVenue(s) {
     return (s ?? '').toLowerCase()
