@@ -3,12 +3,17 @@ import { ImageResponse } from 'next/og';
 /**
  * Home OG image — link preview card for shared mylocaljam.com links.
  *
- * Uses Outfit 900 (the brand display face) loaded from jsdelivr's
- * @fontsource mirror. Earlier attempt loaded fonts via the Google
- * Fonts CSS2 API and silently failed on Vercel's edge runtime —
- * fetching the woff2 binary directly avoids the CSS-parsing layer
- * that was breaking. jsdelivr is on Vercel's egress allowlist and
- * the file is ~13KB so the fetch is near-instant at request time.
+ * Uses system sans-serif rather than Outfit. We tried two approaches to
+ * loading custom fonts in this edge route — fetching from Google Fonts
+ * CSS2 and fetching woff2 directly from jsdelivr — and both produced
+ * empty 200-OK responses. Vercel's edge runtime appears to be blocking
+ * or timing out outbound asset fetches in this function. The fix-it-
+ * later path is to bundle the Outfit woff2 file inside the repo and
+ * reference it via `new URL('./...', import.meta.url)` so Next.js
+ * inlines the asset at build time and the function never has to make
+ * an outbound fetch. Until then, system sans is acceptable — the card
+ * renders, the design hierarchy is clear, and the brand color signals
+ * the rest.
  */
 
 export const runtime = 'edge';
@@ -16,15 +21,7 @@ export const alt = 'myLocalJam — Your local music source, all in one spot.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
-const OUTFIT_900_URL =
-  'https://cdn.jsdelivr.net/npm/@fontsource/outfit@5.2.6/files/outfit-latin-900-normal.woff2';
-
 export default async function Image() {
-  const outfit900 = await fetch(OUTFIT_900_URL).then((r) => {
-    if (!r.ok) throw new Error(`Font fetch failed: ${r.status}`);
-    return r.arrayBuffer();
-  });
-
   return new ImageResponse(
     (
       <div
@@ -42,10 +39,8 @@ export default async function Image() {
         <div
           style={{
             display: 'flex',
-            fontFamily: 'Outfit',
-            fontWeight: 900,
             fontSize: 56,
-            letterSpacing: '-0.035em',
+            fontWeight: 700,
             marginBottom: 60,
           }}
         >
@@ -58,11 +53,9 @@ export default async function Image() {
           style={{
             display: 'flex',
             flexDirection: 'column',
-            fontFamily: 'Outfit',
-            fontWeight: 900,
-            fontSize: 130,
+            fontSize: 124,
+            fontWeight: 700,
             lineHeight: 0.95,
-            letterSpacing: '-0.035em',
             textTransform: 'uppercase',
             flex: 1,
             justifyContent: 'center',
@@ -77,11 +70,6 @@ export default async function Image() {
         </div>
       </div>
     ),
-    {
-      ...size,
-      fonts: [
-        { name: 'Outfit', data: outfit900, weight: 900, style: 'normal' },
-      ],
-    },
+    { ...size },
   );
 }
