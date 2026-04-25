@@ -310,6 +310,10 @@ export default function HomePage() {
   const [artistSearch, setArtistSearch] = useState('');            // artist filter text
   const [activeShortcut, setActiveShortcut] = useState(null);     // shortcut pill key
   const [dbPills, setDbPills] = useState([]);                     // dynamic pills from Supabase
+  // Event-series rows loaded once on mount. Used by the search autocomplete
+  // so a series like "Sea Hear Now 2026" surfaces year-round, even when its
+  // child events aren't in the currently-loaded home feed window.
+  const [eventSeries, setEventSeries] = useState([]);
   // ── Auth state ────────────────────────────────────────────────────────────
   const [user, setUser] = useState(null);                          // Supabase user object
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -470,7 +474,10 @@ export default function HomePage() {
   //     without it, the dropdown stays empty for most searches.
   const autoCompleteSuggestions = useMemo(() => {
     const rawQ = (debouncedSearch ?? '').trim().toLowerCase();
-    if (!rawQ || rawQ.length < 2 || !events.length) return [];
+    // No events.length check: series suggestions are sourced from the
+    // independent eventSeries array, so we should still surface "Sea Hear
+    // Now 2026" even when the events feed hasn't loaded yet.
+    if (!rawQ || rawQ.length < 2) return [];
     const q = normalizeVenue(debouncedSearch);
 
     // Keyword → display-label map. Order matters: first match wins, so put
@@ -567,8 +574,32 @@ export default function HomePage() {
       }
     }
 
+    // Event-series matches — sourced from the eventSeries array (loaded once
+    // on mount), NOT from the events feed. Critical for series whose child
+    // events live outside today's loaded window: Sea Hear Now in September
+    // would otherwise be invisible in autocomplete in April.
+    const seriesMatches = [];
+    for (const s of eventSeries) {
+      const name = (s.name || '').trim();
+      if (!name) continue;
+      if (name.toLowerCase().includes(q)) {
+        // Festival category gets the dedicated 'festival' icon/color the
+        // dropdown already styles; other categories (concert_series, parade,
+        // other) share a generic 'series' type that falls through to the
+        // default calendar icon.
+        const type = s.category === 'festival' ? 'festival' : 'series';
+        seriesMatches.push({ type, label: name });
+      }
+    }
+
     const results = [];
-    // Event-type matches first (most specific), then venues, then artists.
+    // Series matches first — they're named entities the user is most likely
+    // looking for when typing a multi-word query like "sea hear now".
+    for (const entry of seriesMatches) {
+      if (results.length >= 6) break;
+      results.push(entry);
+    }
+    // Event-type matches next (most specific), then venues, then artists.
     for (const [, entry] of eventSet) {
       if (results.length >= 6) break;
       results.push({ type: entry.label, label: entry.display });
@@ -582,7 +613,7 @@ export default function HomePage() {
       results.push({ type: 'artist', label: display });
     }
     return results;
-  }, [debouncedSearch, events]);
+  }, [debouncedSearch, events, eventSeries]);
 
   // ── Notifications preference ─────────────────────────────────────────────────
   const [notifEnabled, setNotifEnabled] = useState(() => {
@@ -1065,6 +1096,25 @@ export default function HomePage() {
         setDbPills(filtered);
       } catch (err) {
         console.error('Error fetching pills:', err);
+      }
+    })();
+  }, []);
+
+  // ── Fetch event_series for autocomplete ───────────────────────────────────
+  // Tiny payload (name + category) and rarely changes, so we load it once on
+  // mount and feed it into autoCompleteSuggestions. This decouples series
+  // visibility from the home feed's date window — Sea Hear Now in September
+  // can be searched in April.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('event_series')
+          .select('id, name, category')
+          .eq('status', 'published');
+        if (data) setEventSeries(data);
+      } catch (err) {
+        console.error('Error fetching event_series:', err);
       }
     })();
   }, []);
