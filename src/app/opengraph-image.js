@@ -63,17 +63,21 @@ export default async function Image() {
         >
           <div style={{ display: 'flex' }}>Your local</div>
           <div style={{ display: 'flex' }}>music source,</div>
-          {/* Don't rely on whitespace between spans — Satori eats trailing
-              spaces, and even non-breaking-space (U+00A0) baked into a string
-              gets stripped at element boundaries. `gap` on the parent broke
-              the column layout. The reliable separator is a `marginRight` on
-              the first span — it's a layout property, not a text character,
-              so Satori treats it as guaranteed space without affecting the
-              column-flex parent's vertical layout. 36px ≈ one word space at
-              this 124px font. */}
+          {/* Fourth attempt at this stupid line. Every previous fix that
+              touched the third div's flex children — trailing space, NBSP,
+              gap on the parent, marginRight on the child — either lost the
+              word break OR collapsed the parent's column-flex height calc
+              and stacked all three lines at the same Y. Apparently any
+              modification to inter-flex-child layout in the third div
+              propagates upward and breaks the column.
+              Fix: wrap the entire line in a SINGLE outer span so the flex
+              div has exactly one child. The space between "one" and "spot."
+              now lives INSIDE a span as text content (not between flex
+              children), where Satori preserves whitespace correctly. */}
           <div style={{ display: 'flex' }}>
-            <span style={{ marginRight: 36 }}>all in one</span>
-            <span style={{ color: '#E8722A' }}>spot.</span>
+            <span>
+              all in one <span style={{ color: '#E8722A' }}>spot.</span>
+            </span>
           </div>
         </div>
       </div>
