@@ -87,7 +87,13 @@ Respond with ONLY the JSON object — no markdown, no code fences, no preamble.`
     if (!res.ok) {
       const errText = await res.text();
       console.error('[AI Enhance] Perplexity error:', res.status, errText.slice(0, 300));
-      return NextResponse.json({ error: 'AI service error' }, { status: 502 });
+      // Admin-only endpoint, so surface the actual upstream error to the
+      // client. Without this the front-end alert just says "AI service
+      // error" and there's no way to tell auth/rate-limit/billing/model
+      // problems apart without digging into Vercel function logs.
+      return NextResponse.json({
+        error: `AI service error (${res.status}): ${errText.slice(0, 300)}`,
+      }, { status: 502 });
     }
 
     const data = await res.json();
