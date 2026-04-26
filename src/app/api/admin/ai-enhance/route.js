@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { callLLMWebGrounded } from '@/lib/llmRouter';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -21,10 +22,11 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Artist name is required' }, { status: 400 });
   }
 
-  const apiKey = process.env.PERPLEXITY_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: 'Perplexity API key not configured' }, { status: 500 });
-  }
+  // No more direct Perplexity fetch — the LLM router (callLLMWebGrounded)
+  // handles provider selection + failover (Perplexity → Gemini → Grok). When
+  // Perplexity returns insufficient_quota or rate-limits, the router
+  // continues down the route automatically. As long as ONE provider's API
+  // key is set, this endpoint stays alive.
 
   // Build context for the prompt
   const dateStr = event_date
@@ -67,64 +69,33 @@ ${current_description ? `Current description to improve: ${current_description}`
 Respond with ONLY the JSON object — no markdown, no code fences, no preamble.`;
 
   try {
-    const res = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'sonar',
-        messages: [
-          { role: 'system', content: 'You are a metadata enrichment API for a local live music discovery app. Always respond with valid JSON only. No markdown formatting.' },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 400,
-        temperature: 0.3,
-      }),
-    });
+    const systemPrompt = 'You are a metadata enrichment API for a local live music discovery app. Always respond with valid JSON only. No markdown formatting.';
+    // Web-grounded routing → Perplexity first (fresh web context for bios),
+    // Gemini second, Grok third. Returns parsed JSON or null if every
+    // provider failed.
+    const parsed = await callLLMWebGrounded(systemPrompt, prompt);
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error('[AI Enhance] Perplexity error:', res.status, errText.slice(0, 300));
-      // Admin-only endpoint, so surface the actual upstream error to the
-      // client. Without this the front-end alert just says "AI service
-      // error" and there's no way to tell auth/rate-limit/billing/model
-      // problems apart without digging into Vercel function logs.
+    if (!parsed) {
+      // All providers exhausted — quota, key, or transient. Vercel logs
+      // already capture the per-provider failure reasons via the router's
+      // own [LLMRouter] console.error lines.
       return NextResponse.json({
-        error: `AI service error (${res.status}): ${errText.slice(0, 300)}`,
+        error: 'AI service unavailable — all providers failed (check Vercel logs for per-provider details)',
       }, { status: 502 });
     }
 
-    const data = await res.json();
-    const raw = data.choices?.[0]?.message?.content?.trim() || '';
-
-    if (!raw) {
-      return NextResponse.json({ error: 'No content generated' }, { status: 500 });
-    }
-
-    // Parse structured JSON — strip markdown fences if the model wraps them
-    let parsed;
-    try {
-      const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-      parsed = JSON.parse(cleaned);
-    } catch {
-      // Fallback: if JSON parsing fails, treat the entire response as a bio (backward compat)
-      console.warn('[AI Enhance] JSON parse failed, falling back to raw text:', raw.slice(0, 200));
-      return NextResponse.json({ enhanced: raw, bio: raw });
-    }
-
-    // Validate vibe is from the allowed set
+    // Validate vibe is from the allowed set (case-insensitive recovery for
+    // small model misses like "chill / low key" → "Chill / Low Key").
     if (parsed.vibe && !ALLOWED_VIBES.includes(parsed.vibe)) {
-      // Try case-insensitive match
       const match = ALLOWED_VIBES.find(v => v.toLowerCase() === parsed.vibe.toLowerCase());
       parsed.vibe = match || null;
     }
 
-    // Return structured response — also include "enhanced" for backward compat with EventFormModal
+    // Return structured response — also include "enhanced" for backward
+    // compat with the EventFormModal handler which checks data.enhanced.
     return NextResponse.json({
-      enhanced: parsed.bio || raw,
-      bio: parsed.bio || raw,
+      enhanced: parsed.bio || '',
+      bio: parsed.bio || '',
       genre: parsed.genre || null,
       vibe: parsed.vibe || null,
       image_search_query: parsed.image_search_query || null,
