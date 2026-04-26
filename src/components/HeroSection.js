@@ -608,33 +608,50 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
           })}
         </div>
 
-        {/* Slide-count indicator — five tiny orange dashes in the top-left
-            corner, one per slide. Active dash sits at full opacity, the rest
-            dim to 35%. Static (no animation) so it stays out of the way. */}
+        {/* Slide indicator — Stories-style pill + dots at bottom center.
+            Replaces the previous top-left orange dashes which read as a
+            glitch artifact rather than a navigational affordance.
+            • Container: glassmorphism (translucent black + backdrop blur)
+              so the indicator stays legible against any poster image.
+            • Active slide → 20×6 orange pill.
+            • Inactive slides → 6×6 translucent-white dots.
+            Pill width transitions in/out so the active marker visibly
+            extends rather than just changing color. */}
         {canSwipe && (
           <div
             aria-hidden="true"
             style={{
               position: 'absolute',
-              top: 14, left: 14,
-              display: 'flex',
-              gap: 4,
+              bottom: 14,
+              left: '50%',
+              transform: 'translateX(-50%)',
               zIndex: 4,
               pointerEvents: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 10px',
+              borderRadius: 999,
+              background: 'rgba(0,0,0,0.28)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
             }}
           >
-            {featured.map((_, i) => (
-              <div
-                key={i}
-                style={{
-                  width: 14,
-                  height: 2,
-                  background: '#E8722A',
-                  opacity: i === active ? 1 : 0.35,
-                  transition: 'opacity 0.3s ease',
-                }}
-              />
-            ))}
+            {featured.map((_, i) => {
+              const isActive = i === active;
+              return (
+                <div
+                  key={i}
+                  style={{
+                    width: isActive ? 20 : 6,
+                    height: 6,
+                    borderRadius: 999,
+                    background: isActive ? '#E8722A' : 'rgba(255,255,255,0.45)',
+                    transition: 'width 0.3s ease, background 0.3s ease',
+                  }}
+                />
+              );
+            })}
           </div>
         )}
       </div>
