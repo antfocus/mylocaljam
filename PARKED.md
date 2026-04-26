@@ -38,6 +38,33 @@ Major work that landed today. Listed for context so the deferred items below mak
 
 ---
 
+## Recently shipped — Apr 26 follow-up session
+
+Shorter session focused on Spotlight polish + admin AI resilience.
+
+**Spotlight**
+- Slide indicator iterated multiple times: top-left orange dashes (read as glitch) → bottom-center pill+dots with glassmorphism (collided with the meta row) → top-left subtle pill+dots in brand orange, no glassmorphism, ~50% smaller, soft drop-shadow for legibility on bright posters. Active pill expands; inactive at 35% opacity.
+- **Desktop nav chevrons.** Two glassmorphism circle buttons at left/right edges, hover-only via `.hero-viewport:hover .hero-chevron { opacity: 1 }`. Hidden entirely on touch via `@media (hover: none)`. Click handlers route through existing `handleDotClick`, so they pause auto-rotate, navigate via modulo wrap, and schedule resume.
+- **Context-aware CTA label.** `Meet Artist →` only shows when an artist record is linked (`ev.artists?.name || ev.artist_id`). Otherwise renders `Event Details →`. Stops the page from promising "meet" content when a Spotlight is event-only (R Bar Oyster Roast, etc.).
+- **Pull-to-refresh now refreshes Spotlight too.** Was only refreshing the events feed; the spotlight fetch was a one-shot useEffect on mount. Refactored into `fetchSpotlight` useCallback + a `fetchSpotlightRef` bridge so `handlePullRefresh` can call it without TDZ issues. Both run in parallel via Promise.all.
+
+**Image presentation**
+- Top-aligned cropping (`object-position: center top` / `background-position: center top`) across Spotlight Hero, EventCardV2, SavedGigCard, and ArtistProfileScreen. Most artist photos have the face in the upper third — center-cropping was lopping heads off (Mushmouth at Reef & Barrel). Trade-off: landscape stage shots may lose some ceiling. Acceptable.
+
+**Welcome modal**
+- Spotlight icon now uses the same pulsing white dot as the home Hero's SPOTLIGHT sticker (visual system unity). Follow icon is the ticket-stub. Copy shortened across all five features. "Territory: Jersey Shore" stays as a one-line scope (the `(for now)` suffix was tried and rejected). Follow desc says "Save events and artists" (was "venues and artists" — wrong nouns).
+
+**Genres**
+- Added `Bluegrass` to both `GENRES` (utils.js) and `ALLOWED_GENRES` (aiLookup.js). The two arrays must stay in lockstep per the existing comment.
+
+**Admin enrichment resilience**
+- `/api/admin/ai-enhance` was making a direct fetch to Perplexity, which broke today when the Perplexity account hit `insufficient_quota`. Refactored to use the existing `callLLMWebGrounded` LLM router (Perplexity → Gemini → Grok auto-failover). 52 lines net deleted. Now any single-provider quota event won't take admin enrichment offline.
+
+**Manual data fixes**
+- Belmar Grass artist row's `image_url` populated via Postimages-hosted poster (interim — proper Phase 1 image curation still parked).
+
+---
+
 ---
 
 ## ⚡ Launch priority (Apr 25 reframe)
