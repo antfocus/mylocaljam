@@ -28,7 +28,7 @@ const GREY  = '#D1D5DB';   // body text, descriptions
 const FEATURES = [
   { dot: true,              label: 'Spotlight', desc: "Tonight's featured show, curated daily.", tint: 'rgba(232, 114, 42, 0.2)' },
   { emoji: '\uD83D\uDD0D', label: 'Discover',  desc: 'Find live music, trivia, and specials nearby.', tint: 'rgba(255, 165, 0, 0.15)' },
-  { emoji: null, svg: true, label: 'Follow',    desc: 'Save venues and artists for gig reminders.', tint: 'rgba(232, 114, 42, 0.15)' },
+  { emoji: null, svg: true, label: 'Follow',    desc: 'Save events and artists for gig reminders.', tint: 'rgba(232, 114, 42, 0.15)' },
   { emoji: '\uD83D\uDCF2', label: 'Share',     desc: 'Send event details to friends in one tap.', tint: 'rgba(30, 144, 255, 0.15)' },
   { emoji: '\uD83D\uDCA1', label: 'Ideas',     desc: 'Find Help & Feedback in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
 ];
@@ -176,10 +176,7 @@ export default function BetaWelcome() {
           color: WHITE,
           lineHeight: 1.4,
         }}>
-          Territory: Jersey Shore{' '}
-          <span style={{ color: GREY, fontWeight: 400, fontStyle: 'italic' }}>
-            (for now)
-          </span>
+          Territory: Jersey Shore
         </p>
 
         {/* ── Quick Features header ── */}
