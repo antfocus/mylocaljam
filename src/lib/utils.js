@@ -126,7 +126,7 @@ export function getVenueColor(venueName) {
 export const GENRES = [
   'Rock', 'Pop', 'Country', 'Acoustic', 'Cover Band', 'DJ', 'Electronic',
   'Jazz', 'Blues', 'Reggae', 'R&B', 'Hip Hop', 'Latin', 'Emo', 'Punk', 'Metal',
-  'Indie', 'Folk', 'Disco', 'Jam',
+  'Indie', 'Folk', 'Bluegrass', 'Disco', 'Jam',
 ];
 
 // Full vibe set — used for events (all four are relevant to a venue setting).

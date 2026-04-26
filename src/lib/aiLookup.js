@@ -93,7 +93,7 @@ import { callLLM, callLLMWebGrounded } from './llmRouter';
 export const ALLOWED_GENRES = [
   'Rock', 'Pop', 'Country', 'Acoustic', 'Cover Band', 'DJ', 'Electronic',
   'Jazz', 'Blues', 'Reggae', 'R&B', 'Hip Hop', 'Latin', 'Emo', 'Punk', 'Metal',
-  'Indie', 'Folk', 'Disco', 'Jam',
+  'Indie', 'Folk', 'Bluegrass', 'Disco', 'Jam',
 ];
 
 export const ALLOWED_VIBES = [
