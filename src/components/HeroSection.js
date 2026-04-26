@@ -612,33 +612,25 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
           })}
         </div>
 
-        {/* Slide indicator — Stories-style pill + dots at bottom center.
-            Replaces the previous top-left orange dashes which read as a
-            glitch artifact rather than a navigational affordance.
-            • Container: glassmorphism (translucent black + backdrop blur)
-              so the indicator stays legible against any poster image.
-            • Active slide → 20×6 orange pill.
-            • Inactive slides → 6×6 translucent-white dots.
-            Pill width transitions in/out so the active marker visibly
-            extends rather than just changing color. */}
+        {/* Slide indicator — minimal pill + dots in the top-left corner.
+            Bottom-center placement collided with the meta row's bottom: 14
+            anchor; top-left is clean (top-right is the SPOTLIGHT sticker).
+            "Very subtle" pass: drop the glassmorphism container, drop the
+            orange, shrink everything ~50%. Pure white with a soft drop-
+            shadow for legibility on bright posters. Active pill still
+            expands so position is readable, just at half the scale. */}
         {canSwipe && (
           <div
             aria-hidden="true"
             style={{
               position: 'absolute',
-              bottom: 14,
-              left: '50%',
-              transform: 'translateX(-50%)',
+              top: 14, left: 14,
               zIndex: 4,
               pointerEvents: 'none',
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              padding: '6px 10px',
-              borderRadius: 999,
-              background: 'rgba(0,0,0,0.28)',
-              backdropFilter: 'blur(8px)',
-              WebkitBackdropFilter: 'blur(8px)',
+              gap: 4,
+              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))',
             }}
           >
             {featured.map((_, i) => {
@@ -647,11 +639,12 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                 <div
                   key={i}
                   style={{
-                    width: isActive ? 20 : 6,
-                    height: 6,
+                    width: isActive ? 12 : 3,
+                    height: 3,
                     borderRadius: 999,
-                    background: isActive ? '#E8722A' : 'rgba(255,255,255,0.45)',
-                    transition: 'width 0.3s ease, background 0.3s ease',
+                    background: '#FFFFFF',
+                    opacity: isActive ? 1 : 0.4,
+                    transition: 'width 0.3s ease, opacity 0.3s ease',
                   }}
                 />
               );
