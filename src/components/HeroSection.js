@@ -331,9 +331,14 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
       position: 'relative', flexShrink: 0,
       width: '100%', maxWidth: '100%', boxSizing: 'border-box',
     }}>
-      {/* Viewport — overflow hidden, custom touch handlers */}
+      {/* Viewport — overflow hidden, custom touch handlers.
+          `hero-viewport` class is the hover anchor for the desktop nav
+          chevrons (defined in the <style> block at the bottom of this
+          component). Hover-driven visibility is gated by @media (hover:
+          hover) so touch devices never render the chevrons at all. */}
       <div
         ref={viewportRef}
+        className="hero-viewport"
         style={{
           overflow: 'hidden',
           position: 'relative',
@@ -383,6 +388,13 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
             const brandedGradient = BRANDED_GRADIENTS[effectiveIndex % BRANDED_GRADIENTS.length];
             const hasBio = !!(ev.description && ev.description.trim());
             const showMeetArtist = hasBio;
+            // Context-aware CTA label: when a real artist record is linked
+            // to this slide ("Meet Artist" copy fits — opens a bio modal).
+            // When the spotlight is an event with no linked artist (e.g.
+            // "R Bar Oyster Roast"), "Meet Artist" lies — switch to a more
+            // generic "Event Details" label.
+            const hasLinkedArtist = !!(ev.artists?.name || ev.artist_id);
+            const ctaLabel = hasLinkedArtist ? 'Meet Artist' : 'Event Details';
 
             // Meta row assembly — filter empty segments so separators don't dangle.
             // Day + time get whiteSpace: nowrap so a long venue can't squeeze
@@ -602,7 +614,7 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                           textShadow: '0 1px 4px rgba(0,0,0,0.5)',
                         }}
                       >
-                        Meet Artist →
+                        {ctaLabel} →
                       </span>
                     )}
                   </div>
@@ -612,13 +624,44 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
           })}
         </div>
 
+        {/* Desktop nav chevrons — visible on hover only, hidden on touch
+            devices. Each click pauses auto-rotate, navigates one slide
+            (snapTo wraps via modulo so prev-from-0 goes to last), and
+            schedules resume. Class names hook into the <style> block
+            below for hover/touch behavior. */}
+        {canSwipe && (
+          <>
+            <button
+              type="button"
+              aria-label="Previous slide"
+              className="hero-chevron hero-chevron-left"
+              onClick={(e) => { e.stopPropagation(); handleDotClick(activeRef.current - 1); }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              aria-label="Next slide"
+              className="hero-chevron hero-chevron-right"
+              onClick={(e) => { e.stopPropagation(); handleDotClick(activeRef.current + 1); }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </>
+        )}
+
         {/* Slide indicator — minimal pill + dots in the top-left corner.
             Bottom-center placement collided with the meta row's bottom: 14
             anchor; top-left is clean (top-right is the SPOTLIGHT sticker).
-            "Very subtle" pass: drop the glassmorphism container, drop the
-            orange, shrink everything ~50%. Pure white with a soft drop-
-            shadow for legibility on bright posters. Active pill still
-            expands so position is readable, just at half the scale. */}
+            "Very subtle" pass: drop the glassmorphism container, swap to
+            brand orange (active 100%, inactive 35%), shrink everything
+            ~50%. Soft drop-shadow for legibility on bright posters.
+            Active pill still expands so position is readable, just at
+            half the scale. */}
         {canSwipe && (
           <div
             aria-hidden="true"
@@ -642,8 +685,8 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                     width: isActive ? 12 : 3,
                     height: 3,
                     borderRadius: 999,
-                    background: '#FFFFFF',
-                    opacity: isActive ? 1 : 0.4,
+                    background: '#E8722A',
+                    opacity: isActive ? 1 : 0.35,
                     transition: 'width 0.3s ease, opacity 0.3s ease',
                   }}
                 />
@@ -658,6 +701,38 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
       <style>{`
         @keyframes shimmer { from { opacity: 0.6; } to { opacity: 1; } }
         @keyframes spotlightPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+        /* Desktop nav chevrons — hover-driven visibility on the viewport.
+           Hidden by default; appear when the cursor enters the viewport.
+           @media (hover: none) hides them entirely on touch devices, so
+           mobile users see no chrome and rely on swipe (existing). */
+        .hero-chevron {
+          position: absolute;
+          top: 50%;
+          transform: translateY(-50%);
+          z-index: 5;
+          width: 40px;
+          height: 40px;
+          border-radius: 999px;
+          border: none;
+          background: rgba(0, 0, 0, 0.4);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          opacity: 0;
+          transition: opacity 0.2s ease, background 0.15s ease;
+          padding: 0;
+        }
+        .hero-chevron-left  { left: 12px; }
+        .hero-chevron-right { right: 12px; }
+        .hero-viewport:hover .hero-chevron { opacity: 1; }
+        .hero-chevron:hover { background: rgba(0, 0, 0, 0.6); }
+        @media (hover: none) {
+          .hero-chevron { display: none; }
+        }
       `}</style>
     </div>
   );
