@@ -159,7 +159,9 @@ export default function ArtistProfileScreen({
             alt={artistName}
             style={{
               width: '100%', height: '100%',
-              objectFit: 'cover', objectPosition: 'center center',
+              // Top-aligned — see HeroSection.js / EventCardV2.js for
+              // rationale. Keep faces in frame on artist headshots.
+              objectFit: 'cover', objectPosition: 'center top',
               display: 'block',
             }}
           />

@@ -397,7 +397,11 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                   loading="lazy"
                   style={{
                     width: '100%', height: '100%',
-                    objectFit: 'cover', objectPosition: 'center 15%',
+                    // Top-aligned — keep faces / subject in frame instead of
+                    // cropping them out. Was 'center 15%' (slightly biased
+                    // toward top); switched to 'center top' for full
+                    // consistency across Spotlight + cards + artist screens.
+                    objectFit: 'cover', objectPosition: 'center top',
                     display: 'block',
                   }}
                   onError={e => { e.currentTarget.parentElement.style.display = 'none'; }}

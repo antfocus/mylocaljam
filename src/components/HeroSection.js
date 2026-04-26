@@ -425,7 +425,11 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                     // silently drop the whole background-image property and
                     // the card renders with no photo. JSON.stringify wraps
                     // in double quotes and escapes any internal quotes.
-                    ? { backgroundImage: `url(${JSON.stringify(realImage)})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                    // Top-aligned crop — most artist photos have the face/
+                    // subject in the upper third, so 'center top' keeps the
+                    // focal point in frame instead of croppping it out the
+                    // top edge as the previous 'center' (mid-vertical) did.
+                    ? { backgroundImage: `url(${JSON.stringify(realImage)})`, backgroundSize: 'cover', backgroundPosition: 'center top' }
                     : { background: brandedGradient }
                   ),
                 }} />
