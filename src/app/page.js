@@ -1039,10 +1039,21 @@ export default function HomePage() {
   // / search context is preserved so users can refresh "what's on Saturday"
   // without losing their place. Returns a promise so the hook can keep the
   // spinner visible until the network round-trip finishes.
+  //
+  // Also re-fetches the Spotlight hero (was previously only loaded on mount,
+  // so a pull-down refreshed the feed but left the Spotlight stale).
+  // fetchSpotlight is declared further down in the file (after this hook),
+  // so we route through a ref — the ref is stable, .current gets populated
+  // by a sync useEffect once fetchSpotlight is defined. Avoids the TDZ that
+  // would result from listing fetchSpotlight in this useCallback's deps.
+  const fetchSpotlightRef = useRef(null);
   const handlePullRefresh = useCallback(async () => {
     setCurrentPage(1);
     setHasMore(false);
-    await fetchEvents(1, false);
+    await Promise.all([
+      fetchEvents(1, false),
+      fetchSpotlightRef.current ? fetchSpotlightRef.current() : Promise.resolve(),
+    ]);
   }, [fetchEvents]);
   const { pull: ptrPull, refreshing: ptrRefreshing, threshold: ptrThreshold } =
     usePullToRefresh(homeScrollRef, handlePullRefresh);
@@ -1451,15 +1462,19 @@ export default function HomePage() {
     }
   }, [activeTab, filtersExpanded]);
 
-  // Fetch spotlight events for today (hydrated with venue + artist data)
-  useEffect(() => {
+  // Fetch spotlight events for today (hydrated with venue + artist data).
+  // Pulled out into a callable so pull-to-refresh can re-trigger it.
+  // Lives here near other data-fetching callbacks; a ref defined earlier
+  // (`fetchSpotlightRef`) bridges this to handlePullRefresh, which renders
+  // before this declaration.
+  const fetchSpotlight = useCallback(async () => {
     const now = new Date();
     const pad = n => String(n).padStart(2, '0');
     const today = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
-    fetch(`/api/spotlight?date=${today}`)
-      .then(r => r.json())
-      .then(data => {
-        if (!Array.isArray(data) || data.length === 0) { setSpotlightData([]); return; }
+    try {
+      const r = await fetch(`/api/spotlight?date=${today}`);
+      const data = await r.json();
+      if (!Array.isArray(data) || data.length === 0) { setSpotlightData([]); return; }
         // Normalize spotlight events using the same mapping as fetchEvents
         // cleanImg / cleanStr treat "", "None", and whitespace-only as null
         const cleanImg = (v) => (v && v !== 'None' && v !== '') ? v : null;
@@ -1564,10 +1579,19 @@ export default function HomePage() {
             venue_lng:     e.venues?.longitude || null,
           };
         });
-        setSpotlightData(mapped);
-      })
-      .catch(() => setSpotlightData([]));
+      setSpotlightData(mapped);
+    } catch {
+      setSpotlightData([]);
+    }
   }, []);
+
+  // Mount-time fetch — runs once. Pull-to-refresh calls fetchSpotlight()
+  // again later via fetchSpotlightRef (see handlePullRefresh).
+  useEffect(() => { fetchSpotlight(); }, [fetchSpotlight]);
+  // Bridge for handlePullRefresh — keeps the ref pointed at the latest
+  // memoized fetchSpotlight so a pull-down refresh always calls the
+  // current implementation.
+  useEffect(() => { fetchSpotlightRef.current = fetchSpotlight; }, [fetchSpotlight]);
 
   // ── Date boundaries (local time) ─────────────────────────────────────────────
   function localDateStr(d) {
