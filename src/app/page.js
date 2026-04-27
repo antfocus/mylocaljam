@@ -1675,10 +1675,17 @@ export default function HomePage() {
     if (townOnly && locationOrigin.trim()) {
       const townKey = locationOrigin.split(',')[0].trim().toLowerCase();
       list = list.filter(e => {
+        // Three-tier match (most authoritative first):
+        //   1. venue.city — canonical, admin-curated. Catches the
+        //      Lake Como → Belmar override and other aliases.
+        //   2. venue.address — fallback substring match. Catches
+        //      venues whose city wasn't filled yet.
+        //   3. venue.name — last resort for venues whose name
+        //      contains the town and address is sparse.
+        const city = (e.venue_city || '').toLowerCase().trim();
+        if (city) return city === townKey;
         const addr = (e.venue_address || '').toLowerCase();
         const venueName = (e.venue || e.venue_name || '').toLowerCase();
-        // Match either venue address (canonical) OR venue name (some venues
-        // include their town in their name and have sparse address data).
         return addr.includes(townKey) || venueName.includes(townKey);
       });
     } else if (milesRadius !== null && locationCoords) {

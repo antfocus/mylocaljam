@@ -153,6 +153,7 @@ function transformEvent(e) {
     venue:         e.venues?.name    || e.venue_name || '',
     venue_name:    e.venues?.name    || e.venue_name || '',
     venue_address: e.venues?.address || '',
+    venue_city:    e.venues?.city || '',
     venue_color:   e.venues?.color   || getVenueColor(e.venues?.name || e.venue_name),
     venue_photo:   e.venues?.photo_url || null,
     venue_lat:     e.venues?.latitude  || null,
@@ -210,7 +211,7 @@ export async function GET(request) {
   // doesn't always stick on local/staging instances). The hint syntax
   // bypasses the cache entirely — works regardless of reload state.
   // Ref: https://postgrest.org/en/stable/references/api/resource_embedding.html
-  const selectColumns = '*, venues(name, address, color, photo_url, latitude, longitude, venue_type, tags, default_start_time), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates!fk_events_template_id(template_name, bio, image_url, category, start_time, genres)';
+  const selectColumns = '*, venues(name, address, city, color, photo_url, latitude, longitude, venue_type, tags, default_start_time), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates!fk_events_template_id(template_name, bio, image_url, category, start_time, genres)';
 
   // ── Search: build the ILIKE filter ──────────────────────────────────────
   // When q is provided, construct an OR filter across the searchable columns.
