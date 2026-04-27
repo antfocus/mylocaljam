@@ -2755,7 +2755,23 @@ export default function HomePage() {
                           }}
                         />
                         {locationOrigin && (
-                          <button onClick={() => { setLocationOrigin(''); setLocationSuggestions([]); triggerGPS(); }} style={{
+                          <button
+                            // X clear: just blank the input. Previously this
+                            // also called triggerGPS() which immediately
+                            // refilled with the user's detected town (e.g.
+                            // "Wall Township"), making the X feel broken.
+                            // Now: text clears and stays cleared. Coords
+                            // also reset so distance filtering stops; the
+                            // user can manually re-trigger GPS via the
+                            // 📍 button below if they want their location
+                            // back.
+                            onClick={() => {
+                              setLocationOrigin('');
+                              setLocationSuggestions([]);
+                              setLocationCoords(null);
+                              setLocationLabel('Current Location');
+                            }}
+                            style={{
                             background: darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
                             border: 'none', cursor: 'pointer',
                             width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0,
