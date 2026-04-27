@@ -73,11 +73,15 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   }, []);
 
   const handlePopoverFollow = useCallback(() => {
-    if (!event?.artist_name) return;
+    // Use the canonical joined artist name when available — that's the
+    // value that resolves to a real artists row. The raw artist_name field
+    // can be a billing or template alias that wouldn't match anything.
+    const followName = event?.artists?.name || event?.artist_name;
+    if (!event?.artist_id || !followName) return;
     try { navigator?.vibrate?.(10); } catch {}
-    onFollowArtist?.(event.artist_name);
+    onFollowArtist?.(followName);
     dismissPopover();
-  }, [event?.artist_name, onFollowArtist, dismissPopover]);
+  }, [event?.artist_id, event?.artists?.name, event?.artist_name, onFollowArtist, dismissPopover]);
 
   // description is pre-resolved via Hierarchy of Truth in page.js
   const desc = event?.description || '';
@@ -112,10 +116,22 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   // Case-insensitive + trimmed so "Jane Doe" / "jane doe " collapses cleanly.
   const _titleKey  = eventTitle.trim().toLowerCase();
   const _artistKey = (artistName || '').trim().toLowerCase();
+  // Hide artist subtitle on template-linked events. The "subtitle" would just
+  // be the scraper alias (e.g. "Grateful Mondays with Kevin Hill - Secret
+  // Sound Check") which the template was designed to clean up. Showing it
+  // alongside the cleaned title defeats the point of templating.
   const showArtistSubtitle = ARTIST_SUBTITLE_CATEGORIES.includes(event.category)
     && eventTitle
     && artistName
-    && _titleKey !== _artistKey;
+    && _titleKey !== _artistKey
+    && !event.template_id;
+
+  // Follow Artist gate: only show when there's a real linked artist row.
+  // Without artist_id, "Follow" would try to follow a template name or
+  // scraper alias, which doesn't resolve to any artists row → click does
+  // nothing. Hide the button entirely in that case.
+  const canonicalArtistName = event.artists?.name || event.artist_name || '';
+  const hasFollowableArtist = !!(event.artist_id && canonicalArtistName);
 
   // Theme colors — all dynamic based on darkMode
   const cardBg      = darkMode ? '#1A1A24' : '#FFFFFF';
@@ -500,10 +516,13 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
               <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                 {/* Primary group — left-aligned pill buttons */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  {/* 1. Follow Artist */}
-                  {onFollowArtist && name && (
+                  {/* 1. Follow Artist — only when there's a real linked artist
+                      to follow. For template-only events (e.g. Grateful Mondays
+                      with no canonical artist FK) we hide the button entirely
+                      rather than show a button that does nothing on click. */}
+                  {onFollowArtist && hasFollowableArtist && (
                     <button
-                      onClick={e => { e.stopPropagation(); onFollowArtist(name); }}
+                      onClick={e => { e.stopPropagation(); onFollowArtist(canonicalArtistName); }}
                       style={{
                         display: 'inline-flex', alignItems: 'center', gap: '5px',
                         fontSize: '11px', fontWeight: 700,
@@ -641,9 +660,12 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
           darkMode={darkMode}
           event={event}
           onFollowArtist={() => {
-            if (event?.artist_name) {
+            // Prefer the canonical joined artist name over the scraper's
+            // artist_name string so we follow the right row when the event
+            // text is a billing or template alias.
+            if (hasFollowableArtist) {
               try { navigator?.vibrate?.(10); } catch {}
-              onFollowArtist?.(event.artist_name);
+              onFollowArtist?.(canonicalArtistName);
             }
           }}
           isArtistFollowed={isArtistFollowed}
@@ -910,7 +932,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 </svg>
               </button>
             </div>
-            {!isArtistFollowed && onFollowArtist && (
+            {!isArtistFollowed && onFollowArtist && hasFollowableArtist && (
               <button
                 onClick={handlePopoverFollow}
                 style={{
