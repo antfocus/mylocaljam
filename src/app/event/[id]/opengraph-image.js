@@ -5,30 +5,50 @@ import { createClient } from '@supabase/supabase-js';
  * Per-event OG image — the link preview card iMessage / Twitter / etc. show
  * when someone shares /event/[id].
  *
- * The previous implementation declared a static `og:image` pointing at the
- * event's raw poster URL. iMessage then hard-cropped that poster to the
- * 1.91:1 banner aspect — so any portrait poster lost its top and bottom
- * (every venue uses a portrait flyer; the matinée date you cared about
- * was the first thing to disappear).
+ * History:
+ *  - v1: static `og:image` pointing at the event's raw poster URL. iMessage
+ *        hard-cropped tall posters to a 1.91:1 banner, killing the top/bottom
+ *        of the flyer (which usually has the date or venue name).
+ *  - v2: 1200×630 dark canvas with the source `objectFit: contain`. Solved
+ *        the cropping but portrait posters became a postage stamp with huge
+ *        dark side-bars — looked dramatically worse than the original.
+ *  - v3 (this version): 1200×1500 portrait canvas (4:5). Modern iMessage
+ *        treats tall OG images as a "tall preview" and shows them at near-
+ *        full size, which is ideal for the venue flyers we get from scrapers
+ *        (almost all portrait). Landscape sources still fit via `contain`
+ *        with small top/bottom bars, but that case is rare.
  *
- * This dynamic version renders a 1200×630 dark canvas at the edge and
- * letterboxes the original poster inside it via maxWidth/maxHeight. The
- * platforms get a 1.91:1 image they don't need to crop, and the user
- * sees the full poster framed in brand-orange-on-dark.
- *
- * (We tried 1200×1200 to defeat iMessage's compact-preview square crop,
- * but the extra dark padding looked worse in practice than the small
- * side-crop, so we reverted.)
+ * Trade-off vs. landscape: Twitter's `summary_large_image` card is 1.91:1
+ * and will letterbox a 4:5 image. Most shares from mylocaljam go to iMessage
+ * or Messenger (which both honor portrait), so we optimize for that.
  */
 
 export const runtime = 'edge';
 export const alt = 'myLocalJam event';
-export const size = { width: 1200, height: 630 };
+export const size = { width: 1200, height: 1500 };
 export const contentType = 'image/png';
 
 // Treat empty / sentinel values as missing so the waterfall keeps falling.
 function clean(v) {
   return (v && v !== 'None' && v !== '') ? v : null;
+}
+
+// Reject image URLs that are too small/low-res to look good as a 1200×630
+// link preview. gstatic `tbn:` URLs are Google search-result thumbnails,
+// max ~200px wide — when piped through `objectFit: contain` they letterbox
+// into a tiny postage stamp, which iMessage then compact-crops weirdly.
+// (Pending DB cleanup of these is task #29 — this filter is defense in depth.)
+const LOW_QUALITY_HOSTS = [
+  /encrypted-tbn\d*\.gstatic\.com/i,
+  /\.gstatic\.com\/.*tbn:/i,
+];
+function isLowQualityImage(url) {
+  if (!url) return false;
+  return LOW_QUALITY_HOSTS.some((pat) => pat.test(url));
+}
+function preferQuality(v) {
+  const c = clean(v);
+  return (c && !isLowQualityImage(c)) ? c : null;
 }
 
 async function fetchEventImage(id) {
@@ -52,13 +72,15 @@ async function fetchEventImage(id) {
       .eq('id', id)
       .single();
     if (!event) return null;
-    // Same waterfall priority as src/app/event/[id]/page.js
+    // Same waterfall priority as src/app/event/[id]/page.js, but each step
+    // also rejects gstatic thumbnails so the OG preview never falls back to
+    // a 200px image. (Snow Crabs template was the canary on 2026-04-27.)
     return (
-      clean(event.custom_image_url) ||
-      clean(event.event_templates?.image_url) ||
-      clean(event.event_image_url) ||
-      clean(event.image_url) ||
-      clean(event.artists?.image_url) ||
+      preferQuality(event.custom_image_url) ||
+      preferQuality(event.event_templates?.image_url) ||
+      preferQuality(event.event_image_url) ||
+      preferQuality(event.image_url) ||
+      preferQuality(event.artists?.image_url) ||
       null
     );
   } catch {
@@ -103,7 +125,7 @@ export default async function Image({ params }) {
           <div
             style={{
               display: 'flex',
-              fontSize: 96,
+              fontSize: 140,
               fontWeight: 700,
               color: '#FFFFFF',
               letterSpacing: '-0.035em',

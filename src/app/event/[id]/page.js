@@ -189,13 +189,20 @@ export async function generateMetadata({ params }) {
 
   const event = flattenEvent(raw);
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://mylocaljam.com';
-  const artistName = event.artist_name || 'Live Music';
+  // Title ladder mirrors EventCardV2 (line 100): eventTitle || artistName.
+  // For venue/special events the scraper writes a raw artist_name like
+  // "AYCE SNOW CRAB" while flattenEvent resolves event_title to the cleaned
+  // template name ("Snow Crabs! (All You Can Eat)"). Without this ladder
+  // the OG preview disagreed with the in-app share text.
+  const headline = event.event_title || event.artist_name || 'Live Music';
   const venueName = event.venue_name || 'a local venue';
   const dateStr = formatOGDate(event.event_date);
   const timeStr = formatOGTime(event.start_time);
   const eventBio = event.description || '';
 
-  // Waterfall: event flyer → artist photo (join) → artist photo (name match) → venue photo → logo
+  // Waterfall: event flyer → artist photo (join) → artist photo (name match) → venue photo → logo.
+  // Note: opengraph-image.js owns the actual og:image waterfall and applies its
+  // own gstatic filter — this `rawImage` is only used for the description fallback.
   let rawImage = event.event_image || event.artist_image || null;
 
   // If artist join returned no image (e.g. artist_id is null), try matching by artist_name
@@ -221,10 +228,10 @@ export async function generateMetadata({ params }) {
     ? `${dateStr} at ${timeStr}`
     : dateStr;
 
-  // OG title: "Artist at Venue | Friday, Mar 27 at 8 PM"
+  // OG title: "<headline> at Venue | Friday, Mar 27 at 8 PM"
   const ogTitle = when
-    ? `${artistName} at ${venueName} | ${when}`
-    : `${artistName} at ${venueName}`;
+    ? `${headline} at ${venueName} | ${when}`
+    : `${headline} at ${venueName}`;
 
   // Page <title> keeps the brand suffix
   const title = `${ogTitle} — MyLocalJam`;
