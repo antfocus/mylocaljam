@@ -636,7 +636,29 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
 
   const rawVibes = tagResult?.vibes || [];
   const vibeAllowlist = kind === 'MUSICIAN' ? ARTIST_VIBES : ALLOWED_VIBES;
-  const vibes = rawVibes.filter(v => vibeAllowlist.includes(v)).slice(0, 2);
+  let vibes = rawVibes.filter(v => vibeAllowlist.includes(v)).slice(0, 2);
+
+  // ── Vibe fallback inference ───────────────────────────────────────────
+  // Pass 2's vibe list (ARTIST_VIBES) only has 3 options:
+  //   "Chill / Low Key", "Energetic / Party", "Family-Friendly"
+  // The LLM frequently returns an empty vibes array when uncertain — we
+  // saw 80% of bio'd artists come back vibe-less in the April 27 batch.
+  // Infer from the resolved genres so most musicians end up tagged.
+  // Order matters: party-genres take precedence (a "Cover Band" at a
+  // venue is energetic, even if also "Jazz"). MUSICIAN only — venue
+  // events keep the LLM's pick.
+  if (kind === 'MUSICIAN' && vibes.length === 0 && genres.length > 0) {
+    const PARTY_GENRES = new Set(['DJ', 'Electronic', 'Hip Hop', 'Punk',
+      'Metal', 'Disco', 'Cover Band', 'Reggae', 'Latin', 'Pop', 'R&B']);
+    const CHILL_GENRES = new Set(['Acoustic', 'Folk', 'Jazz', 'Blues',
+      'Bluegrass', 'Indie', 'Country']);
+    if (genres.some(g => PARTY_GENRES.has(g))) {
+      vibes = ['Energetic / Party'];
+    } else if (genres.some(g => CHILL_GENRES.has(g))) {
+      vibes = ['Chill / Low Key'];
+    }
+    // else (e.g. only "Rock", "Jam") — ambiguous, leave empty.
+  }
 
   // ── Pass 3: Image fallback (Serper) ───────────────────────────────────
   // Only fires if Perplexity didn't give us a usable image_url. This keeps

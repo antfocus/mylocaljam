@@ -205,8 +205,15 @@ export async function fetchPrioritizedArtists({ limit = 50, bareOnly = false } =
     const eventDate = new Date(event.event_date + 'T12:00:00-04:00');
     const dayOfWeek = eventDate.getDay(); // 0=Sun, 4=Thu, 5=Fri, 6=Sat
 
-    // Day-of-week weight: Thu-Sun get bonus (these are the nights people go out)
-    const dayWeight = (dayOfWeek >= 4 || dayOfWeek === 0) ? 2.0 : 1.0;
+    // HARD filter (was a soft weight): only score Thu/Fri/Sat/Sun events.
+    // The launch focus is artists actively playing the weekend slate, so a
+    // band whose only upcoming gig is a Tuesday burner shouldn't sit ahead
+    // of an artist with a Friday show. Mon-Wed-only artists fall out of
+    // the queue entirely until they land a weekend booking. (Original
+    // behavior was a 2x weight, which still surfaced Mon-Wed acts when
+    // their event was sooner.)
+    if (dayOfWeek !== 0 && (dayOfWeek < 4)) continue;
+    const dayWeight = 2.0; // all surviving events are Thu-Sun → flat weight
 
     // Completeness weight: completely bare = higher priority
     const completenessWeight = (!hasBio && !hasImage) ? 2.0 : 1.0;
