@@ -200,7 +200,11 @@ export async function PUT(request) {
 
   // ── kind enum guard — mirrors the CHECK constraint on artists.kind.
   //    Must stay inside this set or Postgres rejects the update with a 23514.
-  const ALLOWED_KINDS = ['musician', 'event'];
+  //    'musician' = real solo/group artist; 'event' = not a performer at all
+  //    (trivia, drink specials); 'billing' = concatenated lineup ("Headliner
+  //    w/ Opener 1, Opener 2") — kept so events display the full string but
+  //    hidden from directory + follow surfaces.
+  const ALLOWED_KINDS = ['musician', 'event', 'billing'];
   if (updates.kind !== undefined && updates.kind !== null) {
     if (!ALLOWED_KINDS.includes(updates.kind)) {
       return NextResponse.json(

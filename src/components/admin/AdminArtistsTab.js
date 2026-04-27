@@ -144,28 +144,44 @@ function AliasTagInput({ value, onChange, canonicalName = '', disabled = false }
 }
 
 /**
- * KindToggle — small Musician/Event pill that flips artists.kind on click.
+ * KindToggle — 3-way Musician/Billing/Event selector for artists.kind.
  *
- * Default state (`musician`) renders subtle/neutral so 99% of the list looks
- * unobtrusive. Flagged state (`event`) renders in brand orange so misclassified
- * rows are easy to spot when scrolling. Click cycles to the other value, calls
- * the existing PUT /api/admin/artists endpoint, then asks the parent to
- * re-fetch so the list reflects the new state.
+ *   - musician : real, singular artist. Default. Shows in directory + all
+ *                user-facing artist surfaces.
+ *   - billing  : concatenated lineup ("Headliner w/ Opener 1, Opener 2").
+ *                Events keep the lineup string for display, but the row is
+ *                hidden from directory + follow surfaces.
+ *   - event    : not a performer at all (trivia, drink specials, brunch).
+ *                Same hiding behavior as billing.
  *
- * `compact` mode (used in the mobile card under the artist name) shrinks the
- * pill to fit alongside the next-event-date.
+ * Implemented as a native <select> styled to look like a colored pill so we
+ * inherit free accessibility, keyboard support, and click-outside. The pill
+ * is color-coded by current value (slate / blue / orange) so admin can scan
+ * the list and spot misclassifications at a glance.
+ *
+ * `compact` mode shrinks the trigger for mobile rendering under the artist
+ * name (alongside next-event-date).
  */
 function KindToggle({ artist, headers, fetchArtists, artistsSearch, artistsNeedsInfo, compact = false }) {
   const [busy, setBusy] = useState(false);
   const kind = artist.kind || 'musician';
-  const isEvent = kind === 'event';
 
-  const flip = async (e) => {
+  // Color tokens per kind. Musician is the unobtrusive default; billing &
+  // event are visually distinct from each other so the admin can tell at a
+  // glance which bucket a misclassified row was bulk-assigned to.
+  const VARIANTS = {
+    musician: { bg: 'rgba(140, 140, 170, 0.18)', fg: 'var(--text-secondary)', border: 'transparent' },
+    billing:  { bg: 'rgba(67, 56, 202, 0.20)',   fg: '#A5B4FC',                border: 'rgba(165, 180, 252, 0.35)' },
+    event:    { bg: 'rgba(232, 114, 42, 0.18)',  fg: '#E8722A',                border: '#E8722A' },
+  };
+  const variant = VARIANTS[kind] || VARIANTS.musician;
+
+  const onChange = async (e) => {
     e.stopPropagation();
-    if (busy) return;
+    const next = e.target.value;
+    if (next === kind || busy) return;
     setBusy(true);
     try {
-      const next = isEvent ? 'musician' : 'event';
       const res = await fetch('/api/admin/artists', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...headers },
@@ -183,35 +199,46 @@ function KindToggle({ artist, headers, fetchArtists, artistsSearch, artistsNeeds
     }
   };
 
-  const padding = compact ? '2px 8px' : '4px 10px';
+  const padding = compact ? '2px 22px 2px 8px' : '4px 26px 4px 10px';
   const fontSize = compact ? '10px' : '11px';
 
-  // Visual treatment: both states are "confidently set" tags, not hollow
-  // buttons. Musician = solid slate tint, no border, bright text — reads as
-  // "this IS a musician". Event = solid orange tint with orange border so
-  // misclassified rows pop visually as you scroll. Click flips the value.
+  // Inline SVG chevron baked into background-image so the native arrow is
+  // hidden but the trigger still tells the user it's a dropdown.
+  const chevronUrl = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'><path d='M2 4l3 3 3-3' stroke='${encodeURIComponent(variant.fg.startsWith('var(') ? '%23999' : variant.fg.replace('#', '%23'))}' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>")`;
+
   return (
-    <button
-      onClick={flip}
+    <select
+      value={kind}
+      onChange={onChange}
       disabled={busy}
-      title={isEvent ? 'Currently: Event. Click to mark as Musician.' : 'Currently: Musician. Click to mark as Event.'}
+      onClick={(e) => e.stopPropagation()}
+      title={`Currently: ${kind.charAt(0).toUpperCase() + kind.slice(1)}. Click to change.`}
       style={{
+        appearance: 'none',
+        WebkitAppearance: 'none',
+        MozAppearance: 'none',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         padding, borderRadius: '999px',
         fontFamily: "'DM Sans', sans-serif",
         fontSize, fontWeight: 700, letterSpacing: '0.4px',
         textTransform: 'uppercase',
         cursor: busy ? 'wait' : 'pointer',
-        border: isEvent ? '1px solid #E8722A' : '1px solid transparent',
-        background: isEvent ? 'rgba(232, 114, 42, 0.18)' : 'rgba(140, 140, 170, 0.18)',
-        color: isEvent ? '#E8722A' : 'var(--text-secondary)',
+        border: `1px solid ${variant.border}`,
+        background: `${variant.bg} ${chevronUrl} no-repeat right 8px center`,
+        backgroundSize: 'auto, 10px 10px',
+        color: variant.fg,
         opacity: busy ? 0.5 : 1,
         transition: 'all 0.15s ease',
         whiteSpace: 'nowrap',
+        outline: 'none',
+        textAlign: 'center',
+        textAlignLast: 'center',
       }}
     >
-      {isEvent ? 'Event' : 'Musician'}
-    </button>
+      <option value="musician">Musician</option>
+      <option value="billing">Billing</option>
+      <option value="event">Event</option>
+    </select>
   );
 }
 
@@ -629,9 +656,9 @@ export default function AdminArtistsTab({
                     <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
                       {artist.name}
                     </span>
-                    {isMobile && (artist.kind === 'event' || artist.next_event_date) && (
+                    {isMobile && ((artist.kind && artist.kind !== 'musician') || artist.next_event_date) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                        {artist.kind === 'event' && (
+                        {artist.kind && artist.kind !== 'musician' && (
                           <KindToggle artist={artist} headers={headers} fetchArtists={fetchArtists} artistsSearch={artistsSearch} artistsNeedsInfo={artistsNeedsInfo} compact />
                         )}
                         {artist.next_event_date && (
