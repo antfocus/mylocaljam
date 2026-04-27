@@ -277,20 +277,17 @@ export default function ArtistProfileScreen({
           {artistName}
         </h1>
 
-        {/* Genre chips */}
+        {/* Genre metadata — single muted small-caps line. Looks like a print
+            byline, not interactive. Keeps the only "buttony" elements on the
+            page (Follow / Share) clearly distinct from descriptive metadata. */}
         {genres.length > 0 && (
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
-            {genres.map(g => (
-              <span key={g} style={{
-                fontSize: '11px', fontWeight: 600, padding: '3px 10px',
-                borderRadius: '999px',
-                background: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-                color: textMuted,
-                fontFamily: "'DM Sans', sans-serif",
-              }}>
-                {g}
-              </span>
-            ))}
+          <div style={{
+            marginTop: '10px',
+            fontSize: '11px', fontWeight: 600, color: textMuted,
+            fontFamily: "'DM Sans', sans-serif",
+            textTransform: 'uppercase', letterSpacing: '1.2px',
+          }}>
+            {genres.join(' \u00B7 ')}
           </div>
         )}
 
@@ -392,93 +389,49 @@ export default function ArtistProfileScreen({
             No upcoming shows scheduled yet.
           </p>
         ) : (
-          /* Editorial listings layout: left column shows MMM DD on top in
-              brand orange, three-letter weekday under in muted caps. Right
-              column stacks venue (15px medium) + time (13px muted) so each
-              row reads like a print event listing. Subtle hairline
-              dividers between rows. */
           <div>
             {upcoming.map((event, i) => {
               const venueRaw = event.venue || event.venue_name || '';
-              let dateLine = '';   // "APR 26"
-              let dayLine = '';    // "SAT"
+              let dateLabel = '';
               const rawDate = event.date || event.event_date || '';
               if (rawDate) {
                 try {
                   const d = new Date(rawDate.substring(0, 10) + 'T12:00:00');
-                  dateLine = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
-                  dayLine = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                  dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
                 } catch { /* skip */ }
               }
-
-              // Format start_time ("19:30") → "7:30 PM"
-              let timeLine = '';
-              const rawTime = event.start_time || event.time || '';
-              if (rawTime) {
-                const m = String(rawTime).match(/^(\d{1,2}):(\d{2})/);
-                if (m) {
-                  let hh = parseInt(m[1], 10);
-                  const mm = m[2];
-                  const period = hh >= 12 ? 'PM' : 'AM';
-                  hh = hh % 12 || 12;
-                  timeLine = `${hh}:${mm} ${period}`;
-                }
-              }
-
               const isLast = i === upcoming.length - 1;
 
               return (
                 <div
                   key={event.id ?? i}
                   style={{
-                    display: 'flex', alignItems: 'flex-start', gap: '16px',
-                    padding: '14px 0',
-                    borderBottom: isLast ? 'none' : `1px solid ${darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+                    display: 'flex', alignItems: 'center',
+                    padding: '16px 0',
+                    borderBottom: isLast ? 'none' : `1px solid ${darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
                   }}
                 >
-                  {/* Date column */}
-                  <div style={{ width: '64px', flexShrink: 0 }}>
-                    {dateLine && (
-                      <div style={{
-                        fontSize: '14px', fontWeight: 800, color: BRAND_ORANGE,
-                        fontFamily: "'DM Sans', sans-serif",
-                        letterSpacing: '0.3px', lineHeight: 1.1,
-                      }}>
-                        {dateLine}
-                      </div>
-                    )}
-                    {dayLine && (
-                      <div style={{
-                        fontSize: '11px', fontWeight: 600, color: textMuted,
-                        fontFamily: "'DM Sans', sans-serif",
-                        letterSpacing: '0.5px', marginTop: '3px',
-                      }}>
-                        {dayLine}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Venue + time column */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: '15px', fontWeight: 600,
-                      color: darkMode ? '#EAEAF2' : '#1F2937',
+                  {/* Date — fixed width, orange */}
+                  {dateLabel && (
+                    <span style={{
+                      width: '62px', flexShrink: 0,
+                      fontSize: '13px', fontWeight: 700, color: BRAND_ORANGE,
                       fontFamily: "'DM Sans', sans-serif",
-                      lineHeight: 1.25,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      letterSpacing: '0.3px',
                     }}>
-                      {venueRaw}
-                    </div>
-                    {timeLine && (
-                      <div style={{
-                        fontSize: '13px', fontWeight: 500, color: textMuted,
-                        fontFamily: "'DM Sans', sans-serif",
-                        marginTop: '3px', letterSpacing: '0.2px',
-                      }}>
-                        {timeLine}
-                      </div>
-                    )}
-                  </div>
+                      {dateLabel}
+                    </span>
+                  )}
+                  {/* Venue — title case, light */}
+                  <span style={{
+                    flex: 1, minWidth: 0,
+                    fontSize: '14px', fontWeight: 500,
+                    color: darkMode ? '#E0E0F0' : '#374151',
+                    fontFamily: "'DM Sans', sans-serif",
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {venueRaw}
+                  </span>
                 </div>
               );
             })}
