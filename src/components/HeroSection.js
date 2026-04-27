@@ -416,8 +416,12 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
             // When the spotlight is an event with no linked artist (e.g.
             // "R Bar Oyster Roast"), "Meet Artist" lies — switch to a more
             // generic "Event Details" label.
+            // CTA label — short enough to fit the right side of the meta row
+            // alongside venue. "Details" is the no-artist variant of "Meet
+            // Artist"; shaved from "Event Details" since we're already on an
+            // event and the meta row was wrapping on long venue names.
             const hasLinkedArtist = !!(ev.artists?.name || ev.artist_id);
-            const ctaLabel = hasLinkedArtist ? 'Meet Artist' : 'Event Details';
+            const ctaLabel = hasLinkedArtist ? 'Meet Artist' : 'Details';
 
             // Meta row assembly — filter empty segments so separators don't dangle.
             // Day + time get whiteSpace: nowrap so a long venue can't squeeze
