@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useRef, useCallback } from 'react';
+import ArtistMonogram from '@/components/ArtistMonogram';
 const BRAND_ORANGE = '#E8722A';
 
 export default function ArtistProfileScreen({
@@ -191,8 +192,13 @@ export default function ArtistProfileScreen({
           </button>
         </div>
       ) : (
-        /* No image — just a back button with safe spacing */
-        <div style={{ padding: '52px 16px 8px', flexShrink: 0 }}>
+        /* No image — Magazine layout. Back button + small monogram avatar.
+            The artist name immediately below (in the shared title block)
+            switches to Outfit Black + uppercase + larger size when there's
+            no image, since the typography becomes the visual hero rather
+            than the photo. The whole top section stays compact (~180-220px)
+            so Upcoming Local Shows lives above the fold. */
+        <div style={{ padding: '52px 20px 0', flexShrink: 0 }}>
           <button
             onClick={onBack}
             style={{
@@ -201,6 +207,7 @@ export default function ArtistProfileScreen({
               cursor: 'pointer', padding: 0,
               color: textMuted, fontSize: '14px', fontWeight: 600,
               fontFamily: "'DM Sans', sans-serif",
+              marginBottom: '20px',
             }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -208,17 +215,31 @@ export default function ArtistProfileScreen({
             </svg>
             Back
           </button>
+          <ArtistMonogram
+            name={artistName}
+            size="sm"
+            style={{ width: '80px', height: '80px' }}
+          />
         </div>
       )}
 
       {/* ── 2. Bio & Action Bar ──────────────────────────────────────────── */}
-      <div style={{ padding: '0 20px', marginTop: imageUrl ? '-40px' : '0', position: 'relative', zIndex: 1 }}>
-        {/* Artist name */}
-        <h1 style={{
+      <div style={{ padding: '0 20px', marginTop: imageUrl ? '-40px' : '16px', position: 'relative', zIndex: 1 }}>
+        {/* Artist name.
+            With image: 28px DM Sans, sits at -40px to overlay the photo.
+            No image: Outfit Black + uppercase + larger size — the typography
+            IS the hero. Compact enough to keep Upcoming Shows above the fold. */}
+        <h1 style={imageUrl ? {
           fontSize: '28px', fontWeight: 800, color: textPrimary,
           fontFamily: "'DM Sans', sans-serif",
           margin: 0, lineHeight: 1.1,
           textShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.6)' : 'none',
+        } : {
+          fontSize: 'clamp(32px, 9vw, 44px)', fontWeight: 900, color: textPrimary,
+          fontFamily: "'Outfit', sans-serif",
+          textTransform: 'uppercase',
+          letterSpacing: '-0.02em',
+          margin: 0, lineHeight: 1.0,
         }}>
           {artistName}
         </h1>

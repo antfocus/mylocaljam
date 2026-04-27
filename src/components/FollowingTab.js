@@ -2,6 +2,22 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { posthog } from '@/lib/posthog';
+import ArtistMonogram from '@/components/ArtistMonogram';
+
+// ── Path A regex filter — exclude obvious VENUE_EVENT rows from My Locals.
+// Until the artists table gets a proper `kind` column (parked task), this
+// strips the worst offenders by name pattern. Catches asterisk-wrapped
+// names ("*Easter Sip & Shop*") and a small set of unambiguous event
+// keywords. Soft cases like "80's Power Hour!" still slip through — those
+// will need the `kind` column to fix properly. See PARKED.md #82-ish.
+const EVENT_NAME_PATTERN = /^\*.+\*$/;
+const EVENT_KEYWORD_PATTERN = /\b(trivia|karaoke|bingo|bogo|sip & shop|sip and shop|wing night|taco tuesday|burger night|drink special|happy hour)\b/i;
+function looksLikeEvent(name) {
+  if (!name) return false;
+  if (EVENT_NAME_PATTERN.test(name)) return true;
+  if (EVENT_KEYWORD_PATTERN.test(name)) return true;
+  return false;
+}
 
 // ── Theme (matching page.js DARK/LIGHT) ─────────────────────────────────────
 const DARK = {
@@ -75,11 +91,21 @@ export default function FollowingTab({
   // Normalize search
   const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-  // Filter following list by search query
+  // Filter following list by search query AND by Path A event-pattern
+  // filter — excludes asterisk-wrapped names and event keywords on
+  // artist-type rows so My Locals stops surfacing entries like
+  // "*Easter Sip & Shop*" alongside actual artists. Venue rows are
+  // never filtered (they're already known to be venues).
   const filteredFollowing = useMemo(() => {
-    if (!searchQuery.trim()) return following;
-    const q = normalize(searchQuery);
-    return following.filter(f => normalize(f.entity_name).includes(q));
+    let list = following.filter(f => {
+      if (f.entity_type !== 'artist') return true;
+      return !looksLikeEvent(f.entity_name);
+    });
+    if (searchQuery.trim()) {
+      const q = normalize(searchQuery);
+      list = list.filter(f => normalize(f.entity_name).includes(q));
+    }
+    return list;
   }, [following, searchQuery]);
 
   // Compute "next gig" for each followed entity from the events array
@@ -426,7 +452,10 @@ export default function FollowingTab({
               transition: 'background 0.1s',
             }}
           >
-            {/* Avatar */}
+            {/* Avatar — image when we have one, ArtistMonogram when we
+                don't. Replaces the previous generic music-note placeholder
+                so the no-image state still feels designed and gives each
+                artist a stable color signature. */}
             {imgUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -434,20 +463,21 @@ export default function FollowingTab({
                 alt={f.entity_name}
                 style={{
                   width: '48px', height: '48px', borderRadius: '50%',
-                  objectFit: 'cover', flexShrink: 0,
+                  objectFit: 'cover', objectPosition: 'center top',
+                  flexShrink: 0,
                 }}
                 onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
               />
             ) : null}
             <div style={{
-              width: '48px', height: '48px', borderRadius: '50%',
-              background: avatarBg, flexShrink: 0,
-              display: imgUrl ? 'none' : 'flex',
-              alignItems: 'center', justifyContent: 'center',
+              display: imgUrl ? 'none' : 'block',
+              flexShrink: 0,
             }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" fill={t.accent} />
-              </svg>
+              <ArtistMonogram
+                name={f.entity_name}
+                size="sm"
+                style={{ width: '48px', height: '48px' }}
+              />
             </div>
 
             {/* Name */}
