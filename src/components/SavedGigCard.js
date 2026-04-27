@@ -33,6 +33,15 @@ export default function SavedGigCard({
   const eventTitle = (event.event_title || '').trim();
   const artistName = event.name || event.artist_name || '';
   const name       = eventTitle || artistName;
+  // Templated events: hide the alias subtitle (the scraper string the
+  // template was built to clean up). Same gate the Spotlight Hero and
+  // EventCardV2 use.
+  const isTemplated = !!event.template_id;
+  // Follow Artist gate: only show when there's a real linked artist row.
+  // Without artist_id, "Follow" would try to follow a template name or
+  // scraper alias and the click would be a no-op.
+  const canonicalArtistName = event.artists?.name || event.artist_name || '';
+  const hasFollowableArtist = !!(event.artist_id && canonicalArtistName);
   const venue      = event.venue       || event.venue_name  || '';
   const desc       = event.description || event.artist_bio  || '';
   // Waterfall: event-specific image → artist image → venue photo
@@ -241,7 +250,7 @@ export default function SavedGigCard({
           }}>
             {name}
           </span>
-          {eventTitle && artistName && eventTitle !== artistName && (
+          {eventTitle && artistName && eventTitle !== artistName && !isTemplated && (
             <span style={{
               fontFamily: "'DM Sans', sans-serif",
               fontSize: '12px', fontWeight: 500, color: textMuted,
@@ -464,10 +473,12 @@ export default function SavedGigCard({
           {/* Action row */}
           {!isCanceled && (
             <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              {/* Follow Artist */}
-              {onFollowArtist && name && (
+              {/* Follow Artist — gated on a real linked artist FK. Pure
+                  template events (no artist_id) hide the button entirely
+                  rather than show a click that does nothing. */}
+              {onFollowArtist && hasFollowableArtist && (
                 <button
-                  onClick={e => { e.stopPropagation(); onFollowArtist(name); }}
+                  onClick={e => { e.stopPropagation(); onFollowArtist(canonicalArtistName); }}
                   style={{
                     display: 'inline-flex', alignItems: 'center', gap: '5px',
                     fontFamily: MONO, fontSize: '10px', fontWeight: 700,
