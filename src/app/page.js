@@ -406,16 +406,62 @@ export default function HomePage() {
     if (!query.trim() || query.trim().length < 2) { setLocationSuggestions([]); return; }
     locationDebounceRef.current = setTimeout(async () => {
       try {
+        // Tighter Nominatim query: full state name (better string match
+        // than the ambiguous "NJ" abbreviation), explicit US country
+        // restriction, and a wider initial limit (10) so we have material
+        // to re-rank from. Without these tightenings, Nominatim's default
+        // relevance ranking sometimes returned unrelated towns ahead of
+        // the obvious match — typing "Asb" returned Piscataway Township
+        // above Asbury Park.
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query + ', NJ')}&format=json&limit=5&addressdetails=1`
+          `https://nominatim.openstreetmap.org/search?` +
+          `q=${encodeURIComponent(query + ', New Jersey')}` +
+          `&format=json` +
+          `&countrycodes=us` +
+          `&addressdetails=1` +
+          `&limit=10`
         );
-        const results = await res.json();
-        setLocationSuggestions(results.map(r => ({
-          name: [r.address?.town || r.address?.city || r.address?.village || r.address?.hamlet || r.display_name.split(',')[0], r.address?.state || 'NJ'].filter(Boolean).join(', '),
-          lat: parseFloat(r.lat),
-          lng: parseFloat(r.lon),
-          full: r.display_name,
-        })));
+        const raw = await res.json();
+        const queryLower = query.trim().toLowerCase();
+
+        // Normalize + dedupe by town name + drop non-NJ leakage.
+        const seen = new Set();
+        const mapped = [];
+        for (const r of raw || []) {
+          const town = r.address?.town
+            || r.address?.city
+            || r.address?.village
+            || r.address?.hamlet
+            || r.display_name?.split(',')[0];
+          if (!town) continue;
+          const state = r.address?.state || '';
+          // Drop anything that didn't actually land in NJ — Nominatim
+          // ignores the ", New Jersey" suffix when a stronger match
+          // exists elsewhere in the country.
+          if (state && state !== 'New Jersey' && state !== 'NJ') continue;
+          const key = town.toLowerCase().trim();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          mapped.push({
+            name: `${town}, ${state || 'NJ'}`,
+            lat: parseFloat(r.lat),
+            lng: parseFloat(r.lon),
+            full: r.display_name,
+            _townLower: key,
+          });
+        }
+
+        // Re-rank: prefix matches always come first, then alphabetical.
+        // Solves the "Asb" → Piscataway problem.
+        mapped.sort((a, b) => {
+          const aStarts = a._townLower.startsWith(queryLower);
+          const bStarts = b._townLower.startsWith(queryLower);
+          if (aStarts && !bStarts) return -1;
+          if (!aStarts && bStarts) return 1;
+          return a._townLower.localeCompare(b._townLower);
+        });
+
+        setLocationSuggestions(mapped.slice(0, 5));
       } catch { setLocationSuggestions([]); }
     }, 300);
   }, []);
