@@ -108,7 +108,7 @@ export async function fetchPrioritizedArtists({ limit = 50, bareOnly = false } =
   }
   const artistNamesOriginal = [...nameByKey.values()];
 
-  const SELECT_COLS = 'id, name, bio, image_url, genres, is_human_edited, is_locked, last_fetched, default_category, field_status';
+  const SELECT_COLS = 'id, name, bio, image_url, genres, is_human_edited, is_locked, last_fetched, default_category, field_status, kind';
 
   const existingArtists = new Map();       // keyed by artist_id
   const existingArtistsByName = new Map(); // keyed by name.toLowerCase()
@@ -176,6 +176,14 @@ export async function fetchPrioritizedArtists({ limit = 50, bareOnly = false } =
     // templates, not AI per-artist enrichment. 'DJ/Dance Party' is NOT in
     // this list — DJs are artists and deserve bios.
     if (artist?.default_category && EVENT_ONLY_CATEGORIES.has(artist.default_category)) continue;
+
+    // Skip rows the admin has explicitly classified as `kind='event'` or
+    // `kind='billing'` via the Artists tab toggle. These are intentionally
+    // not artists for enrichment purposes — burning LLM calls on them
+    // produces fictional bios + bad image URLs (we saw this hit "TRIVIA
+    // TUESDAY" and "All Day Happy Hour" in earlier batches before this
+    // gate landed). 'musician' is the only enrich-able kind.
+    if (artist?.kind && artist.kind !== 'musician') continue;
 
     // Determine what's missing. A 'no_data' sentinel in field_status means
     // the AI has already been asked for this field and came back empty — we

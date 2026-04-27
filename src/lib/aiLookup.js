@@ -167,6 +167,43 @@ export function validateImageUrl(url) {
 }
 
 /**
+ * Live HEAD check on an image URL. Catches LLM hallucinations like
+ * `https://i.ytimg.com/vi/y-2121-2121/maxresdefault.jpg` — strings that
+ * pass the regex sanity check but 404 because the resource doesn't exist.
+ *
+ * Returns true only when the server responds with 2xx AND the
+ * Content-Type starts with `image/`. False on any other outcome
+ * (network error, timeout, non-image content, redirect to login, etc.).
+ *
+ * Tight 3-second timeout so a slow HEAD doesn't blow the Vercel 60s
+ * function budget on bigger backfill batches. Some servers reject HEAD;
+ * those URLs lose here, which is fine — better to drop a marginal
+ * candidate than save a 404.
+ */
+export async function verifyImageUrlLive(url, { timeoutMs = 3000 } = {}) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!res || !res.ok) return false;
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    return ct.startsWith('image/');
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Trim a bio to a hard character limit, preferring a sentence boundary.
  * Also scrubs common LLM preamble ("Here is a bio for…").
  * Returns null if the input is empty after cleaning.
@@ -573,9 +610,17 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
     bio = null;
   }
 
-  // Image: validate Perplexity's returned URL; fall through to Serper if
-  // invalid or absent.
-  const perplexityImage = validateImageUrl(bioResult?.image_url);
+  // Image: validate Perplexity's returned URL — first the cheap regex
+  // check (no network), then a live HEAD verification to catch LLM
+  // hallucinations that look syntactically valid but 404 (we caught one
+  // example: `https://i.ytimg.com/vi/y-2121-2121/maxresdefault.jpg`,
+  // a fake YouTube video ID Perplexity invented). If either check fails
+  // we fall through to Serper. The HEAD check is gated by a 3s timeout
+  // so a single slow image source can't blow the function budget.
+  const perplexityImageRaw = validateImageUrl(bioResult?.image_url);
+  const perplexityImage = perplexityImageRaw && (await verifyImageUrlLive(perplexityImageRaw))
+    ? perplexityImageRaw
+    : null;
   const sourceLink = typeof bioResult?.source_link === 'string' && bioResult.source_link.trim()
     ? bioResult.source_link.trim()
     : null;
@@ -630,9 +675,23 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
         // searchArtistImages for the full query-build rules.
         const serperHits = await searchArtistImages(name, kind, { venue: venueStr, city: cityStr });
         if (serperHits.length > 0) {
-          image_candidates = serperHits;
-          image_url = serperHits[0];
-          image_source = 'serper';
+          // Live-verify the top hit before committing — Serper occasionally
+          // returns dead Google Images thumbnails (encrypted-tbn0.gstatic.com
+          // URLs that expire). If the top fails, walk down up to 3 candidates
+          // before giving up. Each HEAD call has a 3s timeout so the worst
+          // case stays bounded.
+          let verifiedHit = null;
+          for (const candidate of serperHits.slice(0, 3)) {
+            if (await verifyImageUrlLive(candidate)) {
+              verifiedHit = candidate;
+              break;
+            }
+          }
+          if (verifiedHit) {
+            image_candidates = serperHits;
+            image_url = verifiedHit;
+            image_source = 'serper';
+          }
         } else if (!autoMode) {
           // Admin UI: fall back to premium placeholders so the carousel is
           // non-empty and the admin can still pick something. Auto mode
