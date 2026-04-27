@@ -170,6 +170,19 @@ The LOCATION value follows a 4-tier priority:
 3. **GPS + Radius:** `"Current Location + 5 mi"` — handled by tier 1 (locationLabel defaults to `'Current Location'`)
 4. **Neither:** `"Any distance"` — fallback
 
+### Location Autocomplete — Local-First, Then Nominatim
+
+`fetchLocationSuggestions` (in `src/app/page.js`) runs a **two-stage** lookup. Do not collapse this back to a single Nominatim call — Nominatim's relevance ranking is unreliable for short queries (typing `"as"` returns Lindenwold, not Asbury Park).
+
+1. **Local match (synchronous, no debounce).** `matchNjTowns(query, 5)` from `src/lib/njTowns.js` prefix-then-substring matches against a curated NJ towns list. Hits render immediately on the first keystroke past length 2.
+2. **Nominatim supplement (debounced 300ms).** Background fetch with `q=<query>, New Jersey`, `countrycodes=us`, `addressdetails=1`, `limit=10`. Results are filtered to NJ only, deduped against the local list by lowercased town name, and prefix-ranked. Merged below the local hits (5-row cap).
+
+**Adding a new town to the curated list:** append to the `NJ_TOWNS` array in `src/lib/njTowns.js` with name + approximate centroid (lat/lng to 4 decimals is plenty). No other wiring required.
+
+### Town-only Filter (Checkbox)
+
+When the user selects a town from the autocomplete, they can toggle the **"Only events in [town]"** checkbox to switch the home feed from haversine-radius matching to a three-tier text match: `venue_city` equality (priority) → `address` ILIKE → venue `name` ILIKE. State lives in `townOnly` (boolean, defaults `false`). GPS triggering and X-clear both reset it to `false`. The checkbox uses `colorScheme: darkMode ? 'dark' : 'light'` so it renders correctly in both modes.
+
 ### Shortcut Pills — Neon Glow
 
 Active pills use a multi-layer box shadow for a "neon glow" effect:

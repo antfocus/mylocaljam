@@ -4825,3 +4825,107 @@ For genuinely garbage rows the existing delete + ignored_artists blacklist still
 
 - #106 Replace regex filter with kind='musician' across My Locals + autocomplete + follow-suggest (deferred — regex prefilter is launch-adequate)
 
+---
+
+## Session — April 27, 2026 (continued) — Hero/Card waterfall, location filter polish, venues.city, autocomplete fix
+
+Same-day continuation. After the artist-directory cleanup we rolled into launch-prep polish on the home feed, search/filter UX, and venue data normalization. This entry documents the post-artist-directory work in one place.
+
+### 1. Hero + Waterfall — title priority and template image precedence
+
+**`src/lib/waterfall.js`.** Restructured the image waterfall so a linked template's image always wins over the legacy `event_image_url`:
+
+```
+custom_image_url
+  → (template_id ? tpl.image_url)
+  → event_image_url
+  → legacy
+  → artist
+```
+
+Locked vs. unlocked branching dropped — locks now act on the *source* fields, not the resolution order.
+
+**`src/components/HeroSection.js`.** Title priority swapped:
+
+- `titleRaw = event_title (waterfall)` is the primary title.
+- `artistRaw = artist_name` becomes the italic subtitle.
+- Italic subtitle is hidden whenever `ev.template_id` is truthy (templated events read as the event, not as "X performing at Y").
+- CTA shortened "Event Details" → "Details".
+
+### 2. EventCardV2 + SavedGigCard — template-aware artist surfaces
+
+**`src/components/EventCardV2.js`** and **`src/components/SavedGigCard.js`** got matching gates so templated events stop pretending to be artist shows:
+
+- `isTemplated` / `canonicalArtistName` / `hasFollowableArtist` derivations.
+- `showArtistSubtitle` now requires `!event.template_id` — kills the alias subtitle on template rows.
+- "Follow Artist" button gated on `hasFollowableArtist`. Click follows `canonicalArtistName` (the resolved artist, not the literal event title).
+- `handlePopoverFollow` updated to use the canonical name.
+
+### 3. Location filter — X-clear, town-only checkbox, venue.city matching
+
+**`src/app/page.js` — X clear.** Clicking the X in the location input no longer auto-repopulates from GPS. It now clears `locationOrigin`, `locationSuggestions`, `locationCoords`, resets `locationLabel` to `'Current Location'`, and unsets `townOnly`.
+
+**Town-only checkbox.** New `townOnly` boolean state, defaults `false`. Renders a "Only events in [town]" checkbox between the autocomplete dropdown and the radius slider. When checked + `locationOrigin` is set, the home feed filter switches from haversine-radius matching to a three-tier text match:
+
+1. `venue_city` equality (priority)
+2. `address` ILIKE
+3. venue `name` ILIKE
+
+Otherwise the existing haversine path runs. The `useMemo` deps were updated to include `townOnly` and `locationOrigin`. GPS trigger explicitly sets `setTownOnly(false)` so re-locating breaks the local-town pin. `colorScheme: darkMode ? 'dark' : 'light'` was added to the checkbox so it renders correctly in both modes (was reading as filled in light mode).
+
+**`venues.city` column.** New column on the venues table, backfilled from the address parser, with hand-overrides where the parser failed:
+
+- R Bar — corrected to `1114 Main St, Asbury Park, NJ 07712` (was Belmar address).
+- Bar Anticipation, Bakes Brewing, Jacks on the Tracks, McCann's — all overridden to `city='Belmar'` per Tony's "Lake Como/Wall/Manasquan should also be treated as Belmar" rule.
+- 10th Ave Burrito — address "801 Belmar Plaza, Belmar NJ 07719" parsed to `city='Belmar NJ 07719'` (no comma between town and state). Corrected to `'Belmar'`.
+- Several venues lacked `lat`/`lng` (D'Jais, 10th Ave Burrito, Bakes Brewing, Jacks on the Tracks) so they were filtered out of the home feed by the venue-coords prefilter. Approximate centroids added.
+
+**`src/app/api/events/search/route.js`** projects `venue_city` on each transformed event so the client can use it without a second join.
+
+### 4. Location autocomplete — local-first NJ towns list
+
+**The bug.** Nominatim's relevance ranking falls apart for short queries. Typing "as" returned only "Lindenwold, New Jersey" — no Asbury Park anywhere in its top 10. Re-ranking client-side can't help if the desired match isn't in the response at all.
+
+**The fix.** Curated local list, Nominatim as supplement.
+
+- **`src/lib/njTowns.js`** (NEW). ~80 NJ towns (whole Jersey Shore + major NJ cities) with approximate centroids. `matchNjTowns(query, limit)` does prefix-match-then-substring-match, alphabetical within each tier. Easy to extend — just add to the array.
+- **`src/app/page.js` — `fetchLocationSuggestions`.** Local matches now render synchronously (zero debounce, zero network) the moment the user types 2+ characters. Nominatim still fires in the background to fill remaining slots with long-tail towns not in the curated list. Nominatim hits get deduped against local hits by lowercased town name.
+
+Result: "as" → Asbury Park first, "be" → Belmar/Bay Head/Beach Haven, "ma" → Manasquan/Mantoloking/Marlboro/Matawan/Middletown.
+
+### Files Changed (April 27 — continued)
+
+| File | Change |
+|------|--------|
+| `src/lib/waterfall.js` | Template image wins over legacy `event_image_url`; locked/unlocked branching removed |
+| `src/components/HeroSection.js` | Title priority swap (`event_title` primary, `artist_name` italic subtitle); subtitle hidden when `template_id`; CTA text trimmed |
+| `src/components/EventCardV2.js` | `isTemplated` / `canonicalArtistName` / `hasFollowableArtist`; subtitle + Follow gated on template_id |
+| `src/components/SavedGigCard.js` | Same template/follow gates as EventCardV2 |
+| `src/app/page.js` | X clear no longer triggers GPS; `townOnly` state + checkbox; town-aware filter (venue_city / address / name); GPS trigger resets townOnly; checkbox `colorScheme`; local-first autocomplete via `matchNjTowns` |
+| `src/app/api/events/search/route.js` | Joins `venues.city`; projects `venue_city` on each event |
+| `src/lib/njTowns.js` | NEW — curated NJ towns reference list + `matchNjTowns` helper |
+| Supabase `venues` table | New `city` column; backfill + hand-overrides; coords added to D'Jais, 10th Ave Burrito, Bakes Brewing, Jacks on the Tracks |
+
+### Tasks closed this continuation
+
+- #119 ArtistProfileScreen: fetch artist's upcoming events directly
+- #120 Fix ArtistProfileScreen events query — drop nonexistent start_time column
+- #121 Hero title priority — prefer waterfall event_title over raw artist_name
+- #122 Hero: hide alias subtitle when template_id; Waterfall: template image wins
+- #131 Location filter: stop auto-repopulating town on X clear
+- #132 EventCardV2: hide alias subtitle + Follow button on template-only events
+- #133 Location filter: "Only events in this town" checkbox
+- #134 SavedGigCard: same template/follow gates as EventCardV2
+- #135 Add venues.city + backfill + immediate data fixes (UI build is #82, still pending)
+- #136 Location autocomplete: alphabetical prefix-match ranking
+- #137 Location autocomplete: local-first NJ towns list
+
+### Tasks still open
+
+- **#82** Admin Venues management tab UI — schema + immediate data fixes shipped today; the actual UI (sortable list, edit modal, geocode button, +Add Venue) is the 2-3 hour build deferred to next session.
+- **#83** Image curation Phase 1 — Supabase Storage migration for high-profile artists.
+- **#84** Backfill historical orphan events with artist_id + venue_id.
+- **#85** White-text-on-orange button sweep.
+- **#86** Custom scraper for Asbury Park Boardwalk venue family.
+- **#106** Replace regex filter with `kind='musician'` across My Locals + autocomplete + follow-suggest.
+
