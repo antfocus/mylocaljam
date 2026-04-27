@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import ArtistMonogram from '@/components/ArtistMonogram';
+import { supabase } from '@/lib/supabase';
 const BRAND_ORANGE = '#E8722A';
 
 export default function ArtistProfileScreen({
@@ -14,9 +15,15 @@ export default function ArtistProfileScreen({
   onBack,
 }) {
   const [bioExpanded, setBioExpanded] = useState(false);
+  // Fallback artist row from the artists table — only fetched when the events
+  // array doesn't carry image/bio/genres for this artist (e.g., user lands
+  // here from My Locals and none of their upcoming events are in the current
+  // home feed). This is what keeps Jonathan Kirschner's photo on screen even
+  // when no event for him is loaded.
+  const [dbArtist, setDbArtist] = useState(null);
 
   // ── Gather artist data from events ──────────────────────────────────────
-  const artistData = useMemo(() => {
+  const eventsArtistData = useMemo(() => {
     const nameL = artistName.toLowerCase();
     let imageUrl = null;
     let bio = '';
@@ -50,7 +57,39 @@ export default function ArtistProfileScreen({
     return { imageUrl, bio, genres, upcoming };
   }, [artistName, events]);
 
-  const { imageUrl, bio, genres, upcoming } = artistData;
+  // Fetch the artists-table row when events don't supply enough. We re-run
+  // whenever the artist changes; if we already have all three fields from
+  // events we skip the network call.
+  useEffect(() => {
+    setDbArtist(null);
+    if (!artistName) return;
+    const { imageUrl: evImg, bio: evBio, genres: evGenres } = eventsArtistData;
+    if (evImg && evBio && evGenres.length) return;
+
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('artists')
+        .select('id, name, image_url, bio, genres')
+        .ilike('name', artistName)
+        .limit(1);
+      if (cancelled) return;
+      if (error) {
+        console.error('[ArtistProfileScreen] artists fallback fetch failed:', error.message);
+        return;
+      }
+      if (data && data.length) setDbArtist(data[0]);
+    })();
+    return () => { cancelled = true; };
+  }, [artistName, eventsArtistData]);
+
+  // Merge: events first, artists-table row as fallback.
+  const imageUrl = eventsArtistData.imageUrl || dbArtist?.image_url || null;
+  const bio      = eventsArtistData.bio      || dbArtist?.bio       || '';
+  const genres   = eventsArtistData.genres.length
+    ? eventsArtistData.genres
+    : (dbArtist?.genres || []);
+  const upcoming = eventsArtistData.upcoming;
 
   // Theme
   const bgColor      = darkMode ? '#0D0D12' : '#F7F5F2';
@@ -225,21 +264,14 @@ export default function ArtistProfileScreen({
 
       {/* ── 2. Bio & Action Bar ──────────────────────────────────────────── */}
       <div style={{ padding: '0 20px', marginTop: imageUrl ? '-40px' : '16px', position: 'relative', zIndex: 1 }}>
-        {/* Artist name.
-            With image: 28px DM Sans, sits at -40px to overlay the photo.
-            No image: Outfit Black + uppercase + larger size — the typography
-            IS the hero. Compact enough to keep Upcoming Shows above the fold. */}
-        <h1 style={imageUrl ? {
+        {/* Artist name — same 28px DM Sans treatment whether or not there's
+            an image. With image, the -40px margin pulls it over the photo's
+            bottom gradient; without, it sits below the small monogram circle. */}
+        <h1 style={{
           fontSize: '28px', fontWeight: 800, color: textPrimary,
           fontFamily: "'DM Sans', sans-serif",
           margin: 0, lineHeight: 1.1,
-          textShadow: darkMode ? '0 2px 12px rgba(0,0,0,0.6)' : 'none',
-        } : {
-          fontSize: 'clamp(32px, 9vw, 44px)', fontWeight: 900, color: textPrimary,
-          fontFamily: "'Outfit', sans-serif",
-          textTransform: 'uppercase',
-          letterSpacing: '-0.02em',
-          margin: 0, lineHeight: 1.0,
+          textShadow: darkMode && imageUrl ? '0 2px 12px rgba(0,0,0,0.6)' : 'none',
         }}>
           {artistName}
         </h1>
