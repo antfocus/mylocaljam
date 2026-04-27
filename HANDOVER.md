@@ -4701,3 +4701,127 @@ Worth considering an auto-geocode step on venue insert (admin form or DB trigger
 - #69 Fix hero collapse scroll jump
 - #70 Build Osprey Nightclub venue scraper
 
+---
+
+## Session — April 27, 2026 — Artist directory cleanup: kind column, monogram fallback, profile screen polish
+
+### Summary
+
+Three threads in one session:
+
+1. **Data model.** Added `artists.kind` discriminator (`musician` | `event` | `billing`). Backfilled 13 obvious events (trivia, drink specials, sip & shop) and 100 billings (concatenated lineups like "Headliner w/ Opener 1, Opener 2") via two review-first SQL passes. 1118 musicians remain as the default.
+2. **Image / monogram fallback.** New `ArtistMonogram` component renders a brand-cohesive duotone gradient + first-letter avatar when an artist has no `image_url`. `ArtistProfileScreen` now also falls back to the artists-table row directly via Supabase when the events array doesn't carry image/bio/genres (fixes profile photos disappearing when entered from My Locals).
+3. **ArtistProfileScreen polish.** Dropped bio truncation, shrunk the photo-overlay back button to a 32×32 round icon, replaced genre pills with a small-caps metadata line, made Follow the primary action (orange-filled), demoted Share to a 38×38 round icon-only button.
+
+Plus: admin Artists tab now has a 3-way Musician/Billing/Event `<select>` styled as a colored pill on every row, so the team can re-classify any misclassified row in one click. Backend PUT route accepts the new value through the existing arbitrary-update flow with a fresh enum guard.
+
+### 1. `artists.kind` schema + backfill
+
+**Migration 1** — `add_artists_kind_column`:
+
+```sql
+ALTER TABLE public.artists
+  ADD COLUMN kind text NOT NULL DEFAULT 'musician'
+    CHECK (kind IN ('musician', 'event'));
+CREATE INDEX IF NOT EXISTS artists_kind_idx ON public.artists (kind);
+```
+
+**Migration 2** — `extend_artists_kind_billing` (later in session):
+
+```sql
+ALTER TABLE public.artists DROP CONSTRAINT IF EXISTS artists_kind_check;
+ALTER TABLE public.artists ADD CONSTRAINT artists_kind_check
+  CHECK (kind IN ('musician', 'event', 'billing'));
+```
+
+**Backfill — events (13 rows).** Conservative regex against the existing artists list, all 13 reviewed by hand before UPDATE. Patterns matched: `^\*.+\*$` (asterisk-wrapped names like `*Easter Sip & Shop*`) and a small keyword set (`trivia|karaoke|bingo|bogo|sip & shop|wing night|taco tuesday|burger night|drink special|happy hour`). Notable border case: `*Kegs & Eggs w/ Bullzeye Band*` was flipped to `event` — Bullzeye Band is a real artist nested in the wrapper but extracting it cleanly is manual work for later.
+
+**Backfill — billings (100 rows).** Higher-confidence patterns only, no single-comma matches (would have caught real bands like "Crosby, Stills & Nash"):
+
+- 2+ commas in name (multi-artist comma list)
+- `\sw/\s` (slash-with abbreviation — e.g. "Tab Benoit w/ Ghalia Volt")
+- `\s(feat\.|ft\.|featuring)\s`
+- `\spresents\s` (e.g. "North 2 Shore Presents Hot Mulligan")
+
+Zero false positives on review. ~7 rows are arguably events not billings (drink-special listings, "Open Mic w/ PM Ryder", etc.) — left as billings since both kinds are equally hidden from user surfaces, can be flipped later via the admin toggle.
+
+**Final tallies (prod):** 1118 musician / 100 billing / 14 event.
+
+### 2. ArtistMonogram + image fallback
+
+**`src/components/ArtistMonogram.js`** (NEW). Letter-fallback avatar. Hash-by-name picks one of 8 brand-cohesive duotone gradients deterministically (so each artist gets a stable color forever). Outfit Black initial letter, always-orange (`#E8722A`) accent stripe at the bottom. Two sizes: `sm` (56px round, used in lists) and `lg` (square, fills its container — used in earlier mockups but the profile screen ended up using `sm` at 80×80 instead).
+
+**`src/components/FollowingTab.js`.** My Locals tab list rows now render the monogram in place of the music-note SVG placeholder when `image_url` is missing. Same file also got the regex prefilter (`looksLikeEvent` helper) as a launch-time band-aid for the data-quality issue — slated for replacement by `WHERE kind='musician'` on the server (#106 deferred per Tony, "good enough for launch").
+
+**`src/components/ArtistProfileScreen.js` — fallback fetch.** Earlier symptom: Jonathan Kirschner's profile photo disappeared when entered from My Locals if his upcoming Triumph Brewing show wasn't in the current home feed. Root cause was that `ArtistProfileScreen` derived `imageUrl` exclusively from a scan of the `events` prop. Fix: added a `useEffect` that does a case-insensitive `ilike` lookup on the `artists` table when the events scan didn't supply image/bio/genres. Merge order: events first (covers normal flow), artists-table row as fallback (covers My Locals navigation).
+
+### 3. ArtistProfileScreen polish
+
+Five refinements after Tony reviewed in production:
+
+1. **Title** — kept 28px DM Sans for both image and no-image states. Briefly tried Outfit Black uppercase clamp(32–44px) for the no-image case (magazine layout), reverted same session — too loud.
+2. **Bio** — dropped the "...more" / `WebkitLineClamp: 3` truncation. Full bio always renders. Removed the now-unused `bioExpanded` state.
+3. **Back button (photo overlay case)** — went from a 14px-padded pill with "Back" label to a 32×32 round icon-only button at `rgba(0,0,0,0.35)`. Swipe-right and browser back are still the primary paths; this stays as the discoverability fallback for desktop.
+4. **Genres** — replaced individual rounded-pill chips with a single small-caps metadata line (`ROCK · JAZZ · BLUES · R&B`). Reads as descriptive metadata, not as buttons. Stops competing visually with the action pills.
+5. **Action buttons** — Follow is now the primary CTA: orange-filled when not followed, neutral outlined when "Following". Share dropped its label and pill — became a 38×38 round icon-only button next to Follow. Clear hierarchy: one CTA, one utility.
+
+**Upcoming Local Shows** — briefly tried a multi-line editorial layout (date + day stacked left, venue + time stacked right). Tony rejected, reverted to the original single-line `APR 27 ──── Pig & Parrot Brielle` listing.
+
+### 4. Admin Artists tab — 3-way kind selector
+
+**`src/components/admin/AdminArtistsTab.js`.** New `KindToggle` component renders a native `<select>` styled to look like a colored pill (so we get free accessibility, keyboard support, click-outside, and a real menu). Three values:
+
+- `musician` — slate gray fill, no border. Default. Most rows.
+- `billing` — indigo/blue tint with subtle border.
+- `event` — brand-orange fill + orange border. Pops out visually when scrolling the directory.
+
+Inline-SVG chevron baked into the trigger via `background-image`. New "Kind" column on the desktop row layout (rightmost, 92px wide). On mobile, the pill renders under the artist name only when `kind !== 'musician'`, so the 1118-row musician case stays uncluttered.
+
+Selecting a new value calls the existing `PUT /api/admin/artists` endpoint with `{ id, kind: 'X' }` and re-fetches the list. The endpoint's PUT handler already accepts arbitrary updates; only addition was a new `ALLOWED_KINDS = ['musician', 'event', 'billing']` enum guard alongside the existing `default_category` guard.
+
+### 5. Decision: kind vs. delete
+
+Worth recording for future sessions. Tony asked why we kept misclassified rows as `kind='event'`/`'billing'` instead of deleting them via the existing delete-with-blacklist flow. Decision tree:
+
+- **Kind preserves linked-event references.** Events still display "Sweet Lou and The River Rats with Dabble" as their listed artist — exactly the visual the user wants — without the row showing up in the artist directory or follow surfaces.
+- **Reversible in one click.** "DJ Rob Busch" might be a real DJ later; flip kind back. Delete is destructive (loses image, bio, genres).
+- **Decoupled from the linked-event decision.** The existing DELETE endpoint forces a per-row choice between hide-events / unlink-events / convert-to-special. Kind avoids that friction for the easy 113-row sweep.
+- **Future surfaces.** If we ever want a discoverable "Trivia Nights" or "Karaoke" category that surfaces these as events, kind is the discriminator we need.
+
+For genuinely garbage rows the existing delete + ignored_artists blacklist still applies; kind is the soft-hide for the gray area.
+
+### 6. Open follow-ups (Tony deciding on this tomorrow)
+
+- **Billing-row splitting** — should `*Kegs & Eggs w/ Bullzeye Band*` and the 99 other billings get auto-split into individual artist rows with events relinked, or just stay hidden as billings? Tony's call: hidden is fine for now, events keep the lineup string for display.
+- **Ambiguous "X and the Y" names** — the conservative regex deliberately did NOT catch "Hump Day and The Mangos" (could be one band or two). Tony will manually flip these to `kind='billing'` via the admin toggle as he spots them.
+- **Front-end filters using `kind`** — task #106 is deferred. Today's regex prefilter in `FollowingTab` covers My Locals; home autocomplete + follow-suggest paths still need migrating to `WHERE kind='musician'`. Not blocking launch.
+
+### Files Changed (April 27)
+
+| File | Change |
+|------|--------|
+| `src/components/ArtistMonogram.js` | NEW — 56px round / square fill letter-fallback avatar with hash-by-name palette |
+| `src/components/FollowingTab.js` | `looksLikeEvent` regex prefilter for My Locals + monogram replaces music-note placeholder |
+| `src/components/ArtistProfileScreen.js` | artists-table image fallback via useEffect; bio truncation dropped; back button → icon-only; genre pills → small-caps line; Follow → orange primary; Share → round icon-only |
+| `src/components/admin/AdminArtistsTab.js` | New `KindToggle` component (3-way `<select>` styled as pill); new "Kind" column header + cell |
+| `src/app/api/admin/artists/route.js` | `ALLOWED_KINDS` enum guard added to PUT handler |
+| Supabase migration `add_artists_kind_column` | `kind text NOT NULL DEFAULT 'musician'` + CHECK + index + COMMENT |
+| Supabase migration `extend_artists_kind_billing` | CHECK constraint expanded to include `'billing'` |
+| Supabase `artists` rows | 13 → kind='event', 100 → kind='billing' (1118 musicians remain default) |
+
+### Tasks closed this session
+
+- #102 Build ArtistMonogram + Path A filter + Magazine no-image layout
+- #103 Add artists-table image fallback to ArtistProfileScreen
+- #104 Revert ArtistProfileScreen title to 28px DM Sans
+- #105 Backfill artists.kind via heuristic (events review pass)
+- #107 Admin Artists tab: minimal Musician/Event toggle
+- #108 Extend artists.kind to allow 'billing' value
+- #109 Backfill artists.kind='billing' via conservative regex
+- #110 Replace 2-state toggle pill with 3-state dropdown in admin
+- #111 ArtistProfileScreen polish (truncation, back button, shows table, action buttons)
+
+### Tasks still open
+
+- #106 Replace regex filter with kind='musician' across My Locals + autocomplete + follow-suggest (deferred — regex prefilter is launch-adequate)
+
