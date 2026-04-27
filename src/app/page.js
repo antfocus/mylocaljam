@@ -789,7 +789,17 @@ export default function HomePage() {
   useEffect(() => { isLoggedInRef.current = isLoggedIn; }, [isLoggedIn]);
   useEffect(() => { favoritesRef.current = favorites; }, [favorites]);
 
-  // Fetch follows from API when user logs in
+  // Fetch follows from API when user logs in.
+  //
+  // Depend on `user?.id` (a stable string) instead of the `user` object
+  // reference. Supabase's onAuthStateChange fires on token refresh,
+  // visibility change, network reconnect, etc., calling setUser() with a
+  // fresh object reference each time. Depending on the object would re-run
+  // this effect on every auth event and race with optimistic follow-state
+  // updates: a follow-then-follow sequence could see the second optimistic
+  // entry clobbered by a stale GET fired between the two POSTs. Stable
+  // user-identity dependency means the effect only re-fires on real
+  // login / logout / user-switch, not on every auth heartbeat.
   useEffect(() => {
     if (!isLoggedIn || !user) { setFollowing([]); return; }
     (async () => {
@@ -805,7 +815,8 @@ export default function HomePage() {
         }
       } catch {}
     })();
-  }, [isLoggedIn, user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, user?.id]);
 
   const followEntity = useCallback(async (entityType, entityName) => {
     // Hard gate: require auth

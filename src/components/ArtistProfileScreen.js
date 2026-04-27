@@ -28,6 +28,12 @@ export default function ArtistProfileScreen({
   // for the fetch outcome instead of pre-committing to monogram.
   const [dbArtist, setDbArtist] = useState(null);
   const [dbArtistLoading, setDbArtistLoading] = useState(true);
+  // Upcoming events fetched directly from Supabase. The `events` prop is
+  // sourced from the paginated/date-filtered home feed (/api/events/search),
+  // so an artist with 14 upcoming shows might surface only 2 here. We fetch
+  // the artist's full upcoming slate independently so the profile screen
+  // shows a complete listing regardless of the home feed's current page.
+  const [dbEvents, setDbEvents] = useState(null);
 
   // ── Gather artist data from events ──────────────────────────────────────
   const eventsArtistData = useMemo(() => {
@@ -75,32 +81,61 @@ export default function ArtistProfileScreen({
   // hidden until we've actually confirmed there's no image.
   useEffect(() => {
     setDbArtist(null);
+    setDbEvents(null);
     setDbArtistLoading(true);
     if (!artistName) {
-      setDbArtistLoading(false);
-      return;
-    }
-    const { imageUrl: evImg, bio: evBio, genres: evGenres } = eventsArtistData;
-    if (evImg && evBio && evGenres.length) {
-      // Events array already supplied everything — no fetch, not loading.
       setDbArtistLoading(false);
       return;
     }
 
     let cancelled = false;
     (async () => {
-      const { data, error } = await supabase
+      // 1) Artist row by name (case-insensitive). Powers image/bio/genres
+      //    fallback when the home feed's events array doesn't carry them.
+      const { data: artistRow, error: artistErr } = await supabase
         .from('artists')
         .select('id, name, image_url, bio, genres')
         .ilike('name', artistName)
         .limit(1);
       if (cancelled) return;
-      if (error) {
-        console.error('[ArtistProfileScreen] artists fallback fetch failed:', error.message);
-        setDbArtistLoading(false);
-        return;
+      if (artistErr) {
+        console.error('[ArtistProfileScreen] artists fallback fetch failed:', artistErr.message);
+      } else if (artistRow && artistRow.length) {
+        setDbArtist(artistRow[0]);
       }
-      if (data && data.length) setDbArtist(data[0]);
+
+      // 2) Upcoming events for this artist. We can't trust `events` prop
+      //    to be complete — it's the paginated home feed. Fetch directly:
+      //    match by FK if the artist row resolved, OR by artist_name string
+      //    for unlinked rows. Cap at 30 upcoming shows; way more than we'd
+      //    need to display.
+      const artistId = artistRow?.[0]?.id;
+      const todayIso = new Date().toISOString();
+      let eventQuery = supabase
+        .from('events')
+        .select('id, event_date, start_time, event_title, artist_name, venue_name, event_image_url, image_url')
+        .eq('status', 'published')
+        .gte('event_date', todayIso)
+        .order('event_date', { ascending: true })
+        .limit(30);
+      if (artistId) {
+        // FK match catches descriptive event names ("MUSHMOUTH: Back to the
+        // Beach...") that would miss a string ILIKE; ILIKE catches unlinked
+        // rows whose artist_id never resolved.
+        eventQuery = eventQuery.or(
+          `artist_id.eq.${artistId},artist_name.ilike.${artistName.replace(/[%,]/g, '\\$&')}`
+        );
+      } else {
+        eventQuery = eventQuery.ilike('artist_name', artistName);
+      }
+      const { data: evRows, error: evErr } = await eventQuery;
+      if (cancelled) return;
+      if (evErr) {
+        console.error('[ArtistProfileScreen] artist events fetch failed:', evErr.message);
+      } else if (evRows) {
+        setDbEvents(evRows);
+      }
+
       setDbArtistLoading(false);
     })();
     return () => { cancelled = true; };
@@ -112,7 +147,37 @@ export default function ArtistProfileScreen({
   const genres   = eventsArtistData.genres.length
     ? eventsArtistData.genres
     : (dbArtist?.genres || []);
-  const upcoming = eventsArtistData.upcoming;
+
+  // Upcoming events: prefer the directly-fetched dbEvents list (complete +
+  // accurate), fall back to whatever events the home feed's `events` prop
+  // happened to include. Either way, apply the 6 AM rollover so events
+  // stay visible until the morning AFTER the show, not the start time.
+  const upcoming = useMemo(() => {
+    const source = dbEvents
+      ? dbEvents.map(e => ({
+          ...e,
+          // Normalize to the field names the render below already reads.
+          date: e.event_date,
+          venue: e.venue_name,
+        }))
+      : eventsArtistData.upcoming;
+    if (!source || source.length === 0) return [];
+    const now = new Date();
+    return source
+      .filter(e => {
+        const raw = e.date || e.event_date;
+        if (!raw) return false;
+        const cutoff = new Date(String(raw).substring(0, 10) + 'T06:00:00');
+        cutoff.setDate(cutoff.getDate() + 1);
+        return now < cutoff;
+      })
+      .sort((a, b) => {
+        const ad = String(a.date || a.event_date);
+        const bd = String(b.date || b.event_date);
+        const dc = ad.localeCompare(bd);
+        return dc !== 0 ? dc : (a.start_time ?? '').localeCompare(b.start_time ?? '');
+      });
+  }, [dbEvents, eventsArtistData.upcoming]);
 
   // Theme
   const bgColor      = darkMode ? '#0D0D12' : '#F7F5F2';
