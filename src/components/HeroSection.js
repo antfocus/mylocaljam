@@ -374,12 +374,28 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
             }
 
             // ── Data mapping ─────────────────────────────────────────────
-            // Artist name is the primary display line; fall back to event_title/name if we
-            // don't have an artist linked. Event title only shown as the italic subtitle when
-            // it's a distinct value (skip if it duplicates the artist name).
-            const artistName = ev.artist_name || ev.event_title || ev.name || '';
-            const rawTitle = ev.event_title && ev.event_title.trim();
-            const eventTitle = (rawTitle && rawTitle !== ev.artist_name) ? rawTitle : '';
+            // Title priority follows the API's Triple Crown waterfall: when a
+            // template (or custom override) is linked, `event_title` is the
+            // waterfall-resolved display title (e.g. "Snow Crabs! (All You
+            // Can Eat)") and the raw `artist_name` field still holds the
+            // scraper string (e.g. "AYCE SNOW CRAB"). For unlinked events,
+            // the API mirrors `event_title` from the artist name, so a
+            // typical band ("Mushmouth") gets the same value either way.
+            //
+            // Read `event_title` first so templated events display their
+            // clean name. Show `artist_name` as the italic subtitle only
+            // when it's a distinct, non-empty string (so unlinked events
+            // don't echo the same name twice).
+            const titleRaw      = (ev.event_title || '').trim();
+            const artistRaw     = (ev.artist_name || '').trim();
+            const artistName    = titleRaw || artistRaw || (ev.name || '').trim();
+            // Italic subtitle = the scraper artist_name when it differs
+            // meaningfully from the resolved title. Suppressed when the
+            // values match (case-insensitive) so we don't show the same
+            // string twice.
+            const eventTitle    = (artistRaw && artistRaw.toLowerCase() !== artistName.toLowerCase())
+              ? artistRaw
+              : '';
 
             const venue = ev.venue || ev.venue_name || '';
             const timeStr = formatTimeFull(ev.start_time);
