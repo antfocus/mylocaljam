@@ -19,7 +19,15 @@ export default function ArtistProfileScreen({
   // here from My Locals and none of their upcoming events are in the current
   // home feed). This is what keeps Jonathan Kirschner's photo on screen even
   // when no event for him is loaded.
+  //
+  // `dbArtistLoading` exists to suppress the "no-image" branch (back button +
+  // monogram + small layout) until we've confirmed there really is no image.
+  // Without this gate, opening a profile from My Locals showed the monogram
+  // for ~500ms before the artists-table fetch resolved and swapped in the
+  // photo — visible flicker. Default `true` so the very first paint waits
+  // for the fetch outcome instead of pre-committing to monogram.
   const [dbArtist, setDbArtist] = useState(null);
+  const [dbArtistLoading, setDbArtistLoading] = useState(true);
 
   // ── Gather artist data from events ──────────────────────────────────────
   const eventsArtistData = useMemo(() => {
@@ -59,11 +67,25 @@ export default function ArtistProfileScreen({
   // Fetch the artists-table row when events don't supply enough. We re-run
   // whenever the artist changes; if we already have all three fields from
   // events we skip the network call.
+  //
+  // Loading-state contract: we set `dbArtistLoading=true` at the start of
+  // every effect run, then flip to false either (a) immediately if events
+  // already gave us everything (no fetch needed), or (b) after the fetch
+  // resolves / errors. Render uses this flag to keep the no-image branch
+  // hidden until we've actually confirmed there's no image.
   useEffect(() => {
     setDbArtist(null);
-    if (!artistName) return;
+    setDbArtistLoading(true);
+    if (!artistName) {
+      setDbArtistLoading(false);
+      return;
+    }
     const { imageUrl: evImg, bio: evBio, genres: evGenres } = eventsArtistData;
-    if (evImg && evBio && evGenres.length) return;
+    if (evImg && evBio && evGenres.length) {
+      // Events array already supplied everything — no fetch, not loading.
+      setDbArtistLoading(false);
+      return;
+    }
 
     let cancelled = false;
     (async () => {
@@ -75,9 +97,11 @@ export default function ArtistProfileScreen({
       if (cancelled) return;
       if (error) {
         console.error('[ArtistProfileScreen] artists fallback fetch failed:', error.message);
+        setDbArtistLoading(false);
         return;
       }
       if (data && data.length) setDbArtist(data[0]);
+      setDbArtistLoading(false);
     })();
     return () => { cancelled = true; };
   }, [artistName, eventsArtistData]);
@@ -199,7 +223,17 @@ export default function ArtistProfileScreen({
         willChange: 'transform',
       }}
     >
-      {/* ── 1. Hero Header (only if image exists) ─────────────────────── */}
+      {/* ── 1. Hero Header ──────────────────────────────────────────────
+          Three-state render to eliminate the monogram-to-photo blip when
+          entering from My Locals:
+            • imageUrl present              → photo overlay (Magazine A)
+            • dbArtistLoading + no image    → neutral dark slab placeholder
+                                              (matches photo height so layout
+                                              doesn't shift when image lands)
+            • !loading + no image           → monogram + small layout
+          Without the loading gate, every entry where events doesn't have
+          the image showed the monogram for ~500ms before the artists-table
+          fetch resolved and replaced it with the photo. */}
       {imageUrl ? (
         <div style={{ position: 'relative', width: '100%', height: '300px', flexShrink: 0 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -224,6 +258,32 @@ export default function ArtistProfileScreen({
               back gesture on mobile; this is the discoverability fallback
               for desktop and first-time users. Small enough to not dominate
               the photo. */}
+          <button
+            onClick={onBack}
+            aria-label="Back"
+            style={{
+              position: 'absolute', top: '14px', left: '14px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px',
+              background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(6px)',
+              border: 'none', borderRadius: '50%',
+              cursor: 'pointer', padding: 0,
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="rgba(255,255,255,0.85)" />
+            </svg>
+          </button>
+        </div>
+      ) : dbArtistLoading ? (
+        /* Loading slab — same 300px height as the photo branch so when the
+            image lands there's no layout shift. Just the bgColor with a
+            back button overlay. No monogram, no title — those reveal once
+            we know whether the artist actually has an image or not. */
+        <div style={{
+          position: 'relative', width: '100%', height: '300px', flexShrink: 0,
+          background: darkMode ? '#13131C' : '#EDEAE5',
+        }}>
           <button
             onClick={onBack}
             aria-label="Back"
@@ -273,8 +333,13 @@ export default function ArtistProfileScreen({
         </div>
       )}
 
-      {/* ── 2. Bio & Action Bar ──────────────────────────────────────────── */}
-      <div style={{ padding: '0 20px', marginTop: imageUrl ? '-40px' : '16px', position: 'relative', zIndex: 1 }}>
+      {/* ── 2. Bio & Action Bar ──────────────────────────────────────────────
+          marginTop logic: -40px when an image (or loading slab) is up top so
+          the title overlaps the photo's bottom gradient; 16px when the
+          no-image compact header is in place. Treating "loading" the same as
+          "image" keeps the bio block stationary when the slab swaps to a
+          real photo — no upward jump on image-load. */}
+      <div style={{ padding: '0 20px', marginTop: (imageUrl || dbArtistLoading) ? '-40px' : '16px', position: 'relative', zIndex: 1 }}>
         {/* Artist name — same 28px DM Sans treatment whether or not there's
             an image. With image, the -40px margin pulls it over the photo's
             bottom gradient; without, it sits below the small monogram circle. */}
