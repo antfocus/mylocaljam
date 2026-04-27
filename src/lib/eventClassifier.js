@@ -21,7 +21,16 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 export const ALLOWED_CATEGORIES = ['Live Music', 'Trivia', 'Karaoke', 'DJ/Dance Party', 'Comedy', 'Other'];
-export const CONFIDENCE_THRESHOLD = 0.85;
+
+// Confidence threshold for auto-stamping a category vs. flagging for manual
+// review. Lowered from 0.85 → 0.70 (April 27, 2026) after the smart-SQL
+// triage backfill cleared the 185-row queue and showed that ~95% of
+// "below 0.85" events were obvious Live Music rows where the LLM was
+// being conservative. Raising the auto-stamp rate keeps the Triage tab
+// from re-piling. Humans still verify; this just changes who acts first.
+// 'Other' is a permitted category so genuinely ambiguous events can
+// still land somewhere instead of indefinitely sitting in pending.
+export const CONFIDENCE_THRESHOLD = 0.70;
 
 /**
  * Ask Perplexity to classify a single event.
