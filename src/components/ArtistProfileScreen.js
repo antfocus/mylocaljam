@@ -111,9 +111,16 @@ export default function ArtistProfileScreen({
       //    need to display.
       const artistId = artistRow?.[0]?.id;
       const todayIso = new Date().toISOString();
+      // NOTE: do NOT select `start_time` — it's not a real column on
+      // events. The home-feed search route computes it via a waterfall
+      // (event_templates.start_time → fallback extraction from event_date
+      // and title regex). Asking PostgREST for a column that doesn't
+      // exist 400s the whole request, which silently bricks `dbEvents`
+      // and causes the profile to fall back to the empty home-feed slice
+      // — was the symptom Tony hit on April 27. Pull only real columns.
       let eventQuery = supabase
         .from('events')
-        .select('id, event_date, start_time, event_title, artist_name, venue_name, event_image_url, image_url')
+        .select('id, event_date, event_title, artist_name, venue_name, event_image_url, image_url')
         .eq('status', 'published')
         .gte('event_date', todayIso)
         .order('event_date', { ascending: true })
