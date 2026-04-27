@@ -219,33 +219,56 @@ export async function GET(request) {
   //
   // The full search term is matched as a single substring — so "stone po"
   // matches "The Stone Pony" because the string contains "stone po".
-  // This is a simple ILIKE '%term%' across the 3 indexed columns.
   //
-  // Template names (event_templates.template_name) are NOT searchable at
-  // the DB level because PostgREST .or() can't filter across relations.
-  // The sync route copies template category onto events.category and
-  // template_name often matches event_title, so coverage is near-complete.
+  // PostgREST .or() can't filter across joined relations directly, so to
+  // cover events whose searchable name lives only on event_templates
+  // (e.g., venue special events like "Snow Crabs! (All You Can Eat)"
+  // where events.event_title is NULL but the template_name carries the
+  // real label), we pre-fetch matching template IDs and add them to the
+  // OR filter as `template_id.in.(uuid1,uuid2,...)`. One extra round-trip,
+  // but it brings template-driven events back into search results.
   let searchFilter = null;
+  let escaped = '';
   if (q) {
     // Sanitize for PostgREST .or() syntax:
     //   • % and _ are ILIKE wildcards — escape them so user-typed '%' is literal
     //   • Commas separate conditions in .or() — a comma in the value would
     //     split the filter string and produce a malformed condition
     //   • Parentheses are used for grouping in PostgREST filters
-    // The Spotlight route in /api/spotlight/route.js uses the same strategy:
-    //     .replace(/[,()]/g, ' ')
-    const escaped = q
+    escaped = q
       .replace(/%/g, '\\%')
       .replace(/_/g, '\\_')
       .replace(/[,()]/g, ' ')    // strip chars that break .or() syntax
       .trim();
 
     if (escaped) {
-      searchFilter = [
+      const conditions = [
         `event_title.ilike.%${escaped}%`,
         `artist_name.ilike.%${escaped}%`,
         `venue_name.ilike.%${escaped}%`,
-      ].join(',');
+      ];
+
+      // Pull template IDs whose template_name matches and OR them into the
+      // filter. Capped at 200 — far more than any realistic dropdown will
+      // surface, and bounded so a degenerate query like "a" can't blow up.
+      try {
+        const { data: matchingTemplates } = await supabase
+          .from('event_templates')
+          .select('id')
+          .ilike('template_name', `%${escaped}%`)
+          .limit(200);
+
+        const templateIds = (matchingTemplates || []).map(t => t.id).filter(Boolean);
+        if (templateIds.length > 0) {
+          conditions.push(`template_id.in.(${templateIds.join(',')})`);
+        }
+      } catch (err) {
+        // Don't fail the whole search if template lookup errors — just log
+        // and proceed with the original 3-column filter.
+        console.warn('[events/search] template_name lookup failed:', err.message);
+      }
+
+      searchFilter = conditions.join(',');
     }
   }
 

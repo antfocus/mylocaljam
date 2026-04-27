@@ -623,7 +623,16 @@ export default function HomePage() {
       if (rawTitle) {
         const key = normalizeVenue(rawTitle);
         if (key.includes(q)) {
-          const label = classifyTitle(rawTitle);
+          let label = classifyTitle(rawTitle);
+
+          // Template-backed events should never fall through to ARTIST.
+          // The template_name is an editorial event label (e.g. "Snow Crabs!
+          // (All You Can Eat)"), not an artist. If the keyword classifier
+          // didn't match, default to 'event' so the badge is honest.
+          if (!label && e.event_templates?.template_name) {
+            label = 'event';
+          }
+
           if (label) {
             if (!eventSet.has(key)) {
               eventSet.set(key, { label, display: rawTitle });
