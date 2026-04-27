@@ -29,6 +29,15 @@ const VENUE = 'River Rock';
 const EVENTS_URL = 'https://riverrockbricknj.com/events/';
 const DETAIL_BATCH_SIZE = 5;
 
+// Theme-banner titles to drop from the feed. River Rock's calendar uses
+// these as decorative weekly labels alongside the actual timed event of
+// the night (e.g. "Family Night" banner sits next to "Family Funday Monday
+// 5:00 PM" — we only want the latter). Match is case-insensitive on the
+// trimmed title. Add new entries lowercased.
+const BANNER_TITLES = new Set([
+  'family night',
+]);
+
 /**
  * Normalize time from "05:00 PM" → "5:00 PM"
  */
@@ -141,6 +150,9 @@ export async function scrapeRiverRock() {
 
         const title = ev.title?.trim();
         if (!title) continue;
+
+        // Drop theme-banner placeholders (see BANNER_TITLES note above).
+        if (BANNER_TITLES.has(title.toLowerCase())) continue;
 
         const externalId = `riverrock-${ev.id}-${date}`;
         if (seen.has(externalId)) continue;
