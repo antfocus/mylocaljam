@@ -180,18 +180,33 @@ export function applyWaterfall(event, opts = {}) {
     cleanStr(artist?.bio) ||
     '';
 
-  // Image — custom → (human ? event → template : template → event) → legacy → artist.
-  const event_image = humanEdited
-    ? (cleanImg(e.custom_image_url)
-        || cleanImg(e.event_image_url)
-        || cleanImg(tpl?.image_url)
-        || cleanImg(e.image_url)
-        || cleanImg(artist?.image_url))
-    : (cleanImg(e.custom_image_url)
-        || cleanImg(tpl?.image_url)
-        || cleanImg(e.event_image_url)
-        || cleanImg(e.image_url)
-        || cleanImg(artist?.image_url));
+  // Image waterfall.
+  //
+  //   1. Tier 0: custom_image_url — explicit per-event admin override (always wins).
+  //   2. Tier 1: template.image_url — wins WHENEVER an event is template-linked,
+  //              regardless of the row's `is_locked` / `is_human_edited` state.
+  //              Templates exist specifically to override scraper noise;
+  //              linking a template is the admin's signal that the template's
+  //              image is the desired canonical. To beat the template, set
+  //              `custom_image_url` (Tier 0).
+  //   3. Tier 2: event_image_url — scraper-supplied event image, used only
+  //              when there's no template OR the template has no image set.
+  //   4. Tier 3: legacy `events.image_url` (older scraper field).
+  //   5. Tier 4: artist.image_url — final fallback.
+  //
+  // The previous logic gave event_image_url priority over template image
+  // when `humanEdited === true`. That made sense for the "human curated
+  // this event's image" case, but it also fired whenever template-linking
+  // flipped the lock — which inverted the intended priority. The new
+  // ordering puts templates above the lock check; humans can still win
+  // by explicitly setting `custom_image_url`.
+  const event_image =
+    cleanImg(e.custom_image_url)
+    || (e.template_id ? cleanImg(tpl?.image_url) : null)
+    || cleanImg(e.event_image_url)
+    || cleanImg(tpl?.image_url)
+    || cleanImg(e.image_url)
+    || cleanImg(artist?.image_url);
 
   return {
     title,

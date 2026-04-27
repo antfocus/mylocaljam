@@ -390,10 +390,17 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
             const artistRaw     = (ev.artist_name || '').trim();
             const artistName    = titleRaw || artistRaw || (ev.name || '').trim();
             // Italic subtitle = the scraper artist_name when it differs
-            // meaningfully from the resolved title. Suppressed when the
-            // values match (case-insensitive) so we don't show the same
-            // string twice.
-            const eventTitle    = (artistRaw && artistRaw.toLowerCase() !== artistName.toLowerCase())
+            // meaningfully from the resolved title. Suppressed when:
+            //   • the values match (case-insensitive) — don't echo twice
+            //   • the event is template-linked — the raw artist_name is
+            //     the template's alias by definition (used for matching),
+            //     not a public-display value. Linking a template means
+            //     the admin curated this row; the scraper string should
+            //     disappear from view.
+            const isTemplated   = !!ev.template_id;
+            const eventTitle    = (!isTemplated
+              && artistRaw
+              && artistRaw.toLowerCase() !== artistName.toLowerCase())
               ? artistRaw
               : '';
 
