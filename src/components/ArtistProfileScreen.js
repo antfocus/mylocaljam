@@ -95,6 +95,16 @@ export default function ArtistProfileScreen({
   const textPrimary  = darkMode ? '#F0F0F5' : '#1F2937';
   const textMuted    = darkMode ? '#8A8AA8' : '#6B7280';
   const sectionTitle = darkMode ? '#7878A0' : '#6B7280';
+  // Neutral border + foreground used by the secondary action buttons (the
+  // "Following" pill outline and Share icon button). Dark-mode values lean
+  // on translucent white; light-mode values mirror in translucent black so
+  // the buttons stay visible against the F7F5F2 page background instead of
+  // ghosting out.
+  const neutralBorder = darkMode ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.20)';
+  const neutralFg     = darkMode ? 'rgba(255,255,255,0.70)' : 'rgba(0,0,0,0.65)';
+  // Bio uses a slightly stronger gray than `textMuted` — long-form prose
+  // needs better contrast than UI labels do.
+  const bioFg         = darkMode ? '#A0A0A0' : '#4B5563';
 
   // ── Swipe-to-back gesture ────────────────────────────────────────────────
   // Swipe right (L→R) to trigger onBack. Live translateX tracks the thumb.
@@ -308,16 +318,16 @@ export default function ArtistProfileScreen({
               letterSpacing: '0.2px',
               transition: 'all 0.2s ease',
               border: isFollowed
-                ? '1px solid rgba(255,255,255,0.18)'
+                ? `1px solid ${neutralBorder}`
                 : `1px solid ${BRAND_ORANGE}`,
               background: isFollowed ? 'transparent' : BRAND_ORANGE,
-              color: isFollowed ? 'rgba(255,255,255,0.7)' : '#FFFFFF',
+              color: isFollowed ? neutralFg : '#FFFFFF',
             }}
           >
             {isFollowed ? (
               <>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                  <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="rgba(255,255,255,0.7)" />
+                  <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill={neutralFg} />
                 </svg>
                 Following
               </>
@@ -349,13 +359,13 @@ export default function ArtistProfileScreen({
               width: '38px', height: '38px',
               borderRadius: '50%',
               cursor: 'pointer', padding: 0,
-              border: '1px solid rgba(255,255,255,0.18)',
+              border: `1px solid ${neutralBorder}`,
               background: 'transparent',
               transition: 'all 0.2s ease',
             }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill="rgba(255,255,255,0.7)" />
+              <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill={neutralFg} />
             </svg>
           </button>
         </div>
@@ -364,7 +374,7 @@ export default function ArtistProfileScreen({
             the ...more affordance was adding click-cost without payoff. */}
         <div style={{ marginTop: '14px' }}>
           <p style={{
-            fontSize: '14px', color: '#A0A0A0', lineHeight: 1.5, margin: 0,
+            fontSize: '14px', color: bioFg, lineHeight: 1.5, margin: 0,
             fontFamily: "'DM Sans', sans-serif",
             whiteSpace: 'pre-wrap',
           }}>
