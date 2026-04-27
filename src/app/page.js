@@ -2858,6 +2858,16 @@ export default function HomePage() {
                               width: '16px', height: '16px',
                               accentColor: '#E8722A',
                               cursor: 'pointer',
+                              // Pin the native control's color scheme to
+                              // the app theme. Without this, Chrome on
+                              // macOS / iOS auto-renders the OS-level
+                              // dark-mode checkbox (filled black square)
+                              // even when our page is light, making the
+                              // unchecked state look "filled / on" in
+                              // light mode. `colorScheme: 'light'` forces
+                              // a clear empty box in light mode; in dark
+                              // mode we want the dark native styling.
+                              colorScheme: darkMode ? 'dark' : 'light',
                             }}
                           />
                           <span style={{ color: townOnly ? '#E8722A' : t.textMuted }}>
