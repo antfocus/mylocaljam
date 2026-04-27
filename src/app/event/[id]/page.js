@@ -130,12 +130,13 @@ function flattenEvent(e) {
   };
 }
 
-/** Format event date for OG — e.g. "Friday, Mar 27" */
+/** Format event date for OG — e.g. "Mon Apr 27".
+ *  Short form so the headline + venue have room before iMessage truncates. */
 function formatOGDate(eventDate) {
   if (!eventDate) return '';
   try {
     return new Date(eventDate).toLocaleDateString('en-US', {
-      weekday: 'long',
+      weekday: 'short',
       month: 'short',
       day: 'numeric',
       timeZone: 'America/New_York',
@@ -145,8 +146,19 @@ function formatOGDate(eventDate) {
   }
 }
 
+/** Reject low-quality image URLs so the OG preview never falls back to a
+ *  200px Google search thumbnail. Mirrors opengraph-image.js. */
+function isLowQualityImage(url) {
+  if (!url) return false;
+  return /encrypted-tbn\d*\.gstatic\.com/i.test(url) || /\.gstatic\.com\/.*tbn:/i.test(url);
+}
+function preferQuality(v) {
+  return (v && !isLowQualityImage(v)) ? v : null;
+}
+
 /**
- * Format a 24h time string (e.g. "20:00") into "8:00 PM".
+ * Format a 24h time string (e.g. "20:00") into "8 PM" or "8:30 PM".
+ * Drops the ":00" on top-of-hour times to keep the OG title short.
  * Returns '' for midnight/null (midnight typically means "no time provided").
  */
 function formatOGTime(startTime) {
@@ -200,12 +212,17 @@ export async function generateMetadata({ params }) {
   const timeStr = formatOGTime(event.start_time);
   const eventBio = event.description || '';
 
-  // Waterfall: event flyer → artist photo (join) → artist photo (name match) → venue photo → logo.
-  // Note: opengraph-image.js owns the actual og:image waterfall and applies its
-  // own gstatic filter — this `rawImage` is only used for the description fallback.
-  let rawImage = event.event_image || event.artist_image || null;
+  // Image waterfall — used to declare og:image directly (bypassing the
+  // dynamic letterbox canvas in opengraph-image.js) so iMessage gets the
+  // source image at its natural aspect ratio. Apple then picks TALL preview
+  // for portrait posters and BANNER preview for landscape band photos,
+  // filling either way with no dark bars. Each step rejects gstatic thumbs.
+  let rawImage =
+    preferQuality(event.event_image) ||
+    preferQuality(event.artist_image) ||
+    null;
 
-  // If artist join returned no image (e.g. artist_id is null), try matching by artist_name
+  // If artist join returned no usable image, try matching by artist_name
   if (!rawImage && event.artist_name) {
     try {
       const { data: matchedArtist } = await supabase
@@ -215,22 +232,24 @@ export async function generateMetadata({ params }) {
         .not('image_url', 'is', null)
         .limit(1)
         .single();
-      if (matchedArtist?.image_url) rawImage = matchedArtist.image_url;
+      rawImage = preferQuality(matchedArtist?.image_url) || null;
     } catch { /* name lookup failed — fall through to venue/logo */ }
   }
 
-  // Continue waterfall: venue photo → branded fallback
-  if (!rawImage) rawImage = event.venue_photo || null;
-  const imageUrl = rawImage || `${baseUrl}/myLocaljam_Logo_v5.png`;
+  // Continue waterfall: venue photo → null (let opengraph-image.js render the wordmark fallback)
+  if (!rawImage) rawImage = preferQuality(event.venue_photo) || null;
 
-  // Build the date/time slug that appears in the OG title — e.g. "Friday, Mar 27 at 8 PM"
+  // Build the date/time slug — e.g. "Mon Apr 27 · 4 PM"
   const when = timeStr
-    ? `${dateStr} at ${timeStr}`
+    ? `${dateStr} · ${timeStr}`
     : dateStr;
 
-  // OG title: "<headline> at Venue | Friday, Mar 27 at 8 PM"
+  // OG title leads with date+time so the WHEN survives iMessage's ~75-char
+  // truncation. Worst case the venue gets cut, not the time. Format:
+  //   "Mon Apr 27 · 4 PM · Snow Crabs! at Sun Harbor Seafood and Grill"
+  //   "Fri May 1 · 5 PM · Steve Johnson at River Rock"
   const ogTitle = when
-    ? `${headline} at ${venueName} | ${when}`
+    ? `${when} · ${headline} at ${venueName}`
     : `${headline} at ${venueName}`;
 
   // Page <title> keeps the brand suffix
@@ -252,17 +271,18 @@ export async function generateMetadata({ params }) {
       type: 'website',
       url: `${baseUrl}/event/${id}`,
       siteName: 'MyLocalJam',
-      // og:image is generated dynamically by ./opengraph-image.js (file
-      // convention). Don't declare `images` here — explicit metadata
-      // overrides the file convention. The dynamic version letterboxes
-      // the event poster on a 1200x630 brand-dark canvas, so portrait
-      // posters no longer get cropped to their top half by iMessage.
+      // When we have a real source image, declare it directly so iMessage
+      // gets the image at its natural dimensions and picks the right
+      // preview style (TALL for portrait, BANNER for landscape) — no bars.
+      // When we don't, fall through to opengraph-image.js which renders
+      // the brand wordmark on a portrait canvas.
+      ...(rawImage && { images: [{ url: rawImage }] }),
     },
     twitter: {
       card: 'summary_large_image',
       title: ogTitle,
       description,
-      // twitter:image also auto-generated by the opengraph-image.js convention.
+      ...(rawImage && { images: [rawImage] }),
     },
   };
 }
