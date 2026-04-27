@@ -1018,6 +1018,13 @@ export default function HomePage() {
   }, [serverParams]);
 
   const [spotlightData, setSpotlightData] = useState([]);
+  // Tracks whether /api/spotlight has been fetched at least once. Used by
+  // the heroEvents memo to skip the "today's events" fallback during the
+  // initial loading window — without this, the Hero briefly shows the
+  // first event from the feed (e.g. Belmar Grass) before /api/spotlight
+  // resolves and the curated selection takes over. Flips true after the
+  // first fetch completes regardless of result.
+  const [spotlightFetched, setSpotlightFetched] = useState(false);
 
   // ── Initial mount + re-fetch when server params change ──────────────────────
   // Reset to page 1 whenever search, date filter, or dateKey changes.
@@ -1582,6 +1589,10 @@ export default function HomePage() {
       setSpotlightData(mapped);
     } catch {
       setSpotlightData([]);
+    } finally {
+      // Mark that we've completed at least one fetch attempt — the
+      // heroEvents memo uses this to gate its events-feed fallback.
+      setSpotlightFetched(true);
     }
   }, []);
 
@@ -1781,6 +1792,13 @@ export default function HomePage() {
     // Priority 1: Hydrated spotlight data from /api/spotlight
     if (spotlightData.length > 0) return spotlightData;
 
+    // While the spotlight fetch hasn't resolved yet, return an empty array
+    // so HeroSection renders its skeleton instead of falling through to the
+    // events feed (which causes the brief "Belmar Grass flash" before the
+    // curated selection takes over). The fallbacks below only kick in after
+    // we KNOW /api/spotlight returned no curated picks for today.
+    if (!spotlightFetched) return [];
+
     // Priority 2: Algorithmic fallback — today's events sorted by time
     const todayEvents = events
       .filter(e => e.date === todayStr)
@@ -1806,7 +1824,7 @@ export default function HomePage() {
         return (a.start_time ?? '').localeCompare(b.start_time ?? '');
       })
       .slice(0, 6);
-  }, [events, todayStr, spotlightData]);
+  }, [events, todayStr, spotlightData, spotlightFetched]);
 
   const heroIsToday = heroEvents.length > 0 && heroEvents[0]?.date === todayStr;
 
