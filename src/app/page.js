@@ -1973,8 +1973,9 @@ export default function HomePage() {
   }
 
   const radiusIsOverridden = milesRadius !== profileRadiusRef.current;
-  const hasActiveFilters = dateKey !== 'all' || radiusIsOverridden || searchQuery.trim() !== '' || activeShortcut !== null || activeVenues.length > 0;
-  const activeFilterCount = [dateKey !== 'all', radiusIsOverridden, searchQuery.trim() !== '', activeShortcut !== null, activeVenues.length > 0].filter(Boolean).length;
+  const townOnlyActive = townOnly && locationOrigin.trim() !== '';
+  const hasActiveFilters = dateKey !== 'all' || radiusIsOverridden || searchQuery.trim() !== '' || activeShortcut !== null || activeVenues.length > 0 || townOnlyActive;
+  const activeFilterCount = [dateKey !== 'all', radiusIsOverridden, searchQuery.trim() !== '', activeShortcut !== null, activeVenues.length > 0, townOnlyActive].filter(Boolean).length;
   const clearAllFilters = useCallback(() => {
     setDateKey('all');
     setPickedDate('');
@@ -1988,6 +1989,13 @@ export default function HomePage() {
     setVenueSearch('');
     setActiveShortcut(null);
     setShowCalendar(false);
+    // Town-only filter: reset both the checkbox and the typed-town origin so
+    // the inline header pill clears with the X badge.
+    setTownOnly(false);
+    setLocationOrigin('');
+    setLocationCoords(null);
+    setLocationLabel('Current Location');
+    setLocationSuggestions([]);
   }, []);
 
   // Filter panel labels
@@ -2146,7 +2154,18 @@ export default function HomePage() {
                       : ({ today: 'Today', tomorrow: 'Tmrw', weekend: 'Wknd' }[dateKey] || dateKey)}
                   </span>
                 )}
-                {milesRadius !== null && (() => {
+                {/* Town-only takes precedence over the radius indicator —
+                    when the user has pinned to a single town, "5mi" would be
+                    misleading. Pin icon + town name, accent-colored. */}
+                {townOnlyActive ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill="#E8722A" /></svg>
+                    {(() => {
+                      const t = locationOrigin.trim();
+                      return t.length > 14 ? t.slice(0, 14) + '…' : t;
+                    })()}
+                  </span>
+                ) : milesRadius !== null && (() => {
                   const isOverride = milesRadius !== profileRadiusRef.current;
                   const clr = isOverride ? '#E8722A' : (darkMode ? 'rgba(255,255,255,0.35)' : '#9CA3AF');
                   return (
