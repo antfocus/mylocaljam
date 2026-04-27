@@ -14,7 +14,6 @@ export default function ArtistProfileScreen({
   onUnfollow,
   onBack,
 }) {
-  const [bioExpanded, setBioExpanded] = useState(false);
   // Fallback artist row from the artists table — only fetched when the events
   // array doesn't carry image/bio/genres for this artist (e.g., user lands
   // here from My Locals and none of their upcoming events are in the current
@@ -211,23 +210,25 @@ export default function ArtistProfileScreen({
             background: `linear-gradient(to top, ${bgColor} 0%, ${bgColor}CC 30%, transparent 100%)`,
             pointerEvents: 'none',
           }} />
-          {/* Back button — over hero */}
+          {/* Back button — icon-only, low-key. Swipe-right is the primary
+              back gesture on mobile; this is the discoverability fallback
+              for desktop and first-time users. Small enough to not dominate
+              the photo. */}
           <button
             onClick={onBack}
+            aria-label="Back"
             style={{
-              position: 'absolute', top: '16px', left: '16px',
-              display: 'flex', alignItems: 'center', gap: '4px',
-              background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)',
-              border: 'none', borderRadius: '999px',
-              padding: '8px 14px', cursor: 'pointer',
-              color: '#FFFFFF', fontSize: '14px', fontWeight: 600,
-              fontFamily: "'DM Sans', sans-serif",
+              position: 'absolute', top: '14px', left: '14px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '32px', height: '32px',
+              background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(6px)',
+              border: 'none', borderRadius: '50%',
+              cursor: 'pointer', padding: 0,
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="#FFFFFF" />
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" fill="rgba(255,255,255,0.85)" />
             </svg>
-            Back
           </button>
         </div>
       ) : (
@@ -293,46 +294,48 @@ export default function ArtistProfileScreen({
           </div>
         )}
 
-        {/* Action row — Follow pill + Share button */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
-          {/* Follow / Unfollow pill */}
+        {/* Action row — Follow is the primary action (pill, brand-coloured
+            when actionable). Share is utility (round icon-only, no label) so
+            it doesn't compete visually with Follow. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '14px' }}>
+          {/* Follow / Unfollow — orange-filled when not followed (primary
+              CTA), neutral outlined when already followed. */}
           <button
             onClick={handleFollowToggle}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: '5px',
-              padding: '5px 14px', borderRadius: '999px',
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              padding: '8px 18px', borderRadius: '999px',
               cursor: 'pointer',
               fontFamily: "'DM Sans', sans-serif",
-              fontSize: '11px', fontWeight: 600,
-              letterSpacing: '0.5px',
+              fontSize: '13px', fontWeight: 700,
+              letterSpacing: '0.2px',
               transition: 'all 0.2s ease',
               border: isFollowed
-                ? '1px solid rgba(255,255,255,0.25)'
+                ? '1px solid rgba(255,255,255,0.18)'
                 : `1px solid ${BRAND_ORANGE}`,
-              background: 'transparent',
-              color: isFollowed
-                ? 'rgba(255,255,255,0.5)'
-                : BRAND_ORANGE,
+              background: isFollowed ? 'transparent' : BRAND_ORANGE,
+              color: isFollowed ? 'rgba(255,255,255,0.7)' : '#FFFFFF',
             }}
           >
             {isFollowed ? (
               <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="rgba(255,255,255,0.45)" />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="rgba(255,255,255,0.7)" />
                 </svg>
-                FOLLOWING
+                Following
               </>
             ) : (
               <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                  <path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" fill={BRAND_ORANGE} />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" fill="#FFFFFF" />
                 </svg>
-                FOLLOW
+                Follow
               </>
             )}
           </button>
 
-          {/* Share button */}
+          {/* Share — round icon-only button, no label. Lives next to Follow
+              as a quiet utility, not a sibling CTA. */}
           <button
             onClick={() => {
               const shareText = `Check out ${artistName} on myLocalJam!`;
@@ -343,54 +346,33 @@ export default function ArtistProfileScreen({
                 navigator.clipboard?.writeText(`${shareText} ${shareUrl}`);
               }
             }}
+            aria-label="Share"
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: '5px',
-              padding: '5px 14px', borderRadius: '999px',
-              cursor: 'pointer',
-              fontFamily: "'DM Sans', sans-serif",
-              fontSize: '11px', fontWeight: 600,
-              letterSpacing: '0.5px',
-              border: '1px solid rgba(255,255,255,0.25)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: '38px', height: '38px',
+              borderRadius: '50%',
+              cursor: 'pointer', padding: 0,
+              border: '1px solid rgba(255,255,255,0.18)',
               background: 'transparent',
-              color: 'rgba(255,255,255,0.5)',
               transition: 'all 0.2s ease',
             }}
           >
-            {/* Material: ios_share */}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-              <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill="rgba(255,255,255,0.45)" />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill="rgba(255,255,255,0.7)" />
             </svg>
-            SHARE
           </button>
         </div>
 
-        {/* Bio */}
-        <div style={{ marginTop: '12px' }}>
+        {/* Bio — full text, no truncation. Most bios are 2–4 sentences;
+            the ...more affordance was adding click-cost without payoff. */}
+        <div style={{ marginTop: '14px' }}>
           <p style={{
             fontSize: '14px', color: '#A0A0A0', lineHeight: 1.5, margin: 0,
             fontFamily: "'DM Sans', sans-serif",
-            ...(bioExpanded ? {} : {
-              display: '-webkit-box',
-              WebkitLineClamp: 3,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-            }),
+            whiteSpace: 'pre-wrap',
           }}>
             {bio || 'A local favorite bringing live music to the stage.'}
           </p>
-          {bio && bio.length > 150 && (
-            <button
-              onClick={() => setBioExpanded(prev => !prev)}
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                padding: '4px 0 0', fontSize: '13px', fontWeight: 700,
-                color: BRAND_ORANGE,
-                fontFamily: "'DM Sans', sans-serif",
-              }}
-            >
-              {bioExpanded ? 'Show less' : '...more'}
-            </button>
-          )}
         </div>
       </div>
 
@@ -410,49 +392,93 @@ export default function ArtistProfileScreen({
             No upcoming shows scheduled yet.
           </p>
         ) : (
+          /* Editorial listings layout: left column shows MMM DD on top in
+              brand orange, three-letter weekday under in muted caps. Right
+              column stacks venue (15px medium) + time (13px muted) so each
+              row reads like a print event listing. Subtle hairline
+              dividers between rows. */
           <div>
             {upcoming.map((event, i) => {
               const venueRaw = event.venue || event.venue_name || '';
-              let dateLabel = '';
+              let dateLine = '';   // "APR 26"
+              let dayLine = '';    // "SAT"
               const rawDate = event.date || event.event_date || '';
               if (rawDate) {
                 try {
                   const d = new Date(rawDate.substring(0, 10) + 'T12:00:00');
-                  dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+                  dateLine = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+                  dayLine = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
                 } catch { /* skip */ }
               }
+
+              // Format start_time ("19:30") → "7:30 PM"
+              let timeLine = '';
+              const rawTime = event.start_time || event.time || '';
+              if (rawTime) {
+                const m = String(rawTime).match(/^(\d{1,2}):(\d{2})/);
+                if (m) {
+                  let hh = parseInt(m[1], 10);
+                  const mm = m[2];
+                  const period = hh >= 12 ? 'PM' : 'AM';
+                  hh = hh % 12 || 12;
+                  timeLine = `${hh}:${mm} ${period}`;
+                }
+              }
+
               const isLast = i === upcoming.length - 1;
 
               return (
                 <div
                   key={event.id ?? i}
                   style={{
-                    display: 'flex', alignItems: 'center',
-                    padding: '16px 0',
-                    borderBottom: isLast ? 'none' : `1px solid ${darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
+                    display: 'flex', alignItems: 'flex-start', gap: '16px',
+                    padding: '14px 0',
+                    borderBottom: isLast ? 'none' : `1px solid ${darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
                   }}
                 >
-                  {/* Date — fixed width, orange */}
-                  {dateLabel && (
-                    <span style={{
-                      width: '62px', flexShrink: 0,
-                      fontSize: '13px', fontWeight: 700, color: BRAND_ORANGE,
+                  {/* Date column */}
+                  <div style={{ width: '64px', flexShrink: 0 }}>
+                    {dateLine && (
+                      <div style={{
+                        fontSize: '14px', fontWeight: 800, color: BRAND_ORANGE,
+                        fontFamily: "'DM Sans', sans-serif",
+                        letterSpacing: '0.3px', lineHeight: 1.1,
+                      }}>
+                        {dateLine}
+                      </div>
+                    )}
+                    {dayLine && (
+                      <div style={{
+                        fontSize: '11px', fontWeight: 600, color: textMuted,
+                        fontFamily: "'DM Sans', sans-serif",
+                        letterSpacing: '0.5px', marginTop: '3px',
+                      }}>
+                        {dayLine}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Venue + time column */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: '15px', fontWeight: 600,
+                      color: darkMode ? '#EAEAF2' : '#1F2937',
                       fontFamily: "'DM Sans', sans-serif",
-                      letterSpacing: '0.3px',
+                      lineHeight: 1.25,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}>
-                      {dateLabel}
-                    </span>
-                  )}
-                  {/* Venue — title case, light */}
-                  <span style={{
-                    flex: 1, minWidth: 0,
-                    fontSize: '14px', fontWeight: 500,
-                    color: darkMode ? '#E0E0F0' : '#374151',
-                    fontFamily: "'DM Sans', sans-serif",
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {venueRaw}
-                  </span>
+                      {venueRaw}
+                    </div>
+                    {timeLine && (
+                      <div style={{
+                        fontSize: '13px', fontWeight: 500, color: textMuted,
+                        fontFamily: "'DM Sans', sans-serif",
+                        marginTop: '3px', letterSpacing: '0.2px',
+                      }}>
+                        {timeLine}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
