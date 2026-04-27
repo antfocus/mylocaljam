@@ -186,6 +186,10 @@ function KindToggle({ artist, headers, fetchArtists, artistsSearch, artistsNeeds
   const padding = compact ? '2px 8px' : '4px 10px';
   const fontSize = compact ? '10px' : '11px';
 
+  // Visual treatment: both states are "confidently set" tags, not hollow
+  // buttons. Musician = solid slate tint, no border, bright text — reads as
+  // "this IS a musician". Event = solid orange tint with orange border so
+  // misclassified rows pop visually as you scroll. Click flips the value.
   return (
     <button
       onClick={flip}
@@ -198,9 +202,9 @@ function KindToggle({ artist, headers, fetchArtists, artistsSearch, artistsNeeds
         fontSize, fontWeight: 700, letterSpacing: '0.4px',
         textTransform: 'uppercase',
         cursor: busy ? 'wait' : 'pointer',
-        border: isEvent ? '1px solid #E8722A' : '1px solid var(--border)',
-        background: isEvent ? 'rgba(232, 114, 42, 0.15)' : 'var(--bg-elevated)',
-        color: isEvent ? '#E8722A' : 'var(--text-muted)',
+        border: isEvent ? '1px solid #E8722A' : '1px solid transparent',
+        background: isEvent ? 'rgba(232, 114, 42, 0.18)' : 'rgba(140, 140, 170, 0.18)',
+        color: isEvent ? '#E8722A' : 'var(--text-secondary)',
         opacity: busy ? 0.5 : 1,
         transition: 'all 0.15s ease',
         whiteSpace: 'nowrap',
