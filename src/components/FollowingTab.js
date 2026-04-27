@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { posthog } from '@/lib/posthog';
 import ArtistMonogram from '@/components/ArtistMonogram';
+import { supabase } from '@/lib/supabase';
 
 // ── Path A regex filter — exclude obvious VENUE_EVENT rows from My Locals.
 // Until the artists table gets a proper `kind` column (parked task), this
@@ -128,7 +129,9 @@ export default function FollowingTab({
     });
   }, [filteredFollowing, events]);
 
-  // Build artist name → image URL lookup from events array
+  // Build artist name → image URL lookup from events array (fast path —
+  // no extra network call, but only covers artists whose events are in
+  // the current home feed).
   const artistImageMap = useMemo(() => {
     const map = {};
     for (const e of events) {
@@ -140,6 +143,40 @@ export default function FollowingTab({
     }
     return map;
   }, [events]);
+
+  // Fallback map fetched directly from the artists table. Covers followed
+  // artists whose upcoming events aren't in the current home feed (so the
+  // events-derived map above misses them — was the symptom Tony spotted on
+  // My Locals where most rows showed monograms even though the artists had
+  // images in the DB). Fetched once per mount and cached.
+  const [dbImageMap, setDbImageMap] = useState(null);
+  useEffect(() => {
+    if (dbImageMap !== null) return;
+    if (!following || following.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('artists')
+        .select('name, image_url')
+        .not('image_url', 'is', null)
+        .limit(2000);
+      if (cancelled) return;
+      if (error) {
+        console.error('[FollowingTab] artist image fallback fetch failed:', error.message);
+        setDbImageMap({}); // mark "tried" so we don't loop
+        return;
+      }
+      const map = {};
+      for (const row of (data || [])) {
+        if (row.name && row.image_url) {
+          map[row.name.toLowerCase()] = row.image_url;
+        }
+      }
+      setDbImageMap(map);
+    })();
+    return () => { cancelled = true; };
+  }, [following, dbImageMap]);
 
   // Unfollow with undo toast
   const handleUnfollow = useCallback((entityType, entityName) => {
@@ -437,7 +474,11 @@ export default function FollowingTab({
 
       {/* Vertical list */}
       {displayList.map((f, i) => {
-        const imgUrl = artistImageMap[f.entity_name.toLowerCase()] || null;
+        // Image lookup waterfall: events-derived map first (covers artists
+        // with upcoming events in the home feed), then artists-table fallback
+        // (covers everyone else who has an image_url stored on their row).
+        const lowerName = f.entity_name.toLowerCase();
+        const imgUrl = artistImageMap[lowerName] || dbImageMap?.[lowerName] || null;
         const isLast = i === displayList.length - 1;
 
         return (
