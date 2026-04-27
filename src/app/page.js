@@ -307,6 +307,12 @@ export default function HomePage() {
   const [locationLabel, setLocationLabel] = useState('Current Location');  // display label
   const [locationCoords, setLocationCoords] = useState(null);     // { lat, lng } from geolocation or geocode
   const [geolocating, setGeolocating] = useState(false);
+  // "Only events in this town" mode. When true, the filter ignores the
+  // radius slider and instead matches venues whose address contains
+  // `locationOrigin` as a substring (case-insensitive). Default off so
+  // the existing radius behavior is unchanged for users who don't tick
+  // the box. GPS auto-detect + X clear both reset this to false.
+  const [townOnly, setTownOnly] = useState(false);
   const [artistSearch, setArtistSearch] = useState('');            // artist filter text
   const [activeShortcut, setActiveShortcut] = useState(null);     // shortcut pill key
   const [dbPills, setDbPills] = useState([]);                     // dynamic pills from Supabase
@@ -349,6 +355,9 @@ export default function HomePage() {
   const triggerGPS = useCallback(() => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) return;
     setGeolocating(true);
+    // GPS implies "where am I" — radius mode wins. Tick off the
+    // town-only checkbox if it was on; user can re-enable it explicitly.
+    setTownOnly(false);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocationCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
@@ -1649,8 +1658,30 @@ export default function HomePage() {
       list = list.filter(e => normalizeVenue(e.name).includes(aq));
     }
 
-    // Distance filter: Haversine from user location to venue coordinates
-    if (milesRadius !== null && locationCoords) {
+    // Location filter — two modes:
+    //
+    //   1. Town-only mode (`townOnly === true`): exact-town string match.
+    //      Filter to venues whose address contains the typed town name
+    //      (case-insensitive). Radius is ignored in this mode. Useful for
+    //      "show me only Belmar events" where the user explicitly does not
+    //      want to see neighboring towns.
+    //
+    //   2. Radius mode (default): haversine geo-distance from the resolved
+    //      coords. Existing behavior. Triggered when `milesRadius` is set
+    //      AND `townOnly` is off.
+    //
+    // The two modes are mutually exclusive — the checkbox in the filter UI
+    // grays out the slider when townOnly is on.
+    if (townOnly && locationOrigin.trim()) {
+      const townKey = locationOrigin.split(',')[0].trim().toLowerCase();
+      list = list.filter(e => {
+        const addr = (e.venue_address || '').toLowerCase();
+        const venueName = (e.venue || e.venue_name || '').toLowerCase();
+        // Match either venue address (canonical) OR venue name (some venues
+        // include their town in their name and have sparse address data).
+        return addr.includes(townKey) || venueName.includes(townKey);
+      });
+    } else if (milesRadius !== null && locationCoords) {
       list = list.filter(e => {
         if (!e.venue_lat || !e.venue_lng) return false; // exclude venues without coords
         const dist = haversineDistance(
@@ -1795,7 +1826,7 @@ export default function HomePage() {
     });
 
     return list;
-  }, [events, activeVenues, artistSearch, milesRadius, locationCoords, activeShortcut, dbPills]);
+  }, [events, activeVenues, artistSearch, milesRadius, locationCoords, townOnly, locationOrigin, activeShortcut, dbPills]);
 
   const groupedEvents = useMemo(() => groupEventsByDate(filteredEvents), [filteredEvents]);
 
@@ -2770,6 +2801,7 @@ export default function HomePage() {
                               setLocationSuggestions([]);
                               setLocationCoords(null);
                               setLocationLabel('Current Location');
+                              setTownOnly(false);
                             }}
                             style={{
                             background: darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
@@ -2803,12 +2835,50 @@ export default function HomePage() {
                           ))}
                         </div>
                       )}
-                      {/* Slider with bookend labels — disabled when no valid location */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '0 2px', marginTop: '24px', marginBottom: '16px', opacity: locationCoords ? 1 : 0.4, pointerEvents: locationCoords ? 'auto' : 'none' }}>
+                      {/* "Only events in this town" checkbox — when checked,
+                          filter switches from radius geo-distance to
+                          venue.address ILIKE '%[town]%' string match.
+                          Hidden until the user has typed/selected a town.
+                          The slider greys out below when this is checked.
+                      */}
+                      {locationOrigin.trim() && (
+                        <label style={{
+                          display: 'flex', alignItems: 'center', gap: '8px',
+                          padding: '10px 4px 4px',
+                          fontSize: '12px', fontWeight: 600,
+                          color: t.textMuted,
+                          fontFamily: "'DM Sans', sans-serif",
+                          cursor: 'pointer',
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={townOnly}
+                            onChange={e => setTownOnly(e.target.checked)}
+                            style={{
+                              width: '16px', height: '16px',
+                              accentColor: '#E8722A',
+                              cursor: 'pointer',
+                            }}
+                          />
+                          <span style={{ color: townOnly ? '#E8722A' : t.textMuted }}>
+                            Only events in {locationOrigin.split(',')[0].trim() || 'this town'}
+                          </span>
+                        </label>
+                      )}
+
+                      {/* Slider with bookend labels — disabled when no valid
+                          location OR when townOnly is on (radius is irrelevant
+                          in that mode). */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        padding: '0 2px', marginTop: '12px', marginBottom: '16px',
+                        opacity: (locationCoords && !townOnly) ? 1 : 0.4,
+                        pointerEvents: (locationCoords && !townOnly) ? 'auto' : 'none',
+                      }}>
                         <span style={{ fontSize: '10px', fontWeight: 600, color: '#A0A0A0', minWidth: '24px', textAlign: 'left', fontFamily: "'DM Sans', sans-serif", lineHeight: 1 }}>0 mi</span>
                         <input type="range" min="0" max="25" value={milesRadius ?? 0}
                           className="distance-slider"
-                          disabled={!locationCoords}
+                          disabled={!locationCoords || townOnly}
                           onChange={e => { const v = parseInt(e.target.value); setMilesRadius(v === 0 ? null : v); }}
                           style={{
                             flex: 1, height: '6px',
