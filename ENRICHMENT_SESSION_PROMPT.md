@@ -12,7 +12,7 @@ You are my Lead Data Engineer. Your focus is the **Metadata Enrichment Pipeline*
 
 In the previous session I built the foundation but **nothing has been tested end-to-end yet**. Read these files first to get oriented:
 
-1. `ENRICHMENT_HANDOVER.md` — Full architecture doc with DB schema, env vars, and what needs to happen next
+1. `ENRICHMENT.md` — Full architecture doc with DB schema, env vars, and what needs to happen next
 2. `src/lib/llmRouter.js` — Multi-provider LLM abstraction (Gemini → Perplexity → Grok failover). Built but **NOT yet wired into aiLookup.js**
 3. `src/lib/enrichmentPriority.js` — Priority scoring for unenriched artists (Thu–Sun proximity × completeness × recency)
 4. `src/app/api/admin/enrich-backfill/route.js` — Batch enrichment endpoint (20-25 artists/call, client-driven loop)
@@ -44,4 +44,4 @@ In the previous session I built the foundation but **nothing has been tested end
 
 Admin endpoints use `Authorization: Bearer {ADMIN_PASSWORD}`. The password is in `.env.local`.
 
-Start by reading `ENRICHMENT_HANDOVER.md`, then read the files listed above to verify everything is syntactically correct and architecturally sound before making any changes.
+Start by reading `ENRICHMENT.md`, then read the files listed above to verify everything is syntactically correct and architecturally sound before making any changes.

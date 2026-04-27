@@ -1,6 +1,31 @@
-> **⚠️ DRAFT — NOT FINAL.** This is the pre-review draft of the Agent SOP. Two original blockers are now resolved as of April 16, 2026 (Safety Locks inlined as §0; start_time ladder added to the Appendix). Two remain open: category taxonomy reconciliation and Comedy category wiring. See the "Reviewer Notes" appendix at the end of this file. Finalize before an agent consumes this as authoritative.
+> **⚠️ DEPRECATED — being torn down (April 27, 2026).** This doc was a single general SOP for an admin-system agent. The project is shifting to skill-specific manuals. Do not consume this file as authoritative; consult the destination doc for each section instead.
+>
+> **Section migration map:**
+>
+> | Section in this file | Destination |
+> |---|---|
+> | §0 Architectural Invariants — Safety Locks | `ENRICHMENT.md` §5 (Lock System) |
+> | Core Directives | `ENRICHMENT.md` §1 (Mission & Quality Bar) |
+> | Workflow 1 — Triaging "No Match" Events | `ENRICHMENT.md` (pending — to be added) |
+> | Workflow 2 — Categorization & Whitelist | `ENRICHMENT.md` §6 (LLM Prompts — STEP 1 covers this) |
+> | Workflow 3 — Artist Management & Deduplication | `ENRICHMENT.md` §11 (Edge Cases) |
+> | Workflow 4 — Autonomous Venue Investigation & Scraping | `SCRAPER_PROMPT.md` |
+> | Workflow 5 — Magic Wand (Smart Fill) | `ENRICHMENT.md` §A (Architecture Reference) |
+> | Workflow 6 — Classification Fork | `ENRICHMENT.md` §6 (already covered by Pass 1 prompt) |
+> | Triple Crown Data Resolution Rules | `ENRICHMENT.md` §4 (Metadata Waterfall) |
+> | UI Conventions for Admin Curation | `FRONTEND_SOP.md` |
+> | Known Issues & Exorcised Bugs | `HANDOVER.md` (move into a Postmortems section) |
+> | Roadmap | `PARKED.md` |
+> | Reviewer Notes | DELETE — stale |
+> | G Spot (Safety & Confidence Enforcement) | `ENRICHMENT.md` §12 (Verification Protocol) |
+> | Database & Deployment Rules | `HANDOVER.md` |
+> | Data Inheritance Waterfall & Chain of Command | `ENRICHMENT.md` §4 (merge with Triple Crown — same concept) |
+>
+> **End state.** When every section above is fully migrated, this file gets deleted. Until then, the destination docs are the source of truth; this file is reference-only.
+>
+> **The original draft notice (kept for historical record):** "This is the pre-review draft of the Agent SOP. Two original blockers are now resolved as of April 16, 2026 (Safety Locks inlined as §0; start_time ladder added to the Appendix). Two remain open: category taxonomy reconciliation and Comedy category wiring."
 
-# 🤖 myLocalJam: AI Agent Standard Operating Procedure (SOP)
+# 🤖 myLocalJam: AI Agent Standard Operating Procedure (SOP) — DEPRECATED
 
 ## 🎯 ROLE & SYSTEM DIRECTIVE
 
