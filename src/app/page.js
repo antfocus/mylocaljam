@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { posthog } from '@/lib/posthog';
 import { getVenueColor, groupEventsByDate } from '@/lib/utils';
+import { matchNjTowns } from '@/lib/njTowns';
 import { requestNotificationPermission, scheduleReminder, cancelReminder, rehydrateReminders, notificationsGranted } from '@/lib/notifications';
 
 import HeroSection       from '@/components/HeroSection';
@@ -400,19 +401,27 @@ export default function HomePage() {
     } catch {}
   }, [triggerGPS]);
 
-  // Autocomplete: fetch location suggestions from Nominatim (debounced)
+  // Autocomplete: fetch location suggestions
+  //
+  // Strategy: local-first. Nominatim's relevance ranking is unreliable
+  // for short queries (typing "as" returned only Lindenwold, not
+  // Asbury Park; "be" surfaced random places before Belmar). Curated
+  // NJ towns list (src/lib/njTowns.js) gets prefix-matched locally and
+  // shown immediately — synchronous, zero network latency. Nominatim
+  // is then called in the background to fill any remaining slots
+  // with long-tail towns that aren't in our curated list.
   const fetchLocationSuggestions = useCallback((query) => {
     if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
     if (!query.trim() || query.trim().length < 2) { setLocationSuggestions([]); return; }
+
+    // 1) Show curated NJ matches immediately — no debounce, no network.
+    const localMatches = matchNjTowns(query, 5);
+    if (localMatches.length > 0) setLocationSuggestions(localMatches);
+
+    // 2) In the background, ask Nominatim for any long-tail matches we
+    //    don't already cover, and merge them in below the local hits.
     locationDebounceRef.current = setTimeout(async () => {
       try {
-        // Tighter Nominatim query: full state name (better string match
-        // than the ambiguous "NJ" abbreviation), explicit US country
-        // restriction, and a wider initial limit (10) so we have material
-        // to re-rank from. Without these tightenings, Nominatim's default
-        // relevance ranking sometimes returned unrelated towns ahead of
-        // the obvious match — typing "Asb" returned Piscataway Township
-        // above Asbury Park.
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?` +
           `q=${encodeURIComponent(query + ', New Jersey')}` +
@@ -424,9 +433,9 @@ export default function HomePage() {
         const raw = await res.json();
         const queryLower = query.trim().toLowerCase();
 
-        // Normalize + dedupe by town name + drop non-NJ leakage.
-        const seen = new Set();
-        const mapped = [];
+        // Track local town keys so Nominatim duplicates get dropped.
+        const seen = new Set(localMatches.map(m => m._townLower));
+        const remoteMapped = [];
         for (const r of raw || []) {
           const town = r.address?.town
             || r.address?.city
@@ -435,14 +444,11 @@ export default function HomePage() {
             || r.display_name?.split(',')[0];
           if (!town) continue;
           const state = r.address?.state || '';
-          // Drop anything that didn't actually land in NJ — Nominatim
-          // ignores the ", New Jersey" suffix when a stronger match
-          // exists elsewhere in the country.
           if (state && state !== 'New Jersey' && state !== 'NJ') continue;
           const key = town.toLowerCase().trim();
           if (seen.has(key)) continue;
           seen.add(key);
-          mapped.push({
+          remoteMapped.push({
             name: `${town}, ${state || 'NJ'}`,
             lat: parseFloat(r.lat),
             lng: parseFloat(r.lon),
@@ -451,9 +457,8 @@ export default function HomePage() {
           });
         }
 
-        // Re-rank: prefix matches always come first, then alphabetical.
-        // Solves the "Asb" → Piscataway problem.
-        mapped.sort((a, b) => {
+        // Re-rank remote: prefix-first, then alphabetical.
+        remoteMapped.sort((a, b) => {
           const aStarts = a._townLower.startsWith(queryLower);
           const bStarts = b._townLower.startsWith(queryLower);
           if (aStarts && !bStarts) return -1;
@@ -461,8 +466,12 @@ export default function HomePage() {
           return a._townLower.localeCompare(b._townLower);
         });
 
-        setLocationSuggestions(mapped.slice(0, 5));
-      } catch { setLocationSuggestions([]); }
+        const merged = [...localMatches, ...remoteMapped].slice(0, 5);
+        setLocationSuggestions(merged);
+      } catch {
+        // Nominatim failure: keep the local matches we already showed.
+        if (localMatches.length === 0) setLocationSuggestions([]);
+      }
     }, 300);
   }, []);
 
