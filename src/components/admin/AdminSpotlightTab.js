@@ -1,5 +1,15 @@
 'use client';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Feature flag — bulk AI Auto-Fill button at the top of the Spotlight tab.
+// Set to true to re-enable. Hidden Apr 26 because the AI image-generation
+// path is still unreliable and a 20-event cascade is too high-blast-radius
+// to ship before launch. Per-card single-event ✨ buttons on each draggable
+// card are unaffected and stay live (deliberate, one event at a time, easy
+// to review/undo).
+// ─────────────────────────────────────────────────────────────────────────────
+const SPOTLIGHT_BULK_AUTOFILL_ENABLED = false;
+
 import { useState, useMemo } from 'react';
 import { formatTime } from '@/lib/utils';
 import { applyWaterfall, getSpotlightReadiness, isMidnight, normalizeName } from '@/lib/waterfall';
@@ -296,7 +306,12 @@ export default function AdminSpotlightTab({
                   isn't admin-locked. Disabled when nothing needs filling,
                   or while a run is in flight. Badge shows the live
                   candidate count so the admin knows how much work the
-                  click will do before committing. */}
+                  click will do before committing.
+
+                  Currently hidden behind SPOTLIGHT_BULK_AUTOFILL_ENABLED
+                  (top of file). Set to true to re-enable when the AI image
+                  pipeline is in better shape. */}
+              {SPOTLIGHT_BULK_AUTOFILL_ENABLED && (
               <button
                 className="px-3 py-2 rounded-lg text-sm font-semibold"
                 style={{
@@ -351,6 +366,7 @@ export default function AdminSpotlightTab({
                   </>
                 )}
               </button>
+              )}
               <button
                 className="px-3 py-2 rounded-lg text-sm font-medium"
                 style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
