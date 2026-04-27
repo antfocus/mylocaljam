@@ -198,6 +198,18 @@ export async function PUT(request) {
     }
   }
 
+  // ── kind enum guard — mirrors the CHECK constraint on artists.kind.
+  //    Must stay inside this set or Postgres rejects the update with a 23514.
+  const ALLOWED_KINDS = ['musician', 'event'];
+  if (updates.kind !== undefined && updates.kind !== null) {
+    if (!ALLOWED_KINDS.includes(updates.kind)) {
+      return NextResponse.json(
+        { error: `Invalid kind. Must be one of: ${ALLOWED_KINDS.join(', ')}` },
+        { status: 400 }
+      );
+    }
+  }
+
   // Backend lock validation: when an admin explicitly saves via the modal,
   // their edits should always win — update the is_human_edited locks to
   // reflect the fields they're touching, rather than stripping those fields.

@@ -143,6 +143,74 @@ function AliasTagInput({ value, onChange, canonicalName = '', disabled = false }
   );
 }
 
+/**
+ * KindToggle — small Musician/Event pill that flips artists.kind on click.
+ *
+ * Default state (`musician`) renders subtle/neutral so 99% of the list looks
+ * unobtrusive. Flagged state (`event`) renders in brand orange so misclassified
+ * rows are easy to spot when scrolling. Click cycles to the other value, calls
+ * the existing PUT /api/admin/artists endpoint, then asks the parent to
+ * re-fetch so the list reflects the new state.
+ *
+ * `compact` mode (used in the mobile card under the artist name) shrinks the
+ * pill to fit alongside the next-event-date.
+ */
+function KindToggle({ artist, headers, fetchArtists, artistsSearch, artistsNeedsInfo, compact = false }) {
+  const [busy, setBusy] = useState(false);
+  const kind = artist.kind || 'musician';
+  const isEvent = kind === 'event';
+
+  const flip = async (e) => {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const next = isEvent ? 'musician' : 'event';
+      const res = await fetch('/api/admin/artists', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ id: artist.id, kind: next }),
+      });
+      if (!res.ok) {
+        const result = await res.json().catch(() => ({}));
+        console.error('[KindToggle] update failed:', result.error || res.status);
+      }
+      if (typeof fetchArtists === 'function') {
+        await fetchArtists(artistsSearch, artistsNeedsInfo);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const padding = compact ? '2px 8px' : '4px 10px';
+  const fontSize = compact ? '10px' : '11px';
+
+  return (
+    <button
+      onClick={flip}
+      disabled={busy}
+      title={isEvent ? 'Currently: Event. Click to mark as Musician.' : 'Currently: Musician. Click to mark as Event.'}
+      style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        padding, borderRadius: '999px',
+        fontFamily: "'DM Sans', sans-serif",
+        fontSize, fontWeight: 700, letterSpacing: '0.4px',
+        textTransform: 'uppercase',
+        cursor: busy ? 'wait' : 'pointer',
+        border: isEvent ? '1px solid #E8722A' : '1px solid var(--border)',
+        background: isEvent ? 'rgba(232, 114, 42, 0.15)' : 'var(--bg-elevated)',
+        color: isEvent ? '#E8722A' : 'var(--text-muted)',
+        opacity: busy ? 0.5 : 1,
+        transition: 'all 0.15s ease',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {isEvent ? 'Event' : 'Musician'}
+    </button>
+  );
+}
+
 export default function AdminArtistsTab({
   artists, setArtists, events, venues, password, isMobile,
   artistsSearch, setArtistsSearch, artistsNeedsInfo, setArtistsNeedsInfo,
@@ -527,6 +595,9 @@ export default function AdminArtistsTab({
               {!isMobile && <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", width: '120px', textAlign: 'center' }}>
                 Genres
               </span>}
+              {!isMobile && <span style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", width: '92px', textAlign: 'center' }}>
+                Kind
+              </span>}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -554,9 +625,16 @@ export default function AdminArtistsTab({
                     <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
                       {artist.name}
                     </span>
-                    {isMobile && artist.next_event_date && (
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif", marginTop: '2px' }}>
-                        {new Date(artist.next_event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    {isMobile && (artist.kind === 'event' || artist.next_event_date) && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                        {artist.kind === 'event' && (
+                          <KindToggle artist={artist} headers={headers} fetchArtists={fetchArtists} artistsSearch={artistsSearch} artistsNeedsInfo={artistsNeedsInfo} compact />
+                        )}
+                        {artist.next_event_date && (
+                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                            {new Date(artist.next_event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -595,6 +673,11 @@ export default function AdminArtistsTab({
                     ) : (
                       <span style={{ fontSize: '10px', color: 'var(--text-muted)', opacity: 0.5 }}>{'\u2014'}</span>
                     )}
+                  </div>}
+
+                  {/* Kind toggle — Musician (default, subtle) | Event (orange, flagged) */}
+                  {!isMobile && <div style={{ width: '92px', textAlign: 'center', flexShrink: 0 }}>
+                    <KindToggle artist={artist} headers={headers} fetchArtists={fetchArtists} artistsSearch={artistsSearch} artistsNeedsInfo={artistsNeedsInfo} />
                   </div>}
                 </div>
               ))}
