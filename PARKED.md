@@ -164,6 +164,44 @@ Auto-enrichment (LLM router → Perplexity-grounded research → MusicBrainz / D
 
 ---
 
+## 5. Sync artist-linking pass should honor `is_human_edited` on NULL-`artist_id` rows
+
+**Why parked:** Surfaced Apr 28 while diagnosing a one-off Idle Hour event ("Burning sun" on May 29) that was incorrectly linked to Kevin Hill via stale FK. The fix was to set `artist_id = NULL` and `is_human_edited = true` on the row. Sync's smart-upsert at `sync-events/route.js:715` correctly treats the row as protected and only refreshes safe fields (ticket_link, cover, source) on re-scrape — that side is fine. But the artist-id linking pass at `sync-events/route.js:1349` filters only on `!e.artist_id` and doesn't check `is_human_edited`. That means a deliberately-unlinked-and-locked row could get re-linked if a canonical artist matching its `artist_name` is ever created later.
+
+**Concrete failure case:** May 29 row currently has `artist_name = "Burning sun"`, `artist_id = NULL`, `is_human_edited = true`. No canonical "Burning sun" artist exists today. Stable. If an admin (or scraper) ever creates a "Burning sun" artist row, the linking pass will auto-link the May 29 event back to it, ignoring the row's lock. The user's deliberate "this is unlinked, don't touch it" intent gets silently overwritten on the next sync.
+
+**Scope:**
+- Tighten the filter at `src/app/api/sync-events/route.js:1349` from `!e.artist_id` to `!e.artist_id && !e.is_human_edited && !e.is_locked`.
+- Audit the alias-based linking path around `sync-events/route.js:1186` for the same pattern; apply the same fix if needed.
+- Preserve the existing comment's intent (line 1343-1349 says "ALL events, including locked/human-edited" because skipping locked rows broke the OCR-scraped Captain's Inn / Palmetto enrichment loop). The fix is narrower than what that comment warns against: a *locked row with non-null artist_id* is already skipped by the existing `!e.artist_id` filter, unchanged. We're only adding "skip rows with NULL artist_id when they're deliberately locked."
+
+**Risk:** Low. Tightens a filter; touches no new field. Sanity-check before shipping: query for rows with `artist_id IS NULL AND is_human_edited = true` and confirm they're all deliberately-unlinked, not regressions waiting to be re-linked.
+
+**Why it matters:** Closes a hole in the Layer 2 defense pattern documented in `DATA_LIFECYCLE.md` §3.2 (Lock semantics). Without it, "once locked, the next scrape can't undo your correction" is true for upserts but NOT for the artist-id linking pass — a subtle gap that doesn't bite today (no "Burning sun" artist exists) but will the moment an adjacent artist row is created.
+
+**See also:** `TRUST_REFACTOR.md` (this is Phase-3 adjacent — same lock-respecting logic, different code path); `DATA_LIFECYCLE.md` §3 invariant 2.
+
+---
+
+## 6. Follow recurring events / templates — Post-launch, low priority
+
+**Why parked:** Launch decision (Apr 28): keep follow as artist-only at launch to avoid over-complicating the product. A meaningful chunk of the watchable inventory is template-backed and *not* artist-driven — weekly trivia, monthly residencies, "Snow Crabs! All You Can Eat" Tuesdays at Sun Harbor, "80's Power Hour" Fridays at River Rock — events without a linked artist that recur on a schedule. Users will likely ask for "tell me when the next one is scheduled" once they've used the artist-follow flow and noticed the parallel doesn't exist for venue specials.
+
+**Scope:**
+- Extend the `mlj_following` localStorage shape to include `entity_type: "template"` (already designed extensibly — current entries use `entity_type: "artist"`).
+- Add a "Follow this event" affordance on cards where `template_id` is non-null AND `artist_id` is null. When both are present, prefer artist-follow so the user doesn't get duplicate notifications.
+- Update the save-popover at `EventCardV2.js:929` to add a third branch: "no artist, but a template exists" → "Want to know when the next one is scheduled?" with a follow-template button. Today the popover correctly shows `Event Saved!` only for these rows; the addition is a *new affordance*, not a fix.
+- Wire `/api/notify/route.js` to iterate over followed templates the same way it iterates over followed artists, surfacing upcoming instances.
+- Decide whether to extend the same affordance to `event_series` (festivals). Lower priority still — series are rarer than templates and the existing series page can serve as a passive "follow."
+
+**Why low priority:** The current save-only path is already honest — no false promise. A user who cares about a recurring event can save the current instance and check back. Follow-template is a nice-to-have that doesn't fix anything broken; it adds capability. Worth shipping once post-launch usage data shows whether users actually look for it (PostHog `event_bookmarked` events filtered to template-backed rows would be a good leading indicator).
+
+**Implementation effort estimate:** ~half a day. localStorage shape extension is trivial; notify-route extension is ~30 lines mirroring the artist path; popover and card affordance are small. The bulk is testing edge cases (both artist + template linked, template that has no upcoming instances, user follows a template whose venue closes, etc.).
+
+**See also:** `DATA_LIFECYCLE.md` §1 (entity model — templates and series both already exist as first-class tables); `ANALYTICS_PLAN.md` REQ-A5 / `event_bookmarked` (once template-following ships, an analogous `template_followed` capture lets us measure adoption).
+
+---
+
 ## See also
 
 - **CATEGORIES-HANDOFF.md** — category/shortcut audit + auto-templates from event history (parking lot section)
