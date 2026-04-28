@@ -926,7 +926,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
               <p style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: darkMode ? '#E0E0F0' : '#1F2937', lineHeight: 1.35 }}>
-                Event Saved!{!isArtistFollowed && (
+                Event Saved!{!isArtistFollowed && hasFollowableArtist && (
                   <span style={{ fontWeight: 600, color: darkMode ? '#B0B0C8' : '#6B7280' }}>
                     {' '}Want alerts for future shows?
                   </span>
