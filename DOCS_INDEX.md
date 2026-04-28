@@ -27,6 +27,7 @@ One doc per focused skill. Each is self-contained for its narrow domain. An agen
 - **[SCRAPERS.md](./SCRAPERS.md)** — Pipeline architecture, sharded crons, all 50+ existing scrapers. Reference for maintaining and debugging scraper code.
 - **[SERIES_AUTOMATCH.md](./SERIES_AUTOMATCH.md)** — Event-series matching: slug normalization, find-or-create dedup, the parent/child model.
 - **[VENUE_MANAGEMENT.md](./VENUE_MANAGEMENT.md)** — Venue data integrity (required fields, geocoding, CMS identification, scraper linkage), name aliases, town aliases, common ops (add/merge/deactivate).
+- **[SPOTLIGHT_OPERATIONS.md](./SPOTLIGHT_OPERATIONS.md)** — Spotlight admin tab + public hero. Slot model (5 Main + 3 Runner-Ups), autopilot tiers, source tracking (manual vs suggested), staging discipline (☆ stages to Runner-Ups, drag-to-slot fills Main), image warnings, common ops.
 
 ## Tier 4 — Agent kickoff prompts
 

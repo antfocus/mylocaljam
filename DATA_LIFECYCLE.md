@@ -246,6 +246,7 @@ When working in a specific area, the skill doc has the operational detail. This 
 | New venue scraper onboarding | `SCRAPER_PROMPT.md` | Agent kickoff prompt for adding a new venue's scraper |
 | Event series matching | `SERIES_AUTOMATCH.md` | Slug normalization, find-or-create dedup |
 | Venue data integrity + town aliases | `VENUE_MANAGEMENT.md` | Required venue fields, image sourcing (delegates to IMAGE-MANAGEMENT), CMS identification, name aliases, town aliases |
+| Spotlight admin + public hero | `SPOTLIGHT_OPERATIONS.md` | 8-slot pin model (5 Main + 3 Runner-Ups), autopilot tiers, source tracking, staging discipline, image warnings, common ops |
 | Active refactor: lock model | `TRUST_REFACTOR.md` | Phases 1–4 of consolidating `is_locked` / `is_human_edited` |
 | Open feature work: analytics | `ANALYTICS_PLAN.md` | PostHog requirements, status, open items |
 | Backlog | `PARKED.md` | Deferred work, cross-referenced with task tracker |
