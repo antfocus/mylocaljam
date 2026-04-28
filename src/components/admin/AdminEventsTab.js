@@ -895,18 +895,37 @@ export default function AdminEventsTab({
               const catColor = CATEGORY_OPTIONS.find(c => c.key === (ev.category || 'Live Music'))?.color || '#666';
               const statusValue = ev.status || 'draft';
               const statusColor = STATUS_OPTIONS.find(s => s.value === statusValue)?.color || '#9CA3AF';
+              const openEditor = () => { setEditingEvent(ev); setShowEventForm(true); };
+              const isArtistLinked = !!ev.artist_id;
               return (
-              <div key={ev.id} className="rounded-xl border" style={{
+              <div
+                key={ev.id}
+                className="rounded-xl border"
+                onClick={openEditor}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  // Keyboard parity: Enter or Space opens the editor for the
+                  // focused row. Match what the click does so power-users on
+                  // keyboard get the same affordance.
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    openEditor();
+                  }
+                }}
+                style={{
                 background: isEvSelected ? 'rgba(232,114,42,0.04)' : 'var(--bg-card)',
                 borderColor: isEvSelected ? '#E8722A44' : 'var(--border)',
                 padding: '12px 14px',
                 display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '8px' : '0',
+                cursor: 'pointer',
               }}>
                 {/* Top section: checkbox + event info */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '10px' : '14px', flex: 1, minWidth: 0 }}>
                   <input
                     type="checkbox"
                     checked={isEvSelected}
+                    onClick={e => e.stopPropagation()}
                     onChange={e => {
                       setSelectedEvents(prev => {
                         const next = new Set(prev);
@@ -919,6 +938,25 @@ export default function AdminEventsTab({
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="font-display font-bold" style={{ fontSize: isMobile ? '15px' : '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {/* Linkage indicator — at-a-glance whether this event is
+                          tied to a canonical artist row or is event-only. */}
+                      <span
+                        title={isArtistLinked
+                          ? 'Linked to a canonical artist row'
+                          : 'Event-only listing — no artist linked'}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center',
+                          padding: '1px 6px', borderRadius: '9999px',
+                          fontSize: '9px', fontWeight: 700,
+                          fontFamily: "'DM Sans', sans-serif",
+                          background: isArtistLinked ? 'rgba(34,197,94,0.12)' : 'rgba(96,165,250,0.12)',
+                          color: isArtistLinked ? '#22c55e' : '#60A5FA',
+                          border: `1px solid ${isArtistLinked ? 'rgba(34,197,94,0.3)' : 'rgba(96,165,250,0.3)'}`,
+                          flexShrink: 0, letterSpacing: '0.4px',
+                        }}
+                      >
+                        {isArtistLinked ? '🎤 ARTIST' : '🎫 EVENT'}
+                      </span>
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.artist_name}</span>
                       {/* AI-set category indicator — G Spot Protocol. Shows
                           when auto-categorize wrote this row's category. If
@@ -1168,17 +1206,17 @@ export default function AdminEventsTab({
                   </select>
                   {/* Source chain-link was relocated to the details row
                       (next to time) — see above. */}
-                  <button className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent" onClick={() => { setEditingEvent(ev); setShowEventForm(true); }}>
+                  <button className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent" onClick={(e) => { e.stopPropagation(); openEditor(); }} title="Edit event">
                     {Icons.edit}
                   </button>
                   <button
                     className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent"
-                    onClick={() => setDuplicateSource(ev)}
+                    onClick={(e) => { e.stopPropagation(); setDuplicateSource(ev); }}
                     title="Duplicate to additional dates"
                   >
                     {Icons.duplicate}
                   </button>
-                  <button className="p-1.5 rounded text-brand-text-muted hover:text-red-400" onClick={() => deleteEvent(ev.id)} title="Permanently delete">
+                  <button className="p-1.5 rounded text-brand-text-muted hover:text-red-400" onClick={(e) => { e.stopPropagation(); deleteEvent(ev.id); }} title="Permanently delete">
                     {Icons.trash}
                   </button>
                 </div>

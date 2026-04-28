@@ -1405,6 +1405,36 @@ export default function AdminArtistsTab({
               const isMasterLocked = !!artist.is_locked;
               const fs = artist.field_status || {};
 
+              // Extracted so both the card-root onClick and the explicit
+              // pencil button bind to the same handler. Same code that used
+              // to live inline on the pencil button.
+              const openArtistEditor = async () => {
+                setEditingArtist(artist);
+                setImageCandidates(artist.image_url ? [artist.image_url] : []);
+                setImageCarouselIdx(0);
+                setArtistForm({
+                  name: artist.name || '',
+                  bio: artist.bio || '',
+                  genres: artist.genres ? (Array.isArray(artist.genres) ? artist.genres.join(', ') : artist.genres) : '',
+                  vibes: artist.vibes ? (Array.isArray(artist.vibes) ? artist.vibes.join(', ') : artist.vibes) : '',
+                  image_url: artist.image_url || '',
+                  alias_names: Array.isArray(artist.alias_names) ? [...artist.alias_names] : [],
+                  default_category: artist.default_category || '',
+                });
+                try {
+                  const params = new URLSearchParams({ page: '1', limit: '20', sort: 'event_date', order: 'asc' });
+                  const res = await fetch(`/api/admin?${params}`, { headers });
+                  if (res.ok) {
+                    const data = await res.json();
+                    const all = data.events || [];
+                    setArtistEvents(all.filter(e =>
+                      e.artist_id === artist.id ||
+                      (e.artist_name && e.artist_name.toLowerCase() === artist.name.toLowerCase())
+                    ));
+                  }
+                } catch { setArtistEvents([]); }
+              };
+
               const TrafficDot = ({ field, hasData, label }) => {
                 const status = fs[field] || (hasData ? 'live' : 'missing');
                 const showLocked = isMasterLocked && hasData;
@@ -1436,18 +1466,29 @@ export default function AdminArtistsTab({
               return (
                 <div
                   key={artist.id}
+                  onClick={openArtistEditor}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openArtistEditor();
+                    }
+                  }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '14px',
                     padding: '10px 16px', borderRadius: '10px',
                     background: isSelected ? 'rgba(232,114,42,0.06)' : (isEditing ? 'rgba(232,114,42,0.04)' : 'var(--bg-card)'),
                     border: `1px solid ${isEditing ? '#E8722A' : (isSelected ? '#E8722A44' : 'var(--border)')}`,
                     transition: 'all 0.1s ease',
+                    cursor: 'pointer',
                   }}
                 >
                   {/* Checkbox */}
                   <input
                     type="checkbox"
                     checked={isSelected}
+                    onClick={e => e.stopPropagation()}
                     onChange={e => {
                       setSelectedArtists(prev => {
                         const next = new Set(prev);
@@ -1547,7 +1588,8 @@ export default function AdminArtistsTab({
                     {/* Lock toggle */}
                     <button
                       title={artist.is_locked ? 'Unlock — allow scrapers to update' : 'Lock — protect from scraper overwrites'}
-                      onClick={async () => {
+                      onClick={async (e) => {
+                        e.stopPropagation();
                         try {
                           const nowLocking = !artist.is_locked;
                           const newFieldLocks = nowLocking
@@ -1581,32 +1623,7 @@ export default function AdminArtistsTab({
                     {/* Edit (pencil) */}
                     <button
                       title="Edit artist"
-                      onClick={async () => {
-                        setEditingArtist(artist);
-                        setImageCandidates(artist.image_url ? [artist.image_url] : []);
-                        setImageCarouselIdx(0);
-                        setArtistForm({
-                          name: artist.name || '',
-                          bio: artist.bio || '',
-                          genres: artist.genres ? (Array.isArray(artist.genres) ? artist.genres.join(', ') : artist.genres) : '',
-                          vibes: artist.vibes ? (Array.isArray(artist.vibes) ? artist.vibes.join(', ') : artist.vibes) : '',
-                          image_url: artist.image_url || '',
-                          alias_names: Array.isArray(artist.alias_names) ? [...artist.alias_names] : [],
-                          default_category: artist.default_category || '',
-                        });
-                        try {
-                          const params = new URLSearchParams({ page: '1', limit: '20', sort: 'event_date', order: 'asc' });
-                          const res = await fetch(`/api/admin?${params}`, { headers });
-                          if (res.ok) {
-                            const data = await res.json();
-                            const all = data.events || [];
-                            setArtistEvents(all.filter(e =>
-                              e.artist_id === artist.id ||
-                              (e.artist_name && e.artist_name.toLowerCase() === artist.name.toLowerCase())
-                            ));
-                          }
-                        } catch { setArtistEvents([]); }
-                      }}
+                      onClick={(e) => { e.stopPropagation(); openArtistEditor(); }}
                       style={{ color: 'var(--text-muted)', cursor: 'pointer', background: 'none', border: 'none', padding: '6px' }}
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.001 1.001 0 000-1.42l-2.34-2.34a1.001 1.001 0 00-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z" fill="currentColor" /></svg>
@@ -1615,7 +1632,8 @@ export default function AdminArtistsTab({
                     <button
                       title="Delete artist"
                       disabled={artistActionLoading === artist.id}
-                      onClick={async () => {
+                      onClick={async (e) => {
+                        e.stopPropagation();
                         try {
                           const res = await fetch(`/api/admin/artists?id=${artist.id}&action=count-events`, { method: 'DELETE', headers });
                           const data = await res.json();
