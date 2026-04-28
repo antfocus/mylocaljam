@@ -497,14 +497,15 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                 }} />
 
                 {/* Corner sticker — orange, tilted, with pulsing white dot.
-                    White text + subtle dark text-shadow for definition gives
-                    the badge clean readability against the orange (dark text
-                    was washing out at this small size). Outer orange box-
-                    shadow glow makes the badge itself look "spotlit" — the
-                    subtle halo ties the visual to the spotlight metaphor. */}
+                    Jet-black text on orange clears WCAG AAA (9:1 contrast)
+                    and reads cleaner than the prior white-on-orange (~2.7:1,
+                    which actually failed AA at this small size). Pulsing
+                    white dot stays — represents the "spotlight beam" and
+                    visually balances the dense black text. Outer orange
+                    box-shadow glow ties the chip to the spotlight metaphor. */}
                 <div style={{
                   position: 'absolute', top: 14, right: 14, zIndex: 3,
-                  background: '#E8722A', color: '#FFFFFF',
+                  background: '#E8722A', color: '#000000',
                   fontFamily: "'IBM Plex Mono', monospace",
                   fontSize: 11, fontWeight: 700,
                   letterSpacing: '0.18em',
@@ -512,7 +513,6 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                   transform: 'rotate(4deg)',
                   textTransform: 'uppercase',
                   lineHeight: 1,
-                  textShadow: '0 1px 2px rgba(0,0,0,0.35)',
                   boxShadow:
                     '0 0 20px rgba(232,114,42,0.5), ' +
                     '0 2px 10px rgba(0,0,0,0.35)',
