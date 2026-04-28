@@ -260,7 +260,7 @@ export default function HomePage() {
       while (true) {
         const { data: page, error } = await supabase
           .from('events')
-          .select('*, venues(name, address, color, photo_url, latitude, longitude)')
+          .select('*, venues(name, address, color, photo_url, website, latitude, longitude)')
           .gte('event_date', todayLocal)
           .eq('status', 'published')
           .order('event_date', { ascending: true })
@@ -323,6 +323,7 @@ export default function HomePage() {
           venue_address: e.venues?.address || '',
           venue_color:   e.venues?.color   || getVenueColor(e.venues?.name || e.venue_name),
           venue_photo:   e.venues?.photo_url || null,
+          venue_website: e.venues?.website || null,
           venue_lat:     e.venues?.latitude  || null,
           venue_lng:     e.venues?.longitude || null,
         };

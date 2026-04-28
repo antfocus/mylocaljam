@@ -107,6 +107,14 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const isTribute  = event.is_tribute || false;
   const rawSource  = event.source       || null;
   const sourceLink = rawSource && /^https?:\/\//i.test(rawSource) ? rawSource : null;
+  // Venue link: prefer the venue's official website (venues.website) over the
+  // event's scraper origin (event.source). Stone Pony and Wonder Bar events
+  // come in via the Ticketmaster scraper, so source = ticketmaster URL — but
+  // the 🌐 Venue button should land users on the venue's own calendar page.
+  // Falls back to sourceLink for venues without a website populated.
+  const rawVenueSite = event.venue_website || event.venues?.website || null;
+  const venueSite    = rawVenueSite && /^https?:\/\//i.test(rawVenueSite) ? rawVenueSite : null;
+  const venueLink    = venueSite || sourceLink;
   // Smart waterfall: merged arrays (artist-enriched) → legacy event columns → fallback
   const category   = event.artist_vibes?.[0] || event.artist_genres?.[0] || event.genre || event.vibe || 'Live Music';
   const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
@@ -550,9 +558,9 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                   )}
 
                   {/* 2. Venue Website */}
-                  {sourceLink && (
+                  {venueLink && (
                     <a
-                      href={sourceLink}
+                      href={venueLink}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={e => {
@@ -561,7 +569,8 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                           venue_name: venue,
                           artist_name: artistName,
                           event_id: event.id || '',
-                          source_url: sourceLink,
+                          source_url: venueLink,
+                          link_type: venueSite ? 'official' : 'scraper_source',
                         });
                       }}
                       style={{

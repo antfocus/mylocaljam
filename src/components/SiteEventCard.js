@@ -37,6 +37,11 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
   const timeStr    = formatTimeRange(event.start_time, event.end_time);
   const ticketLink = event.ticket_link || null;
   const sourceLink = event.source || null;
+  // Venue link: prefer the venue's official website over the scraper origin
+  // (e.g. Ticketmaster URLs for Stone Pony / Wonder Bar). See EventCardV2 for
+  // the same pattern.
+  const venueWebsite = event.venue_website || event.venues?.website || null;
+  const venueLink    = venueWebsite || sourceLink;
   const isFree     = event.cover === '0' || event.cover === 0 || (event.cover && String(event.cover).toLowerCase() === 'free');
   const showArtistSubtitle = ARTIST_SUBTITLE_CATEGORIES.includes(event.category) && eventTitle && artistName && eventTitle !== artistName;
 
@@ -192,7 +197,7 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
       </div>
 
       {/* Quick action links (visible on hover on desktop) */}
-      {(ticketLink || sourceLink) && (
+      {(ticketLink || venueLink) && (
         <div style={{
           padding: '0 20px 12px',
           display: 'flex',
@@ -217,9 +222,9 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
               🎟 Tickets
             </a>
           )}
-          {sourceLink && (
+          {venueLink && (
             <a
-              href={sourceLink}
+              href={venueLink}
               target="_blank"
               rel="noopener noreferrer"
               style={{

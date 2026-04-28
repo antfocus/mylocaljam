@@ -56,7 +56,7 @@ const EVENT_SELECT = [
   'source', 'status', 'category', 'artist_id', 'template_id',
   'event_image_url', 'image_url',
   'custom_bio', 'custom_genres', 'custom_vibes', 'custom_image_url', 'is_custom_metadata',
-  'venues(name, address, color, photo_url, venue_type)',
+  'venues(name, address, color, photo_url, website, venue_type)',
   'artists(name, bio, image_url, genres, vibes, is_tribute)',
   // New: pull the AI-enriched template name + bio + image so the priority ladders
   // (title, bio, image) can reach them without a second round-trip.
@@ -124,6 +124,7 @@ function flattenEvent(e) {
     is_tribute:     e.artists?.is_tribute || false,
     // Flattened from venues join
     venue_photo:    e.venues?.photo_url || null,
+    venue_website:  e.venues?.website || null,
     venue_address:  e.venues?.address || '',
     venue_color:    e.venues?.color || null,
     venue_type:     e.venues?.venue_type || null,
