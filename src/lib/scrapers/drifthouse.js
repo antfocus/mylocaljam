@@ -49,6 +49,8 @@
  * Address: 1485 Ocean Avenue, Sea Bright, NJ 07760
  */
 
+import { proxyFetch, BROWSER_HEADERS } from '@/lib/proxyFetch';
+
 const VENUE = 'Drifthouse';
 const VENUE_URL = 'https://drifthousenj.com/events/';
 
@@ -275,23 +277,21 @@ function parseEbiCards(html, todayStr) {
 
 export async function scrapeDrifthouse() {
   try {
-    // Browser-shaped User-Agent + Accept headers. The default
-    // 'Mozilla/5.0 (compatible; ...)' UA we use elsewhere works fine on
-    // Squarespace/Wix/Google Calendar, but WordPress security plugins
-    // (Wordfence, AIOWPS, etc.) commonly flag the 'compatible' string as
-    // bot-like and either silently return an empty body or a soft-block
-    // page. Drifthouse's first scrape returned count=0 from the deployed
-    // Vercel runtime even though browser fetches with the same UA worked
-    // fine (likely datacenter-IP-aware filtering on top of UA filtering).
-    // This UA mimics current Chrome on macOS — it gets the real page.
-    const res = await fetch(VENUE_URL, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
-                      'AppleWebKit/537.36 (KHTML, like Gecko) ' +
-                      'Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
+    // proxyFetch + IPRoyal residential proxy. Drifthouse's host (or
+    // upstream CDN) appears to filter Vercel datacenter IPs — the same
+    // browser-shaped UA fetched from a residential connection returned
+    // the full 160KB HTML, but the deployed Vercel runtime got either
+    // empty or stripped-down responses (count=0 across multiple syncs
+    // even after the regex bug was fixed). Routing through the existing
+    // residential proxy used by AlgonquinArts / TimMcLoones / Starland
+    // / HOI sidesteps the IP-based filter.
+    //
+    // BROWSER_HEADERS is the shared header set from `@/lib/proxyFetch`
+    // (Chrome-on-macOS UA, Accept, Accept-Language, Accept-Encoding,
+    // cache disable). Using the constant keeps Drifthouse aligned with
+    // every other proxy-routed scraper instead of inlining a near-copy.
+    const res = await proxyFetch(VENUE_URL, {
+      headers: BROWSER_HEADERS,
       next: { revalidate: 0 },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching Drifthouse events page`);
