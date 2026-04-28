@@ -20,6 +20,7 @@ import { scrapeTenthAveBurrito } from '@/lib/scrapers/tenthAveBurrito';
 import { scrapeReefAndBarrel } from '@/lib/scrapers/reefAndBoatyard';
 import { scrapePalmetto } from '@/lib/scrapers/palmetto';
 import { scrapeIdleHour } from '@/lib/scrapers/idleHour';
+import { scrapeDrifthouse } from '@/lib/scrapers/drifthouse';
 import { scrapeAsburyLanes } from '@/lib/scrapers/asburyLanes';
 import { scrapeBakesBrewing } from '@/lib/scrapers/bakesBrewing';
 import { scrapeRiverRock } from '@/lib/scrapers/riverRock';
@@ -370,6 +371,7 @@ export async function POST(request) {
     'WindwardTavern', 'JenksClub', 'StStephensGreen', 'Crossroads',
     'DealLakeBar', 'WildAir', 'TheRoost', 'JacksOnTheTracks', 'BumRogers',
     'TheColumns', 'TheCabin', 'AnchorTavern', 'Boatyard401', 'Djais',
+    'Drifthouse',
   ]);
 
   // Fast-tier shard 2 — paired with RiverRock (detail-fetch heavy) and the new
@@ -434,7 +436,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, djais, parkerHouse, osprey, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, djais, parkerHouse, osprey, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill, drifthouse] = await Promise.all([
     shouldRunScraper('PigAndParrot')   ? scrapePigAndParrot()       : skip(),
     shouldRunScraper('Ticketmaster')   ? scrapeTicketmaster()       : skip(),
     shouldRunScraper('JoesSurfShack')  ? scrapeJoesSurfShack()      : skip(),
@@ -452,6 +454,7 @@ export async function POST(request) {
     shouldRunScraper('ReefAndBarrel')  ? scrapeReefAndBarrel()      : skip(),
     shouldRunScraper('Palmetto')       ? scrapePalmetto()           : skip(),  // Vision OCR (slow)
     shouldRunScraper('IdleHour')       ? scrapeIdleHour()           : skip(),
+    shouldRunScraper('Drifthouse')     ? scrapeDrifthouse()         : skip(),
     shouldRunScraper('AsburyLanes')    ? scrapeAsburyLanes()        : skip(),
     shouldRunScraper('BakesBrewing')   ? scrapeBakesBrewing()       : skip(),
     shouldRunScraper('RiverRock')      ? scrapeRiverRock()          : skip(),
@@ -505,6 +508,7 @@ export async function POST(request) {
     ReefAndBarrel: { count: reefAndBarrel.events.length, error: reefAndBarrel.error },
     Palmetto: { count: palmetto.events.length, error: palmetto.error },
     IdleHour: { count: idleHour.events.length, error: idleHour.error },
+    Drifthouse: { count: drifthouse.events.length, error: drifthouse.error },
     AsburyLanes: { count: asburyLanes.events.length, error: asburyLanes.error },
     BakesBrewing: { count: bakesBrewing.events.length, error: bakesBrewing.error },
     RiverRock: { count: riverRock.events.length, error: riverRock.error },
@@ -559,6 +563,7 @@ export async function POST(request) {
     ReefAndBarrel: { venue: 'Reef & Barrel', url: 'https://www.reefandbarrel.com', source: 'Google Calendar' },
     Palmetto: { venue: 'Palmetto', url: 'https://www.palmettoasburypark.com', source: 'Vision OCR (Gemini)' },
     IdleHour: { venue: 'Idle Hour', url: 'https://www.ihpointpleasant.com', source: 'Google Calendar' },
+    Drifthouse: { venue: 'Drifthouse', url: 'https://drifthousenj.com', source: 'WordPress + EBI plugin' },
     AsburyLanes: { venue: 'Asbury Lanes', url: 'https://www.asburylanes.com', source: 'HTML Scrape' },
     BakesBrewing: { venue: 'Bakes Brewing', url: 'https://www.bakesbrewing.com', source: 'HTML Scrape (Webflow)' },
     RiverRock: { venue: 'River Rock', url: 'https://riverrockbricknj.com', source: 'WordPress AJAX' },
@@ -620,6 +625,7 @@ export async function POST(request) {
     ...reefAndBarrel.events,
     ...palmetto.events,
     ...idleHour.events,
+    ...drifthouse.events,
     ...asburyLanes.events,
     ...bakesBrewing.events,
     ...riverRock.events,
