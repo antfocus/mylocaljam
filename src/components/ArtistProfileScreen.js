@@ -539,12 +539,32 @@ export default function ArtistProfileScreen({
           <div>
             {upcoming.map((event, i) => {
               const venueRaw = event.venue || event.venue_name || '';
+              let dayLabel = '';
               let dateLabel = '';
+              let timeLabel = '';
               const rawDate = event.date || event.event_date || '';
               if (rawDate) {
                 try {
-                  const d = new Date(rawDate.substring(0, 10) + 'T12:00:00');
-                  dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+                  // Date + day-of-week anchored at noon UTC so the calendar
+                  // date is stable regardless of the user's local timezone.
+                  // Same pattern as the prior implementation.
+                  const dateOnly = new Date(rawDate.substring(0, 10) + 'T12:00:00');
+                  dayLabel = dateOnly.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+                  dateLabel = dateOnly.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+                  // Time label — only when the raw event_date carries a real
+                  // time component (timestamps include 'T' or 'HH:MM').
+                  // Date-only strings get no time displayed.
+                  if (rawDate.includes('T') || /\d{2}:\d{2}/.test(rawDate)) {
+                    const t = new Date(rawDate);
+                    if (!isNaN(t.getTime())) {
+                      const tStr = t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                      // Treat midnight as a "no real time" sentinel — many
+                      // scrapers default to 00:00 when the source page
+                      // doesn't expose a start time. Better to show nothing
+                      // than mislead with "12:00 AM".
+                      if (tStr !== '12:00 AM') timeLabel = tStr;
+                    }
+                  }
                 } catch { /* skip */ }
               }
               const isLast = i === upcoming.length - 1;
@@ -558,18 +578,20 @@ export default function ArtistProfileScreen({
                     borderBottom: isLast ? 'none' : `1px solid ${darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`,
                   }}
                 >
-                  {/* Date — fixed width, orange */}
+                  {/* Date column — day prefix + month/day, orange,
+                      fixed width so all rows align. Mono font keeps the
+                      "WED APR 30" cluster column-aligned across the list. */}
                   {dateLabel && (
                     <span style={{
-                      width: '62px', flexShrink: 0,
-                      fontSize: '13px', fontWeight: 700, color: BRAND_ORANGE,
-                      fontFamily: "'DM Sans', sans-serif",
+                      width: '108px', flexShrink: 0,
+                      fontSize: '12px', fontWeight: 700, color: BRAND_ORANGE,
+                      fontFamily: "'IBM Plex Mono', monospace",
                       letterSpacing: '0.3px',
                     }}>
-                      {dateLabel}
+                      {dayLabel ? `${dayLabel} ${dateLabel}` : dateLabel}
                     </span>
                   )}
-                  {/* Venue — title case, light */}
+                  {/* Venue — title case, light, takes remaining width */}
                   <span style={{
                     flex: 1, minWidth: 0,
                     fontSize: '14px', fontWeight: 500,
@@ -579,6 +601,21 @@ export default function ArtistProfileScreen({
                   }}>
                     {venueRaw}
                   </span>
+                  {/* Time column — right-aligned, muted mono. Always in the
+                      same column position so a list of shows reads like a
+                      schedule. Hidden entirely when no real time is known. */}
+                  {timeLabel && (
+                    <span style={{
+                      flexShrink: 0, marginLeft: '12px',
+                      fontSize: '12px', fontWeight: 500,
+                      color: textMuted,
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      letterSpacing: '0.3px',
+                      minWidth: '64px', textAlign: 'right',
+                    }}>
+                      {timeLabel}
+                    </span>
+                  )}
                 </div>
               );
             })}
