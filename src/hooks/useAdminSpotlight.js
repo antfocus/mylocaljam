@@ -41,6 +41,10 @@ export default function useAdminSpotlight({ password }) {
   const [spotlightEvents, setSpotlightEvents] = useState([]);
   const [spotlightLoading, setSpotlightLoading] = useState(false);
   const [spotlightImageWarning, setSpotlightImageWarning] = useState(null);
+  // Surfaces a refusal message when the ☆ star button can't stage an event
+  // (Main Spotlight has empty slots, OR all 8 slots are full). Cleared after
+  // a successful stage. Rendered as a banner in AdminSpotlightTab.
+  const [spotlightStagingError, setSpotlightStagingError] = useState(null);
   const [spotlightSearch, setSpotlightSearch] = useState('');
   // Magic Wand — bulk AI enrichment for the currently-selected date.
   // `enriching` drives the button spinner; `lastEnrichResult` is the
@@ -333,35 +337,61 @@ export default function useAdminSpotlight({ password }) {
   }, [commitPins]);
 
   /**
-   * Star-button: if unpinned → insert in chronological order by start_time.
-   * If already pinned → unpin. After inserting, the full pin list is re-sorted
-   * chronologically so the Spotlight lineup always reads earliest → latest.
+   * Star-button: STAGE-TO-RUNNER-UPS semantics (Apr 28, 2026).
+   *
+   * If already pinned → unpin (toggle off, unchanged behavior).
+   *
+   * If a new pin: ALWAYS lands in a Runner-Up slot (5, 6, or 7). The Main
+   * Spotlight slots (0–4) are filled exclusively via drag-to-slot, which is
+   * a deliberate admin action. The ☆ star is the staging affordance — a way
+   * to mark "this looks worth promoting later" without publishing it live.
+   *
+   * Refusal cases (set `spotlightStagingError` and return prev unchanged):
+   *  (a) Main has empty slots (prev.length < 5): admin must drag-to-slot to
+   *      fill main; ☆ won't sneak something in there. Pin list is dense, so
+   *      we can't append to slot 5+ while slots 0–4 sit empty without
+   *      restructuring the data model. Force the discipline at the input.
+   *  (b) All 8 slots full (prev.length >= MAX_PINS): admin must clear or
+   *      promote a runner-up before staging another.
+   *
+   * Otherwise: append at the end of a dense list — lands in the first empty
+   * runner-up slot (5, 6, or 7 depending on how full Runner-Ups already are).
    */
   const toggleSpotlightPin = useCallback((eventId) => {
     setSpotlightPins(prev => {
+      // Already pinned → unpin (unchanged)
       if (prev.includes(eventId)) {
         const next = prev.filter(id => id !== eventId);
+        setSpotlightStagingError(null);
         commitPins(next);
         return next;
       }
-      // Build a lookup of event start times for chronological sorting
-      const evMap = {};
-      for (const e of spotlightEvents) evMap[e.id] = e;
-      const getTime = (id) => {
-        const ev = evMap[id];
-        if (!ev) return '99:99';
-        // Prefer template start_time → event start_time
-        const t = ev.event_templates?.start_time || ev.start_time || ev.event_time || '99:99';
-        return t === '00:00' || t === '00:00:00' ? '99:99' : t; // midnight = unresolved, sort last
-      };
-      // Add the new event and sort the full list chronologically
-      const merged = [...prev, eventId];
-      merged.sort((a, b) => getTime(a).localeCompare(getTime(b)));
-      const next = merged.slice(0, MAX_PINS);
+
+      const RUNNER_UP_START = 5;
+
+      if (prev.length < RUNNER_UP_START) {
+        const need = RUNNER_UP_START - prev.length;
+        setSpotlightStagingError(
+          `Main Spotlight has ${need} empty slot${need === 1 ? '' : 's'}. ` +
+          `Fill them via drag-to-slot first — ☆ only stages to Runner-Ups, and Runner-Ups don't open until Main is full.`
+        );
+        return prev;
+      }
+
+      if (prev.length >= MAX_PINS) {
+        setSpotlightStagingError(
+          `All 3 Runner-Up slots are full. Clear or promote a Runner-Up before staging another.`
+        );
+        return prev;
+      }
+
+      // Append to the end of a dense list → first empty Runner-Up slot.
+      setSpotlightStagingError(null);
+      const next = [...prev, eventId];
       commitPins(next);
       return next;
     });
-  }, [commitPins, spotlightEvents]);
+  }, [commitPins]);
 
   // ── Legacy save / clear (still wired for header buttons) ────────────────
   const saveSpotlight = async () => {
@@ -561,6 +591,8 @@ export default function useAdminSpotlight({ password }) {
     spotlightEvents, setSpotlightEvents,
     spotlightLoading,
     spotlightImageWarning, setSpotlightImageWarning,
+    // Refusal banner state for the ☆ star (stage-to-runner-ups semantics)
+    spotlightStagingError, setSpotlightStagingError,
     spotlightSearch, setSpotlightSearch,
     fetchSpotlightEvents,
     fetchSpotlight,

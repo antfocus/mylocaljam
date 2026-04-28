@@ -53,6 +53,7 @@ export default function AdminSpotlightTab({
   spotlightEvents, spotlightLoading,
   spotlightSearch, setSpotlightSearch,
   setSpotlightImageWarning,
+  spotlightStagingError, setSpotlightStagingError,
   fetchSpotlight, fetchSpotlightEvents,
   saveSpotlight, clearSpotlight, toggleSpotlightPin,
   insertPin, reorderPins, removePin, MAX_PINS = 8,
@@ -555,6 +556,34 @@ export default function AdminSpotlightTab({
               </span>
             )}
           </div>
+          {/* Staging refusal banner — surfaced when the ☆ star button can't
+              accept a new pin (Main has empty slots, or Runner-Ups are full).
+              Auto-clears on the next successful stage; admin can also dismiss. */}
+          {spotlightStagingError && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+              marginBottom: 10, padding: '10px 12px',
+              background: 'rgba(232, 114, 42, 0.10)',
+              border: '1px solid rgba(232, 114, 42, 0.35)',
+              borderRadius: 8,
+              fontFamily: "'DM Sans', sans-serif",
+            }}>
+              <span style={{ fontSize: 14, lineHeight: 1.4, flex: 1, color: 'var(--text-primary)' }}>
+                {spotlightStagingError}
+              </span>
+              <button
+                onClick={() => setSpotlightStagingError(null)}
+                aria-label="Dismiss"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: 2, color: 'var(--text-muted)', fontSize: 16, lineHeight: 1,
+                  flexShrink: 0,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
           <SortableContext items={slotIds} strategy={verticalListSortingStrategy}>
             <div style={{
               display: 'flex', flexDirection: 'column', gap: 10,
@@ -781,11 +810,11 @@ export default function AdminSpotlightTab({
             }}
           >
             <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#FFFFFF' }}>
-              Add to Spotlight?
+              Stage to Runner-Ups?
             </h3>
             <p style={{ margin: '0 0 20px', fontSize: 13, color: '#D1D5DB', lineHeight: 1.5 }}>
               <strong style={{ color: '#FFFFFF' }}>{pendingPin.artistName}</strong>
-              {pendingPin.venue ? ` at ${pendingPin.venue}` : ''} will be added to the Spotlight lineup.
+              {pendingPin.venue ? ` at ${pendingPin.venue}` : ''} will be staged in the Runner-Ups for review. It won't appear on the live Spotlight feed until you drag it into a Main slot.
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button
@@ -809,7 +838,7 @@ export default function AdminSpotlightTab({
                   cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
                 }}
               >
-                Confirm
+                Stage
               </button>
             </div>
           </div>
@@ -1167,7 +1196,7 @@ function DraggableEventCard({
               color: 'var(--text-muted)',
               cursor: 'pointer',
             }}
-            title="Pin to Spotlight #1"
+            title="Stage to Runner-Ups"
           >
             ☆
           </button>

@@ -500,6 +500,8 @@ export default function AdminPage() {
           spotlightEvents={sp.spotlightEvents} spotlightLoading={sp.spotlightLoading}
           spotlightSearch={sp.spotlightSearch} setSpotlightSearch={sp.setSpotlightSearch}
           setSpotlightImageWarning={sp.setSpotlightImageWarning}
+          spotlightStagingError={sp.spotlightStagingError}
+          setSpotlightStagingError={sp.setSpotlightStagingError}
           fetchSpotlight={sp.fetchSpotlight} fetchSpotlightEvents={sp.fetchSpotlightEvents}
           saveSpotlight={sp.saveSpotlight} clearSpotlight={sp.clearSpotlight}
           toggleSpotlightPin={sp.toggleSpotlightPin}
