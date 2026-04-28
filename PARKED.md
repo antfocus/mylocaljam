@@ -315,6 +315,70 @@ For `is_human_edited = true` rows: leave alone. The admin deliberately set them 
 
 ---
 
+## 11. Drifthouse scraper — returns 0 events from Vercel runtime, root cause unknown
+
+**Why parked:** Apr 28, 2026. Onboarded the venue (id `5d0dc9f5-61a5-4ec2-9ce1-5c5a874a86b2`) and built the scraper for `https://drifthousenj.com/events/` — WordPress + Elementor + EBI events plugin. Three attempts to make it work, none succeeded:
+
+1. **Initial scraper** (commit `4d92a0e`): `fetch()` with `Mozilla/5.0 (compatible; MyLocalJam/1.0; ...)` UA. First sync produced 17 Thursday events (the `.ebi-card` parse path); subsequent syncs returned count=0. Tuesday/Friday synth never produced anything.
+2. **Browser UA + regex close-tag fix** (commits `fd89ac9` and `04ccc30a`): Switched to a real Chrome UA, added `Accept` and `Accept-Language` headers, fixed the regex bug where `</h6 >` (with trailing whitespace) didn't match `</h\d>`. Verified the regex correctly extracts `'Chad Acoustic'` against the actual page HTML in Node. Still returned count=0.
+3. **proxyFetch via IPRoyal residential proxy** (this commit): Same pattern as AlgonquinArts / TimMcLoones / Starland / HOI. Drop-in swap. Still returned count=0.
+
+**What we know for certain:**
+
+- Browser fetches from a residential connection — both with the original `compatible` UA and with the Chrome UA — return the full ~160KB HTML containing all three music-section anchors and 18 `.ebi-card` elements. The page is server-rendered.
+- The first sync succeeded enough to insert 17 Thursday rows (created_at = 17:31:36). Then subsequent syncs returned count=0 even though the deployed code was identical.
+- proxyFetch didn't help, so it's not a simple datacenter-IP block.
+- The diagnostic warn-line we added to log html_length / qodef-m-title count / ebi-card count / first 200 chars never came back to us — Vercel MCP auth is currently scoped without team access, and Tony didn't pull the line manually before parking.
+
+**Disabled cleanly.** Removed `'Drifthouse'` from `FAST_SHARD_1` so it stops attempting on every cron. The scraper file, all sync-events wiring (import, destructure, Promise.all entry, scraperResults, VENUE_REGISTRY, allEvents spread), the venue row, and the 17 already-landed Thursday events all stay in place. Re-enabling is a one-line edit (uncomment the line in `FAST_SHARD_1`).
+
+**State left in DB:** 17 Thursday events (Apr 30 → Aug 27, 2026), all with `is_human_edited=false`. They'll display correctly on the public feed but won't update or refresh until the scraper works again.
+
+**Things to try when this is picked back up:**
+
+1. **Pull the diagnostic warn line from Vercel logs** — `[Drifthouse] 0 events parsed. html_length=N, qodef-m-title_count=N, ebi-card_count=N. First 200 chars: ...`. Either reconnect the Vercel MCP with team scope, or paste manually. This is the missing data point that would have told us in 30 seconds where the failure actually happens. Most likely path: html_length tiny / counts all 0 means the response is being blocked or interstitial-replaced; counts non-zero means it's a parsing issue we missed.
+2. **Try a different UA / header set** — possibly the IPRoyal proxy itself is being identified by Drifthouse's host (some hosts maintain proxy-IP blocklists). Use the Chrome MCP to fetch from your residential connection and capture every header sent (including the ones Chrome adds automatically), then match them in the scraper.
+3. **Use Playwright** as a heavier last resort. The `houseOfIndependents.playwright.js` and `brielleHouse.playwright.js` files in the codebase show the pattern — runs as a separate GitHub Actions job, full headless browser. Heavyweight but bypasses any anti-bot heuristic that depends on JS execution / browser fingerprinting.
+4. **Direct contact with Drifthouse** — they might whitelist a UA / IP if asked. Lowest engineering cost if they're amenable.
+
+**Files in current state:**
+- `src/lib/scrapers/drifthouse.js` — proxyFetch + BROWSER_HEADERS, three-section parsing, regex fix, diagnostic warn-line. Ready to re-enable.
+- `src/app/api/sync-events/route.js` — Drifthouse line in `FAST_SHARD_1` is COMMENTED OUT. Wiring everywhere else stays.
+- `venues` row id `5d0dc9f5-61a5-4ec2-9ce1-5c5a874a86b2` — populated, geocoded, default_start_time `19:00`. Stays.
+
+**Effort estimate when revisiting:** ~30 min if the Vercel log has a clear "blocked" signature. ~1-2 hours if it requires a Playwright build-out. The site is server-rendered so there's no JS-execution requirement that forces Playwright; it'd be a fallback only.
+
+---
+
+## 12. Edit pencils still rendering in EventsTab + ArtistsTab admin rows
+
+**Why parked:** Apr 28, 2026. Made two changes locally + force-pushed to main:
+- Commit `8baa285` (force-pushed at 20:05 UTC) — `feat(admin): remove edit pencils — rows are clickable now`
+- Source code in both `src/components/admin/AdminEventsTab.js` and `src/components/admin/AdminArtistsTab.js` confirmed clean: no `Icons.edit` references, only `{/* Edit pencil removed */}` comments.
+
+Tony reported the pencils are STILL visible in the live admin UI for both tabs after deploy. Hard refresh didn't help. So either Vercel's deploy failed/got stuck, or there's a separate render path I missed.
+
+**Diagnostic clue:** The new `🎤 ARTIST` / `🎫 EVENT` chip from the SAME edit batch IS rendering in the live UI. The chip-add and pencil-removal were in different commits (chip in `c5895df`-adjacent earlier batch; pencil removal in `8baa285`). The fact that the chip is live but pencils still show suggests the chip commit deployed but the pencil-removal commit did NOT. Likely cause: the force-push for the amended commit confused Vercel's auto-deploy pipeline.
+
+**Things to try when this is picked back up:**
+
+1. **Check Vercel's Deployments page for the project.** Latest successful deploy SHA — does it match `14c9879` (the artist-profile day/time work, latest on main) or is it stuck on an earlier commit?
+2. **If the latest commit didn't deploy successfully, kick a fresh build with an empty commit:**
+   ```bash
+   git commit --allow-empty -m "chore: trigger redeploy" && git push origin main
+   ```
+3. **If a fresh build STILL doesn't remove the pencils, there's a render path I missed.** Take a screenshot of the actual UI state with browser dev tools open, inspect the pencil button element, copy its outerHTML — that'll point to the exact file/line generating it. Possibilities I haven't ruled out: a separate sub-tab view, a component wrapping the row that adds its own pencil, a triage view, or a header bar.
+4. **Worth grepping the codebase** with `grep -r "edit\|pencil\|✏️\|stroke=\"\#.*\".*edit" --include="*.js" src/components/admin/` to surface every edit-icon-shaped thing. The Icons.edit removal handled the obvious case; could be inline SVG paths or CSS-class-based icons elsewhere.
+
+**State left in code:**
+- `src/components/admin/AdminEventsTab.js` — pencil button removed, comment in place. Card root has `onClick={openEditor}` working (verified by Tony — clicking row opens editor).
+- `src/components/admin/AdminArtistsTab.js` — same pattern. `openArtistEditor()` extracted as reusable handler.
+- Both files clean per `grep "Icons.edit"` — zero hits.
+
+**Effort estimate:** 5 minutes if it's just a stuck Vercel deploy + empty commit. 15-30 min if there's a hidden render path that needs grepping out.
+
+---
+
 ## See also
 
 - **CATEGORIES-HANDOFF.md** — category/shortcut audit + auto-templates from event history (parking lot section)
