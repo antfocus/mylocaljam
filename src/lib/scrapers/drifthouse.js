@@ -148,10 +148,17 @@ function parseEbiCardDate(raw) {
  * Returns { artist, time } or null when the section isn't on the page.
  */
 function extractDaySection(html, dayName) {
+  // The Drifthouse theme renders heading close tags with optional whitespace
+  // before `>` — e.g. `<h6 class="qodef-m-subtitle" >Chad Acoustic</h6 >`
+  // (note the space in `</h6 >`). The earlier regex used `</h\d>` which
+  // didn't match that, causing the subtitle's capture group to expand
+  // non-greedily until the NEXT `</h\d>` (the FRIDAYS heading), swallowing
+  // a huge garbage string as the artist. Fixed by allowing optional
+  // whitespace before `>` on every heading close tag.
   const re = new RegExp(
-    `<h\\d[^>]*\\bclass="[^"]*\\bqodef-m-title\\b[^"]*"[^>]*>\\s*${dayName}\\s*</h\\d>` +
+    `<h\\d[^>]*\\bclass="[^"]*\\bqodef-m-title\\b[^"]*"[^>]*>\\s*${dayName}\\s*</h\\d\\s*>` +
     `[\\s\\S]*?` +
-    `<h\\d[^>]*\\bclass="[^"]*\\bqodef-m-subtitle\\b[^"]*"[^>]*>([\\s\\S]*?)</h\\d>` +
+    `<h\\d[^>]*\\bclass="[^"]*\\bqodef-m-subtitle\\b[^"]*"[^>]*>([\\s\\S]*?)</h\\d\\s*>` +
     `[\\s\\S]*?` +
     `<p[^>]*\\bclass="[^"]*\\bqodef-m-text\\b[^"]*"[^>]*>([\\s\\S]*?)</p>`,
     'i'
