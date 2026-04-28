@@ -214,62 +214,93 @@ export async function GET(request) {
   // Ref: https://postgrest.org/en/stable/references/api/resource_embedding.html
   const selectColumns = '*, venues(name, address, city, color, photo_url, website, latitude, longitude, venue_type, tags, default_start_time), artists(name, bio, genres, vibes, is_tribute, image_url), event_templates!fk_events_template_id(template_name, bio, image_url, category, start_time, genres)';
 
-  // ── Search: build the ILIKE filter ──────────────────────────────────────
-  // When q is provided, construct an OR filter across the searchable columns.
-  // pg_trgm GIN indexes accelerate these ILIKE '%term%' patterns.
+  // ── Search: build the ILIKE filter (tokenized AND-of-ORs) ───────────────
+  // Multi-word search uses an AND-of-ORs strategy: each token must appear
+  // somewhere among (event_title, artist_name, venue_name, OR any matching
+  // template_name). The earlier single-substring approach failed when the
+  // user's query had punctuation byte-different from the source data — e.g.
+  // an autocomplete-filled title like "Snow Crabs! (All You Can Eat)" got
+  // sanitized to "Snow Crabs! All You Can Eat" (parens stripped to spaces),
+  // which then didn't substring-match the original template_name with parens.
+  // Splitting the query into tokens sidesteps that entirely: each token is a
+  // small substring that is much more likely to land independently across the
+  // searchable columns.
   //
-  // The full search term is matched as a single substring — so "stone po"
-  // matches "The Stone Pony" because the string contains "stone po".
+  // pg_trgm GIN indexes still accelerate every per-token ILIKE '%term%'.
   //
-  // PostgREST .or() can't filter across joined relations directly, so to
-  // cover events whose searchable name lives only on event_templates
-  // (e.g., venue special events like "Snow Crabs! (All You Can Eat)"
-  // where events.event_title is NULL but the template_name carries the
-  // real label), we pre-fetch matching template IDs and add them to the
-  // OR filter as `template_id.in.(uuid1,uuid2,...)`. One extra round-trip,
-  // but it brings template-driven events back into search results.
-  let searchFilter = null;
-  let escaped = '';
+  // PostgREST .or() can't filter across joined relations, so we pre-fetch
+  // matching template IDs PER TOKEN and add them to that token's OR clause
+  // as `template_id.in.(uuid1,uuid2,...)`. One extra round-trip per token,
+  // all fired in parallel via Promise.all so latency stays flat.
+  //
+  // Each token's OR clause becomes its own .or() call below — chaining .or()
+  // ANDs them together, which gives us the per-token AND semantics.
+  const MAX_TOKENS = 10;
+  const MIN_TOKEN_LEN = 2;
+  const TEMPLATE_LOOKUP_CAP = 200;
+  let searchOrClauses = [];
   if (q) {
     // Sanitize for PostgREST .or() syntax:
-    //   • % and _ are ILIKE wildcards — escape them so user-typed '%' is literal
+    //   • % and _ are ILIKE wildcards — escape so user-typed '%' is literal
     //   • Commas separate conditions in .or() — a comma in the value would
     //     split the filter string and produce a malformed condition
     //   • Parentheses are used for grouping in PostgREST filters
-    escaped = q
+    const sanitized = q
       .replace(/%/g, '\\%')
       .replace(/_/g, '\\_')
       .replace(/[,()]/g, ' ')    // strip chars that break .or() syntax
       .trim();
 
-    if (escaped) {
-      const conditions = [
-        `event_title.ilike.%${escaped}%`,
-        `artist_name.ilike.%${escaped}%`,
-        `venue_name.ilike.%${escaped}%`,
-      ];
+    // Drop very short tokens (single chars are noise; they'd ILIKE-match
+    // almost everything via the template branch and slow the query). Cap at
+    // MAX_TOKENS so an autocomplete-pasted multi-line query can't fan out
+    // into dozens of round-trips.
+    const tokens = sanitized
+      .split(/\s+/)
+      .filter(t => t && t.length >= MIN_TOKEN_LEN)
+      .slice(0, MAX_TOKENS);
 
-      // Pull template IDs whose template_name matches and OR them into the
-      // filter. Capped at 200 — far more than any realistic dropdown will
-      // surface, and bounded so a degenerate query like "a" can't blow up.
+    if (tokens.length > 0) {
+      // Per-token template_name lookups, fired in parallel. Each one is
+      // capped at TEMPLATE_LOOKUP_CAP IDs — far more than any realistic
+      // dropdown surfaces, and bounded so a degenerate token can't blow up.
+      let tokenTemplateIds;
       try {
-        const { data: matchingTemplates } = await supabase
-          .from('event_templates')
-          .select('id')
-          .ilike('template_name', `%${escaped}%`)
-          .limit(200);
-
-        const templateIds = (matchingTemplates || []).map(t => t.id).filter(Boolean);
-        if (templateIds.length > 0) {
-          conditions.push(`template_id.in.(${templateIds.join(',')})`);
-        }
+        const lookups = tokens.map(t =>
+          supabase
+            .from('event_templates')
+            .select('id')
+            .ilike('template_name', `%${t}%`)
+            .limit(TEMPLATE_LOOKUP_CAP)
+        );
+        const results = await Promise.all(lookups);
+        tokenTemplateIds = results.map(r =>
+          (r.data || []).map(row => row.id).filter(Boolean)
+        );
       } catch (err) {
         // Don't fail the whole search if template lookup errors — just log
-        // and proceed with the original 3-column filter.
+        // and proceed with the per-token 3-column ILIKE filter only. The
+        // search degrades to artist_name / event_title / venue_name matching;
+        // template-only-titled events will silently miss until logs are checked.
         console.warn('[events/search] template_name lookup failed:', err.message);
+        tokenTemplateIds = tokens.map(() => []);
       }
 
-      searchFilter = conditions.join(',');
+      // Build one OR clause per token. Each clause requires the token to
+      // appear in event_title OR artist_name OR venue_name OR any matching
+      // template's id list.
+      searchOrClauses = tokens.map((token, i) => {
+        const conditions = [
+          `event_title.ilike.%${token}%`,
+          `artist_name.ilike.%${token}%`,
+          `venue_name.ilike.%${token}%`,
+        ];
+        const ids = tokenTemplateIds[i] || [];
+        if (ids.length > 0) {
+          conditions.push(`template_id.in.(${ids.join(',')})`);
+        }
+        return conditions.join(',');
+      });
     }
   }
 
@@ -314,10 +345,11 @@ export async function GET(request) {
       dataQuery  = dataQuery.eq('category', category);
     }
 
-    // Search filter (ILIKE across searchable columns)
-    if (searchFilter) {
-      countQuery = countQuery.or(searchFilter);
-      dataQuery  = dataQuery.or(searchFilter);
+    // Search filter — per-token AND-of-ORs. Each .or() call ANDs into the
+    // overall WHERE, so chaining produces (token1-OR) AND (token2-OR) AND ...
+    for (const orClause of searchOrClauses) {
+      countQuery = countQuery.or(orClause);
+      dataQuery  = dataQuery.or(orClause);
     }
 
     // ── Pagination via .range() ───────────────────────────────────────────
