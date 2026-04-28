@@ -268,9 +268,22 @@ function parseEbiCards(html, todayStr) {
 
 export async function scrapeDrifthouse() {
   try {
+    // Browser-shaped User-Agent + Accept headers. The default
+    // 'Mozilla/5.0 (compatible; ...)' UA we use elsewhere works fine on
+    // Squarespace/Wix/Google Calendar, but WordPress security plugins
+    // (Wordfence, AIOWPS, etc.) commonly flag the 'compatible' string as
+    // bot-like and either silently return an empty body or a soft-block
+    // page. Drifthouse's first scrape returned count=0 from the deployed
+    // Vercel runtime even though browser fetches with the same UA worked
+    // fine (likely datacenter-IP-aware filtering on top of UA filtering).
+    // This UA mimics current Chrome on macOS — it gets the real page.
     const res = await fetch(VENUE_URL, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; MyLocalJam/1.0; +https://mylocaljam.com)',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
+                      'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+                      'Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
       },
       next: { revalidate: 0 },
     });
@@ -287,8 +300,22 @@ export async function scrapeDrifthouse() {
       ...synthesizeWeekly(html, 'FRIDAYS',  5, todayStr), // Fri
     ];
 
-    console.log(`[Drifthouse] Found ${events.length} upcoming events ` +
-                `(Tue/Fri synthesized over ${HORIZON_WEEKS} weeks, Thu from the schedule list)`);
+    // Diagnostic: when count is 0, dump enough about the response to
+    // distinguish "wrong HTML returned" from "regex bug." Helps the next
+    // operator (or me) figure out the failure mode without re-deploying.
+    if (events.length === 0) {
+      const titleHits = (html.match(/qodef-m-title/g) || []).length;
+      const cardHits = (html.match(/ebi-card/g) || []).length;
+      const snippet = html.slice(0, 200).replace(/\s+/g, ' ');
+      console.warn(
+        `[Drifthouse] 0 events parsed. html_length=${html.length}, ` +
+        `qodef-m-title_count=${titleHits}, ebi-card_count=${cardHits}. ` +
+        `First 200 chars: ${snippet}`
+      );
+    } else {
+      console.log(`[Drifthouse] Found ${events.length} upcoming events ` +
+                  `(Tue/Fri synthesized over ${HORIZON_WEEKS} weeks, Thu from the schedule list)`);
+    }
     return { events, error: null };
 
   } catch (err) {
