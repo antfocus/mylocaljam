@@ -202,6 +202,119 @@ Auto-enrichment (LLM router → Perplexity-grounded research → MusicBrainz / D
 
 ---
 
+## 7. Refactor seven call sites to import from `src/lib/taxonomy.js`
+
+**Why parked:** Apr 27 shipped the canonical `taxonomy.js` constant and ran the DB migration that collapsed `events.category` (11→7 distinct values) and `event_templates.category` (10→5). The DATA layer is now canonical. The CODE layer still has seven writer/reader paths carrying their own local `CATEGORY_OPTIONS` / `ALLOWED_CATEGORIES` / `CATEGORY_CONFIG` arrays — they're correct today only because someone hand-aligned them. Closing this loop makes drift structurally impossible (the next contributor can't accidentally introduce a new vocabulary because there's only one to import).
+
+**Scope:** seven files. Each is a one-import refactor — replace the local constant with the appropriate export from `taxonomy.js`.
+
+1. `src/hooks/useAdminEvents.js` — replace `CATEGORY_OPTIONS` (line 42). Build dropdown options from `CATEGORIES` + `CATEGORY_LABELS`.
+2. `src/components/admin/AdminEventTemplatesTab.js` — replace `CATEGORY_OPTIONS` (line 17). Same pattern.
+3. `src/lib/eventClassifier.js` — replace `ALLOWED_CATEGORIES` (line 23). The LLM prompt's per-category guidance can pull from `CATEGORY_DESCRIPTIONS`.
+4. `src/components/EventCardV2.js` — drop local `CATEGORY_CONFIG`, import from taxonomy.
+5. `src/components/SiteEventCard.js` — same.
+6. `src/app/page.js` — pill values (lines 119–126) reference canonical strings via `import { CATEGORIES }`. Today's pill values happen to be canonical, but moving to the import prevents future drift.
+7. `src/lib/waterfall.js` line 131 — change literal `'Other'` fallback to `DEFAULT_CATEGORY`.
+
+**Risk:** Low. Each file is a one-import refactor. Verify side-by-side: every category badge still renders on every card type, every admin dropdown saves the right value, the LLM classifier still produces canonical outputs.
+
+**Effort:** ~30 minutes. Can ship as one PR (easier to review) or seven (more granular revert).
+
+**See also:** `DATA_LIFECYCLE.md` §3 invariant 1 (canonical category strings) and §5.6 drift finding; `ANALYTICS_PLAN.md` is unaffected.
+
+---
+
+## 8. Backfill `events.artist_name` to match canonical `artists.name`
+
+**Why parked:** `DATA_LIFECYCLE.md` §3 invariant 5: when an event is FK-linked to an artist (`artist_id IS NOT NULL`), the denormalized `events.artist_name` SHOULD equal `artists.name`. Drift causes ghost autocomplete entries — today's Kevin Hill investigation surfaced "Burning sun", "KEVIN HILL" (uppercase), and other variants on rows linked to canonical Kevin Hill. Hand-cleaned for that cluster; the pattern repeats across the artist roster.
+
+**Scope:** SQL-only one-shot pass. For every event with non-NULL `artist_id` whose `artist_name` differs from the canonical and matches a known alias on the canonical, normalize. For anomalies (no match in name OR aliases — e.g., the May 29 "Burning sun" event before we unlinked it), leave the row alone and flag for human review. Sketch:
+
+```sql
+-- Audit first
+SELECT a.name AS canonical, e.artist_name AS current, COUNT(*) AS rows
+  FROM events e JOIN artists a ON a.id = e.artist_id
+ WHERE e.artist_name <> a.name
+ GROUP BY a.name, e.artist_name
+ ORDER BY rows DESC;
+
+-- Backfill where the current value is a recognized alias
+UPDATE events e
+   SET artist_name = a.name, updated_at = NOW()
+  FROM artists a
+ WHERE e.artist_id = a.id
+   AND e.artist_name <> a.name
+   AND lower(e.artist_name) = ANY(
+     SELECT lower(unnest(COALESCE(a.alias_names, ARRAY[]::text[])))
+   );
+```
+
+**Risk:** Low if the alias-match clause holds. Audit produces the worklist; review a sample before committing.
+
+**Effort:** ~30 minutes including the audit.
+
+**See also:** `DATA_LIFECYCLE.md` §3 invariant 5; §5.3 drift finding.
+
+---
+
+## 9. Orphan artist row audit + cleanup beyond Kevin Hill
+
+**Why parked:** Kevin Hill cluster (Apr 28) showed the pattern: a manual merge updated `events.artist_id` to canonical but left the source rows behind in the artists table. Six rows became two; the other four were orphans with 0 events linked OR linked-but-name-drifted. The pattern almost certainly repeats across other clusters that were ever merged.
+
+**Scope:** SQL audit to find candidates, then per-cluster cleanup. The audit:
+
+```sql
+-- "Definitely orphan" — unlocked, no aliases, no events linked
+SELECT a.id, a.name, a.kind, a.last_fetched
+  FROM artists a
+ WHERE a.is_locked = false
+   AND COALESCE(a.alias_names, ARRAY[]::text[]) = '{}'
+   AND NOT EXISTS (SELECT 1 FROM events e WHERE e.artist_id = a.id)
+ ORDER BY a.name;
+
+-- "Probably alias" — name has telltale prefixes/suffixes that suggest it's
+-- a scraper-emitted variant of a canonical artist
+SELECT a.id, a.name FROM artists a
+ WHERE a.name ~* '^(live music - |^.* solo$|^grateful mondays |^.* trio$)';
+```
+
+For each candidate, admin decides: truly orphan (delete) or a real artist (keep). For the "probably alias" set, find the canonical and run the same four-step transaction we did for Kevin Hill: push source name into `alias_names`, reassign events, normalize event `artist_name`, delete source.
+
+**Risk:** Medium per cluster (each merge is destructive). Mitigate with a dry-run manifest before any DELETE.
+
+**Effort:** ~1–2 hours for the audit + several cluster cleanups. More if the worklist surfaces many candidates.
+
+**See also:** `DATA_LIFECYCLE.md` §5.2 drift finding; today's Kevin Hill cleanup in HANDOVER.
+
+---
+
+## 10. Reconcile remaining 64 template/event category disagreements
+
+**Why parked:** Apr 27 taxonomy migration dropped event/template category disagreements from 99 → 64 (upcoming events only). The remainder is a mix of (a) deliberate event-level overrides where the admin chose a different category than the linked template, and (b) cascade damage where `events.category` was set incorrectly by AI or scraper before locks took effect. Reconciling them closes drift §5.1 in `DATA_LIFECYCLE.md`.
+
+**Scope:** Pull the 64 rows, classify by lock state:
+
+```sql
+SELECT e.id, e.event_date, e.category AS event_cat, t.category AS tpl_cat,
+       e.is_human_edited, e.artist_name
+  FROM events e JOIN event_templates t ON t.id = e.template_id
+ WHERE e.category IS DISTINCT FROM t.category
+   AND e.event_date >= NOW()
+ ORDER BY e.is_human_edited, e.event_date;
+```
+
+For `is_human_edited = false` rows: targeted UPDATE that adopts the template's category. Safe because unlocked = "automated processes may overwrite this."
+
+For `is_human_edited = true` rows: leave alone. The admin deliberately set them differently from the template; that's a feature, not a bug.
+
+**Risk:** Low for the unlocked subset. Locked rows untouched. Run an audit COUNT first to know the unlocked split.
+
+**Effort:** ~20 minutes — audit query, eyeball the unlocked count, run the UPDATE.
+
+**See also:** `DATA_LIFECYCLE.md` §5.1 drift finding.
+
+---
+
 ## See also
 
 - **CATEGORIES-HANDOFF.md** — category/shortcut audit + auto-templates from event history (parking lot section)
