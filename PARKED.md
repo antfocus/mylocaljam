@@ -65,6 +65,52 @@ Shorter session focused on Spotlight polish + admin AI resilience.
 
 ---
 
+## Recently shipped — Apr 29 session
+
+Long session — Mac mini agent host stood up, fourth scraper landed, contrast pass, save-confirmation redesign, AI enrichment polish, weekend metadata work begun.
+
+**Mac mini agent host (foundation for self-hosted scrapers + agents)**
+- Brand-new M4 Mac mini provisioned end-to-end as a 24/7 headless host: account `jammaster` / FileVault on / SSH + Screen Sharing enabled / Tailscale on both Macs / iCloud explicitly skipped. SSH from the MacBook works on local Wi-Fi (`agent-mini.local`) and over Tailscale from anywhere (`agent-mini`). Energy/Lock settings tuned to never sleep so future cron jobs don't get knocked offline. Foundation for future migrations (slow-tier OCR, Drifthouse retry, local LLM agents).
+
+**Scrapers**
+- **Mott's Creek Bar** (Galloway, Squarespace): new scraper `src/lib/scrapers/mottsCreekBar.js`. Wired into FAST_SHARD_2. Venue row inserted (id `a0e05904-a73c-4834-b983-849f84c3f730`). 4 upcoming events landing cleanly on first run. Total venue count up to ~46.
+- **Doyle's Pour House**: original parking diagnosis was wrong. The iCal export DOES work — DB now has 30+ Doyle's events (Apr 30 → July). See updated PARKED #14 below.
+- **Per-scraper filter**: still parked (#13). The `tier=all` test path still hits the 60s cap. Worth a 15-min ship next session.
+
+**Spotlight + admin**
+- Spotlight CTA: "Meet Artist" demoted to "Details" when the linked artist has `kind='event'` (legacy fake-artist rows). Defensive check; once orphans are cleaned the path is dormant.
+- Spotlight staging rule reverted — ☆ now appends to next open slot (Main fills first, then Runner-Ups). The Apr 28 "stage-to-Runner-Ups-only" rule was over-engineered; admin couldn't stage candidates while Main had gaps.
+- AdminEventsTab `stopPropagation` fixes — the row-clickable change had broken the "Suggest" template chip and the Category dropdown (clicks bubbled to row's `openEditor`). Both fixed. Side effect: closed PARKED #12 (stale edit pencils — they were already removed in source; force-push had stalled the deploy).
+- Auto-link sweep — 26 of 51 weekend unlinked events linked via exact-name match against existing artists (excluding 4 known event-misclassified-as-artist rows). Linked pool 84 → 110 for Apr 30 – May 3.
+
+**Save confirmation popover redesign (`EventCardV2`)**
+- Anchored 260px popover replaced with a centered modal-card. Big green check + bold "Event saved" headline leads, then event title + venue context, then secondary outline-pill Follow CTA. Eliminates the "tight corner + giant orange button competing with confirmation" UX issues. Body text bumped to 16/15px after first-pass feedback. Follow button label switched to jet black (was orange-on-orange ~3:1 contrast → now ~14:1).
+
+**Search autocomplete word-prefix**
+- `app/page.js` autocomplete switched from `.includes(q)` (substring-anywhere) to word-prefix with stopword filter. Typing "an" no longer surfaces Wildman / Can Eat / Bank / "and". "the" still finds "The Stone Pony" via full-string-prefix. Stopword set: a, an, and, the, of, to, in, on, at, or, but, with, by, for, is, as, from.
+
+**White-on-orange contrast pass (round 1 + round 2)**
+- 11 hits across the codebase fixed (jet black on orange, ~14:1 contrast):
+  - HeroSection Spotlight chip (already fixed earlier; reverified).
+  - SpotlightCarousel ★ badge label, ArtistProfileScreen Follow button + plus icon, home-page venue-filter count pill, EventFormModal admin checkmark badge.
+  - Round 2 (CSS-variable + Tailwind variants the regex missed): home Search button, event-page "Sign up free" + "Create free account" CTAs, admin "+ Add Event" button, admin Settings icons (login screen + header), admin Login button.
+
+**AI Enhance + image lightbox (admin enrichment polish)**
+- AI Enhance genre fix: the prompt was using its own genre list ("Metal / Hardcore", "Hip-Hop / Rap"...) that didn't match the form's canonical `GENRES` list ("Metal", "Hip Hop"...). Even when AI correctly identified the band, the value didn't match a button. Fixed: imports `GENRES` from `utils.js` directly into the prompt + adds case-insensitive recovery + subgenre→canonical mapping (metalcore→Metal, hip-hop→Hip Hop, tribute→Cover Band, etc.).
+- AI Image Search lightbox: clicking a candidate thumbnail used to silently swap the preview. Now opens a centered confirmation lightbox with current vs. candidate side-by-side and explicit "Use This Image" / "Cancel" buttons. Backdrop click dismisses (with `stopPropagation` so it doesn't bubble to the parent EventFormModal).
+
+**Compound-name artist cleanup (one-shot SQL)**
+- Renamed 5 polluted artist rows to clean band names + pushed the bill text into `alias_names` (so any future scraper run with the same compound string still resolves to the canonical):
+  - "ALL THAT REMAINS with Special Guests Born of Osiris and Dead Eyes" → **ALL THAT REMAINS**
+  - "The Flatliners & A Wilhelm Scream w/ Signals Midwest" → **The Flatliners**
+  - "SongsByWeen The WEEN Tribute" → **SongsByWeen**
+  - "The Tacet Mode, w/ Sunfade, Osukasu, & Sean Marshall Trio" → **The Tacet Mode**
+  - John Eddie kept as-is (real band name).
+- Their bios (mostly scraper junk like "ALL AGE SHOW DOORS 6:00 PM") were cleared so AI Enhance has blank fields to fill.
+- Tested AI Enhance + AI Image Search on ALL THAT REMAINS, John Eddie, The Flatliners, SongsByWeen — bio + genre + vibe filled correctly; image lightbox flow validated.
+
+---
+
 ---
 
 ## ⚡ Launch priority (Apr 25 reframe)
@@ -350,32 +396,9 @@ For `is_human_edited = true` rows: leave alone. The admin deliberately set them 
 
 ---
 
-## 12. Edit pencils still rendering in EventsTab + ArtistsTab admin rows
+## ~~12. Edit pencils still rendering in EventsTab + ArtistsTab~~ — RESOLVED Apr 29
 
-**Why parked:** Apr 28, 2026. Made two changes locally + force-pushed to main:
-- Commit `8baa285` (force-pushed at 20:05 UTC) — `feat(admin): remove edit pencils — rows are clickable now`
-- Source code in both `src/components/admin/AdminEventsTab.js` and `src/components/admin/AdminArtistsTab.js` confirmed clean: no `Icons.edit` references, only `{/* Edit pencil removed */}` comments.
-
-Tony reported the pencils are STILL visible in the live admin UI for both tabs after deploy. Hard refresh didn't help. So either Vercel's deploy failed/got stuck, or there's a separate render path I missed.
-
-**Diagnostic clue:** The new `🎤 ARTIST` / `🎫 EVENT` chip from the SAME edit batch IS rendering in the live UI. The chip-add and pencil-removal were in different commits (chip in `c5895df`-adjacent earlier batch; pencil removal in `8baa285`). The fact that the chip is live but pencils still show suggests the chip commit deployed but the pencil-removal commit did NOT. Likely cause: the force-push for the amended commit confused Vercel's auto-deploy pipeline.
-
-**Things to try when this is picked back up:**
-
-1. **Check Vercel's Deployments page for the project.** Latest successful deploy SHA — does it match `14c9879` (the artist-profile day/time work, latest on main) or is it stuck on an earlier commit?
-2. **If the latest commit didn't deploy successfully, kick a fresh build with an empty commit:**
-   ```bash
-   git commit --allow-empty -m "chore: trigger redeploy" && git push origin main
-   ```
-3. **If a fresh build STILL doesn't remove the pencils, there's a render path I missed.** Take a screenshot of the actual UI state with browser dev tools open, inspect the pencil button element, copy its outerHTML — that'll point to the exact file/line generating it. Possibilities I haven't ruled out: a separate sub-tab view, a component wrapping the row that adds its own pencil, a triage view, or a header bar.
-4. **Worth grepping the codebase** with `grep -r "edit\|pencil\|✏️\|stroke=\"\#.*\".*edit" --include="*.js" src/components/admin/` to surface every edit-icon-shaped thing. The Icons.edit removal handled the obvious case; could be inline SVG paths or CSS-class-based icons elsewhere.
-
-**State left in code:**
-- `src/components/admin/AdminEventsTab.js` — pencil button removed, comment in place. Card root has `onClick={openEditor}` working (verified by Tony — clicking row opens editor).
-- `src/components/admin/AdminArtistsTab.js` — same pattern. `openArtistEditor()` extracted as reusable handler.
-- Both files clean per `grep "Icons.edit"` — zero hits.
-
-**Effort estimate:** 5 minutes if it's just a stuck Vercel deploy + empty commit. 15-30 min if there's a hidden render path that needs grepping out.
+Closed during the Apr 29 stopPropagation fix on AdminEventsTab. The pencils were correctly removed in source code; the previous deploy had stalled on the force-push (the diagnosis was right). When the new stopPropagation commit deployed cleanly, the pencils disappeared along with the click-bubbling fix. Two-for-one.
 
 ---
 
@@ -422,37 +445,107 @@ Each runs in ~3-10s, well under the 60s Vercel cap. Backwards-compatible — exi
 
 ---
 
-## 14. Doyle's Pour House scraper — Google Calendar iCal export disabled
+## ~~14. Doyle's Pour House scraper — iCal export disabled~~ — DIAGNOSIS WAS WRONG, WORKING NOW
 
-**Why parked:** Apr 28, 2026. Onboarded the venue (id `e2483c8c-b262-49c8-aaec-a5aaef53b5b3`) and built a scraper following the proven Idle Hour Google-Calendar-iCal pattern. The calendar ID is correct (`b0umkkkth5lktq8o1v6nji7dcg@group.calendar.google.com`, extracted from the iframe `src=` param on `/event-calendar/`). The scraper runs cleanly on Vercel without errors but returns count=0.
+The Apr 28 parking diagnosis was incorrect. The Google Calendar iCal export DOES work for Doyle's. On Apr 29 we discovered 30+ Doyle's events in the production DB (created at `2026-04-29 03:39:59 UTC`), all sourced cleanly from the iCal endpoint. The original count=0 was likely a transient Google-side hiccup — the scraper has been running fine since.
 
-**Diagnostic finding:** the calendar IS publicly viewable — navigating to the embed URL in a browser shows ~20+ upcoming events (Jack Mangan, Brandon Ireland Duo, Jimmy Brogan, Steamboat Messiah, Problem Child, Chuck DeBruyn, Shay Mac, Todd Meredith, etc.). But the public iCal export endpoint at `/calendar/ical/{id}/public/basic.ics` returns an empty calendar. This is because Google Calendar has TWO separate sharing settings:
+**Action item (small):** Tony's local copy of `src/app/api/sync-events/route.js` still has `'DoylesPourHouse'` commented out in `FAST_SHARD_1`. The deployed Vercel version has it uncommented (which is why scraping has been working). Next push needs to **uncomment the line locally** before pushing, otherwise a future deploy disables a working scraper. ~30-second fix, just don't forget.
 
-- **"Public access"** — only the embed widget works (renders via JS). The iCal endpoint returns empty.
-- **"Make available to public"** — full access, including iCal export.
+**State left in DB:** ~30 events confirmed (Todd Meredith, Chuck Miller, Problem Child, Jack Mangan, Dale and Amy, Jimmy Brogan, Steamboat Messiah, Chuck DeBruyn, Brandon Ireland Duo, Sapp and Oak, Shay Mac, etc.) rolling Apr 30 → July.
 
-Doyle's is on the first setting. Same end-of-day symptom as Drifthouse (count=0 / no error), different root cause.
+---
 
-**Three paths to revisit:**
+## 15. Auto-create artist flow tags everything as `kind='musician'`
 
-1. **Ask Doyle's to flip the setting.** If you have a venue contact, the easiest fix — they tick one checkbox in their Google Calendar admin and the iCal feed starts returning events. Existing scraper code works as-is. Lowest engineering cost.
-2. **Use the Google Calendar API with an API key.** `GET https://www.googleapis.com/calendar/v3/calendars/{id}/events?key=$GOOGLE_CAL_API_KEY` works for any publicly-embeddable calendar without requiring iCal export to be enabled. Needs a separate API key (your existing `GOOGLE_AI_KEY` for Gemini won't work — Calendar API is a different service). Free quota is generous (1M req/day). Probably ~30 min of work to swap the fetch + parse logic.
-3. **Use Playwright to render the embed and scrape the DOM.** Same pattern as `brielleHouse.playwright.js` and `houseOfIndependents.playwright.js`. Heavier — each run boots a headless Chrome — but works for any embed-only calendar. Probably ~1-2 hours of work.
+**Why parked:** Apr 29, 2026. Surfaced during the EVENT-kind audit and the auto-link sweep. The scraper / auto-create path tags every new artist row with `kind='musician'` regardless of whether the source string is actually a musician. Result: the artists table has rows like "Asbury Park Rodeo For Recreation" (community event), "Corona Promo" (promotional event), "2026 Summer Season Opening Party", "Emo In Bloom on The Rooftop" — all marked `kind='musician'`. The audit query that excludes `kind='event'` doesn't catch them, so they slip through any musician-targeted enrichment or cleanup pass.
 
-Recommendation: try #1 first if Tony has a venue contact. Otherwise #2 — solid long-term solution that benefits any future venue with the same setting.
+**Two complementary fixes:**
 
-**State left in code:**
+1. **Detect non-musician patterns at create time.** Scraper / admin auto-create flow should pattern-match the candidate name and either skip artist creation OR tag as `kind='event'` when the name contains: a year (`/\b20\d{2}\b/`), promo/event keywords ("Party", "Promo", "Celebration", "Fundraiser", "Rodeo", "Recreation", "Opening", "Industry Night"), or food/drink keywords ("Happy Hour", "Wine Tasting", "Trivia", "Karaoke", "Bingo"). These are templates / events, not artists.
+2. **Hide the kind setter in admin UI.** The artists tab shouldn't expose `kind='event'` as a manual choice. New artists default to `musician` (or null), and the `event` value only exists for legacy rows already flagged for deletion. Removes the temptation to mis-classify going forward.
 
-- `src/lib/scrapers/doylesPourHouse.js` — scraper file in place. Calendar ID is correct.
-- `src/app/api/sync-events/route.js` — `'DoylesPourHouse'` line in `FAST_SHARD_1` is COMMENTED OUT. Wiring everywhere else stays. Re-enable is a one-line uncomment.
-- `venues` row id `e2483c8c-b262-49c8-aaec-a5aaef53b5b3` — populated, geocoded (39.6010674, -74.3474528), Tuckerton NJ. Stays.
+**Why it matters:** Every new EVENT-kind-misclassified-as-musician row is a future "Meet Artist" CTA pointing nowhere, a Magic-Wand AI lookup wasted on a non-existent band, and an enrichment-target that pollutes the audit query. Fixing it at create time stops the bleeding; the orphan cleanup (PARKED #9, plus today's discoveries) handles the legacy.
 
-**Effort estimate when revisiting:**
-- Path #1 (ask venue): 5 min on our side, depends on venue response time.
-- Path #2 (Calendar API key): ~30 min to swap fetch logic + add env var + test.
-- Path #3 (Playwright): ~1-2 hours to author, test, and slot into the slow-tier GitHub Actions workflow.
+**See also:** PARKED #9 (orphan artist audit); the 18 orphan rows + 4 currently-linked rows (Jazz Arts Jam Sessions, Spring Sip & Shop, Asbury Park Rodeo, etc.) are the existing legacy that this fix would prevent in future.
 
-**See also:** PARKED #11 (Drifthouse — same count=0 / no error symptom, different cause); PARKED #13 (per-scraper filter — would speed up debug iteration on this and Drifthouse).
+---
+
+## 16. Bakes Brewing scraper — `LIVE MUSIC[:|-]` prefix creates duplicate artist rows
+
+**Why parked:** Apr 29, 2026. The Bakes Brewing scraper output contains TWO rows for the same act, one with a "LIVE MUSIC: " or "LIVE MUSIC-" prefix and one without:
+
+- "Grateful Dave" + "LIVE MUSIC-Grateful Dave" — both for Sat May 2 at 21:00
+- "P Dub Assassins Acoustic" + "LIVE MUSIC: P Dub Assassins Acoustic" — both for Fri May 1 at 22:00
+
+Same artist, same time, different `external_id`, both get inserted as separate events AND both create separate artist rows.
+
+**Fix:** In `src/lib/scrapers/bakesBrewing.js`, strip the `LIVE MUSIC[:|-]\s*` prefix before computing `artist_name` / `external_id`. Both spellings normalize to the same canonical name and dedupe naturally. Existing duplicate rows need a one-shot SQL pass: merge events.artist_id on the prefixed row to the canonical row, then delete the prefixed artist row.
+
+**Effort:** ~15 minutes for the scraper fix + 10 minutes for the cleanup SQL.
+
+**See also:** today's PARKED.md "Recently shipped — Apr 29" entry mentions the audit caught these.
+
+---
+
+## 17. Compound artist names from multi-band bills — generalize the fix
+
+**Why parked:** Apr 29, 2026. The Apr 29 cleanup hand-fixed five compound names (ALL THAT REMAINS, The Flatliners, SongsByWeen, The Tacet Mode + minor ones) by renaming to the headliner and pushing the bill text into `alias_names`. The pattern repeats across the artists table — anywhere a touring bill or "with special guests" formatting got captured as the artist name.
+
+**Pattern-match heuristics for an automated cleanup:**
+
+- Names containing `, ` (commas separate co-bills): `"Hunchback, Either Either, The Long Defeats, Johnny Nameless"` — first segment is the headliner.
+- Names containing ` w/ ` or ` with `: `"The Flatliners & A Wilhelm Scream w/ Signals Midwest"` — text before w/ is the bill, headliner is the leftmost solo segment.
+- Names containing `with Special Guests`, `featuring`, `feat.`, `ft.`: split on the marker, keep the left side, push right side to alias.
+- Names with a tribute suffix: `"SongsByWeen The WEEN Tribute"` — strip "The X Tribute" suffix, keep canonical band name.
+
+**Approach:** SQL audit query first to surface candidates. Then a per-cluster transaction (rename + push to alias_names + clear bio if scraper-junk) for each. Could be a one-shot script or a button in the artist admin tab ("Clean polluted name").
+
+**Risk:** Medium — destructive renames. Mitigate with a dry-run manifest (audit shows candidates with current and proposed names side by side; admin reviews before committing).
+
+**Effort:** ~1-2 hours for the audit + cleanup pass. Or several smaller passes as the pattern surfaces in future enrichment work.
+
+**See also:** PARKED #9 (orphan artist audit — overlapping pattern, but #9 is "rows with no events," #17 is "rows with events but polluted names"); today's session shipped 5 of these by hand.
+
+---
+
+## 18. Continue Tier 1 weekend artist enrichment (~30 artists remaining)
+
+**Why parked:** Apr 29 session ran out of time after validating the AI Enhance + image lightbox flow on 4 artists (ALL THAT REMAINS, John Eddie, The Flatliners, SongsByWeen). The remaining ~30 Tier 1 weekend artists (Apr 30 – May 3) are local solo/duo/band/DJ acts that need the same per-event manual run.
+
+**Workflow per artist (proven on 4):**
+
+1. Open the event in admin Event Feed
+2. Click ✨ "AI Enhance (Bio + Genre + Vibe)" — fills custom_bio, custom_genres, custom_vibes (the canonical-list fix from today means genres now match buttons)
+3. Click ✨ "AI Image Search" — opens 5 candidates
+4. Click candidate → confirmation lightbox → review side-by-side → "Use This Image" or Cancel
+5. Click "Update Event" to commit
+
+**Tier 1 priority list (clean band names, real database presence):**
+- DJs: DJ Dominic Longo, DJ Funsize, DJ Patman, DJ JADEN T
+- Local headliners: Tony Pontari, Megan Knight, Eddie Testa, Jack Mangan, Bob Boross, Kevin Koczan
+- Bands: Wrong Exit, Friend Zone Band, Lick of Sense, Undisputed, El Ka Bong, Goldenseal, Big John + Little Maria, The Snark Twins
+- Tribute / cover: Rob Messina (Dave Matthews Cover Band), Jr Paul's
+- Duos: Jill McCoy Duo, Todd Robbins Duo, Wayne Bilotti & Co, Serious FM Duo, Steve Reilly
+- Etc. — full list in the audit query already run.
+
+**Tier 2 (multi-band bills) and Tier 3 (events disguised as artists)** were identified in the Apr 29 audit and intentionally skipped — they need cleanup (PARKED #15 + #17), not enrichment.
+
+**Effort:** ~2-3 minutes per artist × ~30 = 60-90 min of focused clicking. Best done in one sitting once ready.
+
+---
+
+## 19. Manually link the 25 still-unlinked weekend events
+
+**Why parked:** Apr 29 auto-link sweep knocked the unlinked weekend pool from 51 → 25. Remaining 25 events couldn't be auto-matched because either (a) their `artist_name` doesn't exact-match any existing artist row, or (b) the artist row exists but with a different spelling/casing/punctuation that `LOWER(REGEXP_REPLACE(name, '^the\s+', ''))` didn't catch.
+
+**Two paths for each:**
+
+1. **Existing artist, just typo'd name** — link manually via admin event edit (artist autocomplete → pick canonical → save). Fast for clear cases.
+2. **No matching artist exists** — create a new artist row, then link. Slower but unavoidable for new acts.
+
+**Triage tip:** the audit query that surfaced the 25 includes the event's current `artist_name`. Eyeball the list against the existing artists list and most will sort into pile 1 (typo) or pile 2 (genuinely new) within a minute each.
+
+**Effort:** ~30 min for all 25.
 
 ---
 

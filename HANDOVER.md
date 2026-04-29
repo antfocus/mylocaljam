@@ -4929,3 +4929,30 @@ Result: "as" → Asbury Park first, "be" → Belmar/Bay Head/Beach Haven, "ma" �
 - **#86** Custom scraper for Asbury Park Boardwalk venue family.
 - **#106** Replace regex filter with `kind='musician'` across My Locals + autocomplete + follow-suggest.
 
+
+---
+
+## Apr 29 session — Mac mini, Mott's Creek, weekend metadata polish
+
+Long mixed-mode session: half infrastructure (Mac mini agent host setup), half product polish (admin UX, contrast, save flow, search), half data work (auto-link sweep, compound-name cleanup, AI Enhance fixes). Full session detail in PARKED.md "Recently shipped — Apr 29" block.
+
+### Highlights
+
+- **Mac mini stood up** as the future 24/7 agent host. SSH + Tailscale working from anywhere. Codebase still on MacBook for daily editing; Mini is the runtime target for slow-tier scrapers and future agent loops.
+- **Mott's Creek Bar** scraper shipped — Squarespace JSON pattern, 4 events live. Total scraper count up to ~46. Doyle's Pour House confirmed working (the Apr 28 "iCal export disabled" diagnosis was wrong).
+- **Auto-link sweep** for Apr 30 – May 3: 26 of 51 unlinked weekend events now linked via exact-name match against `artists.name` (with normalize). Linked pool 84 → 110.
+- **Compound artist name cleanup** for ALL THAT REMAINS, The Flatliners, SongsByWeen, The Tacet Mode — renamed to clean band names with bill text moved to `alias_names`.
+- **AI Enhance genre fix**: prompt was using a different genre vocabulary than the form. Now imports canonical `GENRES` from utils.js + adds subgenre→canonical mapping. Genres now actually fill in.
+- **AI Image Search lightbox**: click a candidate → confirmation lightbox with current vs. candidate side-by-side. Eliminates accidental swap-on-tap.
+- **Save confirmation popover** redesigned to centered modal-card with green check + bigger body text + jet-black Follow CTA.
+- **White-on-orange contrast pass**: 11 hits fixed across public site + admin (HeroSection, SpotlightCarousel, ArtistProfileScreen, EventCardV2, page.js Search button, EventPageClient signup CTAs, AdminEventsTab Add Event, AdminLoginScreen, admin header).
+- **Search autocomplete** switched from substring-anywhere to word-prefix with stopwords. "an" no longer surfaces "wildmAN" etc.
+- **AdminEventsTab** stopPropagation fixes for the Suggest template chip and Category dropdown (both were triggering the row-clickable openEditor by accident). Closed PARKED #12 (stale edit pencils — they were already removed in source; the deploy had stalled on a force-push).
+
+### Next session priorities
+
+1. Push the local `route.js` state — Doyle's Pour House line in FAST_SHARD_1 needs to be uncommented before push (deployed version has it active; local has it commented). Otherwise a future deploy disables a working scraper.
+2. Continue Tier 1 weekend artist enrichment: ~30 local artists remaining, per-event manual ✨ click. PARKED #18.
+3. Manual link the 25 still-unlinked weekend events. PARKED #19.
+4. Cleanup pass: Bakes Brewing duplicate-prefix scraper bug (PARKED #16) + EVENT-kind orphan delete (PARKED #9 + today's 18 orphans) + multi-band bill name pattern (PARKED #17) + auto-create artist guardrail (PARKED #15).
+
