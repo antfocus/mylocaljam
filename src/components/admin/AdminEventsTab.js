@@ -1091,7 +1091,7 @@ export default function AdminEventsTab({
                       return (
                         <button
                           type="button"
-                          onClick={() => confirmTemplateMatch(ev, t.id, t.template_name)}
+                          onClick={(e) => { e.stopPropagation(); confirmTemplateMatch(ev, t.id, t.template_name); }}
                           title={`Confirm match: ${t.template_name} (${matchKindLabel}). Click to set template_id.`}
                           style={{
                             display: 'inline-flex', alignItems: 'center', gap: '4px',
@@ -1151,6 +1151,7 @@ export default function AdminEventsTab({
                   <select
                     value={ev.category || 'Live Music'}
                     onChange={(e) => updateEventCategory(ev, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     className="text-[11px] font-display font-semibold rounded-lg px-2 py-1"
                     style={{
                       background: 'var(--bg-elevated)',
