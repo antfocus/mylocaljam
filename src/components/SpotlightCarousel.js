@@ -225,7 +225,7 @@ export default function SpotlightCarousel({ events = [], darkMode = true }) {
                   <div style={{
                     position: 'absolute', top: 12, left: 12, padding: '4px 10px', borderRadius: 8,
                     background: 'rgba(232,114,42,0.9)', backdropFilter: 'blur(8px)', pointerEvents: 'none',
-                    fontSize: 10, fontWeight: 700, color: '#fff', letterSpacing: '0.5px',
+                    fontSize: 10, fontWeight: 700, color: '#000000', letterSpacing: '0.5px',
                     fontFamily: "'DM Sans', sans-serif", textTransform: 'uppercase',
                   }}>★ Spotlight</div>
 

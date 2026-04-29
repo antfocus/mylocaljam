@@ -458,7 +458,7 @@ export default function ArtistProfileScreen({
                 ? `1px solid ${neutralBorder}`
                 : `1px solid ${BRAND_ORANGE}`,
               background: isFollowed ? 'transparent' : BRAND_ORANGE,
-              color: isFollowed ? neutralFg : '#FFFFFF',
+              color: isFollowed ? neutralFg : '#000000',
             }}
           >
             {isFollowed ? (
@@ -471,7 +471,7 @@ export default function ArtistProfileScreen({
             ) : (
               <>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" fill="#FFFFFF" />
+                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z" fill="#000000" />
                 </svg>
                 Follow
               </>

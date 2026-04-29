@@ -3055,7 +3055,7 @@ export default function HomePage() {
                     </span>
                     {activeVenues.length > 0 && (
                       <span style={{
-                        background: '#E8722A', color: '#FFFFFF', fontSize: '10px', fontWeight: 700,
+                        background: '#E8722A', color: '#000000', fontSize: '10px', fontWeight: 700,
                         borderRadius: '8px', padding: '1px 6px', minWidth: '18px', textAlign: 'center',
                         fontFamily: "'DM Sans', sans-serif", flexShrink: 0,
                       }}>{activeVenues.length}</span>

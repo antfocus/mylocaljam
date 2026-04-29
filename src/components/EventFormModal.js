@@ -744,7 +744,7 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
                             style={{
                               position: 'absolute', top: '2px', right: '2px',
                               width: '14px', height: '14px', borderRadius: '50%',
-                              background: '#E8722A', color: '#fff',
+                              background: '#E8722A', color: '#000000',
                               fontSize: '9px', fontWeight: 900,
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               fontFamily: "'DM Sans', sans-serif",
