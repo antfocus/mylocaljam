@@ -38,29 +38,75 @@ export async function POST(request) {
     ? new Date(event_date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
     : '';
 
-  // ── Description tone contract (user-authored, April 14, 2026) ──────────
-  // This block is the SOURCE OF TRUTH for the "bio" field. If a future
-  // editor wants to tweak it, keep the banned-word list and the example
-  // intact — they're what keeps the model off the flowery-marketing rails.
-  const descriptionContract = `You are a local event data curator. Your job is to write clear, factual, and informative event descriptions. You are writing for locals who want to know what the vibe is, what is happening, and what to expect.
+  // ── Description tone contract (rewritten Apr 29, 2026) ─────────────────
+  // SOURCE OF TRUTH for the "bio" field. Mirrors the artist-bio prompt's
+  // ARTIST/VENUE classification fork (see aiLookup.js) so event copy stays
+  // tight and on-brand. Old version capped at 2-4 sentences (loose), used
+  // an 80-word example that anchored the model to verbose output, and
+  // didn't ban repetition of the event name. New version: 150 char hard
+  // cap, classification fork, explicit name-repetition ban, longer hype
+  // word blacklist (added "high energy" per user request).
+  //
+  // If a future editor wants to tweak this, keep the structure intact:
+  // (1) classify ARTIST vs VENUE, (2) apply the per-branch rules,
+  // (3) two short examples — one per branch — that anchor the right length.
+  const descriptionContract = `You are a professional listings writer for a local live-music and nightlife site. Follow these rules STRICTLY.
 
-STRICT CONSTRAINTS:
-- NO marketing hyperbole or flowery language.
-- NEVER use words like: 'Dive into', 'vibrant', 'savor', 'thrill', 'immersive', 'moody glow', 'flickering', 'dance'.
-- Focus on facts: Crowd type, venue style (e.g., sports bar, acoustic, dive), event sequence, and atmosphere.
-- Keep it strictly between 2 to 4 sentences.
+═══════════════════════════════════════════════════════
+STEP 1 — CLASSIFY THE EVENT
+═══════════════════════════════════════════════════════
+Decide which of these two categories the event belongs to:
 
-EXAMPLE OF PERFECT OUTPUT:
-Input: Tuesday BOGO Burger night at River Rock
-Output: The Tuesday BOGO burger night at River Rock is a high-energy, social event that draws a large local crowd for dining and competitive trivia. The atmosphere is lively and casual, blending a classic sports bar vibe with scenic marina views from the indoor dining area. As the night progresses, the energy shifts from a busy dinner rush to an engaging Quizzoholics Trivia session where teams fill the bar to compete for prizes.
+- ARTIST: a band, solo artist, DJ, duo, tribute act, or other named musical performer is the headliner.
+    Examples: "Tony Pontari at Mott's Creek Bar", "DJ Bluiz", "ALL THAT REMAINS", "SongsByWeen".
 
-Now, write the description for the provided event using this exact factual, grounded tone.`;
+- VENUE: a recurring or themed activity with no specific musical performer.
+    Examples: "Trivia Night", "Karaoke Tuesday", "BOGO Burger", "Happy Hour", "Sunday Brunch".
+
+If both an artist and a themed activity are present, prioritize ARTIST.
+
+═══════════════════════════════════════════════════════
+STEP 2 — WRITE THE BIO
+═══════════════════════════════════════════════════════
+
+UNIVERSAL RULES (both branches):
+- MAXIMUM 150 CHARACTERS. Count every character including spaces and punctuation. If you exceed 150, rewrite shorter.
+- 1 to 2 complete sentences. End on a period.
+- DO NOT repeat the event name, artist name, or venue name in the bio. The card already shows them.
+- AVOID hype words and generic filler: "high energy", "amazing", "incredible", "electrifying", "unforgettable", "world-class", "legendary", "captivating", "mesmerizing", "powerhouse", "showstopping", "breathtaking", "soul-stirring", "mind-blowing", "vibrant", "immersive", "thrill", "savor", "dive into", "moody glow", "flickering".
+- DO NOT call the reader to action: no "come out", "don't miss", "you won't want to miss", or any second-person address.
+- Tone: neutral, informative, professional — like an encyclopedia entry, not marketing copy.
+
+IF kind === "ARTIST":
+- Describe the artist's musical style, genre, instrumentation, or sound.
+- DO NOT mention any venues they have played at — past, present, or current.
+- DO NOT mention tour history, awards, chart positions, or famous collaborators.
+- If the data is insufficient to describe the music, return exactly: "NEEDS_MANUAL_REVIEW".
+
+IF kind === "VENUE":
+- Describe the activity itself, the venue's atmosphere, and what attendees can expect.
+- DO NOT invent musical genres or performer details for food/trivia/drink events. The event has no "sound".
+- If the data is insufficient to describe the activity, return exactly: "NEEDS_MANUAL_REVIEW".
+
+═══════════════════════════════════════════════════════
+STEP 3 — EXAMPLES (target this length and density)
+═══════════════════════════════════════════════════════
+
+ARTIST example:
+  Input: "Tony Pontari at Mott's Creek Bar"
+  Output: "Solo acoustic singer-songwriter blending classic rock and country covers with finger-picked originals." (104 chars)
+
+VENUE example:
+  Input: "Tuesday Trivia Night at River Rock"
+  Output: "Weekly Quizzoholics-style trivia at a marina-side sports bar. Teams compete for prizes during the dinner-to-late-evening shift." (128 chars)
+
+Now write the bio for the provided event using this exact tone and length.`;
 
   const prompt = `${descriptionContract}
 
 You will return a JSON object with the following fields. ONLY the "bio" field is governed by the tone contract above — the other fields remain classification tasks.
 
-1. "bio" — The event description. Follow the STRICT CONSTRAINTS above to the letter. 2 to 4 sentences. No banned words. Facts over feelings.
+1. "bio" — The event description. Follow the rules in the description contract above to the letter. 150 char max. 1-2 sentences. ARTIST branch describes music; VENUE branch describes activity/atmosphere. No banned words. No name repetition. No reader address.
 2. "genre" — The artist's primary genre. Pick ONE EXACTLY from this list (case and spelling must match): ${ALLOWED_GENRES.join(', ')}. Use "Cover Band" for tribute/cover acts. Use "DJ" for DJ sets. Use "Metal" for any metal subgenre (metalcore, deathcore, hardcore). If unsure, pick the closest single match — never invent a new label.
 3. "vibe" — The likely event atmosphere. Pick ONE from: ${ALLOWED_VIBES.join(', ')}. "Vibe" describes the venue experience (energy level, crowd atmosphere), NOT the artist's genre. A jazz trio at a wine bar is "Chill / Low Key". A jazz trio at a street festival is "Energetic / Party".
 4. "image_search_query" — A Google Image search query that would find a photo of this specific artist or band. Use the artist name plus terms like "band", "live", or "musician" to get relevant results. Example: "The Wallflowers band" or "DJ Jazzy Jeff live".
