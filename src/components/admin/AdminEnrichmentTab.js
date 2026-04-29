@@ -73,15 +73,52 @@ export default function AdminEnrichmentTab({
   // ── Triage sub-tab state ─────────────────────────────────────────────────
   // Default range = this weekend (Thu-Sun). Most enrichment work happens
   // on the next 4 days because that's what users browse first.
-  const [triageRange, setTriageRange] = useState(() => thisWeekendRange());
-  const [triageMissing, setTriageMissing] = useState('image');
+  //
+  // Filter state is persisted to sessionStorage so the operator's choices
+  // survive a tab switch + return. When the operator clicks an ARTIST row,
+  // the admin page navigates them to the Artists tab — which unmounts this
+  // component. Without persistence, coming back to Enrichment → Triage
+  // would reset the date range and missing-field pill, forcing a re-input.
+  // sessionStorage scope (vs localStorage) means it auto-clears on browser
+  // close — useful so a stale 6-month-old date range doesn't surface on a
+  // fresh login.
+  const [triageRange, setTriageRange] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('mlj_triage_range');
+      if (saved) try { return JSON.parse(saved); } catch {}
+    }
+    return thisWeekendRange();
+  });
+  const [triageMissing, setTriageMissing] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('mlj_triage_missing');
+      if (saved && ['image', 'bio', 'genres', 'vibes'].includes(saved)) return saved;
+    }
+    return 'image';
+  });
   const [triageQueue, setTriageQueue] = useState([]);
   const [triageLoading, setTriageLoading] = useState(false);
   const [triageError, setTriageError] = useState(null);
   // Preset chip currently selected — purely display state so the active
   // chip can render highlighted. 'custom' means the operator typed dates
   // manually.
-  const [triagePreset, setTriagePreset] = useState('weekend');
+  const [triagePreset, setTriagePreset] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('mlj_triage_preset');
+      if (saved && ['today', 'weekend', 'week', 'custom'].includes(saved)) return saved;
+    }
+    return 'weekend';
+  });
+
+  // Persist the three filter values whenever they change.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      sessionStorage.setItem('mlj_triage_range', JSON.stringify(triageRange));
+      sessionStorage.setItem('mlj_triage_missing', triageMissing);
+      sessionStorage.setItem('mlj_triage_preset', triagePreset);
+    } catch {}
+  }, [triageRange, triageMissing, triagePreset]);
 
   const [batchSize, setBatchSize] = useState(2);
   const [bareOnly, setBareOnly] = useState(false);
@@ -675,8 +712,15 @@ function TriageView({
     // Artist-linked → fix at the source (artist row), so all events for
     // that artist get the benefit. Event-only → open the event modal so
     // the operator can edit just this row.
+    //
+    // We pass the joined artist row directly (via ev.artists) rather than
+    // looking it up in the parent's `ar.artists` cache. The cache may be
+    // empty if the operator hasn't visited the Artists tab yet, which
+    // produced the "Artist not in the loaded list" toast bug. The triage
+    // API already joined the artist row, so it's right here in the queue
+    // entry — pass the whole object and skip the lookup.
     if (ev.has_artist && ev.artist_id) {
-      onOpenArtist?.(ev.artist_id);
+      onOpenArtist?.(ev.artists, ev.artist_id);
     } else {
       onOpenEvent?.(ev);
     }

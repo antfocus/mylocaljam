@@ -590,27 +590,35 @@ export default function AdminPage() {
           // Triage row click → open the artist edit modal. Mirrors the
           // EventFormModal's onNavigateToArtist flow: switches tab to
           // artists/triage, loads the artist into the edit panel.
-          onOpenArtist={(artistId) => {
-            if (!artistId) return;
-            const artist = (ar.artists || []).find(a => a.id === artistId);
-            if (!artist) {
-              showQueueToast(`Artist ${artistId} not in the loaded list — try Refresh`);
-              return;
-            }
+          //
+          // First arg is the joined artist row from the triage queue API
+          // (preferred — has all fields right there). Second arg is the
+          // artist_id as a fallback if the joined row is missing for any
+          // reason — we look it up in ar.artists. If neither path produces
+          // an artist, we still navigate to the Artists tab so the operator
+          // can find them via search.
+          onOpenArtist={(artistRow, artistId) => {
+            const artist = artistRow || (ar.artists || []).find(a => a.id === artistId);
             setReturnToTab(activeTab);
             setActiveTab('artists');
             ar.setArtistSubTab('triage');
-            ar.setEditingArtist(artist);
-            ar.setImageCandidates(artist.image_url ? [artist.image_url] : []);
-            ar.setImageCarouselIdx(0);
-            ar.setArtistForm({
-              name: artist.name || '',
-              bio: artist.bio || '',
-              genres: artist.genres ? (Array.isArray(artist.genres) ? artist.genres.join(', ') : artist.genres) : '',
-              vibes: artist.vibes ? (Array.isArray(artist.vibes) ? artist.vibes.join(', ') : artist.vibes) : '',
-              image_url: artist.image_url || '',
-              default_category: artist.default_category || '',
-            });
+            if (artist) {
+              ar.setEditingArtist(artist);
+              ar.setImageCandidates(artist.image_url ? [artist.image_url] : []);
+              ar.setImageCarouselIdx(0);
+              ar.setArtistForm({
+                name: artist.name || '',
+                bio: artist.bio || '',
+                genres: artist.genres ? (Array.isArray(artist.genres) ? artist.genres.join(', ') : artist.genres) : '',
+                vibes: artist.vibes ? (Array.isArray(artist.vibes) ? artist.vibes.join(', ') : artist.vibes) : '',
+                image_url: artist.image_url || '',
+                default_category: artist.default_category || '',
+              });
+            } else if (artistId) {
+              // Last-resort: surface a toast so the operator knows we
+              // couldn't auto-open. They can search the Artists tab manually.
+              showQueueToast(`Couldn't auto-open artist ${artistId} — search for them in the Artists tab.`);
+            }
           }}
         />
       )}
