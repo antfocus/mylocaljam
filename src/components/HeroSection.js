@@ -416,11 +416,26 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
             // When the spotlight is an event with no linked artist (e.g.
             // "R Bar Oyster Roast"), "Meet Artist" lies — switch to a more
             // generic "Event Details" label.
+            //
+            // EVENT-kind artists are a legacy holdover from before event
+            // templates existed (recurring nights / galas got modeled as
+            // fake "artists"). Even though they have an artist_id, they're
+            // not people you can "meet" — their "bio" is event copy, not
+            // an artist profile. Treat them as no-artist for CTA purposes
+            // so the spotlight reads honestly. Once we finish migrating
+            // these rows to templates and retire EVENT-kind from the
+            // artist directory, this kind check becomes redundant —
+            // leaving it in as defense-in-depth.
+            //
             // CTA label — short enough to fit the right side of the meta row
             // alongside venue. "Details" is the no-artist variant of "Meet
             // Artist"; shaved from "Event Details" since we're already on an
             // event and the meta row was wrapping on long venue names.
-            const hasLinkedArtist = !!(ev.artists?.name || ev.artist_id);
+            const linkedArtistKind = ev.artists?.kind;
+            const isEventKindArtist =
+              linkedArtistKind === 'event' || linkedArtistKind === 'EVENT';
+            const hasLinkedArtist =
+              !!(ev.artists?.name || ev.artist_id) && !isEventKindArtist;
             const ctaLabel = hasLinkedArtist ? 'Meet Artist' : 'Details';
 
             // Meta row assembly — filter empty segments so separators don't dangle.
