@@ -549,6 +549,33 @@ export default function HomePage() {
     if (!rawQ || rawQ.length < 2) return [];
     const q = normalizeVenue(debouncedSearch);
 
+    // ── Match strategy ────────────────────────────────────────────────────
+    // We used to do `key.includes(q)` (substring-anywhere), which made
+    // typing "an" match "Wildman", "Can Eat", "Bank", "and", etc. — way
+    // too noisy. Switched to a word-prefix match with stopword exclusion:
+    //   • Full-string prefix always matches (e.g. "an" → "Anchor Tavern").
+    //   • Any word in the name that STARTS with the query also matches
+    //     (e.g. "an" → "Bar Anticipation"), as long as that word isn't a
+    //     filler word like "and", "the", "of" — those would dilute every
+    //     short query into noise ("an" finding "Sun Harbor and Grill").
+    //
+    // Word-boundary regex needs to escape the query, since users can type
+    // any character. We do the split-and-check approach instead because it
+    // sidesteps regex escaping entirely and is easier to read.
+    const STOPWORDS = new Set([
+      'a', 'an', 'and', 'the', 'of', 'to', 'in', 'on', 'at',
+      'or', 'but', 'with', 'by', 'for', 'is', 'as', 'from',
+    ]);
+    const matchesQ = (key, query) => {
+      if (!key || !query) return false;
+      if (key.startsWith(query)) return true;
+      // Split on common word separators (spaces, dashes, ampersands,
+      // commas, periods, parens, slashes). Keep apostrophes attached to
+      // the word so "Doyle's" stays one token (a query of "do" matches it).
+      const words = key.split(/[\s\-&,.()/]+/);
+      return words.some(w => w.startsWith(query) && !STOPWORDS.has(w));
+    };
+
     // Keyword → display-label map. Order matters: first match wins, so put
     // the most specific patterns (karaoke, trivia) above the generic
     // catch-all ones (event, festival).
@@ -596,14 +623,14 @@ export default function HomePage() {
           && !classifyTitle(artistName)
           && !DRINK_SPECIAL_RE.test(artistName)) {
         const key = artistName.toLowerCase();
-        if (key.includes(q) && !artistSet.has(key)) artistSet.set(key, artistName);
+        if (matchesQ(key, q) && !artistSet.has(key)) artistSet.set(key, artistName);
       }
 
       // Venues: from joined venue data
       const venue = (e.venue ?? '').trim();
       if (venue) {
         const key = venue.toLowerCase();
-        if (key.includes(q) && !venueSet.has(key)) venueSet.set(key, venue);
+        if (matchesQ(key, q) && !venueSet.has(key)) venueSet.set(key, venue);
       }
 
       // Event titles (with `artist_name` fallback for un-linked scraper
@@ -622,7 +649,7 @@ export default function HomePage() {
       const rawTitle = (e.event_title ?? '').trim() || (e.artist_name ?? '').trim();
       if (rawTitle) {
         const key = normalizeVenue(rawTitle);
-        if (key.includes(q)) {
+        if (matchesQ(key, q)) {
           let label = classifyTitle(rawTitle);
 
           // Template-backed events should never fall through to ARTIST.
@@ -660,7 +687,7 @@ export default function HomePage() {
     for (const s of eventSeries) {
       const name = (s.name || '').trim();
       if (!name) continue;
-      if (name.toLowerCase().includes(q)) {
+      if (matchesQ(name.toLowerCase(), q)) {
         // Festival category gets the dedicated 'festival' icon/color the
         // dropdown already styles; other categories (concert_series, parade,
         // other) share a generic 'series' type that falls through to the
