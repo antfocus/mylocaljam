@@ -797,15 +797,27 @@ function TriageView({
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  {/* Linkage chip — same pattern as AdminEventsTab. */}
-                  <span style={{
-                    fontSize: '9px', fontWeight: 700,
-                    padding: '2px 6px', borderRadius: '999px',
-                    background: ev.has_artist ? 'rgba(34,197,94,0.12)' : 'rgba(96,165,250,0.12)',
-                    color: ev.has_artist ? '#22c55e' : '#60a5fa',
-                    flexShrink: 0,
-                  }}>
-                    {ev.has_artist ? '🎤 ARTIST' : '🎫 EVENT'}
+                  {/* Linkage chip — clarified Apr 29:
+                      - ARTIST (green) means the row has artist_id set; click → artist editor.
+                      - UNLINKED (yellow) means no artist_id. Could be a real
+                        musician not yet linked to a canonical artist row, OR a
+                        genuinely event-only listing (Corona Promo, Trivia Night).
+                        Click → event editor where the operator can decide. The
+                        previous label "EVENT" was misleading because most
+                        unlinked rows are actually real musicians. */}
+                  <span
+                    title={ev.has_artist
+                      ? 'Linked to a canonical artist row — click to edit the artist (fix-at-source)'
+                      : 'No artist link yet — click to edit the event row. From there you can link to an existing artist or just fix event-level fields.'}
+                    style={{
+                      fontSize: '9px', fontWeight: 700,
+                      padding: '2px 6px', borderRadius: '999px',
+                      background: ev.has_artist ? 'rgba(34,197,94,0.12)' : 'rgba(234,179,8,0.14)',
+                      color: ev.has_artist ? '#22c55e' : '#eab308',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {ev.has_artist ? '🎤 ARTIST' : '🔗 UNLINKED'}
                   </span>
                   {/* Title */}
                   <strong style={{
