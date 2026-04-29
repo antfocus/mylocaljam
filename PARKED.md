@@ -379,6 +379,49 @@ Tony reported the pencils are STILL visible in the live admin UI for both tabs a
 
 ---
 
+## 13. Add per-scraper filter to `/api/sync-events` for isolated testing
+
+**Why parked:** Apr 28, 2026. Adding Lighthouse Tavern (commit pending) blew past Vercel's 60s function timeout when manually triggering `tier=slow` from the browser console. The slow-tier production path is fine — it runs via GitHub Actions cron with a 6-hour budget — but the manual-test path is unusable for any scraper that lives in a tier alongside multiple OCR scrapers. Same friction was present for Drifthouse debugging (PARKED #11): we couldn't easily isolate one scraper to inspect its diagnostic output.
+
+**Scope:** Tiny route change in `src/app/api/sync-events/route.js`. Add a `?scraper=` query param that, when set, overrides the tier/shard gate and runs only the named scraper:
+
+```javascript
+// Existing — leave the tier/shard params alone:
+const tier = searchParams.get('tier') || ...;
+const shardParam = searchParams.get('shard') || ...;
+
+// NEW — per-scraper override:
+const scraperFilter = searchParams.get('scraper');
+
+function shouldRunScraper(key) {
+  if (scraperFilter) return key === scraperFilter; // exact match wins
+  if (SLOW_SCRAPER_KEYS.has(key)) return includeSlow;
+  if (FAST_SHARD_1.has(key)) return includeShard1;
+  if (FAST_SHARD_2.has(key)) return includeShard2;
+  return false;
+}
+```
+
+**Usage after it ships:**
+
+```js
+fetch('/api/sync-events?scraper=LighthouseTavern&skipEnrich=true', { method: 'POST', headers: {...} })
+fetch('/api/sync-events?scraper=Drifthouse&skipEnrich=true', { method: 'POST', headers: {...} })
+fetch('/api/sync-events?scraper=IdleHour&skipEnrich=true', { method: 'POST', headers: {...} })
+```
+
+Each runs in ~3-10s, well under the 60s Vercel cap. Backwards-compatible — existing `tier=` / `shard=` callers keep working unchanged.
+
+**Why not split the slow tier into two shards instead:** considered. Solves the wrong problem. Splitting helps tier-level manual triggers but still runs ~half the scrapers (overkill when testing one). Per-scraper filter handles every case the shard split would, without the infra overhead of a second cron entry.
+
+**Risk:** Low. Adds a single conditional at the top of `shouldRunScraper`. Doesn't change cron behavior. Doesn't change production paths. Could ship as a hotfix.
+
+**Effort:** ~15 minutes including writing and testing the filter against one or two scrapers locally.
+
+**See also:** `SCRAPERS.md` (tier/shard model); PARKED #11 (Drifthouse — would have benefited from this filter when we were trying to pull diagnostic output).
+
+---
+
 ## See also
 
 - **CATEGORIES-HANDOFF.md** — category/shortcut audit + auto-templates from event history (parking lot section)
