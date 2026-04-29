@@ -92,7 +92,10 @@ export default function AdminEnrichmentTab({
   const [triageMissing, setTriageMissing] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('mlj_triage_missing');
-      if (saved && ['image', 'bio', 'genres', 'vibes'].includes(saved)) return saved;
+      // Accept any valid filter value — keep this whitelist in lockstep
+      // with the API's VALID_MISSING set in /api/admin/enrichment-queue/route.js.
+      const valid = ['image', 'bio', 'genres', 'vibes', 'incomplete', 'artist_unlocked'];
+      if (saved && valid.includes(saved)) return saved;
     }
     return 'image';
   });
@@ -767,15 +770,21 @@ function TriageView({
         </div>
       </div>
 
-      {/* Missing-field filter — single-select pills. The operator picks one
-          field at a time so the click-through workflow is focused on fixing
-          that specific gap before moving to the next. */}
+      {/* Filter pills — single-select. Two groups in one row:
+          (1) Single-field gap checks: Missing Image / Bio / Genres / Vibes
+          (2) Composite filters: Incomplete (any of the four) and
+              Artist Unlocked (events with an artist whose row hasn't
+              been finalized by an admin yet — useful when the operator
+              wants to lock down the long tail of "loose" artist profiles
+              before they get auto-modified by enrichment runs). */}
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
         {[
           { key: 'image', label: 'Missing Image' },
           { key: 'bio', label: 'Missing Bio' },
           { key: 'genres', label: 'Missing Genres' },
           { key: 'vibes', label: 'Missing Vibes' },
+          { key: 'incomplete', label: 'Incomplete (any)' },
+          { key: 'artist_unlocked', label: 'Artist Unlocked' },
         ].map(opt => (
           <button key={opt.key} onClick={() => setMissing(opt.key)} style={missingButtonStyle(opt.key)}>
             {opt.label}
@@ -783,24 +792,34 @@ function TriageView({
         ))}
       </div>
 
-      {/* Result count + state strip */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '10px',
-        fontSize: '12px', color: 'var(--text-muted)',
-        marginBottom: '12px',
-      }}>
-        {loading && <span>Loading…</span>}
-        {!loading && !error && (
-          <span>
-            <strong style={{ color: 'var(--text-primary)' }}>{queue.length}</strong>
-            {' '}event{queue.length === 1 ? '' : 's'} missing {missing} ·{' '}
-            {range.from} → {range.to}
-          </span>
-        )}
-        {error && (
-          <span style={{ color: '#ef4444' }}>Error: {error}</span>
-        )}
-      </div>
+      {/* Result count + state strip — copy varies by filter type so the
+          summary reads naturally for both single-field and composite views. */}
+      {(() => {
+        const filterDescription = (() => {
+          if (missing === 'incomplete') return 'incomplete';
+          if (missing === 'artist_unlocked') return 'with unlocked artists';
+          return `missing ${missing}`;
+        })();
+        return (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            fontSize: '12px', color: 'var(--text-muted)',
+            marginBottom: '12px',
+          }}>
+            {loading && <span>Loading…</span>}
+            {!loading && !error && (
+              <span>
+                <strong style={{ color: 'var(--text-primary)' }}>{queue.length}</strong>
+                {' '}event{queue.length === 1 ? '' : 's'} {filterDescription} ·{' '}
+                {range.from} → {range.to}
+              </span>
+            )}
+            {error && (
+              <span style={{ color: '#ef4444' }}>Error: {error}</span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Result list */}
       {!loading && queue.length === 0 && !error && (
@@ -809,7 +828,11 @@ function TriageView({
           color: 'var(--text-muted)', fontSize: '13px',
           background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px',
         }}>
-          No events with missing {missing} in this range. Try a wider date range or a different field.
+          {missing === 'incomplete'
+            ? 'No incomplete events in this range — every event has all four metadata fields. Try a wider date range or a different filter.'
+            : missing === 'artist_unlocked'
+              ? 'No events with unlocked artists in this range — every linked artist has been finalized. Try a wider date range.'
+              : `No events with missing ${missing} in this range. Try a wider date range or a different field.`}
         </div>
       )}
 
@@ -870,17 +893,55 @@ function TriageView({
                   }}>
                     {displayName}
                   </strong>
-                  {/* Missing badge — small red pill */}
-                  <span style={{
-                    fontSize: '9px', fontWeight: 700,
-                    padding: '2px 8px', borderRadius: '999px',
-                    background: 'rgba(239,68,68,0.12)', color: '#ef4444',
-                    textTransform: 'uppercase', letterSpacing: '0.5px',
-                    marginLeft: 'auto',
-                    flexShrink: 0,
-                  }}>
-                    NO {ev.missing.toUpperCase()}
-                  </span>
+                  {/* Missing/state badge — what's wrong with this row.
+                      Shape varies by filter:
+                        single-field (image/bio/genres/vibes) → "NO IMAGE"
+                        incomplete  → list every missing field, e.g.
+                                       "NO BIO, NO IMG" (so the operator
+                                       sees at-a-glance what to focus on)
+                        artist_unlocked → "UNLOCKED" in amber, since this
+                                       isn't really a "missing" state — the
+                                       artist row just isn't finalized. */}
+                  {(() => {
+                    if (ev.missing === 'artist_unlocked') {
+                      return (
+                        <span style={{
+                          fontSize: '9px', fontWeight: 700,
+                          padding: '2px 8px', borderRadius: '999px',
+                          background: 'rgba(234,179,8,0.14)', color: '#eab308',
+                          textTransform: 'uppercase', letterSpacing: '0.5px',
+                          marginLeft: 'auto',
+                          flexShrink: 0,
+                        }}>UNLOCKED</span>
+                      );
+                    }
+                    if (ev.missing === 'incomplete') {
+                      const abbrev = { image: 'IMG', bio: 'BIO', genres: 'GENRES', vibes: 'VIBES' };
+                      const fields = (ev.missing_fields || []).map(f => `NO ${abbrev[f] || f.toUpperCase()}`);
+                      return (
+                        <span style={{
+                          fontSize: '9px', fontWeight: 700,
+                          padding: '2px 8px', borderRadius: '999px',
+                          background: 'rgba(239,68,68,0.12)', color: '#ef4444',
+                          textTransform: 'uppercase', letterSpacing: '0.5px',
+                          marginLeft: 'auto',
+                          flexShrink: 0,
+                          maxWidth: '220px',
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>{fields.join(', ')}</span>
+                      );
+                    }
+                    return (
+                      <span style={{
+                        fontSize: '9px', fontWeight: 700,
+                        padding: '2px 8px', borderRadius: '999px',
+                        background: 'rgba(239,68,68,0.12)', color: '#ef4444',
+                        textTransform: 'uppercase', letterSpacing: '0.5px',
+                        marginLeft: 'auto',
+                        flexShrink: 0,
+                      }}>NO {ev.missing.toUpperCase()}</span>
+                    );
+                  })()}
                 </div>
                 <div style={{
                   fontSize: '12px', color: 'var(--text-muted)',

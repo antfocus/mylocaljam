@@ -29,7 +29,21 @@ function checkAuth(request) {
   return authHeader === `Bearer ${process.env.ADMIN_PASSWORD}`;
 }
 
-const VALID_MISSING = new Set(['image', 'bio', 'genres', 'vibes']);
+// Filter types:
+//   image / bio / genres / vibes — single-field gap check (waterfall-aware)
+//   incomplete                   — union of the four field gaps; surfaces any
+//                                  event with at least one missing field
+//   artist_unlocked              — events whose linked artist row has
+//                                  is_locked=false. These artist profiles
+//                                  haven't been finalized by an admin yet,
+//                                  so any AI/scraper enrichment can still
+//                                  rewrite them. Useful for the operator to
+//                                  audit the long tail of "loose" artist
+//                                  profiles before they get auto-modified.
+const VALID_MISSING = new Set([
+  'image', 'bio', 'genres', 'vibes',
+  'incomplete', 'artist_unlocked',
+]);
 
 export async function GET(request) {
   if (!checkAuth(request)) {
@@ -62,6 +76,9 @@ export async function GET(request) {
   // include the event_templates and artists embeds so the missing check
   // can walk the waterfall server-side and skip events that look blank
   // at the event row level but are actually populated by the joined tier.
+  // The artists embed pulls is_locked + is_human_edited so the
+  // artist_unlocked filter can decide whether the artist row is "loose"
+  // (no admin finalization yet).
   const { data: events, error } = await supabase
     .from('events')
     .select(`
@@ -71,7 +88,7 @@ export async function GET(request) {
       genre, custom_genres, vibe, custom_vibes,
       template_id,
       venues(name, city),
-      artists(id, name, bio, image_url, genres, vibes),
+      artists(id, name, bio, image_url, genres, vibes, is_locked, is_human_edited),
       event_templates(image_url, bio, genres)
     `)
     .gte('event_date', `${fromParam}T00:00:00`)
@@ -86,12 +103,16 @@ export async function GET(request) {
 
   // Waterfall-aware missing check. Returns true if EVERY tier the renderer
   // walks is empty for the given field. An empty array counts as missing
-  // for genres/vibes (no useful data to show on cards).
+  // for genres/vibes (no useful data to show on cards). Refactored into a
+  // per-field helper so the 'incomplete' filter can call it 4 times for
+  // the union check, and so the response payload can echo back which
+  // specific fields are missing on each row (used by the UI badge for
+  // 'incomplete' to say "NO BIO, NO IMG" instead of just "NO INCOMPLETE").
   const isArrayPopulated = (v) => Array.isArray(v) && v.length > 0;
   const isStringPopulated = (v) => typeof v === 'string' && v.trim().length > 0;
 
-  function isMissing(ev) {
-    switch (missingType) {
+  function fieldIsMissing(ev, field) {
+    switch (field) {
       case 'image':
         return (
           !isStringPopulated(ev.custom_image_url) &&
@@ -125,18 +146,55 @@ export async function GET(request) {
     }
   }
 
+  // Top-level filter dispatch. Per-field checks compose into the union
+  // 'incomplete' check; 'artist_unlocked' is a separate axis that asks
+  // whether the linked artist row has been finalized by an admin.
+  function isMissing(ev) {
+    if (missingType === 'incomplete') {
+      return (
+        fieldIsMissing(ev, 'image') ||
+        fieldIsMissing(ev, 'bio') ||
+        fieldIsMissing(ev, 'genres') ||
+        fieldIsMissing(ev, 'vibes')
+      );
+    }
+    if (missingType === 'artist_unlocked') {
+      // Only events with an artist link AND that artist is not locked.
+      // is_locked=false means the artist hasn't been finalized; admins
+      // typically lock after reviewing, so unlocked = "still in flux."
+      // Filtering out is_locked=true protects the operator's locked work
+      // from showing up in the triage queue. We accept null/undefined as
+      // "not locked" since the column has historically been nullable.
+      return (
+        !!ev.artist_id &&
+        !!ev.artists &&
+        ev.artists.is_locked !== true
+      );
+    }
+    return fieldIsMissing(ev, missingType);
+  }
+
   // Pass the full event row plus a few computed fields so the click handler
   // can populate the EventFormModal directly without a second fetch. The
   // `has_artist` flag is the click-routing signal; `missing` echoes back
-  // the field that's missing for the red badge.
+  // which filter was applied; `missing_fields` lists every per-field gap
+  // so the UI can render "NO BIO, NO IMG" badges on incomplete rows.
   const queue = (events || [])
     .filter(isMissing)
-    .map((ev) => ({
-      ...ev,
-      has_artist: !!ev.artist_id,
-      venue_name: ev.venues?.name || null,
-      missing: missingType,
-    }));
+    .map((ev) => {
+      const missingFields = [];
+      if (fieldIsMissing(ev, 'image')) missingFields.push('image');
+      if (fieldIsMissing(ev, 'bio')) missingFields.push('bio');
+      if (fieldIsMissing(ev, 'genres')) missingFields.push('genres');
+      if (fieldIsMissing(ev, 'vibes')) missingFields.push('vibes');
+      return {
+        ...ev,
+        has_artist: !!ev.artist_id,
+        venue_name: ev.venues?.name || null,
+        missing: missingType,
+        missing_fields: missingFields,
+      };
+    });
 
   return NextResponse.json({
     events: queue,
