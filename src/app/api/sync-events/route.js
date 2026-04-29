@@ -374,7 +374,10 @@ export async function POST(request) {
     'WindwardTavern', 'JenksClub', 'StStephensGreen', 'Crossroads',
     'DealLakeBar', 'WildAir', 'TheRoost', 'JacksOnTheTracks', 'BumRogers',
     'TheColumns', 'TheCabin', 'AnchorTavern', 'Boatyard401', 'Djais',
-    'DoylesPourHouse',
+    // 'DoylesPourHouse', ← parked (Apr 28, 2026). Calendar is publicly
+    //   embeddable but iCal export is disabled — basic.ics returns empty.
+    //   See PARKED.md #14. Wiring stays; uncomment once iCal access fixed
+    //   or scraper is rewritten to use Calendar API key or Playwright.
     // 'Drifthouse',  ← parked (Apr 28, 2026). Returned count=0 across
     //   multiple syncs. Tried browser-shape UA, regex close-tag fix, and
     //   proxyFetch — none unblocked. See PARKED.md #11. Wiring (import,

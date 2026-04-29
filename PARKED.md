@@ -422,6 +422,40 @@ Each runs in ~3-10s, well under the 60s Vercel cap. Backwards-compatible — exi
 
 ---
 
+## 14. Doyle's Pour House scraper — Google Calendar iCal export disabled
+
+**Why parked:** Apr 28, 2026. Onboarded the venue (id `e2483c8c-b262-49c8-aaec-a5aaef53b5b3`) and built a scraper following the proven Idle Hour Google-Calendar-iCal pattern. The calendar ID is correct (`b0umkkkth5lktq8o1v6nji7dcg@group.calendar.google.com`, extracted from the iframe `src=` param on `/event-calendar/`). The scraper runs cleanly on Vercel without errors but returns count=0.
+
+**Diagnostic finding:** the calendar IS publicly viewable — navigating to the embed URL in a browser shows ~20+ upcoming events (Jack Mangan, Brandon Ireland Duo, Jimmy Brogan, Steamboat Messiah, Problem Child, Chuck DeBruyn, Shay Mac, Todd Meredith, etc.). But the public iCal export endpoint at `/calendar/ical/{id}/public/basic.ics` returns an empty calendar. This is because Google Calendar has TWO separate sharing settings:
+
+- **"Public access"** — only the embed widget works (renders via JS). The iCal endpoint returns empty.
+- **"Make available to public"** — full access, including iCal export.
+
+Doyle's is on the first setting. Same end-of-day symptom as Drifthouse (count=0 / no error), different root cause.
+
+**Three paths to revisit:**
+
+1. **Ask Doyle's to flip the setting.** If you have a venue contact, the easiest fix — they tick one checkbox in their Google Calendar admin and the iCal feed starts returning events. Existing scraper code works as-is. Lowest engineering cost.
+2. **Use the Google Calendar API with an API key.** `GET https://www.googleapis.com/calendar/v3/calendars/{id}/events?key=$GOOGLE_CAL_API_KEY` works for any publicly-embeddable calendar without requiring iCal export to be enabled. Needs a separate API key (your existing `GOOGLE_AI_KEY` for Gemini won't work — Calendar API is a different service). Free quota is generous (1M req/day). Probably ~30 min of work to swap the fetch + parse logic.
+3. **Use Playwright to render the embed and scrape the DOM.** Same pattern as `brielleHouse.playwright.js` and `houseOfIndependents.playwright.js`. Heavier — each run boots a headless Chrome — but works for any embed-only calendar. Probably ~1-2 hours of work.
+
+Recommendation: try #1 first if Tony has a venue contact. Otherwise #2 — solid long-term solution that benefits any future venue with the same setting.
+
+**State left in code:**
+
+- `src/lib/scrapers/doylesPourHouse.js` — scraper file in place. Calendar ID is correct.
+- `src/app/api/sync-events/route.js` — `'DoylesPourHouse'` line in `FAST_SHARD_1` is COMMENTED OUT. Wiring everywhere else stays. Re-enable is a one-line uncomment.
+- `venues` row id `e2483c8c-b262-49c8-aaec-a5aaef53b5b3` — populated, geocoded (39.6010674, -74.3474528), Tuckerton NJ. Stays.
+
+**Effort estimate when revisiting:**
+- Path #1 (ask venue): 5 min on our side, depends on venue response time.
+- Path #2 (Calendar API key): ~30 min to swap fetch logic + add env var + test.
+- Path #3 (Playwright): ~1-2 hours to author, test, and slot into the slow-tier GitHub Actions workflow.
+
+**See also:** PARKED #11 (Drifthouse — same count=0 / no error symptom, different cause); PARKED #13 (per-scraper filter — would speed up debug iteration on this and Drifthouse).
+
+---
+
 ## See also
 
 - **CATEGORIES-HANDOFF.md** — category/shortcut audit + auto-templates from event history (parking lot section)
