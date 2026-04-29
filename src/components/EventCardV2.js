@@ -896,73 +896,155 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
         document.body
       )}
 
-      {/* Follow popover — portaled to body to escape overflow:hidden */}
+      {/* Save confirmation — centered modal-card (Apr 29, 2026 redesign).
+          Old anchored popover competed with the save icon for space and
+          forced the orange Follow button to dominate the screen. New design
+          centers on the viewport with a dim backdrop, leads with a green
+          check + "Event saved" headline so the success state is read first,
+          and demotes Follow to a secondary outline pill. The previous
+          popoverPos calculation is no longer used (popover is centered)
+          but kept in scope so we don't have to refactor the open/close
+          flow — it's harmless dead state. */}
       {showFollowPopover && mounted && createPortal(
         <>
-          {/* Invisible backdrop to dismiss on click-away */}
-          <div onClick={dismissPopover} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999 }} />
+          {/* Dim backdrop — click anywhere outside the card to dismiss. */}
+          <div onClick={dismissPopover} style={{
+            position: 'fixed', inset: 0, zIndex: 999,
+            background: 'rgba(0,0,0,0.45)',
+            backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)',
+          }} />
+
+          {/* Centered confirmation card */}
           <div
-            className={popoverFading ? 'popover-fade-out' : 'popover-fade-in'}
+            className={popoverFading ? 'save-confirm-fade-out' : 'save-confirm-fade-in'}
             onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-label="Event saved"
             style={{
-              position: 'fixed', top: `${popoverPos.top}px`, right: `${popoverPos.right}px`, zIndex: 1000,
+              position: 'fixed',
+              top: '50%', left: '50%',
+              zIndex: 1000,
               background: darkMode ? '#252535' : '#FFFFFF',
               border: `1px solid ${darkMode ? '#3A3A4A' : '#E5E7EB'}`,
-              borderRadius: '14px',
-              padding: '14px 16px',
-              boxShadow: darkMode ? '0 12px 32px rgba(0,0,0,0.6)' : '0 6px 24px rgba(0,0,0,0.15)',
-              width: '260px',
+              borderRadius: '20px',
+              padding: '28px 24px 24px',
+              boxShadow: darkMode
+                ? '0 24px 60px rgba(0,0,0,0.7)'
+                : '0 18px 48px rgba(0,0,0,0.18)',
+              width: 'min(360px, 90vw)',
               fontFamily: "'DM Sans', sans-serif",
             }}
           >
-            {/* Arrow */}
+            {/* Dismiss X — top right of the card. Bigger hit target than
+                the old 16px X so users with thumbs can tap it confidently. */}
+            <button
+              onClick={dismissPopover}
+              aria-label="Dismiss"
+              style={{
+                position: 'absolute', top: 10, right: 10,
+                width: 32, height: 32, padding: 0,
+                background: 'none', border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 8,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                   stroke={darkMode ? '#8888A8' : '#9CA3AF'} strokeWidth="2"
+                   strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            {/* Success indicator — soft-green circle + check. Reads first.
+                Green choice is the standard success-state semantic; the
+                check icon reinforces "done" without needing a label. */}
             <div style={{
-              position: 'absolute', top: '-6px', right: '18px',
-              width: '12px', height: '12px',
-              background: darkMode ? '#252535' : '#FFFFFF',
-              border: `1px solid ${darkMode ? '#3A3A4A' : '#E5E7EB'}`,
-              borderRight: 'none', borderBottom: 'none',
-              transform: 'rotate(45deg)',
-            }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-              <p style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: darkMode ? '#E0E0F0' : '#1F2937', lineHeight: 1.35 }}>
-                Event Saved!{!isArtistFollowed && hasFollowableArtist && (
-                  <span style={{ fontWeight: 600, color: darkMode ? '#B0B0C8' : '#6B7280' }}>
-                    {' '}Want alerts for future shows?
-                  </span>
-                )}
-              </p>
-              <button
-                onClick={dismissPopover}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', flexShrink: 0, display: 'flex', alignItems: 'center', marginTop: '1px' }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={darkMode ? '#7878A0' : '#9CA3AF'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
+              width: 56, height: 56, borderRadius: '50%',
+              background: darkMode ? 'rgba(34,197,94,0.16)' : 'rgba(34,197,94,0.12)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 14px',
+            }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+                   stroke="#22c55e" strokeWidth="3"
+                   strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
             </div>
+
+            {/* Headline */}
+            <p style={{
+              margin: '0 0 6px',
+              fontSize: 20, fontWeight: 800,
+              color: darkMode ? '#F0F0F5' : '#1F2937',
+              textAlign: 'center', lineHeight: 1.2,
+            }}>
+              Event saved
+            </p>
+
+            {/* Event context — title + venue, smaller and muted so the
+                headline still wins the eye. */}
+            <p style={{
+              margin: 0,
+              fontSize: 14, fontWeight: 500,
+              color: darkMode ? '#A8A8C0' : '#6B7280',
+              textAlign: 'center', lineHeight: 1.45,
+            }}>
+              <span style={{ color: darkMode ? '#D8D8E8' : '#374151', fontWeight: 600 }}>
+                {name}
+              </span>
+              {venue ? <> at {venue}</> : null}
+            </p>
+
+            {/* Follow upsell — only when artist is followable + not already
+                followed. Visually demoted from the old full-width orange
+                button: a divider sets it apart, the prompt is a one-liner,
+                and the CTA is an outline pill that's clearly orange-themed
+                but doesn't fight the headline for attention. */}
             {!isArtistFollowed && onFollowArtist && hasFollowableArtist && (
-              <button
-                onClick={handlePopoverFollow}
-                style={{
-                  marginTop: '12px', width: '100%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '8px',
-                  padding: '10px 14px', borderRadius: '10px', border: 'none',
-                  background: '#E8722A', color: '#1C1917',
-                  fontSize: '14px', fontWeight: 700, cursor: 'pointer',
-                  fontFamily: "'DM Sans', sans-serif",
-                  transition: 'opacity 0.15s',
-                  textAlign: 'left',
-                  overflow: 'hidden',
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1C1917" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {(event?.artist_name || '').length > 18 ? 'Follow Artist' : `Follow ${event?.artist_name || ''}`}
-                </span>
-              </button>
+              <>
+                <div style={{
+                  height: 1,
+                  background: darkMode ? '#3A3A4A' : '#E5E7EB',
+                  margin: '20px -24px 16px',
+                }} />
+                <p style={{
+                  margin: '0 0 14px',
+                  fontSize: 13, fontWeight: 500,
+                  color: darkMode ? '#9090B0' : '#6B7280',
+                  textAlign: 'center', lineHeight: 1.4,
+                }}>
+                  Want updates when{' '}
+                  <strong style={{ color: darkMode ? '#D0D0E0' : '#374151' }}>
+                    {canonicalArtistName}
+                  </strong>
+                  {' '}plays again?
+                </p>
+                <button
+                  onClick={handlePopoverFollow}
+                  className="follow-pill-btn"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    gap: 6,
+                    padding: '10px 20px',
+                    margin: '0 auto',
+                    borderRadius: '999px',
+                    border: '1.5px solid #E8722A',
+                    background: 'rgba(232,114,42,0.08)',
+                    color: '#E8722A',
+                    fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    fontFamily: "'DM Sans', sans-serif",
+                    transition: 'background 0.15s ease',
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                       stroke="#E8722A" strokeWidth="2.5"
+                       strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  Follow {canonicalArtistName.length > 18 ? 'Artist' : canonicalArtistName}
+                </button>
+              </>
             )}
           </div>
         </>,
@@ -994,6 +1076,24 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
           opacity: 0;
           transform: translateY(-4px) scale(0.95);
           transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        /* Save-confirmation centered card (Apr 29 redesign).
+           Compounds with translate(-50%,-50%) which is set inline so the
+           card stays centered regardless of viewport size. */
+        @keyframes saveConfirmIn {
+          from { opacity: 0; transform: translate(-50%, -50%) scale(0.92); }
+          to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+        .save-confirm-fade-in {
+          animation: saveConfirmIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .save-confirm-fade-out {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.92);
+          transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+        .follow-pill-btn:hover {
+          background: rgba(232, 114, 42, 0.16) !important;
         }
         @media (hover: hover) {
           .save-btn:hover svg path {
