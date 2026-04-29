@@ -486,7 +486,7 @@ export default function EventPageClient({ event }) {
                 href="/?signup=true"
                 style={{
                   padding: '10px 24px', borderRadius: '999px',
-                  background: t.accent, color: '#FFFFFF',
+                  background: t.accent, color: '#000000',
                   textDecoration: 'none', fontWeight: 700, fontSize: '13px',
                 }}
               >
@@ -574,7 +574,7 @@ export default function EventPageClient({ event }) {
               href="/?signup=true"
               style={{
                 padding: '10px 20px', borderRadius: '999px',
-                background: t.accent, color: '#FFFFFF',
+                background: t.accent, color: '#000000',
                 textDecoration: 'none', fontWeight: 700, fontSize: '13px',
                 whiteSpace: 'nowrap', flexShrink: 0,
               }}

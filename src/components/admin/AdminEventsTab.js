@@ -423,8 +423,8 @@ export default function AdminEventsTab({
             </div>
             {eventsStatusFilter !== 'series' && (
             <button
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white"
-              style={{ background: 'var(--accent)', fontFamily: "'DM Sans', sans-serif" }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium"
+              style={{ background: 'var(--accent)', color: '#000000', fontFamily: "'DM Sans', sans-serif" }}
               onClick={() => { setEditingEvent(null); setShowEventForm(true); }}
             >
               {Icons.plus} Add Event

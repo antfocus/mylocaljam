@@ -255,7 +255,7 @@ export default function AdminPage() {
       {/* Header */}
       <header className="flex items-center justify-between py-5 border-b border-white/[0.06] mb-6" style={{ paddingTop: isMobile ? '12px' : '20px', paddingBottom: isMobile ? '12px' : '20px' }}>
         <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-[10px] flex items-center justify-center text-white" style={{ background: 'var(--accent)', width: isMobile ? '32px' : '40px', height: isMobile ? '32px' : '40px' }}>
+          <div className="w-10 h-10 rounded-[10px] flex items-center justify-center" style={{ background: 'var(--accent)', color: '#000000', width: isMobile ? '32px' : '40px', height: isMobile ? '32px' : '40px' }}>
             {Icons.settings}
           </div>
           <div className="font-display font-extrabold" style={{ fontSize: isMobile ? '16px' : '20px' }}>

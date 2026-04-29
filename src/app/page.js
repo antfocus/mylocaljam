@@ -3258,7 +3258,7 @@ export default function HomePage() {
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                     flex: '2 1 0', minWidth: 0,
                     padding: '12px 24px', borderRadius: '10px', border: 'none',
-                    background: t.accent, color: '#FFFFFF', cursor: 'pointer',
+                    background: t.accent, color: '#000000', cursor: 'pointer',
                     fontSize: '14px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
                     minHeight: '48px',
                   }}>

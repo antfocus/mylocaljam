@@ -19,7 +19,7 @@ export default function AdminLoginScreen({ password, setPassword, showPassword, 
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
       <form onSubmit={handleLogin} className="w-full max-w-sm p-8 rounded-2xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}>
         <div className="flex items-center gap-2.5 mb-6">
-          <div className="w-10 h-10 rounded-[10px] flex items-center justify-center text-white" style={{ background: 'var(--accent)' }}>
+          <div className="w-10 h-10 rounded-[10px] flex items-center justify-center" style={{ background: 'var(--accent)', color: '#000000' }}>
             {Icons.settings}
           </div>
           <div className="font-display font-extrabold text-xl">Admin Panel</div>
@@ -60,7 +60,7 @@ export default function AdminLoginScreen({ password, setPassword, showPassword, 
             )}
           </button>
         </div>
-        <button type="submit" className="w-full mt-4 py-3 rounded-xl font-display font-semibold text-white" style={{ background: 'var(--accent)' }}>
+        <button type="submit" className="w-full mt-4 py-3 rounded-xl font-display font-semibold" style={{ background: 'var(--accent)', color: '#000000' }}>
           Login
         </button>
       </form>
