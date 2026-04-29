@@ -171,6 +171,31 @@ export async function GET(request) {
     query = query.gte('event_date', dateStart).lte('event_date', dateEnd);
   }
 
+  // ── Server-side text search (Apr 29, 2026) ─────────────────────────────
+  // Previously the admin Event Feed filtered events client-side by typing
+  // into the search box. That meant matches past row 1000 (Supabase's
+  // PostgREST max-rows default) silently disappeared — e.g. Lori and Alex
+  // had 3 upcoming events but only the closest one appeared because the
+  // other two ranked at positions 1097 and 1362 in the date-sorted feed.
+  //
+  // Now the search runs server-side via .or() across artist_name +
+  // venue_name + event_title (the same fields the client-side filter
+  // checked). This applies BEFORE the .range() pagination so matches
+  // anywhere in the table surface, not just within the first 1000 rows.
+  // The client-side filter remains as a no-op fallback for callers that
+  // don't pass a search param.
+  const searchTerm = (searchParams.get('search') || '').trim();
+  if (searchTerm) {
+    // PostgREST .or() requires comma-separated conditions inside one string.
+    // Each clause uses ilike for case-insensitive substring match. Escape
+    // commas/parens in the user input so they can't break the .or() syntax.
+    const escaped = searchTerm.replace(/[,()*]/g, ' ').slice(0, 100);
+    const pattern = `%${escaped}%`;
+    query = query.or(
+      `artist_name.ilike.${pattern},venue_name.ilike.${pattern},event_title.ilike.${pattern}`
+    );
+  }
+
   const { data, error } = await query;
 
   // ── Row-multiplication guard ─────────────────────────────────────────────
@@ -206,6 +231,15 @@ export async function GET(request) {
   if (missingTime) countQuery = countQuery.eq('is_time_tbd', true);
   if (missingImage) countQuery = countQuery.is('custom_image_url', null).is('event_image_url', null).is('image_url', null);
   if (dateStart && dateEnd) countQuery = countQuery.gte('event_date', dateStart).lte('event_date', dateEnd);
+  // Mirror the search filter on the count query so the displayed total
+  // reflects matching rows, not the full table size.
+  if (searchTerm) {
+    const escaped = searchTerm.replace(/[,()*]/g, ' ').slice(0, 100);
+    const pattern = `%${escaped}%`;
+    countQuery = countQuery.or(
+      `artist_name.ilike.${pattern},venue_name.ilike.${pattern},event_title.ilike.${pattern}`
+    );
+  }
   const countResult = await countQuery;
   count = countResult.count;
 

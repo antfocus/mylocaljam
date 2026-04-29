@@ -72,13 +72,19 @@ export default function useAdminEvents({ password, showQueueToast, setAuthentica
   // `limit` (8th arg) is overridable so the search-mode quick-win can pull a
   // larger slice when the admin types in the search box. Default 100 keeps
   // the normal Load-More pagination behavior unchanged.
-  const fetchEvents = useCallback(async (page = 1, sort = eventsSortField, order = eventsSortOrder, status = eventsStatusFilter, missingTime = eventsMissingTime, recentlyAdded = eventsRecentlyAdded, missingImage = eventsMissingImage, limit = 100) => {
+  const fetchEvents = useCallback(async (page = 1, sort = eventsSortField, order = eventsSortOrder, status = eventsStatusFilter, missingTime = eventsMissingTime, recentlyAdded = eventsRecentlyAdded, missingImage = eventsMissingImage, limit = 100, search = '') => {
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(limit), sort, order });
       if (status) params.set('status', status);
       if (missingTime) params.set('missingTime', 'true');
       if (missingImage) params.set('missingImage', 'true');
       if (recentlyAdded) params.set('recentlyAdded', 'true');
+      // Server-side text search — applies BEFORE the PostgREST row cap so
+      // matches anywhere in the table surface, not just within the first
+      // 1000 rows. See /api/admin/route.js for full rationale.
+      if (search && typeof search === 'string' && search.trim()) {
+        params.set('search', search.trim());
+      }
       const res = await fetch(`/api/admin?${params}`, { headers: { Authorization: `Bearer ${password}` } });
       if (res.status === 401) { setAuthenticated(false); try { sessionStorage.removeItem('mlj_admin_pw'); } catch {} alert('Invalid password'); return; }
       const data = await res.json();

@@ -205,6 +205,11 @@ export default function AdminEventsTab({
     const search = eventsSearch.trim();
     if (!search) return;
     const handle = setTimeout(() => {
+      // Server-side search applies the .ilike() filter BEFORE the row cap,
+      // so we no longer need to bump limit to 5000 — the response is already
+      // pre-filtered to matching rows. Keep limit at 1000 (still room for
+      // searches that match many rows like "live music") and let the count
+      // come back accurate from the server's count query.
       fetchEvents(
         1,
         eventsSortField,
@@ -213,7 +218,8 @@ export default function AdminEventsTab({
         eventsMissingTime,
         eventsRecentlyAdded,
         eventsMissingImage,
-        5000
+        1000,
+        search
       );
     }, 300);
     return () => clearTimeout(handle);
