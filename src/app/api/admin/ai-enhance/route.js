@@ -1,15 +1,20 @@
 import { NextResponse } from 'next/server';
 import { callLLMWebGrounded } from '@/lib/llmRouter';
+import { GENRES, VIBES } from '@/lib/utils';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
   return authHeader === `Bearer ${process.env.ADMIN_PASSWORD}`;
 }
 
-// Must stay in sync with VIBES in src/lib/utils.js
-// This route enhances EVENTS, so all 4 vibes apply (including Outdoor / Patio).
-// For ARTIST-only vibes, see ARTIST_VIBES in utils.js (excludes Outdoor / Patio).
-const ALLOWED_VIBES = ['Chill / Low Key', 'Energetic / Party', 'Outdoor / Patio', 'Family-Friendly'];
+// Pull the canonical lists from utils.js so the AI prompt and the form
+// stay in lockstep. Previous bug: the prompt used a DIFFERENT genre list
+// ("Rock / Alternative", "Metal / Hardcore", etc.) — when the model
+// returned "Metal / Hardcore" the form's Metal button didn't highlight
+// because that string wasn't in GENRES. Symptom: bio + vibe filled,
+// genre stayed empty even when the bio said "metal bands."
+const ALLOWED_GENRES = GENRES;
+const ALLOWED_VIBES = VIBES;
 
 export async function POST(request) {
   if (!checkAuth(request)) {
@@ -56,7 +61,7 @@ Now, write the description for the provided event using this exact factual, grou
 You will return a JSON object with the following fields. ONLY the "bio" field is governed by the tone contract above — the other fields remain classification tasks.
 
 1. "bio" — The event description. Follow the STRICT CONSTRAINTS above to the letter. 2 to 4 sentences. No banned words. Facts over feelings.
-2. "genre" — The artist's primary genre. Pick ONE from this list: Rock / Alternative, Yacht Rock / Surf, R&B / Soul / Funk, Country / Americana, Pop / Top 40, Acoustic / Singer-Songwriter, Jazz / Blues, Reggae / Island, Jam / Psych, Metal / Hardcore, Punk / Ska, Hip-Hop / Rap, Electronic / DJ, Latin / World, Tributes / Covers. If unsure, use the closest match.
+2. "genre" — The artist's primary genre. Pick ONE EXACTLY from this list (case and spelling must match): ${ALLOWED_GENRES.join(', ')}. Use "Cover Band" for tribute/cover acts. Use "DJ" for DJ sets. Use "Metal" for any metal subgenre (metalcore, deathcore, hardcore). If unsure, pick the closest single match — never invent a new label.
 3. "vibe" — The likely event atmosphere. Pick ONE from: ${ALLOWED_VIBES.join(', ')}. "Vibe" describes the venue experience (energy level, crowd atmosphere), NOT the artist's genre. A jazz trio at a wine bar is "Chill / Low Key". A jazz trio at a street festival is "Energetic / Party".
 4. "image_search_query" — A Google Image search query that would find a photo of this specific artist or band. Use the artist name plus terms like "band", "live", or "musician" to get relevant results. Example: "The Wallflowers band" or "DJ Jazzy Jeff live".
 
@@ -89,6 +94,38 @@ Respond with ONLY the JSON object — no markdown, no code fences, no preamble.`
     if (parsed.vibe && !ALLOWED_VIBES.includes(parsed.vibe)) {
       const match = ALLOWED_VIBES.find(v => v.toLowerCase() === parsed.vibe.toLowerCase());
       parsed.vibe = match || null;
+    }
+
+    // Same case-insensitive recovery for genre. Models occasionally return
+    // "metal" or "rock & roll" or "hip-hop" — try to match before giving up
+    // and dropping the field, so the form gets a usable value when the AI
+    // identification was correct but the casing/spelling drifted.
+    if (parsed.genre && !ALLOWED_GENRES.includes(parsed.genre)) {
+      const lower = parsed.genre.toLowerCase().trim();
+      // Exact case-insensitive match first
+      let match = ALLOWED_GENRES.find(g => g.toLowerCase() === lower);
+      // If still no match, try common subgenre → canonical mapping. Models
+      // often return more specific labels than our flat list supports.
+      if (!match) {
+        const subgenreMap = {
+          'metalcore': 'Metal', 'deathcore': 'Metal', 'hardcore': 'Metal',
+          'death metal': 'Metal', 'heavy metal': 'Metal', 'metal/hardcore': 'Metal',
+          'hip-hop': 'Hip Hop', 'hiphop': 'Hip Hop', 'rap': 'Hip Hop',
+          'r&b/soul': 'R&B', 'soul': 'R&B', 'funk': 'R&B',
+          'alternative': 'Rock', 'alt rock': 'Rock', 'punk rock': 'Punk', 'ska': 'Punk',
+          'tribute': 'Cover Band', 'cover': 'Cover Band', 'tributes': 'Cover Band',
+          'electronic/dj': 'DJ', 'edm': 'Electronic', 'house': 'Electronic',
+          'singer-songwriter': 'Acoustic', 'folk rock': 'Folk',
+          'americana': 'Country', 'bluegrass/folk': 'Bluegrass',
+          'jazz/blues': 'Jazz', 'blues rock': 'Blues',
+          'reggae/island': 'Reggae', 'island': 'Reggae',
+          'latin/world': 'Latin', 'world': 'Latin',
+          'jam/psych': 'Jam', 'psych': 'Jam', 'jam band': 'Jam',
+          'pop/top 40': 'Pop',
+        };
+        match = subgenreMap[lower];
+      }
+      parsed.genre = match || null;
     }
 
     // Return structured response — also include "enhanced" for backward

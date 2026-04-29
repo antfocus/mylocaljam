@@ -70,6 +70,13 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
   const [imageSearching, setImageSearching] = useState(false);
   const [imageSearchError, setImageSearchError] = useState(null);
   const [previewImages, setPreviewImages] = useState([]);
+  // Holds the candidate URL the user clicked from the gallery — drives
+  // the click-to-confirm lightbox below. Click thumbnail → opens the
+  // lightbox with full-size image and a "Use this image" button. The
+  // pickGalleryImage write only fires after the user confirms, instead
+  // of the old "click thumbnail = silently swap" behavior that mass-
+  // overwrote images by accident on touch devices.
+  const [zoomedCandidate, setZoomedCandidate] = useState(null);
 
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -710,8 +717,8 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
                       <button
                         type="button"
                         key={`${url}-${i}`}
-                        onClick={() => pickGalleryImage(url)}
-                        title={isActive ? 'Currently selected' : `Use this image (candidate ${i + 1} of ${previewImages.length})`}
+                        onClick={() => isActive ? null : setZoomedCandidate(url)}
+                        title={isActive ? 'Currently selected' : `Tap to preview candidate ${i + 1} of ${previewImages.length} full-size`}
                         style={{
                           position: 'relative',
                           width: '56px', height: '56px',
@@ -1066,6 +1073,138 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
           </div>
         </div>
       </div>
+
+      {/* Image candidate lightbox — appears when the user clicks a thumbnail
+          from the AI gallery. Shows the candidate full-size with explicit
+          "Use this image" / Cancel buttons so accidental taps don't silently
+          overwrite the existing image. Click backdrop to cancel. z-index is
+          above the modal (z-200) so the lightbox stacks correctly. */}
+      {zoomedCandidate && (
+        <div
+          onClick={() => setZoomedCandidate(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 300,
+            background: 'rgba(0,0,0,0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '24px',
+            backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: 'min(640px, 90vw)',
+              width: '100%',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border)',
+              borderRadius: '16px',
+              padding: '20px',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            <p style={{
+              margin: '0 0 12px',
+              fontSize: '14px', fontWeight: 600,
+              color: 'var(--text-primary)',
+            }}>
+              Replace current image with this candidate?
+            </p>
+
+            {/* Side-by-side: current image vs. candidate, so the operator
+                can compare directly before deciding. Falls back to a single
+                centered candidate when there's no current image. */}
+            <div style={{
+              display: 'flex', gap: '12px', marginBottom: '14px',
+              flexWrap: 'wrap',
+            }}>
+              {form.custom_image_url || imageResolved.value ? (
+                <div style={{ flex: '1 1 0', minWidth: '180px' }}>
+                  <p style={{
+                    margin: '0 0 6px', fontSize: '11px', fontWeight: 700,
+                    textTransform: 'uppercase', letterSpacing: '0.5px',
+                    color: 'var(--text-muted)',
+                  }}>
+                    Current
+                  </p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={form.custom_image_url || imageResolved.value}
+                    alt="Current image"
+                    style={{
+                      width: '100%', maxHeight: '260px', objectFit: 'cover',
+                      borderRadius: '10px',
+                      border: '1px solid var(--border)',
+                    }}
+                  />
+                </div>
+              ) : null}
+
+              <div style={{ flex: '1 1 0', minWidth: '180px' }}>
+                <p style={{
+                  margin: '0 0 6px', fontSize: '11px', fontWeight: 700,
+                  textTransform: 'uppercase', letterSpacing: '0.5px',
+                  color: '#E8722A',
+                }}>
+                  Candidate
+                </p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={zoomedCandidate}
+                  alt="AI candidate full-size"
+                  style={{
+                    width: '100%', maxHeight: '260px', objectFit: 'cover',
+                    borderRadius: '10px',
+                    border: '2px solid #E8722A',
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Action buttons. Cancel returns to gallery without writing.
+                Use This Image commits via pickGalleryImage (which writes to
+                BOTH custom_image_url and event_image_url) and closes the
+                lightbox. Saving still requires the operator to click
+                "Update Event" at the bottom of the modal — this button
+                only updates the form's preview, not the database. */}
+            <div style={{
+              display: 'flex', gap: '10px', justifyContent: 'flex-end',
+            }}>
+              <button
+                type="button"
+                onClick={() => setZoomedCandidate(null)}
+                style={{
+                  padding: '10px 20px', borderRadius: '10px',
+                  fontSize: '13px', fontWeight: 600,
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border)',
+                  cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  pickGalleryImage(zoomedCandidate);
+                  setZoomedCandidate(null);
+                }}
+                style={{
+                  padding: '10px 20px', borderRadius: '10px',
+                  fontSize: '13px', fontWeight: 700,
+                  background: '#E8722A', color: '#000000',
+                  border: 'none', cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                }}
+              >
+                Use This Image
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
