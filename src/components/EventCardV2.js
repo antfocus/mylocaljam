@@ -982,11 +982,14 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
               Event saved
             </p>
 
-            {/* Event context — title + venue, smaller and muted so the
-                headline still wins the eye. */}
+            {/* Event context — title + venue. Sized close to the headline so
+                it's actually readable on mobile (was 14px, bumped to 16px on
+                feedback that the line was too small). The strong title still
+                outweighs the muted "at <venue>" segment so the hierarchy
+                "headline → title → venue" is preserved. */}
             <p style={{
               margin: 0,
-              fontSize: 14, fontWeight: 500,
+              fontSize: 16, fontWeight: 500,
               color: darkMode ? '#A8A8C0' : '#6B7280',
               textAlign: 'center', lineHeight: 1.45,
             }}>
@@ -1010,7 +1013,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 }} />
                 <p style={{
                   margin: '0 0 14px',
-                  fontSize: 13, fontWeight: 500,
+                  fontSize: 15, fontWeight: 500,
                   color: darkMode ? '#9090B0' : '#6B7280',
                   textAlign: 'center', lineHeight: 1.4,
                 }}>
@@ -1020,6 +1023,11 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                   </strong>
                   {' '}plays again?
                 </p>
+                {/* Follow CTA — outline pill in brand orange so it reads as
+                    "this is the orange call-to-action" without a saturated
+                    fill, but the LABEL itself is jet black. Orange-on-orange
+                    text fails contrast (~3:1) and was hard to read against
+                    the 8% orange wash; black hits ~14:1 and is comfortable. */}
                 <button
                   onClick={handlePopoverFollow}
                   className="follow-pill-btn"
@@ -1031,14 +1039,14 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     borderRadius: '999px',
                     border: '1.5px solid #E8722A',
                     background: 'rgba(232,114,42,0.08)',
-                    color: '#E8722A',
-                    fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    color: '#000000',
+                    fontSize: 14, fontWeight: 700, cursor: 'pointer',
                     fontFamily: "'DM Sans', sans-serif",
                     transition: 'background 0.15s ease',
                   }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                       stroke="#E8722A" strokeWidth="2.5"
+                       stroke="#000000" strokeWidth="2.5"
                        strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 5v14M5 12h14" />
                   </svg>
