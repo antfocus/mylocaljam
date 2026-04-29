@@ -337,29 +337,29 @@ export default function useAdminSpotlight({ password }) {
   }, [commitPins]);
 
   /**
-   * Star-button: STAGE-TO-RUNNER-UPS semantics (Apr 28, 2026).
+   * Star-button: APPEND-TO-NEXT-OPEN-SLOT semantics (Apr 29, 2026).
    *
-   * If already pinned → unpin (toggle off, unchanged behavior).
+   * If already pinned → unpin (toggle off).
    *
-   * If a new pin: ALWAYS lands in a Runner-Up slot (5, 6, or 7). The Main
-   * Spotlight slots (0–4) are filled exclusively via drag-to-slot, which is
-   * a deliberate admin action. The ☆ star is the staging affordance — a way
-   * to mark "this looks worth promoting later" without publishing it live.
+   * If a new pin: appended to the end of the dense list, landing in the
+   * first available slot. Fills Main (slots 0–4) before Runner-Ups (5–7),
+   * because the data model is a dense array — slot index = list position.
    *
-   * Refusal cases (set `spotlightStagingError` and return prev unchanged):
-   *  (a) Main has empty slots (prev.length < 5): admin must drag-to-slot to
-   *      fill main; ☆ won't sneak something in there. Pin list is dense, so
-   *      we can't append to slot 5+ while slots 0–4 sit empty without
-   *      restructuring the data model. Force the discipline at the input.
-   *  (b) All 8 slots full (prev.length >= MAX_PINS): admin must clear or
-   *      promote a runner-up before staging another.
+   * Refusal: if all 8 slots are full, surface a banner and return prev
+   * unchanged. Admin must clear or promote a slot before staging another.
    *
-   * Otherwise: append at the end of a dense list — lands in the first empty
-   * runner-up slot (5, 6, or 7 depending on how full Runner-Ups already are).
+   * History: Apr 28, 2026 introduced a stricter "stage-to-Runner-Ups only"
+   * rule that refused when Main had any empty slot, on the theory that ☆
+   * should never publish directly to Main. In practice this blocked the
+   * common triage workflow ("I want to stage 8 candidates while I'm
+   * browsing, I'll sort them into Main later"), so it was rolled back to
+   * the simpler "fill next open slot" rule. Drag-to-slot is still the
+   * deliberate way to place an event at a specific position; ☆ is the
+   * fast path for "good enough — put it on the list."
    */
   const toggleSpotlightPin = useCallback((eventId) => {
     setSpotlightPins(prev => {
-      // Already pinned → unpin (unchanged)
+      // Already pinned → unpin (toggle off)
       if (prev.includes(eventId)) {
         const next = prev.filter(id => id !== eventId);
         setSpotlightStagingError(null);
@@ -367,25 +367,15 @@ export default function useAdminSpotlight({ password }) {
         return next;
       }
 
-      const RUNNER_UP_START = 5;
-
-      if (prev.length < RUNNER_UP_START) {
-        const need = RUNNER_UP_START - prev.length;
-        setSpotlightStagingError(
-          `Main Spotlight has ${need} empty slot${need === 1 ? '' : 's'}. ` +
-          `Fill them via drag-to-slot first — ☆ only stages to Runner-Ups, and Runner-Ups don't open until Main is full.`
-        );
-        return prev;
-      }
-
+      // All 8 slots full — refuse with a banner.
       if (prev.length >= MAX_PINS) {
         setSpotlightStagingError(
-          `All 3 Runner-Up slots are full. Clear or promote a Runner-Up before staging another.`
+          `All 8 spotlight slots are full. Clear or promote a slot before staging another.`
         );
         return prev;
       }
 
-      // Append to the end of a dense list → first empty Runner-Up slot.
+      // Append to the end of the dense list → first available slot.
       setSpotlightStagingError(null);
       const next = [...prev, eventId];
       commitPins(next);

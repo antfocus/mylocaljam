@@ -810,11 +810,11 @@ export default function AdminSpotlightTab({
             }}
           >
             <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#FFFFFF' }}>
-              Stage to Runner-Ups?
+              Add to Spotlight?
             </h3>
             <p style={{ margin: '0 0 20px', fontSize: 13, color: '#D1D5DB', lineHeight: 1.5 }}>
               <strong style={{ color: '#FFFFFF' }}>{pendingPin.artistName}</strong>
-              {pendingPin.venue ? ` at ${pendingPin.venue}` : ''} will be staged in the Runner-Ups for review. It won't appear on the live Spotlight feed until you drag it into a Main slot.
+              {pendingPin.venue ? ` at ${pendingPin.venue}` : ''} will land in the next open slot (Main fills first, then Runner-Ups). You can rearrange anytime by dragging.
             </p>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button
@@ -838,7 +838,7 @@ export default function AdminSpotlightTab({
                   cursor: 'pointer', fontFamily: "'DM Sans', sans-serif",
                 }}
               >
-                Stage
+                Add
               </button>
             </div>
           </div>
@@ -1196,7 +1196,7 @@ function DraggableEventCard({
               color: 'var(--text-muted)',
               cursor: 'pointer',
             }}
-            title="Stage to Runner-Ups"
+            title="Add to Spotlight"
           >
             ☆
           </button>
