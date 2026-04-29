@@ -1081,7 +1081,13 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
           above the modal (z-200) so the lightbox stacks correctly. */}
       {zoomedCandidate && (
         <div
-          onClick={() => setZoomedCandidate(null)}
+          // stopPropagation is critical here — the lightbox renders inside
+          // the EventFormModal's outer backdrop div, which has `onClick={onClose}`.
+          // Without stopPropagation, clicking the lightbox backdrop bubbles up
+          // and closes the entire event-edit modal, dumping the user's work.
+          // Both the click handler AND any propagation from inner elements
+          // need to be stopped at the lightbox level.
+          onClick={(e) => { e.stopPropagation(); setZoomedCandidate(null); }}
           style={{
             position: 'fixed', inset: 0, zIndex: 300,
             background: 'rgba(0,0,0,0.85)',
@@ -1112,54 +1118,75 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
             </p>
 
             {/* Side-by-side: current image vs. candidate, so the operator
-                can compare directly before deciding. Falls back to a single
-                centered candidate when there's no current image. */}
-            <div style={{
-              display: 'flex', gap: '12px', marginBottom: '14px',
-              flexWrap: 'wrap',
-            }}>
-              {form.custom_image_url || imageResolved.value ? (
-                <div style={{ flex: '1 1 0', minWidth: '180px' }}>
-                  <p style={{
-                    margin: '0 0 6px', fontSize: '11px', fontWeight: 700,
-                    textTransform: 'uppercase', letterSpacing: '0.5px',
-                    color: 'var(--text-muted)',
-                  }}>
-                    Current
-                  </p>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={form.custom_image_url || imageResolved.value}
-                    alt="Current image"
-                    style={{
-                      width: '100%', maxHeight: '260px', objectFit: 'cover',
-                      borderRadius: '10px',
-                      border: '1px solid var(--border)',
-                    }}
-                  />
-                </div>
-              ) : null}
-
-              <div style={{ flex: '1 1 0', minWidth: '180px' }}>
-                <p style={{
-                  margin: '0 0 6px', fontSize: '11px', fontWeight: 700,
-                  textTransform: 'uppercase', letterSpacing: '0.5px',
-                  color: '#E8722A',
+                can compare directly before deciding. Always renders BOTH
+                panels — when there's no current image, shows a placeholder
+                so the layout stays consistent and the operator knows the
+                slot is genuinely empty (vs. wondering if the panel is
+                hidden by a CSS bug). */}
+            {(() => {
+              const currentImageUrl = form.custom_image_url || imageResolved.value || '';
+              return (
+                <div style={{
+                  display: 'flex', gap: '12px', marginBottom: '14px',
+                  flexWrap: 'wrap',
                 }}>
-                  Candidate
-                </p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={zoomedCandidate}
-                  alt="AI candidate full-size"
-                  style={{
-                    width: '100%', maxHeight: '260px', objectFit: 'cover',
-                    borderRadius: '10px',
-                    border: '2px solid #E8722A',
-                  }}
-                />
-              </div>
-            </div>
+                  <div style={{ flex: '1 1 0', minWidth: '180px' }}>
+                    <p style={{
+                      margin: '0 0 6px', fontSize: '11px', fontWeight: 700,
+                      textTransform: 'uppercase', letterSpacing: '0.5px',
+                      color: 'var(--text-muted)',
+                    }}>
+                      Current
+                    </p>
+                    {currentImageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={currentImageUrl}
+                        alt="Current image"
+                        style={{
+                          width: '100%', maxHeight: '260px', objectFit: 'cover',
+                          borderRadius: '10px',
+                          border: '1px solid var(--border)',
+                        }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: '100%', height: '260px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        borderRadius: '10px',
+                        border: '1px dashed var(--border)',
+                        background: 'var(--bg-elevated)',
+                        color: 'var(--text-muted)',
+                        fontSize: '13px', fontStyle: 'italic',
+                        textAlign: 'center', padding: '12px',
+                      }}>
+                        No current image — this candidate would be the first.
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ flex: '1 1 0', minWidth: '180px' }}>
+                    <p style={{
+                      margin: '0 0 6px', fontSize: '11px', fontWeight: 700,
+                      textTransform: 'uppercase', letterSpacing: '0.5px',
+                      color: '#E8722A',
+                    }}>
+                      Candidate
+                    </p>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={zoomedCandidate}
+                      alt="AI candidate full-size"
+                      style={{
+                        width: '100%', maxHeight: '260px', objectFit: 'cover',
+                        borderRadius: '10px',
+                        border: '2px solid #E8722A',
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Action buttons. Cancel returns to gallery without writing.
                 Use This Image commits via pickGalleryImage (which writes to
