@@ -574,11 +574,44 @@ export default function AdminPage() {
         />
       )}
 
-      {/* Enrichment Tab — metadata backfill pipeline ───────────────────── */}
+      {/* Enrichment Tab — metadata backfill + interactive triage ────────── */}
       {activeTab === 'enrichment' && !loading && (
         <AdminEnrichmentTab
           password={password}
           showQueueToast={showQueueToast}
+          // Triage row click → open the event edit modal in-place.
+          // Receives the full event row from the triage queue API; we plug
+          // it directly into the form's editing-event state.
+          onOpenEvent={(eventRow) => {
+            if (!eventRow) return;
+            ev.setEditingEvent(eventRow);
+            ev.setShowEventForm(true);
+          }}
+          // Triage row click → open the artist edit modal. Mirrors the
+          // EventFormModal's onNavigateToArtist flow: switches tab to
+          // artists/triage, loads the artist into the edit panel.
+          onOpenArtist={(artistId) => {
+            if (!artistId) return;
+            const artist = (ar.artists || []).find(a => a.id === artistId);
+            if (!artist) {
+              showQueueToast(`Artist ${artistId} not in the loaded list — try Refresh`);
+              return;
+            }
+            setReturnToTab(activeTab);
+            setActiveTab('artists');
+            ar.setArtistSubTab('triage');
+            ar.setEditingArtist(artist);
+            ar.setImageCandidates(artist.image_url ? [artist.image_url] : []);
+            ar.setImageCarouselIdx(0);
+            ar.setArtistForm({
+              name: artist.name || '',
+              bio: artist.bio || '',
+              genres: artist.genres ? (Array.isArray(artist.genres) ? artist.genres.join(', ') : artist.genres) : '',
+              vibes: artist.vibes ? (Array.isArray(artist.vibes) ? artist.vibes.join(', ') : artist.vibes) : '',
+              image_url: artist.image_url || '',
+              default_category: artist.default_category || '',
+            });
+          }}
         />
       )}
 

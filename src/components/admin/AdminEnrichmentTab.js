@@ -27,11 +27,62 @@
  * shared admin hooks, just the admin password for Authorization.
  */
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 const ENDPOINT = '/api/admin/enrich-backfill';
 
-export default function AdminEnrichmentTab({ password, showQueueToast }) {
+// ── Date helpers for the Triage sub-tab presets ─────────────────────────────
+// Builds YYYY-MM-DD strings in America/New_York so the date-range filter
+// matches the user's intuition (a "Friday" event lands on the Friday they
+// expect, not whichever UTC day midnight happens to fall on).
+function todayET() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+function addDaysET(dateStr, days) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days, 12));
+  return dt.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+// "This weekend" = upcoming Thursday through Sunday (4 days). If today is
+// already past Thursday, it's the rest of THIS weekend; if before, it's
+// the next coming weekend. The triage view defaults to this range.
+function thisWeekendRange() {
+  const t = todayET();
+  const dt = new Date(`${t}T12:00:00Z`);
+  const dow = dt.getUTCDay(); // 0=Sun, 4=Thu, 5=Fri, 6=Sat
+  // Days until Thursday (or 0 if already Thu/Fri/Sat/Sun).
+  const daysToThu = dow >= 4 || dow === 0 ? 0 : 4 - dow;
+  const from = addDaysET(t, daysToThu);
+  // Sunday = Thursday + 3 days
+  const to = addDaysET(from, 3);
+  return { from, to };
+}
+
+export default function AdminEnrichmentTab({
+  password,
+  showQueueToast,
+  // Triage row click handlers — passed from admin/page.js so the operator
+  // can jump straight to the right edit modal without leaving the tab.
+  // When a row has a linked artist, onOpenArtist fires (fix-at-source);
+  // otherwise onOpenEvent fires (per-row event-level fix).
+  onOpenEvent,
+  onOpenArtist,
+}) {
+  const [activeSubTab, setActiveSubTab] = useState('backfill');
+
+  // ── Triage sub-tab state ─────────────────────────────────────────────────
+  // Default range = this weekend (Thu-Sun). Most enrichment work happens
+  // on the next 4 days because that's what users browse first.
+  const [triageRange, setTriageRange] = useState(() => thisWeekendRange());
+  const [triageMissing, setTriageMissing] = useState('image');
+  const [triageQueue, setTriageQueue] = useState([]);
+  const [triageLoading, setTriageLoading] = useState(false);
+  const [triageError, setTriageError] = useState(null);
+  // Preset chip currently selected — purely display state so the active
+  // chip can render highlighted. 'custom' means the operator typed dates
+  // manually.
+  const [triagePreset, setTriagePreset] = useState('weekend');
+
   const [batchSize, setBatchSize] = useState(2);
   const [bareOnly, setBareOnly] = useState(false);
 
@@ -222,10 +273,61 @@ export default function AdminEnrichmentTab({ password, showQueueToast }) {
           Metadata Enrichment
         </h2>
         <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: '4px 0 0' }}>
-          Backfill bios, images, and genre tags onto unenriched artists. Runs in a client-driven loop, snapshots
-          each write so rollback is possible.
+          {activeSubTab === 'backfill'
+            ? 'Backfill bios, images, and genre tags onto unenriched artists. Runs in a client-driven loop, snapshots each write so rollback is possible.'
+            : 'Triage events with missing metadata in a date range. Click a row to jump straight to the right edit modal.'}
         </p>
       </div>
+
+      {/* Sub-tab toggle: Backfill (existing automation) | Triage (interactive
+          per-event drill-down). Both modes serve different workflows; the
+          backfill is good for processing the long tail at scale, triage is
+          good for hands-on cleanup of a specific weekend or week ahead. */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)', marginBottom: '16px' }}>
+        {[
+          { key: 'backfill', label: 'Backfill' },
+          { key: 'triage', label: 'Triage' },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setActiveSubTab(t.key)}
+            style={{
+              padding: '10px 18px', background: 'transparent',
+              border: 'none', cursor: 'pointer',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '13px', fontWeight: 600,
+              color: activeSubTab === t.key ? 'var(--text-primary)' : 'var(--text-muted)',
+              borderBottom: activeSubTab === t.key ? '2px solid #E8722A' : '2px solid transparent',
+              marginBottom: '-1px',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeSubTab === 'triage' && (
+        <TriageView
+          password={password}
+          range={triageRange}
+          setRange={setTriageRange}
+          missing={triageMissing}
+          setMissing={setTriageMissing}
+          preset={triagePreset}
+          setPreset={setTriagePreset}
+          queue={triageQueue}
+          setQueue={setTriageQueue}
+          loading={triageLoading}
+          setLoading={setTriageLoading}
+          error={triageError}
+          setError={setTriageError}
+          onOpenEvent={onOpenEvent}
+          onOpenArtist={onOpenArtist}
+        />
+      )}
+
+      {activeSubTab !== 'backfill' ? null : (
+      <>
 
       {/* Status banner — prominent Running / Pausing / Paused indicator.
           Shows current batch, enriched count, and live LLM-call total so
@@ -470,6 +572,271 @@ export default function AdminEnrichmentTab({ password, showQueueToast }) {
         results before bumping to 20-25. Download the snapshot after each session — it's the only copy of
         the pre-write state once the Vercel function has cold-booted.
       </div>
+      </>
+      )}
+    </div>
+  );
+}
+
+// ── Triage sub-component ────────────────────────────────────────────────────
+// Self-contained: receives state from the parent so the parent can persist
+// the operator's filter choices when they switch sub-tabs and back. Fires
+// the GET /api/admin/enrichment-queue endpoint whenever filters change.
+function TriageView({
+  password, range, setRange, missing, setMissing, preset, setPreset,
+  queue, setQueue, loading, setLoading, error, setError,
+  onOpenEvent, onOpenArtist,
+}) {
+  // Refetch the queue any time the filters change. Debounced lightly so
+  // typing in the custom date inputs doesn't spam the endpoint mid-keystroke.
+  useEffect(() => {
+    if (!range?.from || !range?.to || !missing) return;
+    const handle = setTimeout(async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams({ from: range.from, to: range.to, missing });
+        const res = await fetch(`/api/admin/enrichment-queue?${params}`, {
+          headers: { Authorization: `Bearer ${password}` },
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+        setQueue(data.events || []);
+      } catch (err) {
+        setError(err?.message || 'Network error');
+        setQueue([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [range.from, range.to, missing, password, setQueue, setLoading, setError]);
+
+  // Preset chip helpers — set range AND mark which preset is active so
+  // the chip stays highlighted. Custom dates clear the preset.
+  const setPresetToday = () => {
+    const t = todayET();
+    setRange({ from: t, to: t });
+    setPreset('today');
+  };
+  const setPresetWeekend = () => {
+    setRange(thisWeekendRange());
+    setPreset('weekend');
+  };
+  const setPresetWeek = () => {
+    const t = todayET();
+    setRange({ from: t, to: addDaysET(t, 7) });
+    setPreset('week');
+  };
+
+  const presetButtonStyle = (key) => ({
+    padding: '6px 12px',
+    borderRadius: '999px',
+    border: `1px solid ${preset === key ? '#E8722A' : 'var(--border)'}`,
+    background: preset === key ? 'rgba(232,114,42,0.10)' : 'transparent',
+    color: preset === key ? '#E8722A' : 'var(--text-secondary)',
+    fontSize: '12px', fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: "'DM Sans', sans-serif",
+  });
+
+  const missingButtonStyle = (key) => ({
+    padding: '8px 14px',
+    borderRadius: '999px',
+    border: `1.5px solid ${missing === key ? '#E8722A' : 'var(--border)'}`,
+    background: missing === key ? '#E8722A' : 'transparent',
+    color: missing === key ? '#000000' : 'var(--text-secondary)',
+    fontSize: '12px', fontWeight: 700,
+    cursor: 'pointer',
+    fontFamily: "'DM Sans', sans-serif",
+    textTransform: 'uppercase', letterSpacing: '0.5px',
+  });
+
+  const formatRowDate = (iso) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      const day = d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/New_York' });
+      const dateNum = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+      const time = d.toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/New_York',
+      });
+      // Hide midnight-stub times so the operator isn't fooled into thinking
+      // "12:00 AM" is the real start time. Most scraped events with no time
+      // default to midnight; we render only the date in that case.
+      const isMidnightStub = /^12:00\s*AM$/i.test(time);
+      return isMidnightStub ? `${day} · ${dateNum}` : `${day} · ${dateNum} · ${time}`;
+    } catch {
+      return iso;
+    }
+  };
+
+  const handleRowClick = (ev) => {
+    // Artist-linked → fix at the source (artist row), so all events for
+    // that artist get the benefit. Event-only → open the event modal so
+    // the operator can edit just this row.
+    if (ev.has_artist && ev.artist_id) {
+      onOpenArtist?.(ev.artist_id);
+    } else {
+      onOpenEvent?.(ev);
+    }
+  };
+
+  return (
+    <div>
+      {/* Date range row — preset chips + custom inputs side-by-side. The
+          custom inputs always reflect the current range, even when a preset
+          is selected, so the operator can see exactly which days are being
+          queried. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '12px',
+        flexWrap: 'wrap', marginBottom: '12px',
+      }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <button onClick={setPresetToday} style={presetButtonStyle('today')}>Today</button>
+          <button onClick={setPresetWeekend} style={presetButtonStyle('weekend')}>This Weekend</button>
+          <button onClick={setPresetWeek} style={presetButtonStyle('week')}>Next 7 Days</button>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px', color: 'var(--text-muted)' }}>
+          <span>From</span>
+          <input
+            type="date"
+            value={range.from || ''}
+            onChange={e => { setRange(r => ({ ...r, from: e.target.value })); setPreset('custom'); }}
+            style={{
+              background: 'var(--bg-card)', border: '1px solid var(--border)',
+              borderRadius: '6px', padding: '4px 8px', color: 'var(--text-primary)',
+              fontSize: '12px', fontFamily: "'DM Sans', sans-serif",
+            }}
+          />
+          <span>To</span>
+          <input
+            type="date"
+            value={range.to || ''}
+            onChange={e => { setRange(r => ({ ...r, to: e.target.value })); setPreset('custom'); }}
+            style={{
+              background: 'var(--bg-card)', border: '1px solid var(--border)',
+              borderRadius: '6px', padding: '4px 8px', color: 'var(--text-primary)',
+              fontSize: '12px', fontFamily: "'DM Sans', sans-serif",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Missing-field filter — single-select pills. The operator picks one
+          field at a time so the click-through workflow is focused on fixing
+          that specific gap before moving to the next. */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        {[
+          { key: 'image', label: 'Missing Image' },
+          { key: 'bio', label: 'Missing Bio' },
+          { key: 'genres', label: 'Missing Genres' },
+          { key: 'vibes', label: 'Missing Vibes' },
+        ].map(opt => (
+          <button key={opt.key} onClick={() => setMissing(opt.key)} style={missingButtonStyle(opt.key)}>
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Result count + state strip */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '10px',
+        fontSize: '12px', color: 'var(--text-muted)',
+        marginBottom: '12px',
+      }}>
+        {loading && <span>Loading…</span>}
+        {!loading && !error && (
+          <span>
+            <strong style={{ color: 'var(--text-primary)' }}>{queue.length}</strong>
+            {' '}event{queue.length === 1 ? '' : 's'} missing {missing} ·{' '}
+            {range.from} → {range.to}
+          </span>
+        )}
+        {error && (
+          <span style={{ color: '#ef4444' }}>Error: {error}</span>
+        )}
+      </div>
+
+      {/* Result list */}
+      {!loading && queue.length === 0 && !error && (
+        <div style={{
+          padding: '24px', textAlign: 'center',
+          color: 'var(--text-muted)', fontSize: '13px',
+          background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '10px',
+        }}>
+          No events with missing {missing} in this range. Try a wider date range or a different field.
+        </div>
+      )}
+
+      {!loading && queue.length > 0 && (
+        <div style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          borderRadius: '10px',
+          overflow: 'hidden',
+        }}>
+          {queue.map((ev, i) => {
+            const displayName = ev.event_title || ev.artist_name || '(untitled)';
+            return (
+              <button
+                key={ev.id}
+                onClick={() => handleRowClick(ev)}
+                style={{
+                  display: 'block', width: '100%',
+                  padding: '12px 14px',
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: i < queue.length - 1 ? '1px solid var(--border)' : 'none',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(232,114,42,0.04)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  {/* Linkage chip — same pattern as AdminEventsTab. */}
+                  <span style={{
+                    fontSize: '9px', fontWeight: 700,
+                    padding: '2px 6px', borderRadius: '999px',
+                    background: ev.has_artist ? 'rgba(34,197,94,0.12)' : 'rgba(96,165,250,0.12)',
+                    color: ev.has_artist ? '#22c55e' : '#60a5fa',
+                    flexShrink: 0,
+                  }}>
+                    {ev.has_artist ? '🎤 ARTIST' : '🎫 EVENT'}
+                  </span>
+                  {/* Title */}
+                  <strong style={{
+                    fontSize: '14px', color: 'var(--text-primary)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {displayName}
+                  </strong>
+                  {/* Missing badge — small red pill */}
+                  <span style={{
+                    fontSize: '9px', fontWeight: 700,
+                    padding: '2px 8px', borderRadius: '999px',
+                    background: 'rgba(239,68,68,0.12)', color: '#ef4444',
+                    textTransform: 'uppercase', letterSpacing: '0.5px',
+                    marginLeft: 'auto',
+                    flexShrink: 0,
+                  }}>
+                    NO {ev.missing.toUpperCase()}
+                  </span>
+                </div>
+                <div style={{
+                  fontSize: '12px', color: 'var(--text-muted)',
+                  marginTop: '4px',
+                }}>
+                  {ev.venue_name || '(no venue)'} · {formatRowDate(ev.event_date)}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
