@@ -350,17 +350,38 @@ export default function AdminEventsTab({
 
   const handleCreateTemplateFromEvent = (ev) => {
     if (!ev || !setActiveTab || !setEditingTemplate || !setTemplateForm) return;
-    const rawTitle = ev.event_title || ev.name || '';
+    // Event-only rows (no event_title) carry the headliner string in
+    // `artist_name` instead. Previous code used only event_title || name,
+    // which left the template name + aliases empty for typical scraper rows
+    // like "Lori and Alex" where artist_name is the only filled name field.
+    const rawTitle = ev.event_title || ev.artist_name || ev.name || '';
     const bioSource   = ev.custom_bio        || ev.description     || ev.artist_bio || '';
     const imageSource = ev.custom_image_url  || ev.event_image_url || ev.image_url  || '';
+    // Genres/vibes are arrays on the event row but the template form's
+    // StyleMoodSelector expects a comma-separated string (it calls
+    // `.split(',')` on the value internally). Resolve via the same waterfall
+    // the EventFormModal uses: override (custom_*) → linked artist (artist_*)
+    // → legacy single-value scraper field. Empty arrays/strings drop through
+    // to the next tier so an event with no override but a linked artist
+    // still gets the artist's tags. Previous code hardcoded both to '',
+    // which is why the new template form opened with no genre / vibe even
+    // when the source event had them set.
+    const eventGenres =
+      (Array.isArray(ev.custom_genres) && ev.custom_genres.length) ? ev.custom_genres :
+      (Array.isArray(ev.artist_genres) && ev.artist_genres.length) ? ev.artist_genres :
+      (ev.genre ? [ev.genre] : []);
+    const eventVibes =
+      (Array.isArray(ev.custom_vibes) && ev.custom_vibes.length) ? ev.custom_vibes :
+      (Array.isArray(ev.artist_vibes) && ev.artist_vibes.length) ? ev.artist_vibes :
+      (ev.vibe ? [ev.vibe] : []);
     setTemplateForm({
       template_name: rawTitle,                                              // editable — admin can trim scraper junk
       aliases: rawTitle,                                                    // guarantees match on next sync
       category: ev.category || 'Live Music',
       venue_id: ev.venue_id || '',
       bio: sanitizeForTemplate(bioSource, rawTitle),
-      genres: '',
-      vibes: '',
+      genres: eventGenres.join(', '),
+      vibes: eventVibes.join(', '),
       image_url: sanitizeForTemplate(imageSource, rawTitle),
       start_time: ev.start_time || '',
       is_human_edited: {},
