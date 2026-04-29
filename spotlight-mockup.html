@@ -1,0 +1,492 @@
+<meta charset="utf-8">
+<title>Spotlight card — Gig Poster mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    background: #13131C;
+    min-height: 100vh;
+    font-family: 'Outfit', sans-serif;
+    color: #FFFFFF;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .stage {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 48px 16px 48px;
+    gap: 28px;
+  }
+
+  .stage h1 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #6B6B8A;
+    margin: 0 0 8px 0;
+  }
+
+  /* Simulated app shell — 480px wide, mylocalJam dark bg */
+  .app-shell {
+    width: 100%;
+    max-width: 480px;
+    background: #1E1E2C;
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid #2A2A3C;
+  }
+
+  /* =========================================================
+     SPOTLIGHT CARD — GIG POSTER
+     ========================================================= */
+
+  .card {
+    position: relative;
+    padding: 14px 18px 16px;
+    background: #1E1E2C;
+  }
+
+  /* Top meta strip: SPOTLIGHT / issue tag  */
+  .strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #9D9DB8;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #2A2A3C;
+    margin-bottom: 12px;
+  }
+  .strip .dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #E8722A;
+    margin-right: 8px;
+    vertical-align: 1px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  /* Photo — duotone halftone treatment */
+  .photo-frame {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;            /* shorter — leaves room for event cards below */
+    background: #E8722A;            /* orange base shows through shadows */
+    overflow: hidden;
+    border-radius: 4px;
+  }
+  .photo-frame::before {
+    /* The photo — a single image, duotone-treated. The orange you see IS the
+       photo's highlights, not a background behind it. */
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url('https://picsum.photos/seed/suitmaitai/800/600');
+    background-size: cover;
+    background-position: center;
+    filter: grayscale(1) contrast(1.15) brightness(1.05);
+    mix-blend-mode: multiply;
+    opacity: 0.92;                  /* slightly softer so the photo reads clearly */
+  }
+  .photo-frame::after {
+    /* Very subtle halftone dot overlay for that silkscreen texture */
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(0,0,0,0.22) 18%, transparent 20%);
+    background-size: 4px 4px;
+    mix-blend-mode: multiply;
+    pointer-events: none;
+    opacity: 0.4;
+  }
+
+  /* Corner "LIVE" sticker — tilted, hand-stuck flyer energy */
+  .sticker {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: #3AADA0;
+    color: #0F1815;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    padding: 5px 9px;
+    border-radius: 3px;
+    transform: rotate(6deg);
+    z-index: 2;
+  }
+
+  /* Artist name — stacked, massive, tight */
+  .artist-block {
+    margin-top: 14px;
+    line-height: 0.9;
+  }
+  .artist-name {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 900;
+    font-size: 44px;
+    letter-spacing: -0.03em;
+    color: #FFFFFF;
+    text-transform: uppercase;
+    margin: 0;
+  }
+  .artist-name .amp {
+    color: #E8722A;
+    font-weight: 900;
+  }
+
+  /* Event title / subtitle — editorial italic for contrast */
+  .event-title {
+    font-family: 'DM Serif Display', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 19px;
+    color: #D8D8E8;
+    margin: 8px 0 0;
+    letter-spacing: -0.01em;
+  }
+  .event-title .quote {
+    color: #E8722A;
+    font-style: normal;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    vertical-align: 2px;
+  }
+
+  /* Meta strip — time / venue */
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 10px 0;
+    border-top: 1px dashed #3A3A4C;
+    border-bottom: 1px dashed #3A3A4C;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #BEBEDA;
+  }
+  .meta .time {
+    color: #FFFFFF;
+    font-weight: 600;
+  }
+  .meta .sep {
+    color: #4A4A60;
+  }
+
+  /* CTA button — ticket-stub shape with notches */
+  .cta-row {
+    margin-top: 14px;
+    display: flex;
+    justify-content: flex-start;
+  }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 20px;
+    background: transparent;
+    border: 1.5px solid #FFFFFF;
+    color: #FFFFFF;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 2px;
+    position: relative;
+    transition: all 0.15s ease;
+  }
+  .cta:hover {
+    background: #E8722A;
+    border-color: #E8722A;
+    color: #1E1E2C;
+  }
+  .cta .arrow {
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  /* =========================================================
+     OVERLAY VARIANT — gig-poster type, same footprint as current
+     ========================================================= */
+  .overlay-card {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    background-image: url('https://picsum.photos/seed/suitmaitai/960/600');
+    background-size: cover;
+    background-position: center;
+    overflow: hidden;
+  }
+  .overlay-card::before {
+    /* Bottom-heavy scrim for legibility — punchier than the current card */
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(180deg,
+        rgba(19,19,28,0.15) 0%,
+        rgba(19,19,28,0) 35%,
+        rgba(19,19,28,0.55) 60%,
+        rgba(19,19,28,0.92) 100%);
+  }
+  .overlay-card::after {
+    /* Subtle orange edge glow — picks up the brand accent */
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 15% 100%, rgba(232,114,42,0.22) 0%, transparent 55%);
+    pointer-events: none;
+  }
+
+  .ov-sticker {
+    position: absolute;
+    top: 14px; right: 14px;
+    background: #E8722A;
+    color: #13131C;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    padding: 6px 10px;
+    border-radius: 3px;
+    transform: rotate(4deg);
+    z-index: 3;
+    text-transform: uppercase;
+  }
+  .ov-sticker .pulse {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #13131C;
+    margin-right: 6px;
+    vertical-align: 1px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .ov-body {
+    position: absolute;
+    left: 18px; right: 18px; bottom: 14px;
+    z-index: 2;
+  }
+  .ov-artist {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 900;
+    font-size: 32px;
+    letter-spacing: -0.03em;
+    color: #FFFFFF;
+    text-transform: uppercase;
+    line-height: 0.95;
+    margin: 0;
+  }
+  .ov-title {
+    font-family: 'DM Serif Display', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: 15px;
+    color: #E8E8F0;
+    margin: 4px 0 8px;
+    letter-spacing: -0.005em;
+  }
+  .ov-title .q {
+    color: #E8722A;
+    font-style: normal;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    vertical-align: 1px;
+  }
+  .ov-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .ov-meta {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #D8D8E8;
+    line-height: 1.2;
+  }
+  .ov-meta .t { color: #FFFFFF; font-weight: 600; }
+  .ov-meta .d { color: #E8722A; font-weight: 600; margin-right: 2px; }
+  .ov-meta .s { color: #6B6B85; margin: 0 6px; }
+  .ov-cta {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: rgba(255,255,255,0.85);
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-color: rgba(255,255,255,0.3);
+    transition: color 0.15s ease, text-decoration-color 0.15s ease;
+  }
+  .ov-cta:hover {
+    color: #E8722A;
+    text-decoration-color: #E8722A;
+  }
+
+/* ==== Side-by-side comparison: CURRENT (for reference) ==== */
+  .reference {
+    width: 100%;
+    max-width: 480px;
+    background: #1E1E2C;
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid #2A2A3C;
+    padding: 0;
+  }
+  .ref-hero {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background-image: url('https://picsum.photos/seed/suitmaitai/800/600');
+    background-size: cover;
+    background-position: center;
+  }
+  .ref-scrim {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 40%, rgba(0,0,0,0.72) 100%);
+  }
+  .ref-badge {
+    position: absolute;
+    top: 16px; left: 16px;
+    background: rgba(108, 70, 200, 0.95);
+    color: #FFFFFF;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 6px 12px;
+    border-radius: 20px;
+    text-transform: uppercase;
+  }
+  .ref-title {
+    position: absolute;
+    left: 16px; right: 16px; bottom: 52px;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    font-size: 24px;
+    color: #FFFFFF;
+    margin: 0;
+  }
+  .ref-meta {
+    position: absolute;
+    left: 16px; bottom: 28px;
+    color: #E5E5F0;
+    font-size: 14px;
+  }
+  .ref-cta {
+    position: absolute;
+    left: 16px; bottom: -2px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #FFFFFF;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    transform: translateY(-8px);
+  }
+</style>
+
+<div class="stage">
+  <h1>New — Hybrid overlay (for the feed)</h1>
+
+  <div class="app-shell">
+    <div class="overlay-card">
+      <div class="ov-sticker"><span class="pulse"></span>Spotlight</div>
+
+      <div class="ov-body">
+        <h2 class="ov-artist">Suit &amp; Mai Tai</h2>
+        <p class="ov-title"><span class="q">“</span>Yacht the Rocks<span class="q">”</span></p>
+        <div class="ov-meta-row">
+          <div class="ov-meta">
+            <span class="d">Fri</span>
+            <span class="s">·</span>
+            <span class="t">7:00 PM</span>
+            <span class="s">·</span>
+            <span>Bar Anticipation</span>
+          </div>
+          <button class="ov-cta">Meet Artist →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h1 style="margin-top: 24px;">Full Gig Poster — park this for Local Lineup / shared artist pages</h1>
+
+  <div class="app-shell">
+    <div class="card">
+      <div class="strip">
+        <span><span class="dot"></span>On Stage</span>
+        <span>Fri 04 / 24 / 26</span>
+      </div>
+
+      <div class="photo-frame">
+        <div class="sticker">SPOTLIGHT</div>
+      </div>
+
+      <div class="artist-block">
+        <p class="artist-name">Suit <span class="amp">&amp;</span></p>
+        <p class="artist-name">Mai Tai</p>
+      </div>
+
+      <p class="event-title"><span class="quote">“</span>Yacht the Rocks<span class="quote">”</span></p>
+
+      <div class="meta">
+        <span class="time">7:00 PM</span>
+        <span class="sep">/</span>
+        <span>Bar Anticipation</span>
+      </div>
+
+      <div class="cta-row">
+        <button class="cta">Meet the Artist <span class="arrow">→</span></button>
+      </div>
+    </div>
+  </div>
+
+  <h1 style="margin-top: 24px;">Current — for comparison</h1>
+
+  <div class="reference">
+    <div class="ref-hero">
+      <div class="ref-scrim"></div>
+      <div class="ref-badge">⚡ Today's Spotlight</div>
+      <h2 class="ref-title">SUIT &amp; MAI TAI – "Yacht the Rocks"</h2>
+      <div class="ref-meta">🕐 7:00 PM · Bar Anticipation</div>
+      <div class="ref-cta">Meet the Artist ›</div>
+    </div>
+  </div>
+</div>

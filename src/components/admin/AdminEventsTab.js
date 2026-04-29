@@ -1206,9 +1206,9 @@ export default function AdminEventsTab({
                   </select>
                   {/* Source chain-link was relocated to the details row
                       (next to time) — see above. */}
-                  <button className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent" onClick={(e) => { e.stopPropagation(); openEditor(); }} title="Edit event">
-                    {Icons.edit}
-                  </button>
+                  {/* Edit pencil removed — the entire row is clickable to
+                      open the editor. Duplicate + delete actions remain
+                      because they're destructive / non-default actions. */}
                   <button
                     className="p-1.5 rounded text-brand-text-muted hover:text-brand-accent"
                     onClick={(e) => { e.stopPropagation(); setDuplicateSource(ev); }}

@@ -48,6 +48,7 @@ import { scrapeCrossroads } from '@/lib/scrapers/crossroads';
 import { scrapeEventideGrille } from '@/lib/scrapers/eventideGrille';
 import { scrapeTriumphBrewing } from '@/lib/scrapers/triumphBrewing';
 import { scrapeBlackSwan } from '@/lib/scrapers/blackSwan';
+import { scrapeMottsCreekBar } from '@/lib/scrapers/mottsCreekBar';
 // ── Proxy-routed scrapers (IPRoyal residential proxy) ──
 import { scrapeAlgonquinArts } from '@/lib/scrapers/algonquinArts';
 import { scrapeTimMcLoones } from '@/lib/scrapers/timMcLoones';
@@ -394,6 +395,7 @@ export async function POST(request) {
     'PigAndParrot', 'JoesSurfShack', 'Jamians', 'BeachHaus', 'AsburyLanes',
     'TriumphBrewing', 'ReefAndBarrel', 'SunHarbor', 'BlackSwan', 'RBar',
     'WaterStreet', 'CrabsClaw', 'MarinaGrille', 'BrielleHouse', 'Osprey',
+    'MottsCreekBar',
   ]);
 
   const includeSlow = tier === 'slow' || tier === 'all';
@@ -448,7 +450,7 @@ export async function POST(request) {
   }
 
   // Run all scrapers in parallel
-  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, djais, parkerHouse, osprey, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill, drifthouse, lighthouseTavern, doylesPourHouse] = await Promise.all([
+  const [pigAndParrot, ticketmaster, joesSurfShack, stStephensGreen, mcCanns, beachHaus, martells, barAnticipation, jacksOnTheTracks, marinaGrille, anchorTavern, rBar, brielleHouse, tenthAveBurrito, reefAndBarrel, palmetto, idleHour, asburyLanes, bakesBrewing, riverRock, jenksClub, djais, parkerHouse, osprey, wildAir, asburyParkBrewery, boatyard401, windwardTavern, jamians, theCabin, theVogel, sunHarbor, bumRogers, theColumns, theRoost, dealLakeBar, crabsClaw, waterStreet, crossroads, eventideGrille, triumphBrewing, blackSwan, algonquinArts, timMcLoones, mjsRestaurant, paganosUva, captainsInn, charleysOceanGrill, drifthouse, lighthouseTavern, doylesPourHouse, mottsCreekBar] = await Promise.all([
     shouldRunScraper('PigAndParrot')   ? scrapePigAndParrot()       : skip(),
     shouldRunScraper('Ticketmaster')   ? scrapeTicketmaster()       : skip(),
     shouldRunScraper('JoesSurfShack')  ? scrapeJoesSurfShack()      : skip(),
@@ -502,6 +504,7 @@ export async function POST(request) {
     shouldRunScraper('PaganosUva')     ? scrapePaganosUva()         : skip(),
     shouldRunScraper('CaptainsInn')    ? scrapeCaptainsInn()        : skip(),
     shouldRunScraper('CharleysOcean')  ? scrapeCharleysOceanGrill() : skip(),
+    shouldRunScraper('MottsCreekBar')  ? scrapeMottsCreekBar()      : skip(),
   ]);
 
   const scraperResults = {
@@ -558,6 +561,7 @@ export async function POST(request) {
     PaganosUva: { count: paganosUva.events.length, error: paganosUva.error },
     CaptainsInn: { count: captainsInn.events.length, error: captainsInn.error },
     CharleysOcean: { count: charleysOceanGrill.events.length, error: charleysOceanGrill.error },
+    MottsCreekBar: { count: mottsCreekBar.events.length, error: mottsCreekBar.error },
   };
 
   // ── Venue registry (used by both scraper health writing and admin UI) ─────
@@ -615,6 +619,7 @@ export async function POST(request) {
     PaganosUva: { venue: "Pagano's UVA Ristorante", url: 'https://www.uvaonmain.com/live-music/', source: 'Vision OCR (Gemini)' },
     CaptainsInn: { venue: "Captain's Inn", url: 'https://www.captainsinnnj.com/calendar', source: 'Vision OCR (Gemini)' },
     CharleysOcean: { venue: "Charley's Ocean Bar & Grill", url: 'https://www.charleysoceangrill.com/events.php', source: 'Vision OCR (Gemini)' },
+    MottsCreekBar: { venue: "Mott's Creek Bar", url: 'https://www.mottscreekbar.com', source: 'Squarespace' },
   };
 
   // NOTE: scraper_health writing was moved to AFTER the upsert loops (search
@@ -679,6 +684,7 @@ export async function POST(request) {
     ...paganosUva.events,
     ...captainsInn.events,
     ...charleysOceanGrill.events,
+    ...mottsCreekBar.events,
   ].map(ev => mapEvent(ev, venueMap, defaultTimes));
 
   // Filter out events with no external_id or date, and deduplicate by external_id

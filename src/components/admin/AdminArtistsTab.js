@@ -1620,14 +1620,11 @@ export default function AdminArtistsTab({
                         }
                       </svg>
                     </button>
-                    {/* Edit (pencil) */}
-                    <button
-                      title="Edit artist"
-                      onClick={(e) => { e.stopPropagation(); openArtistEditor(); }}
-                      style={{ color: 'var(--text-muted)', cursor: 'pointer', background: 'none', border: 'none', padding: '6px' }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.001 1.001 0 000-1.42l-2.34-2.34a1.001 1.001 0 00-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z" fill="currentColor" /></svg>
-                    </button>
+                    {/* Edit pencil removed — the entire row is clickable to
+                        open the editor (openArtistEditor on row onClick).
+                        Lock toggle + delete remain because they're
+                        destructive / state-changing actions distinct from
+                        "open the editor." */}
                     {/* Delete (trash) */}
                     <button
                       title="Delete artist"
