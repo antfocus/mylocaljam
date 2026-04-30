@@ -519,137 +519,170 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
               </div>
             )} */}
 
-            {/* Action row — single flex line: [Follow | Venue | Share] ... [Edit icon] */}
+            {/* Action row — Option B v2 (Apr 30, 2026 redesign).
+                Single flex line: [Follow CTA] [Venue text+icon] [Share text+icon] ... [Flag icon]
+                Design intent:
+                  • Follow CTA = the only "real button" — solid brand orange
+                    pill with jet-black label/icon. Pulls all visual weight.
+                  • Venue + Share are demoted to text+icon "links" (no border,
+                    no background). Same dark color in both modes so they feel
+                    incidental rather than competing.
+                  • Flag is a bare 20px lucide wavy banner, right-aligned via
+                    flex spacer. Now actually reads as a flag (the previous
+                    corner-notch path was unrecognizable at small sizes).
+                Hierarchy in 0.2 seconds: orange dominates → text-only utility
+                actions → flag tucked at the edge. The whole row sings the
+                same brand color story as the time stamp + ticket icon at
+                the top of the card. */}
             {!isCanceled && (
-              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                {/* Primary group — left-aligned pill buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  {/* 1. Follow Artist — only when there's a real linked artist
-                      to follow. For template-only events (e.g. Grateful Mondays
-                      with no canonical artist FK) we hide the button entirely
-                      rather than show a button that does nothing on click. */}
-                  {onFollowArtist && hasFollowableArtist && (
-                    <button
-                      onClick={e => { e.stopPropagation(); onFollowArtist(canonicalArtistName); }}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '5px',
-                        fontSize: '11px', fontWeight: 700,
-                        padding: '8px 16px', borderRadius: '999px', cursor: 'pointer',
-                        border: 'none',
-                        background: isArtistFollowed
-                          ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.1)')
-                          : (darkMode ? '#3A3A4A' : '#374151'),
-                        color: isArtistFollowed ? '#E8722A' : (darkMode ? '#F0F0F5' : '#FFFFFF'),
-                        transition: 'all 0.2s ease',
-                        fontFamily: "'DM Sans', sans-serif",
-                      }}
-                    >
-                      {isArtistFollowed ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#E8722A" />
-                        </svg>
-                      ) : (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                          <path d="M12 5v14M5 12h14" />
-                        </svg>
-                      )}
-                      {isArtistFollowed ? 'Following' : 'Follow Artist'}
-                    </button>
-                  )}
-
-                  {/* 2. Venue Website */}
-                  {venueLink && (
-                    <a
-                      href={venueLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={e => {
-                        e.stopPropagation();
-                        posthog.capture?.('venue_link_clicked', {
-                          venue_name: venue,
-                          artist_name: artistName,
-                          event_id: event.id || '',
-                          source_url: venueLink,
-                          link_type: venueSite ? 'official' : 'scraper_source',
-                        });
-                      }}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '5px',
-                        fontSize: '11px', fontWeight: 700,
-                        padding: '8px 14px', borderRadius: '8px',
-                        background: darkMode ? '#2A2A3A' : '#E5E7EB',
-                        color: darkMode ? '#AAAACC' : '#4B5563',
-                        textDecoration: 'none', border: 'none', cursor: 'pointer',
-                        fontFamily: "'DM Sans', sans-serif",
-                      }}
-                    >
-                      🌐 Venue
-                    </a>
-                  )}
-
-                  {/* 3. Share button */}
+              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                {/* 1. Follow Artist — solid orange pill, jet-black text + icon.
+                    Only renders when there's a real linked artist; template-
+                    only events (e.g. Grateful Mondays with no canonical FK)
+                    skip this button entirely rather than show a no-op CTA.
+                    When already followed, switches to a soft orange-tinted
+                    "Following" state with a checkmark — preserves the toggle
+                    behavior the previous design had. */}
+                {onFollowArtist && hasFollowableArtist && (
                   <button
-                    className="share-btn-detail"
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const shareText = `${name} at ${venue}`;
-                      const shareUrl = event.id
-                        ? `https://mylocaljam.com/event/${event.id}`
-                        : (event.ticket_link || event.source || window.location.href);
-                      const copyFallback = async () => {
-                        try {
-                          await navigator.clipboard.writeText(`${shareText} — ${shareUrl}`);
-                          onFlag?.('Link copied to clipboard!');
-                        } catch {
-                          onFlag?.('Could not copy link — try again');
-                        }
-                      };
-                      if (navigator.share) {
-                        try {
-                          await navigator.share({ title: shareText, text: shareText, url: shareUrl });
-                        } catch (err) {
-                          // User cancelled share sheet — not an error; only fallback on real failures
-                          if (err.name !== 'AbortError') await copyFallback();
-                        }
-                      } else {
-                        await copyFallback();
-                      }
-                    }}
+                    onClick={e => { e.stopPropagation(); onFollowArtist(canonicalArtistName); }}
                     style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '5px',
-                      fontSize: '11px', fontWeight: 700,
-                      padding: '8px 14px', borderRadius: '8px',
-                      background: darkMode ? '#2A2A3A' : '#E5E7EB',
-                      color: darkMode ? '#AAAACC' : '#4B5563',
-                      border: 'none', cursor: 'pointer',
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      fontSize: '13px', fontWeight: 700,
+                      padding: '9px 18px', borderRadius: '999px', cursor: 'pointer',
+                      border: isArtistFollowed ? '1.5px solid #E8722A' : 'none',
+                      background: isArtistFollowed
+                        ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.10)')
+                        : '#E8722A',
+                      color: isArtistFollowed ? '#E8722A' : '#000000',
+                      transition: 'all 0.2s ease',
                       fontFamily: "'DM Sans', sans-serif",
-                      transition: 'opacity 0.15s',
+                      flexShrink: 0,
                     }}
                   >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                      <path d="M16 5l-1.42 1.42-1.59-1.59V16h-1.98V4.83L9.42 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z" fill="currentColor" />
-                    </svg>
-                    Share
+                    {isArtistFollowed ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#E8722A" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000000" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    )}
+                    {isArtistFollowed ? 'Following' : 'Follow'}
                   </button>
-                </div>
+                )}
 
-                {/* Secondary action — outlined icon, pushed right */}
+                {/* 2. Venue link — text+icon, no border, no background.
+                    Quiet so Follow keeps all the gravity. PostHog capture
+                    preserved for click-through analytics. */}
+                {venueLink && (
+                  <a
+                    href={venueLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={e => {
+                      e.stopPropagation();
+                      posthog.capture?.('venue_link_clicked', {
+                        venue_name: venue,
+                        artist_name: artistName,
+                        event_id: event.id || '',
+                        source_url: venueLink,
+                        link_type: venueSite ? 'official' : 'scraper_source',
+                      });
+                    }}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      fontSize: '12px', fontWeight: 600,
+                      padding: '8px 8px',
+                      background: 'transparent',
+                      color: darkMode ? '#F0F0F5' : '#1F2937',
+                      textDecoration: 'none', border: 'none', cursor: 'pointer',
+                      fontFamily: "'DM Sans', sans-serif",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    Venue
+                  </a>
+                )}
+
+                {/* 3. Share — same text+icon treatment as Venue.
+                    Native share sheet on supported browsers; clipboard fallback
+                    on desktop. AbortError is NOT an error (user cancelled). */}
+                <button
+                  className="share-btn-detail"
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const shareText = `${name} at ${venue}`;
+                    const shareUrl = event.id
+                      ? `https://mylocaljam.com/event/${event.id}`
+                      : (event.ticket_link || event.source || window.location.href);
+                    const copyFallback = async () => {
+                      try {
+                        await navigator.clipboard.writeText(`${shareText} — ${shareUrl}`);
+                        onFlag?.('Link copied to clipboard!');
+                      } catch {
+                        onFlag?.('Could not copy link — try again');
+                      }
+                    };
+                    if (navigator.share) {
+                      try {
+                        await navigator.share({ title: shareText, text: shareText, url: shareUrl });
+                      } catch (err) {
+                        if (err.name !== 'AbortError') await copyFallback();
+                      }
+                    } else {
+                      await copyFallback();
+                    }
+                  }}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    fontSize: '12px', fontWeight: 600,
+                    padding: '8px 8px',
+                    background: 'transparent',
+                    color: darkMode ? '#F0F0F5' : '#1F2937',
+                    border: 'none', cursor: 'pointer',
+                    fontFamily: "'DM Sans', sans-serif",
+                    transition: 'opacity 0.15s',
+                    flexShrink: 0,
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                    <path d="M16 6l-4-4-4 4" />
+                    <line x1="12" y1="2" x2="12" y2="15" />
+                  </svg>
+                  Share
+                </button>
+
+                {/* Flex spacer pushes the flag to the right edge. */}
+                <span style={{ flex: 1 }} />
+
+                {/* 4. Flag / Report — bare icon, lucide wavy banner so it
+                    actually reads as a flag (the old corner-notch path was
+                    unrecognizable). Same dark color as Venue/Share so the
+                    whole right-side group reads as one weight, with Follow
+                    the only thing pulling visual weight on the left. */}
                 <button
                   className="flag-btn"
                   onClick={e => { e.stopPropagation(); setFlagSheet(true); }}
                   title="Report / Suggest Edit"
+                  aria-label="Report"
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    width: '32px', height: '32px', borderRadius: '999px',
-                    background: 'none', cursor: 'pointer',
-                    border: `1.5px solid ${darkMode ? '#3A3A4A' : '#D1D5DB'}`,
-                    color: darkMode ? '#7878A0' : '#9CA3AF',
-                    transition: 'border-color 0.15s, color 0.15s',
+                    padding: '8px',
+                    background: 'transparent',
+                    border: 'none', cursor: 'pointer',
+                    color: darkMode ? '#F0F0F5' : '#1F2937',
+                    transition: 'color 0.15s',
                     flexShrink: 0,
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 15V4h16v11H4z" style={{ display: 'none' }} />
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
                     <line x1="4" y1="22" x2="4" y2="15" />
                   </svg>
