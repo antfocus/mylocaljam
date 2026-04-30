@@ -21,7 +21,7 @@
  *   - venue_type as a true enum dropdown with canonical list
  */
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 
 // Empty form template — used both for "+ New Venue" and as the reset state
 // when the modal closes. Mirrors the columns we expose for editing; any
@@ -368,10 +368,44 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
   const [imageSearching, setImageSearching] = useState(false);
   const [imageCandidates, setImageCandidates] = useState([]);
   // Lightbox state — when non-null, an overlay shows the candidate at
-  // full size with Use / Cancel buttons. Lets the admin actually
-  // evaluate the photo before committing rather than guessing from a
-  // ~80px thumbnail.
-  const [lightboxCandidate, setLightboxCandidate] = useState(null);
+  // full size with Use / Cancel buttons. Stored as an INDEX into
+  // imageCandidates (not the candidate object itself) so prev/next
+  // navigation can wrap and the position indicator can show "X of N"
+  // without recomputing.
+  const [lightboxIndex, setLightboxIndex] = useState(null);
+  const lightboxCandidate = lightboxIndex !== null ? imageCandidates[lightboxIndex] : null;
+
+  // Navigate forward / backward through the candidate gallery while
+  // the lightbox is open. Wraps at the edges so left-from-zero lands
+  // on the last image (no dead-ends).
+  const lightboxPrev = useCallback(() => {
+    setLightboxIndex(prev => {
+      if (prev === null || imageCandidates.length === 0) return prev;
+      return prev === 0 ? imageCandidates.length - 1 : prev - 1;
+    });
+  }, [imageCandidates.length]);
+
+  const lightboxNext = useCallback(() => {
+    setLightboxIndex(prev => {
+      if (prev === null || imageCandidates.length === 0) return prev;
+      return prev === imageCandidates.length - 1 ? 0 : prev + 1;
+    });
+  }, [imageCandidates.length]);
+
+  // Keyboard shortcuts while the lightbox is open: Left/Right arrows
+  // navigate, Esc closes. Listener attaches only when the lightbox is
+  // actually visible so we don't intercept arrow keys elsewhere in the
+  // form (e.g. a number-input increment via keyboard).
+  useEffect(() => {
+    if (lightboxIndex === null) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); setLightboxIndex(null); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); lightboxPrev(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); lightboxNext(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxIndex, lightboxPrev, lightboxNext]);
   // Ergonomic field setter — keeps the JSX below tidy.
   const set = (key, val) => setVenue(prev => ({ ...prev, [key]: val }));
 
@@ -401,7 +435,7 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
   // candidates before deciding.
   const handleApplyCandidate = (url) => {
     set('photo_url', url);
-    setLightboxCandidate(null);
+    setLightboxIndex(null);
   };
 
   // Geocode handler — calls the server-side Nominatim proxy with the
@@ -660,13 +694,13 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
                 gap: '6px',
                 marginTop: '8px',
               }}>
-                {imageCandidates.map((c) => {
+                {imageCandidates.map((c, i) => {
                   const isActive = c.url === venue.photo_url;
                   return (
                     <button
                       key={c.url}
                       type="button"
-                      onClick={() => setLightboxCandidate(c)}
+                      onClick={() => setLightboxIndex(i)}
                       title={`${c.sourceDomain || ''}${c.title ? ' — ' + c.title : ''}`}
                       style={{
                         position: 'relative',
@@ -822,7 +856,7 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
           z-index 300 sits above the parent edit modal's z-index 200. */}
       {lightboxCandidate && (
         <div
-          onClick={(e) => { e.stopPropagation(); setLightboxCandidate(null); }}
+          onClick={(e) => { e.stopPropagation(); setLightboxIndex(null); }}
           style={{
             position: 'fixed', inset: 0, zIndex: 300,
             background: 'rgba(0,0,0,0.75)',
@@ -855,21 +889,39 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
                   </div>
                 )}
               </div>
-              {(lightboxCandidate.width || lightboxCandidate.height) && (
-                <span style={{
-                  fontSize: '10px', fontWeight: 600,
-                  padding: '3px 8px', borderRadius: '4px',
-                  background: 'var(--bg-elevated)', color: 'var(--text-muted)',
-                  flexShrink: 0,
-                }}>
-                  {lightboxCandidate.width || '?'} × {lightboxCandidate.height || '?'}
-                </span>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                {imageCandidates.length > 1 && (
+                  <span style={{
+                    fontSize: '10px', fontWeight: 700,
+                    padding: '3px 8px', borderRadius: '4px',
+                    background: 'rgba(232,114,42,0.12)', color: '#E8722A',
+                    fontFamily: "'DM Sans', sans-serif",
+                    flexShrink: 0,
+                  }}>
+                    {lightboxIndex + 1} of {imageCandidates.length}
+                  </span>
+                )}
+                {(lightboxCandidate.width || lightboxCandidate.height) && (
+                  <span style={{
+                    fontSize: '10px', fontWeight: 600,
+                    padding: '3px 8px', borderRadius: '4px',
+                    background: 'var(--bg-elevated)', color: 'var(--text-muted)',
+                    flexShrink: 0,
+                  }}>
+                    {lightboxCandidate.width || '?'} × {lightboxCandidate.height || '?'}
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Big preview — full URL (not thumbnail) so admin sees real
-                quality. Capped at 80vh tall via maxHeight on the wrapper. */}
+                quality. Wrapped in `position: relative` so the prev/next
+                chevrons can absolute-position over the image. The chevrons
+                only render when there are 2+ candidates (single-candidate
+                lightboxes don't need navigation). Keyboard arrows + Esc
+                also work via the global keydown listener above. */}
             <div style={{
+              position: 'relative',
               borderRadius: '8px', overflow: 'hidden',
               background: 'var(--bg-elevated)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -877,6 +929,7 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
             }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
+                key={lightboxCandidate.url}
                 src={lightboxCandidate.url}
                 alt=""
                 style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}
@@ -884,6 +937,60 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
                   e.currentTarget.style.opacity = '0.2';
                 }}
               />
+              {imageCandidates.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); lightboxPrev(); }}
+                    aria-label="Previous image"
+                    style={{
+                      position: 'absolute',
+                      left: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: '40px', height: '40px',
+                      borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.55)',
+                      color: '#fff',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'background 0.15s ease',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.75)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.55)'; }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); lightboxNext(); }}
+                    aria-label="Next image"
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      width: '40px', height: '40px',
+                      borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.55)',
+                      color: '#fff',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'background 0.15s ease',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.75)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.55)'; }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                </>
+              )}
             </div>
 
             {/* Comparison row — current photo (small) on left, the
@@ -913,7 +1020,7 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <button
                 type="button"
-                onClick={() => setLightboxCandidate(null)}
+                onClick={() => setLightboxIndex(null)}
                 style={{
                   padding: '8px 14px', borderRadius: '8px',
                   background: 'transparent', color: 'var(--text-muted)',
