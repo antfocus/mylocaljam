@@ -519,174 +519,241 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
               </div>
             )} */}
 
-            {/* Action row — Option B v2 (Apr 30, 2026 redesign).
-                Single flex line: [Follow CTA] [Venue text+icon] [Share text+icon] ... [Flag icon]
+            {/* Action row — Rebalanced layout (Apr 30, 2026 v3).
+                Single flex line: [Identity pill] [flex spacer] [icon] [icon] [icon]
                 Design intent:
-                  • Follow CTA = the only "real button" — solid brand orange
-                    pill with jet-black label/icon. Pulls all visual weight.
-                  • Venue + Share are demoted to text+icon "links" (no border,
-                    no background). Same dark color in both modes so they feel
-                    incidental rather than competing.
-                  • Flag is a bare 20px lucide wavy banner, right-aligned via
-                    flex spacer. Now actually reads as a flag (the previous
-                    corner-notch path was unrecognizable at small sizes).
-                Hierarchy in 0.2 seconds: orange dominates → text-only utility
-                actions → flag tucked at the edge. The whole row sings the
-                same brand color story as the time stamp + ticket icon at
-                the top of the card. */}
+                  • LEFT: identity pill — exactly one of three states:
+                      - Follow      (solid orange, jet-black text)  — artist not followed
+                      - Following   (outlined orange pill)           — artist followed
+                      - Event       (outlined orange pill, calendar) — no followable artist
+                    All three pills share the same shape/size so the row's
+                    composition is identical across artist and event-only cards.
+                    The Event variant is non-interactive (a label, not a CTA);
+                    Follow / Following toggle the user's follow state.
+                  • RIGHT: a tight cluster of three 18px icon-only utilities
+                    (Venue map pin, Share, Report flag) with gap 14px. Equal
+                    visual weight — they form a balanced trio, no orphan flag.
+                  • A flex spacer in the middle pushes the cluster to the
+                    right edge, so the row reads as left-vs-right balance:
+                    one bold pill on the left, one quiet utility cluster on
+                    the right.
+                Each icon button gets title + aria-label since the text
+                labels are gone. */}
             {!isCanceled && (
-              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                {/* 1. Follow Artist — solid orange pill, jet-black text + icon.
-                    Only renders when there's a real linked artist; template-
-                    only events (e.g. Grateful Mondays with no canonical FK)
-                    skip this button entirely rather than show a no-op CTA.
-                    When already followed, switches to a soft orange-tinted
-                    "Following" state with a checkmark — preserves the toggle
-                    behavior the previous design had. */}
+              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                {/* 1a. Follow / Following — interactive toggle, only when
+                    there's a real canonical artist linked. Solid orange when
+                    not followed (jet-black text/icon for WCAG AA contrast),
+                    soft orange-tinted outlined pill when followed. */}
                 {onFollowArtist && hasFollowableArtist && (
                   <button
                     onClick={e => { e.stopPropagation(); onFollowArtist(canonicalArtistName); }}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
                       fontSize: '13px', fontWeight: 700,
-                      padding: '9px 18px', borderRadius: '999px', cursor: 'pointer',
-                      border: isArtistFollowed ? '1.5px solid #E8722A' : 'none',
-                      background: isArtistFollowed
-                        ? (darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.10)')
-                        : '#E8722A',
-                      color: isArtistFollowed ? '#E8722A' : '#000000',
+                      // Variant A — tinted outline pill. Same shape in both
+                      // unfollowed and followed states (8% orange tint bg,
+                      // full-opacity orange border, orange text); only the
+                      // leading icon differentiates (plus → checkmark).
+                      // Quieter than the solid orange CTA so the pill no
+                      // longer competes with the card's content for attention.
+                      padding: '6px 14px', borderRadius: '999px', cursor: 'pointer',
+                      border: '1.5px solid #E8722A',
+                      background: darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.08)',
+                      color: '#E8722A',
                       transition: 'all 0.2s ease',
                       fontFamily: "'DM Sans', sans-serif",
                       flexShrink: 0,
                     }}
                   >
                     {isArtistFollowed ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                         <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#E8722A" />
                       </svg>
                     ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#000000" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                         <path d="M12 5v14M5 12h14" />
                       </svg>
                     )}
-                    {isArtistFollowed ? 'Following' : 'Follow'}
+                    {isArtistFollowed ? 'Following' : 'Follow Artist'}
                   </button>
                 )}
 
-                {/* 2. Venue link — text+icon, no border, no background.
-                    Quiet so Follow keeps all the gravity. PostHog capture
-                    preserved for click-through analytics. */}
-                {venueLink && (
-                  <a
-                    href={venueLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                {/* 1b. Event badge — non-interactive label that takes the
+                    Follow pill's slot when there's no canonical artist to
+                    follow (template-only events, fake-artist rows demoted
+                    to kind='event', etc.). Same outlined-orange shape as
+                    Following so the row composition is identical to artist
+                    cards; the only differences are the calendar icon and
+                    cursor: default. Renders as a <span> rather than <button>
+                    to make the non-interactive intent unambiguous to assistive
+                    tech. */}
+                {(!onFollowArtist || !hasFollowableArtist) && (
+                  <button
                     onClick={e => {
                       e.stopPropagation();
-                      posthog.capture?.('venue_link_clicked', {
-                        venue_name: venue,
-                        artist_name: artistName,
-                        event_id: event.id || '',
-                        source_url: venueLink,
-                        link_type: venueSite ? 'official' : 'scraper_source',
-                      });
+                      try { navigator?.vibrate?.(10); } catch {}
+                      const wasSaved = isFavorited;
+                      onToggleFavorite?.(event.id);
+                      // Mirror the ticket stub's follow-popover trigger
+                      // when transitioning into saved state.
+                      if (!wasSaved && event?.artist_name) {
+                        setShowFollowPopover(true);
+                        setPopoverFading(false);
+                      }
                     }}
+                    aria-pressed={isFavorited}
+                    aria-label={isFavorited ? 'Following this event' : 'Follow this event'}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
-                      fontSize: '12px', fontWeight: 600,
-                      padding: '8px 8px',
-                      background: 'transparent',
-                      color: darkMode ? '#F0F0F5' : '#1F2937',
-                      textDecoration: 'none', border: 'none', cursor: 'pointer',
+                      fontSize: '13px', fontWeight: 700,
+                      // Variant A — same tinted outline pill as Follow Artist.
+                      // Symmetric across artist and event-only cards: identical
+                      // shape and tint, only the icon differentiates state
+                      // (plus → checkmark). Wired to the same onToggleFavorite
+                      // handler as the ticket-stub icon at the top of the card
+                      // so the two controls stay in sync.
+                      padding: '6px 14px', borderRadius: '999px', cursor: 'pointer',
+                      border: '1.5px solid #E8722A',
+                      background: darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.08)',
+                      color: '#E8722A',
+                      transition: 'all 0.2s ease',
                       fontFamily: "'DM Sans', sans-serif",
                       flexShrink: 0,
                     }}
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                      <circle cx="12" cy="10" r="3" />
-                    </svg>
-                    Venue
-                  </a>
+                    {isFavorited ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#E8722A" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    )}
+                    {isFavorited ? 'Following' : 'Follow Event'}
+                  </button>
                 )}
 
-                {/* 3. Share — same text+icon treatment as Venue.
-                    Native share sheet on supported browsers; clipboard fallback
-                    on desktop. AbortError is NOT an error (user cancelled). */}
-                <button
-                  className="share-btn-detail"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    const shareText = `${name} at ${venue}`;
-                    const shareUrl = event.id
-                      ? `https://mylocaljam.com/event/${event.id}`
-                      : (event.ticket_link || event.source || window.location.href);
-                    const copyFallback = async () => {
-                      try {
-                        await navigator.clipboard.writeText(`${shareText} — ${shareUrl}`);
-                        onFlag?.('Link copied to clipboard!');
-                      } catch {
-                        onFlag?.('Could not copy link — try again');
-                      }
-                    };
-                    if (navigator.share) {
-                      try {
-                        await navigator.share({ title: shareText, text: shareText, url: shareUrl });
-                      } catch (err) {
-                        if (err.name !== 'AbortError') await copyFallback();
-                      }
-                    } else {
-                      await copyFallback();
-                    }
-                  }}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    fontSize: '12px', fontWeight: 600,
-                    padding: '8px 8px',
-                    background: 'transparent',
-                    color: darkMode ? '#F0F0F5' : '#1F2937',
-                    border: 'none', cursor: 'pointer',
-                    fontFamily: "'DM Sans', sans-serif",
-                    transition: 'opacity 0.15s',
-                    flexShrink: 0,
-                  }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                    <path d="M16 6l-4-4-4 4" />
-                    <line x1="12" y1="2" x2="12" y2="15" />
-                  </svg>
-                  Share
-                </button>
-
-                {/* Flex spacer pushes the flag to the right edge. */}
+                {/* Flex spacer pushes the icon cluster to the right edge. */}
                 <span style={{ flex: 1 }} />
 
-                {/* 4. Flag / Report — bare icon, lucide wavy banner so it
-                    actually reads as a flag (the old corner-notch path was
-                    unrecognizable). Same dark color as Venue/Share so the
-                    whole right-side group reads as one weight, with Follow
-                    the only thing pulling visual weight on the left. */}
-                <button
-                  className="flag-btn"
-                  onClick={e => { e.stopPropagation(); setFlagSheet(true); }}
-                  title="Report / Suggest Edit"
-                  aria-label="Report"
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    padding: '8px',
-                    background: 'transparent',
-                    border: 'none', cursor: 'pointer',
-                    color: darkMode ? '#F0F0F5' : '#1F2937',
-                    transition: 'color 0.15s',
-                    flexShrink: 0,
-                  }}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                    <line x1="4" y1="22" x2="4" y2="15" />
-                  </svg>
-                </button>
+                {/* Right-aligned icon cluster — Venue, Share, Report.
+                    All three icons are 18px with 8px hit-area padding and
+                    14px gap between them, so they read as a single balanced
+                    utility group. No text labels; title + aria-label carry
+                    the meaning. Same color as the card body text in both
+                    modes so the cluster sits as a quiet counterweight to
+                    the loud orange identity pill on the left. */}
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
+                  {/* 2. Venue link — opens venue site or scraper source. */}
+                  {venueLink && (
+                    <a
+                      href={venueLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Visit ${venue}`}
+                      aria-label={`Visit ${venue}`}
+                      onClick={e => {
+                        e.stopPropagation();
+                        posthog.capture?.('venue_link_clicked', {
+                          venue_name: venue,
+                          artist_name: artistName,
+                          event_id: event.id || '',
+                          source_url: venueLink,
+                          link_type: venueSite ? 'official' : 'scraper_source',
+                        });
+                      }}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        padding: '8px',
+                        background: 'transparent',
+                        color: darkMode ? '#F0F0F5' : '#1F2937',
+                        textDecoration: 'none', border: 'none', cursor: 'pointer',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                        <circle cx="12" cy="10" r="3" />
+                      </svg>
+                    </a>
+                  )}
+
+                  {/* 3. Share — native share sheet on supported browsers;
+                      clipboard fallback on desktop. AbortError is NOT an
+                      error (user cancelled the system share dialog). */}
+                  <button
+                    className="share-btn-detail"
+                    title="Share event"
+                    aria-label="Share event"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const shareText = `${name} at ${venue}`;
+                      const shareUrl = event.id
+                        ? `https://mylocaljam.com/event/${event.id}`
+                        : (event.ticket_link || event.source || window.location.href);
+                      const copyFallback = async () => {
+                        try {
+                          await navigator.clipboard.writeText(`${shareText} — ${shareUrl}`);
+                          onFlag?.('Link copied to clipboard!');
+                        } catch {
+                          onFlag?.('Could not copy link — try again');
+                        }
+                      };
+                      if (navigator.share) {
+                        try {
+                          await navigator.share({ title: shareText, text: shareText, url: shareUrl });
+                        } catch (err) {
+                          if (err.name !== 'AbortError') await copyFallback();
+                        }
+                      } else {
+                        await copyFallback();
+                      }
+                    }}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '8px',
+                      background: 'transparent',
+                      color: darkMode ? '#F0F0F5' : '#1F2937',
+                      border: 'none', cursor: 'pointer',
+                      transition: 'opacity 0.15s',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                      <path d="M16 6l-4-4-4 4" />
+                      <line x1="12" y1="2" x2="12" y2="15" />
+                    </svg>
+                  </button>
+
+                  {/* 4. Report flag — opens the flag/suggest-edit sheet.
+                      Lucide wavy banner so it reads as a flag (the old
+                      corner-notch path was unrecognizable at small sizes).
+                      Same color as Venue/Share — they're peers in the
+                      utility cluster, no longer an orphan at the far edge. */}
+                  <button
+                    className="flag-btn"
+                    onClick={e => { e.stopPropagation(); setFlagSheet(true); }}
+                    title="Report / Suggest edit"
+                    aria-label="Report or suggest edit"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '8px',
+                      background: 'transparent',
+                      border: 'none', cursor: 'pointer',
+                      color: darkMode ? '#F0F0F5' : '#1F2937',
+                      transition: 'color 0.15s',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                      <line x1="4" y1="22" x2="4" y2="15" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             )}
           </div>
