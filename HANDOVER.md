@@ -5011,3 +5011,154 @@ Focused UX polish session on the event card action row. Iterated through several
 - The `onToggleFavorite` wiring on Follow Event means saved-state propagates between the bottom pill and the top ticket stub on a single click. If that ever feels redundant (two controls for the same action visible at once), the cleaner move is to hide the ticket stub when `!hasFollowableArtist` — but only after confirming the bottom pill is discoverable enough on its own.
 - The "Event" badge is gone — every venue-only card now has a primary CTA instead of a passive label. Watch for analytics on Follow Event clicks; if they're materially below Follow Artist clicks the pattern's working as intended (artists are the higher-intent target), if they're 0 we may be hiding the ticket stub redundantly.
 
+
+---
+
+## Apr 30 session — continued (admin venues CRUD, pill iteration to neutral, town clusters, image search)
+
+Long second half of Apr 30. Major shipped work in three workstreams: (a) the action-row pill went through three more iterations and landed on a Soft Fill to Ghost neutral-palette treatment that's the inverse of the morning's variant A; (b) the entire Admin Venues management tab (PARKED #1) shipped end-to-end with sub-tabs, full CRUD, geocode button, and image search; (c) infrastructure — town clusters, ZIP-aware Wall Township documentation, global italic placeholder, AGENT_ARCHITECTURE.md.
+
+### 1. Action row pill — final design (Soft Fill to Ghost, neutral palette)
+
+Iterated three times after the morning's variant A landed. The chain:
+
+1. **Variant A (morning)** — orange tinted outline, same shape both states. Tony: "the orange is too distracting."
+2. **Direction A (afternoon)** — outlined neutral pill (gray border, transparent bg). Briefly added a SAVE/SAVED caption under the ticket stub to disambiguate the dual-control on artist cards, then dropped it ("remove Save. i dont like it.").
+3. **Soft Fill to Ghost (zinc palette)** — Gemini's recommendation that the visual hierarchy was BACKWARD. Once followed, the action is complete and the button should recede, not advance. Unfollowed gets the soft solid fill (presence, invites click); followed becomes a ghost outline (recedes). This was the conceptual breakthrough — the prior 4 iterations had all been fighting the inverse hierarchy.
+4. **Soft Fill to Ghost (neutral palette + WCAG fix)** — initial zinc-400/zinc-600 followed-state colors failed AA contrast (~3:1). Bumped to zinc-500 light / zinc-400 dark (clean AA). Then swapped zinc → Tailwind `neutral` for true achromatic gray (zinc has a tiny cool blue undertone). Bumped unfollowed bg one shade darker (#E5E5E5) so it doesn't merge with white cards. Added hover state via React `onMouseEnter`/`onMouseLeave` flags (no CSS :hover available with inline styles).
+
+**Final values:**
+
+| State | Light bg | Light text | Dark bg | Dark text | Border |
+|---|---|---|---|---|---|
+| Unfollowed (`Follow Artist`/`Save Event`) | `#E5E5E5` | `#171717` | `#262626` | `#F5F5F5` | none |
+| Unfollowed hover | `#D4D4D4` | `#171717` | `#404040` | `#F5F5F5` | none |
+| Followed (`Following Artist`/`Saved Event`) | transparent | `#737373` | transparent | `#A3A3A3` | `#D4D4D4` light / `#404040` dark |
+
+Verb-consistent labels: `Follow Artist` ↔ `Following Artist` for the artist subscription pill, `Save Event` ↔ `Saved Event` for the bookmark pill on event-only cards. Bookmark semantics fit events; `Follow` stays reserved for artist subscription.
+
+The hierarchy now reads correctly: active CTA has weight, completed action recedes. Both pills share identical visual language across artist and event-only cards. Brand orange stays exclusively on the timestamp, divider, ticket stub, and `Read More` — earning attention where it belongs without competing with the action row.
+
+### 2. Admin Venues management tab (PARKED #1 — closed)
+
+End-to-end CRUD for the `venues` table. Same skill doc PARKED #1 has been pinned to since Apr 25 launch-prep. Shipped as a parent `AdminVenuesTab` with two sub-tabs (Directory + Scrapers) sharing the existing `useAdminVenues` hook.
+
+**Sub-tab structure.** The previous `AdminVenuesTab.js` was actually the scraper-health view despite the name. Relocated to `AdminVenuesScrapers.js` (zero behavior change, pure rename). New `AdminVenuesDirectory.js` for the CRUD. Parent wrapper handles the sub-tab toggle with sessionStorage persistence + URL hash deep-linking (`#directory`, `#scrapers`). Pattern mirrors `AdminEnrichmentTab` Backfill/Triage.
+
+**Directory features.**
+- List view: search by name/city/address, sort by name/city/scraper-fed-first, "+ New Venue" button, indicator chips per row (📍 has-coords, 📷 has-photo, scraper-fed badge).
+- Edit modal: name (required, unique-checked), city, slug (auto-suggested from name on create), address, lat/lng, website, photo_url, venue_type (datalist of common values), default_start_time, tags (comma-separated → array).
+- **Geocode button** — calls Nominatim via server-side proxy (`/api/admin/geocode`), fills lat/lng on success rounded to 6 decimals. 8s timeout, US country bias.
+- **Find images button** — calls Serper Images via server-side proxy (`/api/admin/venues/image-search`). Filters out unstable CDN hosts (FB, IG, Google thumbnail cache, Bing, DuckDuckGo, Pinterest) — those URLs reliably break within weeks. Returns up to 6 candidates with thumbnail, source domain, dimensions. Deny-list on the server so unstable URLs never reach the UI.
+- **Lightbox preview** — clicking a candidate opens a centered overlay (z-index 300, sits above edit modal) showing the candidate at full size with a small "Currently:" thumbnail of the existing photo for comparison. Use this image / Cancel buttons. Backdrop click stopPropagated so it doesn't dismiss the parent modal. Source domain caption visible on every thumbnail in the grid.
+- **Lightbox prev/next navigation** — chevron buttons absolute-positioned over the preview (40px round, semi-transparent, only when 2+ candidates). Keyboard shortcuts: Left/Right arrow keys cycle, Esc closes. Position chip in header reads "X of N" with orange accent. Both directions wrap at edges.
+- **Delete with FK pre-check** — server checks events / event_templates / event_series before allowing delete; returns structured 409 with counts so admin sees "Cannot delete — referenced by 12 events. Reassign or delete those first."
+
+**API routes.**
+- `/api/admin/venues` (extended) — POST (full payload, supports legacy quick-create from queue triage), PUT (whitelist-sanitized + cross-row name uniqueness check), DELETE (FK pre-check).
+- `/api/admin/geocode` (new) — POST `{address}`, returns `{latitude, longitude, display_name}`. Nominatim-backed. 8s timeout. US country bias.
+- `/api/admin/venues/image-search` (new) — POST `{name, city}`, returns `{candidates, query, rejectedUnstable}`. Serper-backed. Filters by `min-width` 300px and unstable-host deny-list.
+
+**Hook surface.** `useAdminVenues` extended with `fetchVenuesFull`, `createVenue`, `updateVenue`, `deleteVenue`, `geocodeAddress`, `searchVenueImages`. Existing minimal `fetchVenues` preserved for any caller that wants the lean payload (admin/page.js's `fetchAll` switched to `fetchVenuesFull`).
+
+### 3. Address QC pass (5 fixes shipped, 25 venues identified for follow-up)
+
+Ran a comprehensive QC against all 72 venues. Findings tiered by severity:
+
+- **Tier 1 (8 venues)** — completely missing address. Manual research needed. Tony to handle via Directory tab when he has time.
+- **Tier 2 (3 venues)** — suspect/wrong data. "Asbury Park, New Jersey" name needs delete-or-rename decision; R Bar coords were stale Belmar latitudes (40.17 instead of 40.22); The Saint longitude was truncated to `-74` exactly (whole degree).
+- **Tier 3 (3 venues)** — incomplete address (town/state only, no street). The Crab's Claw Inn, The Roost, Water Street Bar & Grill.
+- **Tier 4 (3 venues)** — malformed addresses (missing commas). 10th Ave Burrito, ParkStage, Reef & Barrel.
+- **Tier 5 (14 venues)** — missing coordinates, geocodable from existing address. Click-by-click in the Geocode button.
+- **Tier 6 (5 venues)** — intentional `venues.city` overrides for Wall Township / Lake Como venues that operate as Belmar. Confirmed correct, no fix needed.
+
+**SQL fixes shipped (Tier 4 + R Bar/Saint coord nullification):** added missing commas to the 3 malformed addresses; nulled out R Bar and The Saint coords so the Geocode button can refill them with accurate Nominatim values. Five rows fixed in one execute_sql.
+
+### 4. Town clusters and Wall Township postal geography
+
+New `src/lib/townAliases.js` — defines Jersey Shore "social" clusters that group neighboring municipalities locals treat as one area. Four clusters: Belmar (+ Lake Como, Wall Township), Asbury Park (+ Bradley Beach), Manasquan (+ Sea Girt, Brielle, Wall Township), Spring Lake (+ Spring Lake Heights, Wall Township).
+
+**Wall Township is intentionally a member of three clusters** — it has no ZIP code of its own and shares ZIPs with neighboring boroughs. This isn't arbitrary social mapping; it's literal postal geography. The file's docstring includes the full ZIP→post-office reference table from Tony so admins can deterministically choose the correct `venues.city` for new Wall Township venues by reading the ZIP code in the address (07719 → Belmar, 08736 → Manasquan, 07762 → Spring Lake / Spring Lake Heights, etc.).
+
+`getTownCluster(name)` is the helper. Many-to-many aware — searching `Wall Township` returns the union of all three clusters (broad net for locals searching directly), searching `Belmar` returns just the Belmar cluster, searching `Lake Como` also returns the Belmar cluster (cluster-member reverse lookup).
+
+`src/app/page.js` townOnly filter updated to use cluster expansion instead of literal `venue_city === selectedTown` equality. Existing manual `venues.city` overrides (Bakes Brewing, Bar Anticipation, etc. set to `Belmar` despite Wall/Lake Como addresses) continue to work — the alias map is additive.
+
+**Sanity-checked against live venue data:** Belmar cluster matches 10 venues, Asbury Park 15, Manasquan 8, Spring Lake 2. Numbers align with mental model.
+
+### 5. Global italic placeholder
+
+One-rule fix in `src/app/globals.css`: `input::placeholder, textarea::placeholder, select::placeholder { font-style: italic; opacity: 0.55; }`. Applies to every form across the app — Venue Directory, Event Edit Modal, Artist Edit Modal, queue triage, search inputs. Color is inherited (no override) so it adapts to whatever surface the input is on; opacity + italic combination makes the distinction unmistakable. Existing per-component overrides like `.filter-search-input::placeholder` continue to take precedence by specificity.
+
+### 6. AGENT_ARCHITECTURE.md (new doc)
+
+Captured the planned hybrid local-plus-Claude autonomous agent setup as `AGENT_ARCHITECTURE.md`. Three agents (Maintenance, QC, Marketing), Mac mini host with Ollama + Qwen2.5-Coder 32B and 14B, Claude Sonnet via Max subscription for marketing (no incremental cost), Supabase as shared state, Claude Agent SDK as orchestration. Phased rollout: Phase 1 = Maintenance agent against PARKED #18 (Tier 1 weekend artist enrichment), Phase 2 = QC nightly report, Phase 3 = Marketing draft queue (human-approved before posting), Phase 4 = cross-agent feedback loops. Doc cross-referenced from DOCS_INDEX.md as Tier 5 (active plan) — promotes to Tier 2 (system reference) once running stably.
+
+### Files Changed (Apr 30 continued)
+
+| File | Change |
+|------|--------|
+| `src/components/EventCardV2.js` | Pill states migrated through 3 designs; final = Soft Fill to Ghost on Tailwind neutral palette with hover handlers |
+| `src/components/admin/AdminVenuesTab.js` | Rewrote as parent wrapper with Directory/Scrapers sub-tabs + sessionStorage + URL hash persistence |
+| `src/components/admin/AdminVenuesScrapers.js` | NEW — relocation of prior scraper-health view |
+| `src/components/admin/AdminVenuesDirectory.js` | NEW — full CRUD + geocode button + image search + lightbox + nav |
+| `src/hooks/useAdminVenues.js` | Added fetchVenuesFull, createVenue, updateVenue, deleteVenue, geocodeAddress, searchVenueImages |
+| `src/app/api/admin/venues/route.js` | POST expanded for full payload, PUT whitelist-sanitized + name uniqueness, DELETE with FK pre-check |
+| `src/app/api/admin/geocode/route.js` | NEW — Nominatim proxy |
+| `src/app/api/admin/venues/image-search/route.js` | NEW — Serper Images proxy with unstable-host deny-list |
+| `src/app/admin/page.js` | Pass new hook methods to AdminVenuesTab; fetchVenues call sites switched to fetchVenuesFull |
+| `src/lib/townAliases.js` | NEW — town cluster map + ZIP→post-office reference table |
+| `src/app/page.js` | townOnly filter expanded to use getTownCluster instead of literal equality |
+| `src/app/globals.css` | Global italic + 55% opacity placeholder rule |
+| `AGENT_ARCHITECTURE.md` | NEW — hybrid agent architecture plan |
+| `DOCS_INDEX.md` | Added AGENT_ARCHITECTURE.md entry under Tier 5 |
+| Supabase `venues` rows | 5 SQL fixes: 3 malformed addresses + R Bar/Saint coord nullification |
+
+### Tasks closed this continuation
+
+- #28 Update HANDOVER.md with action-row redesign session
+- #29 Mock up labeled stub + neutral pill direction
+- #30 Apply Direction A — outlined neutral pill + labeled stub
+- #31 Draft AGENT_ARCHITECTURE.md
+- #32 Verify current venues table schema
+- #34 Rename AdminVenuesTab → AdminScrapersHealthTab (actually became sub-tab restructure)
+- #35 Build new AdminVenuesTab CRUD component
+- #36 Extend useAdminVenues hook for CRUD
+- #37 Add venues CRUD API endpoints
+- #38 Wire Venues tab into admin nav
+- #39 End-to-end verify venues CRUD
+- #40 Apply Soft Fill to Ghost pills with WCAG contrast fix
+- #41 QC check all venue addresses
+- #42 SQL fix Tier 4 + R Bar + The Saint
+- #43 Build Geocode button in Directory edit modal
+- #44 Switch follow pills to neutral palette + hover states
+- #45 Build town alias clusters
+- #46 Build venue image search button
+- #47 Filter unstable hosts + add lightbox preview
+- #48 Apply global italic placeholder style
+- #49 Add navigation to image lightbox
+- **PARKED #1 closed.** Admin Venues management tab shipped end-to-end.
+
+### Tasks still open
+
+- **#15** Draft VENUE_MANAGEMENT.md skill doc (in_progress) — should incorporate the town-cluster + ZIP-aware Wall Township pattern when next picked up.
+- **#17** Migrate Agent_SOP content + delete file
+- **#19** Housekeeping — fold transient docs into HANDOVER
+- **#24** Build Mott's Creek Bar scraper (in_progress — Apr 29 launched 4 events; verify pattern is stable on a second cron run)
+- Carryover: Tier 1 weekend artist enrichment ~30 remaining (PARKED #18), 25 still-unlinked weekend events (PARKED #19), Bakes Brewing dedupe (PARKED #16), EVENT-kind orphan delete (PARKED #9), compound artist name pattern (PARKED #17), auto-create artist guardrail (PARKED #15), image curation Phase 1 (PARKED #2 — launch-blocking).
+
+### Manual follow-up Tony is handling solo
+
+- **Tier 1 venues** (8 with no address) — research one by one via the Directory tab.
+- **Tier 2 venues** (3 suspect rows) — investigate "Asbury Park, New Jersey" (delete-or-rename), Geocode R Bar + The Saint via the new button.
+- **Tier 3 venues** (3 incomplete) — fill in street addresses for Crab's Claw Inn, The Roost, Water Street.
+- **Tier 5 venues** (14 missing coords) — Geocode button click pass.
+- **Top 15 high-volume venues** — manual photo research via the new Find Images button. Stone Pony / Wonder Bar / Bar A / Tim McLoone's etc. cover ~70% of event flow.
+
+### Notes for next session
+
+- Don't preemptively iterate the pill again. The Soft Fill to Ghost pattern shipped; let it bake in production for a week and gather usage signal before another design pass. Watch the Following/Saved click rate — if users tap the ghost frequently, it's reading as "click to unfollow" rather than "completed action," and a copy/icon tweak (not redesign) may be warranted.
+- The town clusters are conservative for now — only 4 clusters covering today's coverage area. Expansion candidates noted in `townAliases.js` docstring: Farmingdale, Howell, Neptune, Brick. Add when there are venues to cluster.
+- Image curation Phase 1 (PARKED #2) is the real long-term answer to image stability. The Find Images button + unstable-host deny-list is the second-best defense; saves to `photo_url` are still pointing at third-party CDNs that we don't control. Phase 1 mirrors chosen images to Supabase Storage so lifetime is fully ours.
+- The Mac mini agent loop (Phase 1 of AGENT_ARCHITECTURE) is the natural next big workstream. Concrete first move: install Ollama, pull Qwen2.5-Coder 32B, write a Node script that loops through unenriched weekend artists and calls AI Enhance against the local model. Compare to Claude output. If quality matches, the whole architecture is viable on the existing hardware.
+

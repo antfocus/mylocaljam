@@ -135,6 +135,28 @@ Focused UX session — single-file refactor of the EventCardV2 action row. Sever
 
 ---
 
+## Recently shipped — Apr 30 (continued: admin venues, pills, town clusters)
+
+Long second half of Apr 30. Three workstreams: pill iteration to final Soft Fill to Ghost pattern, full Admin Venues management tab (PARKED #1 — closed), and infrastructure (town clusters, ZIP-aware Wall Township documentation, global placeholder, AGENT_ARCHITECTURE.md, address QC).
+
+**Action row pill — final design.** Variant A → Direction A → Soft Fill to Ghost (zinc) → Soft Fill to Ghost (neutral palette + WCAG fix + hover). Final state has unfollowed soft solid fill `#E5E5E5` light / `#262626` dark with near-black or near-white text (font-weight 600), and followed transparent + hairline border + mid-gray text (font-weight 500). Hover darkens unfollowed bg one shade. Verb-consistent labels: `Follow Artist` ↔ `Following Artist`, `Save Event` ↔ `Saved Event`. Hierarchy now reads correctly — active CTA has weight, completed action recedes. Brand orange stays exclusively on timestamp/divider/stub/`Read More`.
+
+**Admin Venues management (PARKED #1 — closed end-to-end).** Single top-level "Venues" tab with two sub-tabs (Directory + Scrapers) sharing the existing `useAdminVenues` hook. Sub-tab persistence via sessionStorage + URL hash deep-linking. Directory: search/sort, edit modal with all editable fields, indicator chips, "+ New Venue" button, FK-pre-checked delete. Scrapers sub-tab is the prior scraper-health view, relocated unchanged. New routes: extended `/api/admin/venues` (POST/PUT/DELETE with whitelist sanitize + cross-row name uniqueness + FK pre-check), new `/api/admin/geocode` (Nominatim proxy with US country bias + 8s timeout), new `/api/admin/venues/image-search` (Serper Images proxy with unstable-host deny-list).
+
+**Geocode button.** In the Directory edit modal between Address and Lat/Lng. Calls Nominatim, fills both coord fields rounded to 6 decimal places. Disabled when address is empty or save is in flight.
+
+**Find images button + lightbox.** Calls Serper Images with venue name + city, returns up to 6 candidates filtered by min-width 300 + unstable-host deny-list (FB/IG CDN, Google/Bing thumbnail caches, DuckDuckGo proxy, Pinterest CDN). Each candidate has source domain shown as caption under thumbnail. Clicking a thumbnail opens a centered lightbox (z-index 300, sits above edit modal) with full-size preview, source domain header, dimensions chip, "Currently:" comparison thumbnail, Use this image / Cancel buttons. Lightbox supports prev/next chevrons (40px round, semi-transparent, only when 2+ candidates), keyboard arrow nav + Esc, "X of N" position chip in header. Wraps at edges. Backdrop click closes lightbox without dismissing parent modal (stopPropagation).
+
+**Address QC (5 fixed today, 25 flagged for manual follow-up).** Five SQL fixes shipped: 3 malformed addresses got missing commas (10th Ave Burrito, ParkStage, Reef & Barrel); R Bar and The Saint had stale/truncated coords nulled so the new Geocode button can refill them. Tier 1 (8 missing addresses), Tier 2 (suspect rows), Tier 3 (3 incomplete addresses), Tier 5 (14 missing coords) flagged for Tony to handle solo via the Directory.
+
+**Town clusters (`src/lib/townAliases.js`).** Four clusters of socially-grouped Jersey Shore municipalities: Belmar (+ Lake Como, Wall Township), Asbury Park (+ Bradley Beach), Manasquan (+ Sea Girt, Brielle, Wall Township), Spring Lake (+ Spring Lake Heights, Wall Township). Wall Township in three clusters is intentional — it has no ZIP of its own and shares ZIPs with neighboring boroughs. The file's docstring includes the full ZIP→post-office reference table from Tony so admins can deterministically choose `venues.city` for new Wall venues. `getTownCluster(name)` is many-to-many aware (cluster name → members, member town → all clusters it belongs to). `src/app/page.js` townOnly filter switched from literal `venue_city === selectedTown` to cluster expansion. Existing manual `venues.city` overrides continue to work — alias map is additive.
+
+**Global italic placeholder.** One-rule fix in `src/app/globals.css`: `input::placeholder, textarea::placeholder, select::placeholder { font-style: italic; opacity: 0.55; }`. Affects every form across the app. Color inherited so it adapts to whatever surface the input is on. Existing per-component overrides (`.filter-search-input::placeholder`) take precedence by specificity.
+
+**AGENT_ARCHITECTURE.md (new).** Captures the planned hybrid local + Claude autonomous-agent setup. Three agents (Maintenance, QC, Marketing) on the Mac mini, Ollama + Qwen2.5-Coder 32B and 14B for local, Claude Sonnet via Max subscription for marketing (zero incremental cost). Phased rollout starts with Maintenance against PARKED #18 (Tier 1 weekend artist enrichment). DOCS_INDEX updated to reference under Tier 5.
+
+---
+
 ---
 
 ## ⚡ Launch priority (Apr 25 reframe)
@@ -156,29 +178,18 @@ Auto-enrichment (LLM router → Perplexity-grounded research → MusicBrainz / D
 
 ---
 
-## 1. Admin Venues management tab
+## 1. Admin Venues management tab — ✅ SHIPPED Apr 30
 
-**Why parked:** Came up Friday Apr 25 while adding "Pagano's UVA Ristorante" — there's no admin UI for the `venues` table, so a missing venue means dropping into SQL. User explicitly deferred to Monday.
+End-to-end CRUD shipped end of Apr 30 in the "Recently shipped — Apr 30 (continued)" block above. Scope delivered:
 
-**Scope (basic CRUD):**
-- New tab alongside "Venue Scrapers" called "Venues"
-- List view: searchable, sortable. Show name, address, type, tag count, photo presence
-- Create / Edit form: `name`, `address`, `slug`, `latitude`, `longitude`, `photo_url`, `venue_type`, `tags[]`, `default_start_time`, `website`
-- Delete (soft delete or hard — TBD). Events with this `venue_id` get the FK set to null via existing ON DELETE behavior
-- Image upload uses the same Supabase Storage bucket if/when image curation Phase 1 lands
+- ✅ Sub-tab structure (Directory CRUD + Scrapers health, sessionStorage + hash deep-link)
+- ✅ Search/sort, edit modal with all editable fields, indicator chips, "+ New Venue", FK-pre-checked delete
+- ✅ Geocode button (Nominatim proxy, fills lat/lng with one click)
+- ✅ Find Images button (Serper proxy, lightbox with prev/next nav, unstable-host deny-list)
+- ⏳ **Deferred to v2:** Photo upload to Supabase Storage (still URL paste only — natural follow-up to PARKED #2 image curation Phase 1).
+- ⏳ **Deferred to v2:** Scraper-source assignment per venue (which scraper feeds this row, override flag for multi-source venues, custom HTML scraper for the APB family). The Scrapers sub-tab still shows scraper health but doesn't yet let you reassign which scraper feeds which venue.
 
-**Scope creep to consider:**
-- Outdoor metadata: Outdoor / Patio / Rooftop / Dog Friendly tags surface in the existing shortcut pills, so a tag editor here would unblock "Dog Friendly" filter accuracy (currently broken — see CATEGORIES-HANDOFF.md)
-- Photo upload to Supabase Storage instead of pasting URLs
-- **Scraper-source assignment per venue.** Today, Wonder Bar (and probably others in the Asbury Park Boardwalk family) is being indirectly fed by the Ticketmaster API search rather than the venue's own calendar at `wonderbarasburypark.com/calendar/`. Result: only Ticketmaster-listed shows surface; smaller direct bookings are missed. The venue admin form should expose: which scraper key feeds this venue, the source URL, and an override flag if multiple scrapers should fan in. Also need a custom HTML scraper for the APB family (`.apb-event` markup is consistent across Wonder Bar, Asbury Lanes, etc. — one scraper covers the group).
-
-**Why it matters:** Closes the loop on the venue normalization fixes from this session — admins can correct mismatches and add missing venues without touching SQL.
-
-**Files to touch:**
-- `src/app/admin/page.js` — add nav item + route
-- `src/components/admin/AdminVenuesTab.js` — new component (currently `AdminVenuesTab.js` is the *Scrapers* view despite the name; rename or pick a new path)
-- `src/hooks/useAdminVenues.js` — already exists, has fetch logic for scraper health; extend for CRUD
-- `src/app/api/admin/route.js` — add venue create/update/delete handlers
+The two deferred items are real follow-ups but neither is launch-blocking. Tony can handle the long tail of address/coord/photo fixes via the new Directory tab without SQL.
 
 ---
 
