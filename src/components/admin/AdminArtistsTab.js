@@ -651,10 +651,32 @@ export default function AdminArtistsTab({
                     <img src={artist.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   </div>
 
-                  {/* Name */}
+                  {/* Name + lock indicator. The 🔒 icon renders inline next
+                      to the name when artist.is_locked is true — quick visual
+                      cue that this row is protected from scraper overwrites
+                      and AI re-enrichment. The Metadata Triage view's lock
+                      toggle remains the canonical place to flip the state;
+                      this is read-only signal for the directory. */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
-                      {artist.name}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', maxWidth: '100%' }}>
+                      <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
+                        {artist.name}
+                      </span>
+                      {artist.is_locked && (
+                        <span
+                          title="Locked — protected from scraper overwrites and AI re-enrichment"
+                          aria-label="Locked"
+                          style={{
+                            fontSize: '12px',
+                            color: '#22c55e',
+                            flexShrink: 0,
+                            cursor: 'help',
+                            lineHeight: 1,
+                          }}
+                        >
+                          🔒
+                        </span>
+                      )}
                     </span>
                     {isMobile && ((artist.kind && artist.kind !== 'musician') || artist.next_event_date) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
