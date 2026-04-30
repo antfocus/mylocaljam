@@ -58,6 +58,7 @@ export default function AdminVenuesDirectory({
   updateVenue,
   deleteVenue,
   geocodeAddress,
+  searchVenueImages,
   showQueueToast,
 }) {
   const [search, setSearch] = useState('');
@@ -346,6 +347,7 @@ export default function AdminVenuesDirectory({
           saving={saving}
           deleting={deleting}
           geocodeAddress={geocodeAddress}
+          searchVenueImages={searchVenueImages}
           showQueueToast={showQueueToast}
         />
       )}
@@ -357,11 +359,44 @@ export default function AdminVenuesDirectory({
  * Edit modal — controlled form for one venue. Pure presentational; the
  * parent owns the venue state and the save/delete handlers.
  */
-function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, deleting, geocodeAddress, showQueueToast }) {
+function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, deleting, geocodeAddress, searchVenueImages, showQueueToast }) {
   const isNew = !venue.id;
   const [geocoding, setGeocoding] = useState(false);
+  // Image-search state lives in the modal so candidates persist while
+  // the admin scrolls between thumbnails and the photo_url input. Reset
+  // each time the modal opens by virtue of the modal unmounting.
+  const [imageSearching, setImageSearching] = useState(false);
+  const [imageCandidates, setImageCandidates] = useState([]);
   // Ergonomic field setter — keeps the JSX below tidy.
   const set = (key, val) => setVenue(prev => ({ ...prev, [key]: val }));
+
+  // Image search handler — calls Serper via the server-side proxy with
+  // the venue's name + city, populates the candidates state with up to
+  // 6 thumbnails. Clicking a thumbnail (handled separately below) sets
+  // photo_url. Errors surface via toast inside the hook method.
+  const handleImageSearch = async () => {
+    if (!venue.name?.trim()) {
+      showQueueToast?.('Fill in the venue name first');
+      return;
+    }
+    setImageSearching(true);
+    try {
+      const candidates = await searchVenueImages({ name: venue.name, city: venue.city });
+      if (candidates && candidates.length > 0) {
+        setImageCandidates(candidates);
+      }
+    } finally {
+      setImageSearching(false);
+    }
+  };
+
+  // Apply a candidate as the venue's photo_url. Doesn't save to the DB
+  // immediately — sets the form field so the admin can preview, then
+  // commits with the modal's main Save button. Lets them try multiple
+  // candidates before deciding.
+  const handleApplyCandidate = (url) => {
+    set('photo_url', url);
+  };
 
   // Geocode handler — calls the server-side Nominatim proxy with the
   // current address and fills both lat/lng fields on success. Surfaces
@@ -538,13 +573,133 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
             />
           </Field>
 
-          <Field label="Photo URL">
-            <input
-              type="url" value={venue.photo_url} onChange={e => set('photo_url', e.target.value)}
-              placeholder="https://..."
-              style={inputStyle}
-            />
-          </Field>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <span style={{
+                fontSize: '11px', fontWeight: 700,
+                color: 'var(--text-muted)',
+                fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.4px',
+                textTransform: 'uppercase',
+              }}>
+                Photo URL
+              </span>
+              {/* Find images button — calls Serper Images via the server-
+                  side proxy, populates the candidate row below. Disabled
+                  while a search is in flight or while the parent is
+                  saving / deleting (so the form state doesn't shift
+                  mid-save). */}
+              <button
+                type="button"
+                onClick={handleImageSearch}
+                disabled={imageSearching || saving || deleting || !venue.name?.trim()}
+                style={{
+                  padding: '4px 10px', borderRadius: '6px',
+                  fontSize: '11px', fontWeight: 700,
+                  fontFamily: "'DM Sans', sans-serif",
+                  background: 'rgba(232,114,42,0.12)',
+                  color: '#E8722A',
+                  border: '1px solid rgba(232,114,42,0.30)',
+                  cursor: (imageSearching || saving || deleting || !venue.name?.trim()) ? 'not-allowed' : 'pointer',
+                  opacity: (imageSearching || saving || deleting || !venue.name?.trim()) ? 0.5 : 1,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {imageSearching ? '⟳ Searching…' : '⟳ Find images'}
+              </button>
+            </div>
+
+            {/* Layout: current photo preview on the left (or a placeholder
+                if none), URL input fills the rest. Lets the admin see what
+                will appear on cards as they paste/pick a URL. */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'stretch' }}>
+              <div style={{
+                width: '60px', height: '60px', flexShrink: 0,
+                borderRadius: '8px', overflow: 'hidden',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {venue.photo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={venue.photo_url}
+                    alt=""
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={e => { e.currentTarget.style.display = 'none'; }}
+                  />
+                ) : (
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                    no photo
+                  </span>
+                )}
+              </div>
+              <input
+                type="url" value={venue.photo_url} onChange={e => set('photo_url', e.target.value)}
+                placeholder="https://..."
+                style={{ ...inputStyle, flex: 1 }}
+              />
+            </div>
+
+            {/* Candidate thumbnail row — appears after a successful search.
+                Click any thumbnail to set photo_url. Highlights the active
+                candidate (whichever URL matches the current form value). */}
+            {imageCandidates.length > 0 && (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(6, 1fr)',
+                gap: '6px',
+                marginTop: '8px',
+              }}>
+                {imageCandidates.map((c) => {
+                  const isActive = c.url === venue.photo_url;
+                  return (
+                    <button
+                      key={c.url}
+                      type="button"
+                      onClick={() => handleApplyCandidate(c.url)}
+                      title={c.title || c.source || 'Use this image'}
+                      style={{
+                        position: 'relative',
+                        aspectRatio: '1 / 1',
+                        padding: 0,
+                        borderRadius: '6px',
+                        overflow: 'hidden',
+                        cursor: 'pointer',
+                        border: isActive
+                          ? '2px solid #E8722A'
+                          : '1px solid var(--border)',
+                        background: 'var(--bg-elevated)',
+                        transition: 'border 0.15s ease',
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={c.thumbnail || c.url}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        onError={e => {
+                          // Some hotlinks 403 — show a faint placeholder
+                          // instead of leaving a broken-image icon.
+                          e.currentTarget.style.opacity = '0.2';
+                        }}
+                      />
+                      {isActive && (
+                        <span style={{
+                          position: 'absolute', top: '2px', right: '2px',
+                          width: '14px', height: '14px', borderRadius: '50%',
+                          background: '#E8722A', color: '#fff',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '10px', fontWeight: 700,
+                        }}>
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <Field label="Type">

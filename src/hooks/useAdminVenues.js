@@ -143,6 +143,38 @@ export default function useAdminVenues({ password, showQueueToast }) {
     }
   }, [password]);
 
+  // Directory: search for venue photo candidates via Serper Images
+  // (server-side proxy at /api/admin/venues/image-search). Returns the
+  // candidates array on success or null on failure. The directory UI
+  // renders the candidates as clickable thumbnails so the admin can
+  // pick one to assign as photo_url.
+  const searchVenueImages = useCallback(async ({ name, city }) => {
+    if (!name || !name.trim()) {
+      showQueueToast('Venue name is empty — fill it in before searching');
+      return null;
+    }
+    try {
+      const res = await fetch('/api/admin/venues/image-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+        body: JSON.stringify({ name: name.trim(), city: (city || '').trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showQueueToast(`Image search failed: ${data.error || res.status}`);
+        return null;
+      }
+      const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
+      if (candidates.length === 0) {
+        showQueueToast('No image results found — try adjusting the venue name');
+      }
+      return candidates;
+    } catch (err) {
+      showQueueToast(`Image search error: ${err.message}`);
+      return null;
+    }
+  }, [password, showQueueToast]);
+
   // Directory: geocode an address via Nominatim (server-side proxy at
   // /api/admin/geocode). Returns { latitude, longitude } on success or
   // null on failure (toast surfaces the specific error).
@@ -206,5 +238,6 @@ export default function useAdminVenues({ password, showQueueToast }) {
     updateVenue,
     deleteVenue,
     geocodeAddress,
+    searchVenueImages,
   };
 }

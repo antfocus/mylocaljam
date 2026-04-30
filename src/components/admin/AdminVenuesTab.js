@@ -37,7 +37,8 @@ export default function AdminVenuesTab({
   venues, scraperHealth,
   showQueueToast,
   // directory
-  fetchVenuesFull, createVenue, updateVenue, deleteVenue, geocodeAddress,
+  fetchVenuesFull, createVenue, updateVenue, deleteVenue,
+  geocodeAddress, searchVenueImages,
   // scrapers
   venuesFilter, setVenuesFilter,
   forceSyncing, handleForceSync,
@@ -114,6 +115,7 @@ export default function AdminVenuesTab({
           updateVenue={updateVenue}
           deleteVenue={deleteVenue}
           geocodeAddress={geocodeAddress}
+          searchVenueImages={searchVenueImages}
           showQueueToast={showQueueToast}
         />
       )}
