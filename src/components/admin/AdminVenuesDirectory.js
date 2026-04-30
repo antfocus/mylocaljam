@@ -57,6 +57,7 @@ export default function AdminVenuesDirectory({
   createVenue,
   updateVenue,
   deleteVenue,
+  geocodeAddress,
   showQueueToast,
 }) {
   const [search, setSearch] = useState('');
@@ -344,6 +345,8 @@ export default function AdminVenuesDirectory({
           onDelete={handleDelete}
           saving={saving}
           deleting={deleting}
+          geocodeAddress={geocodeAddress}
+          showQueueToast={showQueueToast}
         />
       )}
     </div>
@@ -354,10 +357,36 @@ export default function AdminVenuesDirectory({
  * Edit modal — controlled form for one venue. Pure presentational; the
  * parent owns the venue state and the save/delete handlers.
  */
-function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, deleting }) {
+function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, deleting, geocodeAddress, showQueueToast }) {
   const isNew = !venue.id;
+  const [geocoding, setGeocoding] = useState(false);
   // Ergonomic field setter — keeps the JSX below tidy.
   const set = (key, val) => setVenue(prev => ({ ...prev, [key]: val }));
+
+  // Geocode handler — calls the server-side Nominatim proxy with the
+  // current address and fills both lat/lng fields on success. Surfaces
+  // errors via toast (e.g., empty address, no Nominatim match, timeout).
+  const handleGeocode = async () => {
+    if (!venue.address?.trim()) {
+      showQueueToast?.('Fill in the address first');
+      return;
+    }
+    setGeocoding(true);
+    try {
+      const result = await geocodeAddress(venue.address);
+      if (result) {
+        // Round to 6 decimal places — beyond that is meter-scale noise
+        // and adds no real precision for venue mapping.
+        const lat = Math.round(result.latitude * 1e6) / 1e6;
+        const lng = Math.round(result.longitude * 1e6) / 1e6;
+        setVenue(prev => ({ ...prev, latitude: lat, longitude: lng }));
+        showQueueToast?.(`Geocoded → ${lat}, ${lng}`);
+      }
+      // On null result, geocodeAddress already toasted the specific error
+    } finally {
+      setGeocoding(false);
+    }
+  };
   // Auto-derive a slug suggestion when name changes on a new venue (only if
   // slug is still empty; never overwrite an admin's edit).
   const onNameChange = (val) => {
@@ -448,23 +477,57 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
             />
           </Field>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Field label="Latitude">
-              <input
-                type="number" step="any"
-                value={venue.latitude} onChange={e => set('latitude', e.target.value)}
-                placeholder="40.2206"
-                style={inputStyle}
-              />
-            </Field>
-            <Field label="Longitude">
-              <input
-                type="number" step="any"
-                value={venue.longitude} onChange={e => set('longitude', e.target.value)}
-                placeholder="-74.0121"
-                style={inputStyle}
-              />
-            </Field>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <span style={{
+                fontSize: '11px', fontWeight: 700,
+                color: 'var(--text-muted)',
+                fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.4px',
+                textTransform: 'uppercase',
+              }}>
+                Coordinates
+              </span>
+              {/* Geocode button — calls Nominatim with the current address
+                  and fills both lat/lng on success. Disabled while a
+                  geocode is in flight, or while the parent is saving /
+                  deleting (so the form state doesn't shift mid-save). */}
+              <button
+                type="button"
+                onClick={handleGeocode}
+                disabled={geocoding || saving || deleting || !venue.address?.trim()}
+                style={{
+                  padding: '4px 10px', borderRadius: '6px',
+                  fontSize: '11px', fontWeight: 700,
+                  fontFamily: "'DM Sans', sans-serif",
+                  background: 'rgba(232,114,42,0.12)',
+                  color: '#E8722A',
+                  border: '1px solid rgba(232,114,42,0.30)',
+                  cursor: (geocoding || saving || deleting || !venue.address?.trim()) ? 'not-allowed' : 'pointer',
+                  opacity: (geocoding || saving || deleting || !venue.address?.trim()) ? 0.5 : 1,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {geocoding ? '⟳ Geocoding…' : '⟳ Geocode from address'}
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <Field label="Latitude">
+                <input
+                  type="number" step="any"
+                  value={venue.latitude} onChange={e => set('latitude', e.target.value)}
+                  placeholder="40.2206"
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="Longitude">
+                <input
+                  type="number" step="any"
+                  value={venue.longitude} onChange={e => set('longitude', e.target.value)}
+                  placeholder="-74.0121"
+                  style={inputStyle}
+                />
+              </Field>
+            </div>
           </div>
 
           <Field label="Website">

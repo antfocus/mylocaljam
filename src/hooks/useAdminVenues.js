@@ -143,6 +143,32 @@ export default function useAdminVenues({ password, showQueueToast }) {
     }
   }, [password]);
 
+  // Directory: geocode an address via Nominatim (server-side proxy at
+  // /api/admin/geocode). Returns { latitude, longitude } on success or
+  // null on failure (toast surfaces the specific error).
+  const geocodeAddress = useCallback(async (address) => {
+    if (!address || !address.trim()) {
+      showQueueToast('Address is empty — fill it in before geocoding');
+      return null;
+    }
+    try {
+      const res = await fetch('/api/admin/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` },
+        body: JSON.stringify({ address: address.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showQueueToast(`Geocode failed: ${data.error || res.status}`);
+        return null;
+      }
+      return { latitude: data.latitude, longitude: data.longitude };
+    } catch (err) {
+      showQueueToast(`Geocode error: ${err.message}`);
+      return null;
+    }
+  }, [password, showQueueToast]);
+
   const handleForceSync = useCallback(async (scraperKey) => {
     if (forceSyncing) return;
     setForceSyncing(scraperKey);
@@ -179,5 +205,6 @@ export default function useAdminVenues({ password, showQueueToast }) {
     createVenue,
     updateVenue,
     deleteVenue,
+    geocodeAddress,
   };
 }

@@ -527,6 +527,7 @@ export default function AdminPage() {
           createVenue={ve.createVenue}
           updateVenue={ve.updateVenue}
           deleteVenue={ve.deleteVenue}
+          geocodeAddress={ve.geocodeAddress}
           // Scrapers health
           venuesFilter={ve.venuesFilter}
           setVenuesFilter={ve.setVenuesFilter}
