@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 /**
  * POST /api/admin/venues/image-search
  * Body: { name: string, city?: string }
- * Returns: { candidates: [{ url, thumbnail, source, width, height, title }] }
+ * Returns: { candidates: [{ url, thumbnail, sourceDomain, source, width, height, title }] }
  *
  * Server-side proxy to Serper's Google Images search. Used by the Admin
  * Venues Directory edit modal — the "Find images" button fires this with
@@ -13,8 +13,8 @@ import { NextResponse } from 'next/server';
  * Why server-side:
  *   • SERPER_API_KEY stays in the server env, never reaches the client.
  *   • Same auth gate the rest of /api/admin/* uses — no public proxy.
- *   • One place to filter junk results (tiny thumbnails, data URIs, dead
- *     hosts) before paying the round-trip cost on the client.
+ *   • One place to filter junk results before paying the round-trip cost
+ *     on the client.
  *   • Easy place to swap to Google CSE or Bing later without touching
  *     the UI.
  *
@@ -23,11 +23,20 @@ import { NextResponse } from 'next/server';
  *     browsers block mixed content on the admin's HTTPS origin).
  *   • imageWidth ≥ 300 (anything smaller is a favicon or social-profile
  *     thumb, useless as a venue header).
+ *   • Hostname must NOT match the unstable-host deny-list. See the list
+ *     below — these are CDNs whose URLs reliably break within weeks
+ *     (Google Images thumbnail cache, Facebook CDN, Instagram CDN, etc.).
+ *     Saving an unstable URL to venues.photo_url means the admin will
+ *     fix the same venue twice. Hard-reject at search time.
  *   • De-dup by URL so we don't show the same image twice.
  *
  * Returns up to 6 candidates — enough variety for the admin to pick a
- * good one, few enough to render comfortably in a 3-column thumbnail
- * row inside the edit modal without cluttering the form.
+ * good one, few enough to render comfortably as thumbnails inside the
+ * edit modal without cluttering the form.
+ *
+ * Long-term plan: image curation Phase 1 (PARKED #2) will mirror chosen
+ * images to Supabase Storage so the lifetime is fully under our control.
+ * Until that ships, this deny-list is the second-best defense.
  */
 
 function checkAuth(request) {
@@ -37,6 +46,45 @@ function checkAuth(request) {
 
 const MAX_CANDIDATES = 6;
 const MIN_IMAGE_WIDTH = 300;
+
+// Deny-list of CDN hosts known to expire / require auth / block hotlinks.
+// Matched as a substring of the hostname (so subdomains catch too —
+// scontent-iad3-1.cdninstagram.com, etc.). Conservative: only entries
+// I'm confident WILL break. Yelp, Tripadvisor, Squarespace, Wix all stay
+// out of this list because their CDNs are stable for the duration the
+// venue website itself is up.
+const UNSTABLE_HOST_PATTERNS = [
+  'fbcdn.net',           // Facebook CDN — auth-token URLs, expire
+  'cdninstagram.com',    // Instagram CDN — same problem
+  'lookaside.fbsbx.com', // Facebook external storage — frequent breakage
+  'gstatic.com',         // Google Images thumbnail cache — weeks at most
+  'googleusercontent.com', // Google content CDN — short-lived
+  'bing.net',            // Bing thumbnail cache
+  'duckduckgo.com',      // DuckDuckGo image proxy — short-lived
+  'pinimg.com',          // Pinterest CDN — frequent breakage
+];
+
+// Extract a clean source domain (e.g. "tenthavenueburrito.com") from a
+// URL for display next to each candidate. Strips "www." prefix so the
+// chip shown to the admin is short. Falls back to the raw hostname on
+// parse failure — never returns null, so the UI doesn't have to guard.
+function getSourceDomain(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.startsWith('www.') ? host.slice(4) : host;
+  } catch {
+    return 'unknown';
+  }
+}
+
+function isUnstableHost(url) {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return UNSTABLE_HOST_PATTERNS.some(pat => host.includes(pat));
+  } catch {
+    return true; // Couldn't parse → can't trust → reject
+  }
+}
 
 export async function POST(request) {
   if (!checkAuth(request)) {
@@ -94,17 +142,20 @@ export async function POST(request) {
     // Filter + dedupe + cap. Keep the order Serper returned (relevance-ranked).
     const seen = new Set();
     const candidates = [];
+    let rejectedUnstable = 0;
     for (const img of rawImages) {
       if (candidates.length >= MAX_CANDIDATES) break;
       const url = img?.imageUrl;
       if (!url || typeof url !== 'string' || !url.startsWith('https://')) continue;
       if (seen.has(url)) continue;
+      if (isUnstableHost(url)) { rejectedUnstable++; continue; }
       const width = Number(img?.imageWidth) || 0;
       if (width > 0 && width < MIN_IMAGE_WIDTH) continue;
       seen.add(url);
       candidates.push({
         url,
         thumbnail: img?.thumbnailUrl || url,
+        sourceDomain: getSourceDomain(url),
         source: img?.source || null,
         width: width || null,
         height: Number(img?.imageHeight) || null,
@@ -112,7 +163,13 @@ export async function POST(request) {
       });
     }
 
-    return NextResponse.json({ candidates, query: q });
+    return NextResponse.json({
+      candidates,
+      query: q,
+      // Surfaced for the UI to show "X results filtered out as unstable"
+      // if the admin wants context for why fewer than 6 candidates returned.
+      rejectedUnstable,
+    });
   } catch (err) {
     if (err.name === 'TimeoutError' || err.name === 'AbortError') {
       return NextResponse.json({ error: 'Image search timed out' }, { status: 504 });

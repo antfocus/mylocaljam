@@ -367,6 +367,11 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
   // each time the modal opens by virtue of the modal unmounting.
   const [imageSearching, setImageSearching] = useState(false);
   const [imageCandidates, setImageCandidates] = useState([]);
+  // Lightbox state — when non-null, an overlay shows the candidate at
+  // full size with Use / Cancel buttons. Lets the admin actually
+  // evaluate the photo before committing rather than guessing from a
+  // ~80px thumbnail.
+  const [lightboxCandidate, setLightboxCandidate] = useState(null);
   // Ergonomic field setter — keeps the JSX below tidy.
   const set = (key, val) => setVenue(prev => ({ ...prev, [key]: val }));
 
@@ -396,6 +401,7 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
   // candidates before deciding.
   const handleApplyCandidate = (url) => {
     set('photo_url', url);
+    setLightboxCandidate(null);
   };
 
   // Geocode handler — calls the server-side Nominatim proxy with the
@@ -641,8 +647,12 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
             </div>
 
             {/* Candidate thumbnail row — appears after a successful search.
-                Click any thumbnail to set photo_url. Highlights the active
-                candidate (whichever URL matches the current form value). */}
+                Click any thumbnail to OPEN the lightbox preview (not to
+                apply directly) so the admin can evaluate at full size
+                before committing. Highlights the currently-applied
+                candidate (whichever URL matches the form value). Source
+                domain caption under each thumbnail surfaces the URL host
+                so the admin can spot suspicious sources at a glance. */}
             {imageCandidates.length > 0 && (
               <div style={{
                 display: 'grid',
@@ -656,11 +666,11 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
                     <button
                       key={c.url}
                       type="button"
-                      onClick={() => handleApplyCandidate(c.url)}
-                      title={c.title || c.source || 'Use this image'}
+                      onClick={() => setLightboxCandidate(c)}
+                      title={`${c.sourceDomain || ''}${c.title ? ' — ' + c.title : ''}`}
                       style={{
                         position: 'relative',
-                        aspectRatio: '1 / 1',
+                        display: 'flex', flexDirection: 'column',
                         padding: 0,
                         borderRadius: '6px',
                         overflow: 'hidden',
@@ -672,28 +682,46 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
                         transition: 'border 0.15s ease',
                       }}
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={c.thumbnail || c.url}
-                        alt=""
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                        onError={e => {
-                          // Some hotlinks 403 — show a faint placeholder
-                          // instead of leaving a broken-image icon.
-                          e.currentTarget.style.opacity = '0.2';
-                        }}
-                      />
-                      {isActive && (
-                        <span style={{
-                          position: 'absolute', top: '2px', right: '2px',
-                          width: '14px', height: '14px', borderRadius: '50%',
-                          background: '#E8722A', color: '#fff',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '10px', fontWeight: 700,
-                        }}>
-                          ✓
-                        </span>
-                      )}
+                      <div style={{
+                        position: 'relative', aspectRatio: '1 / 1',
+                        background: 'var(--bg-elevated)',
+                      }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={c.thumbnail || c.url}
+                          alt=""
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          onError={e => {
+                            // Some hotlinks 403 — show a faint placeholder
+                            // instead of leaving a broken-image icon.
+                            e.currentTarget.style.opacity = '0.2';
+                          }}
+                        />
+                        {isActive && (
+                          <span style={{
+                            position: 'absolute', top: '2px', right: '2px',
+                            width: '14px', height: '14px', borderRadius: '50%',
+                            background: '#E8722A', color: '#fff',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '10px', fontWeight: 700,
+                          }}>
+                            ✓
+                          </span>
+                        )}
+                      </div>
+                      {/* Source domain caption — truncated, lowercase. Visible
+                          across all 6 thumbs so admin can spot e.g. "yelp.com"
+                          vs "tenthavenueburrito.com" before clicking. */}
+                      <span style={{
+                        display: 'block', padding: '2px 4px',
+                        fontSize: '9px', fontWeight: 600,
+                        color: 'var(--text-muted)',
+                        fontFamily: "'DM Sans', sans-serif",
+                        textAlign: 'center',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>
+                        {c.sourceDomain || '—'}
+                      </span>
                     </button>
                   );
                 })}
@@ -783,6 +811,137 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
           </div>
         </div>
       </div>
+
+      {/* Image preview lightbox — opens when admin clicks a candidate
+          thumbnail. Shows the candidate at full size with the current
+          photo as a small comparison thumbnail, plus source domain and
+          dimensions. Use / Cancel buttons commit or dismiss. Backdrop
+          click closes the lightbox WITHOUT closing the parent edit modal
+          (stopPropagation on the inner panel; clicking the backdrop
+          itself only fires the lightbox's own onClick handler).
+          z-index 300 sits above the parent edit modal's z-index 200. */}
+      {lightboxCandidate && (
+        <div
+          onClick={(e) => { e.stopPropagation(); setLightboxCandidate(null); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 300,
+            background: 'rgba(0,0,0,0.75)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '24px',
+            fontFamily: "'DM Sans', sans-serif",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: '720px',
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border)',
+              borderRadius: '14px',
+              padding: '20px',
+              display: 'flex', flexDirection: 'column', gap: '14px',
+              maxHeight: '90vh', overflow: 'auto',
+            }}
+          >
+            {/* Header — source + dimensions */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {lightboxCandidate.sourceDomain || 'unknown source'}
+                </div>
+                {lightboxCandidate.title && (
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {lightboxCandidate.title}
+                  </div>
+                )}
+              </div>
+              {(lightboxCandidate.width || lightboxCandidate.height) && (
+                <span style={{
+                  fontSize: '10px', fontWeight: 600,
+                  padding: '3px 8px', borderRadius: '4px',
+                  background: 'var(--bg-elevated)', color: 'var(--text-muted)',
+                  flexShrink: 0,
+                }}>
+                  {lightboxCandidate.width || '?'} × {lightboxCandidate.height || '?'}
+                </span>
+              )}
+            </div>
+
+            {/* Big preview — full URL (not thumbnail) so admin sees real
+                quality. Capped at 80vh tall via maxHeight on the wrapper. */}
+            <div style={{
+              borderRadius: '8px', overflow: 'hidden',
+              background: 'var(--bg-elevated)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              minHeight: '240px',
+            }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={lightboxCandidate.url}
+                alt=""
+                style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}
+                onError={e => {
+                  e.currentTarget.style.opacity = '0.2';
+                }}
+              />
+            </div>
+
+            {/* Comparison row — current photo (small) on left, the
+                candidate already shown above. Lets admin verify they're
+                actually swapping to something better. */}
+            {venue.photo_url && venue.photo_url !== lightboxCandidate.url && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                <span style={{ fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                  Currently:
+                </span>
+                <div style={{
+                  width: '60px', height: '60px', borderRadius: '6px', overflow: 'hidden',
+                  background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={venue.photo_url}
+                    alt="current photo"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={e => { e.currentTarget.style.display = 'none'; }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Footer — Cancel + Use this image */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setLightboxCandidate(null)}
+                style={{
+                  padding: '8px 14px', borderRadius: '8px',
+                  background: 'transparent', color: 'var(--text-muted)',
+                  border: '1px solid var(--border)',
+                  fontSize: '12px', fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif",
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyCandidate(lightboxCandidate.url)}
+                style={{
+                  padding: '8px 16px', borderRadius: '8px',
+                  background: '#E8722A', color: '#000', border: 'none',
+                  fontSize: '12px', fontWeight: 700,
+                  fontFamily: "'DM Sans', sans-serif",
+                  cursor: 'pointer',
+                }}
+              >
+                Use this image
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
