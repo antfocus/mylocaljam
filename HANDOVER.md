@@ -4956,3 +4956,58 @@ Long mixed-mode session: half infrastructure (Mac mini agent host setup), half p
 3. Manual link the 25 still-unlinked weekend events. PARKED #19.
 4. Cleanup pass: Bakes Brewing duplicate-prefix scraper bug (PARKED #16) + EVENT-kind orphan delete (PARKED #9 + today's 18 orphans) + multi-band bill name pattern (PARKED #17) + auto-create artist guardrail (PARKED #15).
 
+
+---
+
+## Apr 30 session — EventCardV2 action row redesign (rebalanced + variant A pills)
+
+Focused UX polish session on the event card action row. Iterated through several mockup directions before settling on a left-vs-right balanced layout with a tinted-outline identity pill on the far left and a tight icon cluster on the far right. Also wired the venue-only Event badge into the same save-event handler as the ticket-stub icon, eliminating the orphaned "no Follow Artist" treatment that was making event-only cards (e.g. Bingo Night, Open Mic) feel unbalanced underneath flyer-heavy images.
+
+### What shipped
+
+**`src/components/EventCardV2.js`** — single-file refactor of the action row (199 insertions, 132 deletions, commit `c9b2d5f`).
+
+- **Layout: rebalanced row.** `[identity pill]  ←flex spacer→  [Venue 18px] [Share 18px] [Report 18px]`. Identity pill carries the brand color; the icon cluster is tight (gap 14px) and same-weight neutral so it reads as one balanced utility group rather than three loose buttons + an orphan flag at the far edge.
+- **Identity pill = one of three states with identical box dimensions.**
+  - `Follow Artist` — when there's a canonical linked artist and the user hasn't followed yet. Plus icon.
+  - `Following` — same shape as above but with a checkmark. Toggles back via `onFollowArtist`.
+  - `Follow Event` — replaces the previous non-interactive "Event" badge on cards with no canonical artist (template-only, fake-artist `kind='event'` rows). Plus icon. Toggles via `onToggleFavorite?.(event.id)` — the SAME handler the ticket-stub icon at the top of the card uses, so the two controls stay in sync. Mirrors the stub's `setShowFollowPopover` trigger and haptic vibration.
+- **Variant A — tinted outline.** All three pill states share the exact same visual treatment: `background: rgba(232,114,42,0.08)` (light) / `0.15` (dark), `border: 1.5px solid #E8722A`, `color: #E8722A`. Only the leading icon differentiates state (plus → checkmark). Symmetric across artist and event-only cards. The earlier solid orange CTA was deemed too distracting; the tinted outline keeps brand presence without competing with card content.
+- **Pill height matches pre-redesign card.** Padding `6px 14px` (from `9px 18px`). 14px icon (from 16px). Row height now sits ~28-30px instead of ~38px.
+- **Icon cluster.** Venue (map pin), Share (3-dot connect), Report (lucide wavy banner) — all 18px, all `currentColor` so they pick up `#F0F0F5` in dark / `#1F2937` in light. Each gets `title` + `aria-label` since the text labels are gone.
+- **Box-sizing parity.** Every pill state has a `1.5px solid #E8722A` border (the unfollowed state previously had `border: 'none'`, making it 3px shorter than the followed/Event variants and visibly out of register).
+- **Label clarity.** "Follow" → "Follow Artist" so the CTA explicitly tells you what you're following — useful when scrolling a feed where the artist name above is small.
+
+### What got rejected along the way
+
+- **Solid orange CTA with jet-black text** (Option B v2 from Apr 29). Drew the eye too hard. Tony: "the orange is too distracting. it take away from the event card."
+- **Magic Patterns single-row generation.** Returned 2-row stacked variations for our brief; fell back to direct mockup design.
+- **3-row stacked variations** (button-heavy designs from earlier in session). Wanted single-line balance, not visual density.
+- **Variant B (neutral pill, orange icon only)** and **Variant C (text + icon, no pill)** — both shown as alternatives. Tony picked A — pill present but quiet.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `src/components/EventCardV2.js` | Full action row refactor: rebalanced layout, three-state identity pill, variant A tinted outline, Follow Event wired to `onToggleFavorite` for ticket-stub sync |
+
+### Tasks closed this session
+
+- #25 Build rebalanced action row in EventCardV2
+- #26 Wire Event badge to save-event action
+- #27 Apply variant A tinted outline to follow pills
+
+### Tasks still open
+
+- **#15** Draft VENUE_MANAGEMENT.md skill doc (in_progress)
+- **#17** Migrate Agent_SOP content + delete file
+- **#19** Housekeeping — fold transient docs into HANDOVER
+- **#24** Build Mott's Creek Bar scraper (in_progress — Apr 29 launched 4 events; verify pattern is stable)
+- Carryover priorities from Apr 29: Tier 1 weekend artist enrichment (~30 remaining, PARKED #18), manual link 25 still-unlinked weekend events (PARKED #19), Bakes Brewing dedupe (PARKED #16), EVENT-kind orphan delete (PARKED #9), compound artist name pattern (PARKED #17), auto-create artist guardrail (PARKED #15), image curation Phase 1 (PARKED #2).
+
+### Notes for next session
+
+- Watch real cards in production for a day before iterating further on the pill — variant A might still feel "too there" once it's everywhere in the feed, or it might recede correctly. Don't preemptively tune.
+- The `onToggleFavorite` wiring on Follow Event means saved-state propagates between the bottom pill and the top ticket stub on a single click. If that ever feels redundant (two controls for the same action visible at once), the cleaner move is to hide the ticket stub when `!hasFollowableArtist` — but only after confirming the bottom pill is discoverable enough on its own.
+- The "Event" badge is gone — every venue-only card now has a primary CTA instead of a passive label. Watch for analytics on Follow Event clicks; if they're materially below Follow Artist clicks the pattern's working as intended (artists are the higher-intent target), if they're 0 we may be hiding the ticket stub redundantly.
+

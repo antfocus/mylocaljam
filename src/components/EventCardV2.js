@@ -575,7 +575,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                         <path d="M12 5v14M5 12h14" />
                       </svg>
                     )}
-                    {isArtistFollowed ? 'Following' : 'Follow Artist'}
+                    {isArtistFollowed ? 'Following Artist' : 'Follow Artist'}
                   </button>
                 )}
 
@@ -631,7 +631,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                         <path d="M12 5v14M5 12h14" />
                       </svg>
                     )}
-                    {isFavorited ? 'Following' : 'Follow Event'}
+                    {isFavorited ? 'Following Event' : 'Follow Event'}
                   </button>
                 )}
 

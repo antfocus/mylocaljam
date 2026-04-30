@@ -111,6 +111,30 @@ Long session — Mac mini agent host stood up, fourth scraper landed, contrast p
 
 ---
 
+## Recently shipped — Apr 30 session
+
+Focused UX session — single-file refactor of the EventCardV2 action row. Several mockup directions iterated through before settling on a left-vs-right balanced row with a tinted-outline identity pill on the far left and a tight icon cluster on the far right. Commit `c9b2d5f`.
+
+**Action row redesign (`src/components/EventCardV2.js`)**
+- Layout: `[identity pill] ←spacer→ [Venue 18px] [Share 18px] [Report 18px]`. Identity pill is the only thing carrying brand color; the icon cluster is same-weight neutral and tight (gap 14px) so the row reads as one balanced trio of utilities rather than three loose buttons + an orphan flag at the far edge.
+- Identity pill = one of three states with identical box dimensions: **Follow Artist** (canonical artist linked, not yet followed) / **Following** (followed) / **Follow Event** (no canonical artist — replaces the previous non-interactive "Event" badge on template-only and `kind='event'` cards).
+- **Variant A — tinted outline.** All three states share the exact same visual treatment: `background: rgba(232,114,42,0.08)` (light) / `0.15` (dark), `border: 1.5px solid #E8722A`, `color: #E8722A`. Only the leading icon differentiates state (plus → checkmark). The earlier solid orange CTA was deemed too distracting; tinted outline keeps brand presence without competing with card content.
+- **Pill heights match.** Padding `6px 14px` (was `9px 18px`). 14px icon (was 16px). Row height back to ~28-30px instead of ~38px.
+- **Box-sizing parity.** Every pill state has `1.5px solid #E8722A`; previously the unfollowed solid-orange variant had `border: 'none'`, making it 3px shorter than Following / Event and visibly out of register.
+- **Follow Event ↔ ticket stub sync.** Wired to the same `onToggleFavorite?.(event.id)` handler the ticket-stub icon at the top of the card uses. Mirrors the stub's `setShowFollowPopover` trigger and haptic vibration. Saved-state propagates between the bottom pill and the top stub on a single click.
+- **Label clarity.** "Follow" → "Follow Artist" so the CTA explicitly tells you what you're following — useful when scrolling a feed where the artist name above is small.
+
+**Rejected directions**
+- Solid orange CTA with jet-black text (Option B v2 from Apr 29). Too loud — drew eye away from card content.
+- Magic Patterns single-row generation. Returned 2-row stacked variations for our brief; fell back to direct mockup design.
+- Variant B (neutral pill, orange icon only) and Variant C (text + icon, no pill) — shown as alternatives. Tony picked A — pill present but quiet.
+
+**Notes for follow-up sessions**
+- Watch real cards in production for a day before iterating. Variant A might feel right once it's everywhere in the feed, or might still need to recede further. Don't preemptively tune.
+- Every venue-only card now has a primary CTA (Follow Event) instead of a passive label. Watch analytics — if Follow Event clicks are materially below Follow Artist clicks, the pattern's working as intended (artists are the higher-intent target). If they're zero, consider whether the bottom pill is redundant with the top ticket stub on the same card.
+
+---
+
 ---
 
 ## ⚡ Launch priority (Apr 25 reframe)
