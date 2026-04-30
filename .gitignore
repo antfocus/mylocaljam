@@ -5,3 +5,24 @@ node_modules/
 .vercel
 *.log
 .env*.local
+
+# macOS Finder metadata. Never commit. If a previous commit accidentally
+# tracked it, run: git rm --cached .DS_Store && git commit
+.DS_Store
+**/.DS_Store
+
+# Local-only image staging folder. Tony downloads artist images here
+# before uploading to Postimages → the resulting postimg.cc URL is what
+# gets pasted into artists.image_url. These should NEVER be committed:
+# they bloat git history with binaries the deployed app doesn't need.
+# Folder name has a space — quote when adding via CLI.
+artist images/
+
+# Generic catch-all for image files accidentally dropped at the repo root.
+# Files inside src/ that NEED to be committed (favicon, opengraph fallback,
+# etc.) are tracked explicitly via `git add` and override these patterns.
+/*.png
+/*.jpg
+/*.jpeg
+/*.webp
+/*.heic
