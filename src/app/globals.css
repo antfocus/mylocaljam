@@ -71,6 +71,26 @@ html:has(body.app-shell-lock) {
 .filter-search-input::placeholder { color: #5C6370; opacity: 1; }
 .filter-search-input.dark-mode::placeholder { color: #9898B0; opacity: 1; }
 
+/* ── Global placeholder style — italic + 55% opacity ────────────────────
+   Default browser ::placeholder rendering can read as real input data,
+   especially on dark surfaces where the contrast is high. Italics plus
+   55% opacity makes the distinction unmistakable: this is hint/example
+   text, not user input. Inherits the input's color (no override) so it
+   adapts to whatever surface the input is on — light card, dark card,
+   modal — without per-component theming. Applied to inputs, textareas,
+   and selects so every form gets consistent treatment.
+
+   Per-component overrides set on a higher-specificity selector (like the
+   .filter-search-input rule above with explicit `color` and `opacity: 1`)
+   continue to take precedence; this is the default that everything else
+   inherits. */
+input::placeholder,
+textarea::placeholder,
+select::placeholder {
+  font-style: italic;
+  opacity: 0.55;
+}
+
 /* Selection */
 ::selection {
   background: var(--accent);
