@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { posthog } from '@/lib/posthog';
 import { getVenueColor, groupEventsByDate } from '@/lib/utils';
 import { matchNjTowns } from '@/lib/njTowns';
+import { getTownCluster } from '@/lib/townAliases';
 import { requestNotificationPermission, scheduleReminder, cancelReminder, rehydrateReminders, notificationsGranted } from '@/lib/notifications';
 
 import HeroSection       from '@/components/HeroSection';
@@ -1764,20 +1765,27 @@ export default function HomePage() {
     // The two modes are mutually exclusive — the checkbox in the filter UI
     // grays out the slider when townOnly is on.
     if (townOnly && locationOrigin.trim()) {
-      const townKey = locationOrigin.split(',')[0].trim().toLowerCase();
+      const townInput = locationOrigin.split(',')[0].trim();
+      // Expand the search input to its town cluster so e.g. "Belmar" also
+      // matches venues in Lake Como / Wall Township, "Asbury Park" also
+      // matches Bradley Beach, etc. See src/lib/townAliases.js for the
+      // full cluster map. Falls back to a literal [townInput] for towns
+      // that aren't part of any defined cluster (e.g. Long Branch).
+      const cluster = getTownCluster(townInput);
+      const clusterLower = cluster.map(c => c.toLowerCase());
       list = list.filter(e => {
         // Three-tier match (most authoritative first):
-        //   1. venue.city — canonical, admin-curated. Catches the
-        //      Lake Como → Belmar override and other aliases.
-        //   2. venue.address — fallback substring match. Catches
-        //      venues whose city wasn't filled yet.
-        //   3. venue.name — last resort for venues whose name
-        //      contains the town and address is sparse.
+        //   1. venue.city — canonical, admin-curated. Cluster-aware so the
+        //      Lake Como → Belmar social aliasing works automatically.
+        //   2. venue.address — fallback substring match across any cluster
+        //      member. Catches venues whose city wasn't filled yet.
+        //   3. venue.name — last resort for venues whose name contains a
+        //      cluster town and address is sparse.
         const city = (e.venue_city || '').toLowerCase().trim();
-        if (city) return city === townKey;
+        if (city) return clusterLower.includes(city);
         const addr = (e.venue_address || '').toLowerCase();
         const venueName = (e.venue || e.venue_name || '').toLowerCase();
-        return addr.includes(townKey) || venueName.includes(townKey);
+        return clusterLower.some(c => addr.includes(c) || venueName.includes(c));
       });
     } else if (milesRadius !== null && locationCoords) {
       list = list.filter(e => {
