@@ -550,25 +550,30 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     onClick={e => { e.stopPropagation(); onFollowArtist(canonicalArtistName); }}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
-                      fontSize: '13px', fontWeight: 700,
-                      // Variant A — tinted outline pill. Same shape in both
-                      // unfollowed and followed states (8% orange tint bg,
-                      // full-opacity orange border, orange text); only the
-                      // leading icon differentiates (plus → checkmark).
-                      // Quieter than the solid orange CTA so the pill no
-                      // longer competes with the card's content for attention.
+                      fontSize: '13px', fontWeight: 600,
+                      // Direction A — outlined neutral pill. Brand orange
+                      // moves out of the action row and stays where it earns
+                      // attention (timestamp, divider, ticket stub). The pill
+                      // is one of three equal utilities now, not a hero CTA.
+                      // Followed state: subtle gray fill + darker border +
+                      // checkmark; unfollowed: transparent bg + light border
+                      // + plus icon. Same shape in both states.
                       padding: '6px 14px', borderRadius: '999px', cursor: 'pointer',
-                      border: '1.5px solid #E8722A',
-                      background: darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.08)',
-                      color: '#E8722A',
+                      border: isArtistFollowed
+                        ? `1.5px solid ${darkMode ? '#F0F0F5' : '#1F2937'}`
+                        : `1.5px solid ${darkMode ? 'rgba(255,255,255,0.20)' : '#D1D5DB'}`,
+                      background: isArtistFollowed
+                        ? (darkMode ? 'rgba(255,255,255,0.10)' : '#F3F4F6')
+                        : 'transparent',
+                      color: darkMode ? '#F0F0F5' : '#1F2937',
                       transition: 'all 0.2s ease',
                       fontFamily: "'DM Sans', sans-serif",
                       flexShrink: 0,
                     }}
                   >
                     {isArtistFollowed ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#E8722A" />
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <polyline points="20 6 9 17 4 12" />
                       </svg>
                     ) : (
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -603,35 +608,42 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                       }
                     }}
                     aria-pressed={isFavorited}
-                    aria-label={isFavorited ? 'Following this event' : 'Follow this event'}
+                    aria-label={isFavorited ? 'Saved this event' : 'Save this event'}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
-                      fontSize: '13px', fontWeight: 700,
-                      // Variant A — same tinted outline pill as Follow Artist.
-                      // Symmetric across artist and event-only cards: identical
-                      // shape and tint, only the icon differentiates state
-                      // (plus → checkmark). Wired to the same onToggleFavorite
-                      // handler as the ticket-stub icon at the top of the card
-                      // so the two controls stay in sync.
+                      fontSize: '13px', fontWeight: 600,
+                      // Direction A — outlined neutral pill, mirrored across
+                      // artist and event-only cards. Verb-consistent labels:
+                      // "Save Event" → "Saved Event" (bookmark semantics fit
+                      // events; "Follow" is reserved for artist subscription).
+                      // Wired to the same onToggleFavorite handler as the
+                      // ticket-stub icon at the top of the card so the two
+                      // controls stay in sync. On event-only cards there's no
+                      // SAVE/SAVED caption under the stub since this pill IS
+                      // the labeled save action.
                       padding: '6px 14px', borderRadius: '999px', cursor: 'pointer',
-                      border: '1.5px solid #E8722A',
-                      background: darkMode ? 'rgba(232,114,42,0.15)' : 'rgba(232,114,42,0.08)',
-                      color: '#E8722A',
+                      border: isFavorited
+                        ? `1.5px solid ${darkMode ? '#F0F0F5' : '#1F2937'}`
+                        : `1.5px solid ${darkMode ? 'rgba(255,255,255,0.20)' : '#D1D5DB'}`,
+                      background: isFavorited
+                        ? (darkMode ? 'rgba(255,255,255,0.10)' : '#F3F4F6')
+                        : 'transparent',
+                      color: darkMode ? '#F0F0F5' : '#1F2937',
                       transition: 'all 0.2s ease',
                       fontFamily: "'DM Sans', sans-serif",
                       flexShrink: 0,
                     }}
                   >
                     {isFavorited ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
-                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="#E8722A" />
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <polyline points="20 6 9 17 4 12" />
                       </svg>
                     ) : (
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                         <path d="M12 5v14M5 12h14" />
                       </svg>
                     )}
-                    {isFavorited ? 'Following Event' : 'Follow Event'}
+                    {isFavorited ? 'Saved Event' : 'Save Event'}
                   </button>
                 )}
 
