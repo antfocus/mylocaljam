@@ -163,7 +163,7 @@ export default function AdminPage() {
       tr.fetchTriage();
       ar.fetchArtists();
       ve.fetchScraperHealth();
-      ve.fetchVenues();
+      ve.fetchVenuesFull();
       se.fetchSeries();
     }
   }, [authenticated]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -195,7 +195,7 @@ export default function AdminPage() {
     ar.fetchArtists();
     ve.fetchScraperHealth();
     fetchAnalytics(); // PostHog analytics for dashboard
-    ve.fetchVenues(); // populate venue datalist for queue triage
+    ve.fetchVenuesFull(); // populate venue list (datalist for queue triage + Directory sub-tab)
     se.fetchSeries(); // populate event-series name autocomplete
   };
 
@@ -516,13 +516,22 @@ export default function AdminPage() {
         />
       )}
 
-      {/* Venues Tab */}
+      {/* Venues Tab — wraps Directory (CRUD) + Scrapers (health) sub-tabs */}
       {activeTab === 'venues' && !loading && (
         <AdminVenuesTab
-          events={ev.events} venues={ve.venues}
-          scraperHealth={ve.scraperHealth} venuesFilter={ve.venuesFilter}
+          venues={ve.venues}
+          scraperHealth={ve.scraperHealth}
+          showQueueToast={showQueueToast}
+          // Directory CRUD
+          fetchVenuesFull={ve.fetchVenuesFull}
+          createVenue={ve.createVenue}
+          updateVenue={ve.updateVenue}
+          deleteVenue={ve.deleteVenue}
+          // Scrapers health
+          venuesFilter={ve.venuesFilter}
           setVenuesFilter={ve.setVenuesFilter}
-          forceSyncing={ve.forceSyncing} handleForceSync={ve.handleForceSync}
+          forceSyncing={ve.forceSyncing}
+          handleForceSync={ve.handleForceSync}
           updateVenueDefaultTime={ve.updateVenueDefaultTime}
         />
       )}
