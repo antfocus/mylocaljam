@@ -37,6 +37,12 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const [isTextTruncated, setIsTextTruncated] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [pressed, setPressed] = useState(false);
+  // Hover flags for the action-row pills — used to swap the unfollowed
+  // background to the next neutral shade darker (Tailwind neutral-300
+  // light / neutral-700 dark). The followed/saved ghost states don't
+  // change on hover; they're already at their resting weight.
+  const [followHover, setFollowHover] = useState(false);
+  const [saveHover, setSaveHover] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [cardRect, setCardRect] = useState(null);
   const cardRef = useRef(null);
@@ -548,29 +554,31 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 {onFollowArtist && hasFollowableArtist && (
                   <button
                     onClick={e => { e.stopPropagation(); onFollowArtist(canonicalArtistName); }}
+                    onMouseEnter={() => setFollowHover(true)}
+                    onMouseLeave={() => setFollowHover(false)}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
                       fontSize: '13px',
-                      // Soft Fill to Ghost — visual hierarchy follows action
-                      // priority. Unfollowed state has presence (soft solid
-                      // fill, no border) to invite the click. Followed state
-                      // recedes (transparent bg, mid-gray outlined ghost) so
-                      // the action visually quiets down once complete.
-                      // Followed-state colors are tuned to clear WCAG AA
-                      // (zinc-500 on white ≈ 4.6:1, zinc-400 on near-black
-                      // ≈ 6.8:1) so the ghost reads as "confirmed" rather
-                      // than "disabled."
+                      // Soft Fill to Ghost on Tailwind's neutral palette (true
+                      // achromatic gray — no cool zinc tint). Unfollowed state
+                      // has presence (soft solid fill at neutral-200/800, near-
+                      // black or near-white text) inviting the click; followed
+                      // state recedes (transparent + neutral-300/700 hairline
+                      // border + neutral-500/400 text) so the action quiets
+                      // once complete. WCAG AA clean on both states.
                       fontWeight: isArtistFollowed ? 500 : 600,
                       padding: '7px 14px', borderRadius: '999px', cursor: 'pointer',
                       border: isArtistFollowed
-                        ? `1px solid ${darkMode ? '#52525B' : '#D4D4D8'}`
+                        ? `1px solid ${darkMode ? '#404040' : '#D4D4D4'}`
                         : 'none',
                       background: isArtistFollowed
                         ? 'transparent'
-                        : (darkMode ? '#27272A' : '#F4F4F5'),
+                        : (darkMode
+                          ? (followHover ? '#404040' : '#262626')
+                          : (followHover ? '#D4D4D4' : '#E5E5E5')),
                       color: isArtistFollowed
-                        ? (darkMode ? '#A1A1AA' : '#71717A')
-                        : (darkMode ? '#D4D4D8' : '#27272A'),
+                        ? (darkMode ? '#A3A3A3' : '#737373')
+                        : (darkMode ? '#F5F5F5' : '#171717'),
                       transition: 'all 0.2s ease-in-out',
                       fontFamily: "'DM Sans', sans-serif",
                       flexShrink: 0,
@@ -612,27 +620,31 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                         setPopoverFading(false);
                       }
                     }}
+                    onMouseEnter={() => setSaveHover(true)}
+                    onMouseLeave={() => setSaveHover(false)}
                     aria-pressed={isFavorited}
                     aria-label={isFavorited ? 'Saved this event' : 'Save this event'}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
                       fontSize: '13px',
-                      // Same Soft Fill to Ghost treatment as the Follow Artist
-                      // pill so artist and event-only cards share visual
-                      // language. Save Event/Saved Event verbs match the
-                      // bookmark semantics; Follow stays reserved for the
-                      // artist subscription action.
+                      // Same Soft Fill to Ghost (neutral palette) treatment
+                      // as the Follow Artist pill so artist and event-only
+                      // cards share visual language. Save Event / Saved Event
+                      // verbs match the bookmark semantics; Follow stays
+                      // reserved for the artist subscription action.
                       fontWeight: isFavorited ? 500 : 600,
                       padding: '7px 14px', borderRadius: '999px', cursor: 'pointer',
                       border: isFavorited
-                        ? `1px solid ${darkMode ? '#52525B' : '#D4D4D8'}`
+                        ? `1px solid ${darkMode ? '#404040' : '#D4D4D4'}`
                         : 'none',
                       background: isFavorited
                         ? 'transparent'
-                        : (darkMode ? '#27272A' : '#F4F4F5'),
+                        : (darkMode
+                          ? (saveHover ? '#404040' : '#262626')
+                          : (saveHover ? '#D4D4D4' : '#E5E5E5')),
                       color: isFavorited
-                        ? (darkMode ? '#A1A1AA' : '#71717A')
-                        : (darkMode ? '#D4D4D8' : '#27272A'),
+                        ? (darkMode ? '#A3A3A3' : '#737373')
+                        : (darkMode ? '#F5F5F5' : '#171717'),
                       transition: 'all 0.2s ease-in-out',
                       fontFamily: "'DM Sans', sans-serif",
                       flexShrink: 0,
