@@ -154,7 +154,22 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   // scraper alias, which doesn't resolve to any artists row → click does
   // nothing. Hide the button entirely in that case.
   const canonicalArtistName = event.artists?.name || event.artist_name || '';
-  const hasFollowableArtist = !!(event.artist_id && canonicalArtistName);
+  // hasFollowableArtist gates the Follow Artist pill. An artist is only
+  // followable if there's a real link AND the linked artist row is a
+  // genuine performer — not an event row (kind='event') or a billing
+  // row (kind='billing'). Event-kind rows exist for venue parties /
+  // brunches / trivia nights that got mistakenly shaped as artist rows
+  // by the scraper; they should render with Save Event, not Follow
+  // Artist. The kind check looks at the joined artist row when present;
+  // events without a joined artist row fall through (no kind to check
+  // → assume followable, the artist_id guard already handled it).
+  const linkedArtistKind = event.artists?.kind;
+  const hasFollowableArtist = !!(
+    event.artist_id
+    && canonicalArtistName
+    && linkedArtistKind !== 'event'
+    && linkedArtistKind !== 'billing'
+  );
 
   // Theme colors — all dynamic based on darkMode
   const cardBg      = darkMode ? '#1A1A24' : '#FFFFFF';
