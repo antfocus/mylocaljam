@@ -55,7 +55,12 @@ const DARK = {
 };
 
 const LIGHT = {
-  bg:           '#F7F5F2',
+  // Page bg shifted from #F7F5F2 (warm beige, ~3% darker than white — too
+  // subtle to read as a canvas) to #F5F5F5 (Tailwind neutral-100, true
+  // achromatic gray). Pairs with white #FFFFFF cards so each card reads
+  // as a discrete unit against the canvas. Mirrors the existing dark-mode
+  // pattern (#0D0D12 page / #1A1A24 card) inverted for light.
+  bg:           '#F5F5F5',
   surface:      '#FFFFFF',
   surfaceAlt:   '#F9FAFB',
   border:       '#E5E7EB',
@@ -3977,7 +3982,13 @@ export default function HomePage() {
                         </svg>
                       </button>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {/* Feed-card wrapper — gap tuned to 16px after the
+                        24px first pass felt airy in a multi-card scroll
+                        (Apr 30 canvas-vs-card review). Cards still read as
+                        discrete units against the page canvas thanks to
+                        the bg shift to neutral-100 + visible neutral-200
+                        border, but the feed no longer feels stretched out. */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       {group.events.map((event, i) => (
                         <EventCardV2
                           key={event.id ?? `${group.date}-${i}`}

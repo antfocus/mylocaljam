@@ -158,7 +158,12 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
 
   // Theme colors — all dynamic based on darkMode
   const cardBg      = darkMode ? '#1A1A24' : '#FFFFFF';
-  const borderColor = darkMode ? '#2A2A3A' : '#F3F4F6';
+  // Card border — bumped from #F3F4F6 (lighter than the page bg, so the
+  // edge actually disappeared into the canvas) to #E5E5E5 / neutral-200
+  // so cards have a visible hairline against the gray page bg. Dark
+  // mode kept at #2A2A3A — already creates clear separation against
+  // the near-black page bg.
+  const borderColor = darkMode ? '#2A2A3A' : '#E5E5E5';
   const textPrimary = darkMode ? '#F0F0F5' : '#1F2937';
   const textMuted   = darkMode ? '#7878A0' : '#6B7280';
   const venueColor  = darkMode ? '#4DB8B2' : '#2A8F8A';
@@ -197,7 +202,10 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   return (
     <div ref={cardRef} id={event?.id ? `event-${event.id}` : undefined} style={{
       background: cardBg,
-      borderRadius: '12px',
+      // 16px (rounded-2xl) — softer corners that match modern feed-card
+      // conventions and pair with the bumped page bg + visible border to
+      // give each card a discrete shape against the canvas.
+      borderRadius: '16px',
       overflow: 'hidden',
       boxShadow: shortcutOpen
         ? (darkMode ? '0 2px 16px rgba(232,114,42,0.25)' : '0 2px 12px rgba(232,114,42,0.2)')
