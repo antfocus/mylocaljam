@@ -434,7 +434,20 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
           overflow: 'hidden',
           transition: 'max-height 0.25s ease-out',
         }}>
-          <div onClick={() => { if (desc) setBioExpanded(prev => !prev); }} style={{ padding: '0 12px 12px 12px', background: expandedBg, cursor: desc ? 'pointer' : 'default' }}>
+          <div onClick={() => { if (desc) setBioExpanded(prev => !prev); }} style={{
+            padding: '0 12px 12px 12px',
+            background: expandedBg,
+            // Very subtle hairline between header and bottom content. Much
+            // lighter than the outer card border (~30-40% as visible) so it
+            // reads as a structural hint rather than dividing the card into
+            // two pieces. Only renders when expanded; collapsed cards stay
+            // seamless. transparent stand-in keeps the height consistent
+            // either way (no jump on toggle).
+            borderTop: expanded
+              ? `1px solid ${darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'}`
+              : '1px solid transparent',
+            cursor: desc ? 'pointer' : 'default',
+          }}>
 
             {/* Hero image — 16:9 aspect ratio, no clipping */}
             {imageUrl && (
