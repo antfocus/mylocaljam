@@ -86,12 +86,25 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   // description is pre-resolved via Hierarchy of Truth in page.js
   const desc = event?.description || '';
 
-  // Check if description text is actually truncated
+  // Short-bio threshold — bios under this length skip the line-clamp +
+  // Read More entirely so cards with concise blurbs render cleanly with
+  // no truncation chrome. New AI bios target ≤150 chars; legacy long
+  // bios continue to clamp + show Read More. Tuning value lives here so
+  // a designer can dial it up/down without touching prompt logic.
+  const SHORT_BIO_LIMIT = 150;
+  const isShortBio = desc.length > 0 && desc.length <= SHORT_BIO_LIMIT;
+
+  // Check if description text is actually truncated. Short bios skip this
+  // entirely (they fit in any number of lines, so the measurement is noise).
   useEffect(() => {
+    if (isShortBio) {
+      if (isTextTruncated) setIsTextTruncated(false);
+      return;
+    }
     if (descRef.current && !bioExpanded) {
       setIsTextTruncated(descRef.current.scrollHeight > descRef.current.clientHeight);
     }
-  }, [expanded, bioExpanded, desc]);
+  }, [expanded, bioExpanded, desc, isShortBio, isTextTruncated]);
 
   if (!event) return null;
 
@@ -462,12 +475,15 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
 
             {/* Cover Charge pill — hidden until feature is set up */}
 
-            {/* Bio / Description — 3-line clamp with Read More */}
+            {/* Bio / Description — short bios (≤150 chars) render inline with
+                no truncation chrome; long bios get the 3-line clamp + Read
+                More toggle. Threshold tuned to match the AI prompt target
+                so newly-generated artists default to clean, untruncated cards. */}
             {desc && (
               <div style={{ margin: '6px 0 8px' }}>
                 <p ref={descRef} style={{
                   fontSize: '15px', color: textDesc, lineHeight: 1.65, margin: 0,
-                  ...(bioExpanded ? {} : {
+                  ...(isShortBio || bioExpanded ? {} : {
                     display: '-webkit-box',
                     WebkitLineClamp: 3,
                     WebkitBoxOrient: 'vertical',
@@ -476,7 +492,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 }}>
                   {desc}
                 </p>
-                {(isTextTruncated || bioExpanded) && (
+                {!isShortBio && (isTextTruncated || bioExpanded) && (
                   <button
                     onClick={(e) => { e.stopPropagation(); setBioExpanded(prev => !prev); }}
                     style={{

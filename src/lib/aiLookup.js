@@ -106,10 +106,12 @@ export const ARTIST_VIBES = [
   'Chill / Low Key', 'Energetic / Party', 'Family-Friendly',
 ];
 
-// Hard cap on bio length. The prompt asks the LLM to stay under 250 chars,
-// but we ALSO enforce this client-side because sonar-pro occasionally runs
-// long. Trimming on a sentence boundary is handled in normalizeBio below.
-const BIO_MAX_CHARS = 250;
+// Hard cap on bio length. The prompt asks the LLM to stay under 150 chars
+// (matches the EventCardV2 short-bio threshold so newly-generated artists
+// render with no truncation chrome), but we ALSO enforce this client-side
+// because sonar-pro occasionally runs long. Trimming on a sentence
+// boundary is handled in normalizeBio below.
+const BIO_MAX_CHARS = 150;
 
 // Banned "hype" words — the system prompt asks the LLM not to use them, but
 // we also scrub the response client-side before accepting it. If a bio comes
@@ -483,21 +485,21 @@ STEP 2 — CONDITIONAL WRITING RULES
 
 IF kind === "MUSICIAN":
   BIO RULES (MUSICIAN):
-  - Maximum 250 characters (count every character including spaces and punctuation).
+  - Maximum 150 characters (count every character including spaces and punctuation). Hard limit — anything over 150 will be truncated and look broken on the card.
   - Focus STRICTLY on the artist's musical style, genre, vocal range, and instrumentation — what kind of music they play and how they sound.
   - DO NOT list past venues, tour history, award history, or any places the band has performed. Not even one example.
   - AVOID hype words: "legendary", "world-class", "amazing", "soul-stirring", "incredible", "electrifying", "unforgettable", "mind-blowing", "jaw-dropping", "high-energy", "captivating", "mesmerizing", "powerhouse", "showstopping", "breathtaking". Never use promotional adjectives.
   - DO NOT use generic filler sentences such as "Come out for a night of music" or "Don't miss this show" or "You won't want to miss…". Never address the reader or call them to action.
   - Tone: neutral, informative, professional — like an encyclopedia entry, not marketing copy.
-  - Write 1–3 complete sentences. End on a period. If you would exceed 250 characters, rewrite shorter rather than truncating mid-sentence.
+  - Write 1–2 complete sentences. End on a period. If you would exceed 150 characters, rewrite shorter rather than truncating mid-sentence.
   - DO NOT include citation markers like [1], [2], [3] in the bio text. Write clean prose with no references or footnotes.
   - If the data is insufficient to confidently identify the artist, return exactly: "NEEDS_MANUAL_REVIEW" for bio.
 
 IF kind === "VENUE_EVENT":
   BIO RULES (VENUE_EVENT):
-  - Maximum 250 characters (same hard cap).
+  - Maximum 150 characters (same hard cap).
   - Describe THE ACTIVITY, the venue's atmosphere, and what attendees can expect (e.g. trivia format and prize structure, karaoke vibe, food/drink special details, comedy lineup style).
-  - Keep it informative and punchy. 1–3 complete sentences. End on a period.
+  - Keep it informative and punchy. 1–2 complete sentences. End on a period. If you would exceed 150 characters, rewrite shorter.
   - DO NOT invent musical genres, vocal ranges, or performer details for food/trivia/drink events. This event has no "sound".
   - Same banned hype-word list applies: "legendary", "world-class", "amazing", "soul-stirring", "incredible", "electrifying", "unforgettable", "mind-blowing", "jaw-dropping", "high-energy", "captivating", "mesmerizing", "powerhouse", "showstopping", "breathtaking".
   - Same no-call-to-action rule: DO NOT write "Come out…", "Don't miss…", or address the reader.
