@@ -313,9 +313,9 @@ export default function AdminEnrichmentTab({
           Metadata Enrichment
         </h2>
         <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: '4px 0 0' }}>
-          {activeSubTab === 'backfill'
-            ? 'Backfill bios, images, and genre tags onto unenriched artists. Runs in a client-driven loop, snapshots each write so rollback is possible.'
-            : 'Triage events with missing metadata in a date range. Click a row to jump straight to the right edit modal.'}
+          {activeSubTab === 'backfill' && 'Backfill bios, images, and genre tags onto unenriched artists. Runs in a client-driven loop, snapshots each write so rollback is possible.'}
+          {activeSubTab === 'triage' && 'Triage events with missing metadata in a date range. Click a row to jump straight to the right edit modal.'}
+          {activeSubTab === 'queue' && 'Review staged AI enrichment proposals before they write to live artists. Bulk-enrich populates the queue; you Approve / Reject each row.'}
         </p>
       </div>
 
@@ -327,6 +327,7 @@ export default function AdminEnrichmentTab({
         {[
           { key: 'backfill', label: 'Backfill' },
           { key: 'triage', label: 'Triage' },
+          { key: 'queue', label: 'Queue' },
         ].map(t => (
           <button
             key={t.key}
@@ -362,6 +363,14 @@ export default function AdminEnrichmentTab({
           error={triageError}
           setError={setTriageError}
           onOpenEvent={onOpenEvent}
+          onOpenArtist={onOpenArtist}
+        />
+      )}
+
+      {activeSubTab === 'queue' && (
+        <QueueView
+          password={password}
+          showQueueToast={showQueueToast}
           onOpenArtist={onOpenArtist}
         />
       )}
@@ -979,6 +988,404 @@ function StatCard({ label, value, subtitle, accent }) {
           {subtitle}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Queue sub-component ─────────────────────────────────────────────────────
+// The bulk-enrich review queue. Lists pending_enrichments rows with their
+// joined artist current state, side-by-side for quick comparison. Approve
+// promotes the proposal to the live artist row + flips per-field locks;
+// Reject marks the queue row rejected without touching artists. The
+// "Run next 10" button calls /api/admin/bare-artists then /api/admin/bulk-enrich
+// in sequence so the operator stays on this tab through the full loop.
+function QueueView({ password, showQueueToast, onOpenArtist }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [actionId, setActionId] = useState(null); // id currently being approved/rejected
+  const [statusFilter, setStatusFilter] = useState('pending');
+  const [error, setError] = useState(null);
+  const [poolSize, setPoolSize] = useState(null);
+
+  const headers = useMemo(() => ({
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${password}`,
+  }), [password]);
+
+  // Load the queue. Triggered on mount, on status filter change, after
+  // every approve/reject, and after a bulk-enrich run completes.
+  const fetchQueue = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/pending-enrichments?status=${statusFilter}&limit=100`, { headers });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setItems(data.items || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [headers, statusFilter]);
+
+  useEffect(() => { fetchQueue(); }, [fetchQueue]);
+
+  // Run next 10: GET /api/admin/bare-artists for the priority list,
+  // then POST /api/admin/bulk-enrich with those IDs. Refetch the queue
+  // when done. Sync — the operator sees a "Running..." state for ~50s
+  // while the LLM works through the batch.
+  const runNextBatch = async () => {
+    if (running) return;
+    setRunning(true);
+    setError(null);
+    try {
+      const bareRes = await fetch('/api/admin/bare-artists?limit=10', { headers });
+      const bareData = await bareRes.json();
+      if (!bareRes.ok) throw new Error(bareData.error || `Bare-artists HTTP ${bareRes.status}`);
+      setPoolSize(bareData.pool_size ?? null);
+      const ids = (bareData.items || []).map(a => a.id);
+      if (ids.length === 0) {
+        showQueueToast?.('No bare artists left — backlog is clear.');
+        return;
+      }
+
+      showQueueToast?.(`Running enrichment on ${ids.length} artist${ids.length === 1 ? '' : 's'}…`);
+
+      const enrichRes = await fetch('/api/admin/bulk-enrich', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ artist_ids: ids }),
+      });
+      const enrichData = await enrichRes.json();
+      if (!enrichRes.ok) throw new Error(enrichData.error || `Bulk-enrich HTTP ${enrichRes.status}`);
+
+      const { processed, queued, failed } = enrichData;
+      showQueueToast?.(`Processed ${processed}: ${queued} queued, ${failed} failed`);
+
+      await fetchQueue();
+    } catch (err) {
+      setError(err.message);
+      showQueueToast?.(`Run failed: ${err.message}`);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const approve = async (item) => {
+    if (actionId) return;
+    setActionId(item.id);
+    try {
+      const res = await fetch(`/api/admin/pending-enrichments/${item.id}/approve`, {
+        method: 'POST', headers, body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      showQueueToast?.(`Approved "${item.artists?.name || 'artist'}" — ${data.fields_written?.join(', ') || 'fields'} written + locked`);
+      await fetchQueue();
+    } catch (err) {
+      showQueueToast?.(`Approve failed: ${err.message}`);
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const reject = async (item) => {
+    if (actionId) return;
+    if (!confirm(`Reject this proposal for "${item.artists?.name || 'artist'}"?\nThe artist row stays untouched.`)) return;
+    setActionId(item.id);
+    try {
+      const res = await fetch(`/api/admin/pending-enrichments/${item.id}/reject`, {
+        method: 'POST', headers, body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      showQueueToast?.(`Rejected "${item.artists?.name || 'artist'}"`);
+      await fetchQueue();
+    } catch (err) {
+      showQueueToast?.(`Reject failed: ${err.message}`);
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  return (
+    <div>
+      {/* Header — counts, status filter, run button */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <button
+          onClick={runNextBatch}
+          disabled={running || loading}
+          style={{
+            padding: '8px 16px', borderRadius: '8px',
+            background: running ? 'var(--bg-elevated)' : '#E8722A',
+            color: running ? 'var(--text-muted)' : '#000',
+            border: 'none', cursor: running ? 'not-allowed' : 'pointer',
+            fontSize: '13px', fontWeight: 700,
+            fontFamily: "'DM Sans', sans-serif",
+          }}
+        >
+          {running ? '⟳ Running enrichment…' : '⟳ Run next 10'}
+        </button>
+
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border)' }}>
+          {[
+            { key: 'pending',  label: 'Pending' },
+            { key: 'approved', label: 'Approved' },
+            { key: 'rejected', label: 'Rejected' },
+            { key: 'error',    label: 'Errors' },
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setStatusFilter(t.key)}
+              style={{
+                padding: '6px 12px', fontSize: '11px', fontWeight: 600,
+                fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+                background: 'none', border: 'none',
+                color: statusFilter === t.key ? 'var(--text-primary)' : 'var(--text-muted)',
+                borderBottom: statusFilter === t.key ? '2px solid #E8722A' : '2px solid transparent',
+                marginBottom: '-1px',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+          {items.length} {statusFilter}{poolSize != null && statusFilter === 'pending' ? ` · ${poolSize} bare artists in pool` : ''}
+        </span>
+
+        <button
+          onClick={fetchQueue}
+          disabled={loading || running}
+          style={{
+            marginLeft: 'auto',
+            padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+            background: 'transparent', color: 'var(--text-muted)',
+            border: '1px solid var(--border)', cursor: 'pointer',
+            fontFamily: "'DM Sans', sans-serif",
+          }}
+        >
+          {loading ? '…' : '↻ Refresh'}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{
+          padding: '10px 12px', borderRadius: '8px',
+          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)',
+          color: '#ef4444', fontSize: '12px', marginBottom: '12px',
+          fontFamily: "'DM Sans', sans-serif",
+        }}>
+          {error}
+        </div>
+      )}
+
+      {items.length === 0 && !loading ? (
+        <p style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: '13px', fontFamily: "'DM Sans', sans-serif" }}>
+          {statusFilter === 'pending'
+            ? 'Queue is empty. Click "Run next 10" to populate proposals.'
+            : `No ${statusFilter} rows.`}
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {items.map(item => (
+            <QueueRow
+              key={item.id}
+              item={item}
+              busy={actionId === item.id}
+              isPending={statusFilter === 'pending'}
+              onApprove={() => approve(item)}
+              onReject={() => reject(item)}
+              onOpenArtist={() => onOpenArtist?.(item.artists)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Single row in the review queue ──────────────────────────────────────────
+// Renders current artist data on the left and the proposed values on the
+// right so the operator can spot-compare at a glance. Approve / Reject /
+// Open Artist buttons in the footer when status='pending'; for other
+// statuses the row is read-only audit trail.
+function QueueRow({ item, busy, isPending, onApprove, onReject, onOpenArtist }) {
+  const artist = item.artists || {};
+  const proposedBio = item.proposed_bio || '';
+  const currentBio = artist.bio || '';
+
+  return (
+    <div style={{
+      padding: '14px 16px', borderRadius: '10px',
+      background: 'var(--bg-card)', border: '1px solid var(--border)',
+      fontFamily: "'DM Sans', sans-serif",
+    }}>
+      {/* Header — artist name + status + source */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+          {artist.name || '(unknown artist)'}
+        </span>
+        {item.status === 'error' && item.error_message && (
+          <span style={{
+            fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '4px',
+            background: 'rgba(239,68,68,0.12)', color: '#ef4444',
+          }}>
+            ERROR
+          </span>
+        )}
+        {item.notes && (
+          <span style={{
+            fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px',
+            background: 'rgba(234,179,8,0.12)', color: '#EAB308',
+          }}>
+            REVIEW CAREFULLY
+          </span>
+        )}
+        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+          {new Date(item.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+        </span>
+      </div>
+
+      {/* Side-by-side comparison */}
+      {item.status === 'error' ? (
+        <div style={{
+          padding: '10px 12px', borderRadius: '8px',
+          background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.20)',
+          color: '#ef4444', fontSize: '12px', fontFamily: 'monospace', wordBreak: 'break-word',
+        }}>
+          {item.error_message}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          {/* Current */}
+          <CompareColumn
+            label="CURRENT"
+            bio={currentBio}
+            imageUrl={artist.image_url}
+            genres={artist.genres}
+            vibes={artist.vibes}
+          />
+          {/* Proposed */}
+          <CompareColumn
+            label="PROPOSED"
+            bio={proposedBio}
+            imageUrl={item.proposed_image_url}
+            genres={item.proposed_genres}
+            vibes={item.proposed_vibes}
+            highlight
+          />
+        </div>
+      )}
+
+      {item.notes && (
+        <div style={{
+          marginTop: '10px', padding: '8px 10px', borderRadius: '6px',
+          background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.20)',
+          fontSize: '11px', color: '#EAB308',
+        }}>
+          {item.notes}
+        </div>
+      )}
+
+      {/* Action footer — only on pending rows */}
+      {isPending && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '14px' }}>
+          <button
+            onClick={onOpenArtist}
+            disabled={busy}
+            style={{
+              padding: '6px 12px', borderRadius: '6px',
+              background: 'transparent', color: 'var(--text-muted)',
+              border: '1px solid var(--border)', cursor: busy ? 'not-allowed' : 'pointer',
+              fontSize: '11px', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            Open Artist
+          </button>
+          <button
+            onClick={onReject}
+            disabled={busy}
+            style={{
+              padding: '6px 12px', borderRadius: '6px',
+              background: 'transparent', color: '#ef4444',
+              border: '1px solid rgba(239,68,68,0.30)', cursor: busy ? 'not-allowed' : 'pointer',
+              fontSize: '11px', fontWeight: 600, fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            Reject
+          </button>
+          <button
+            onClick={onApprove}
+            disabled={busy || item.status === 'error'}
+            style={{
+              padding: '6px 14px', borderRadius: '6px',
+              background: '#E8722A', color: '#000', border: 'none',
+              cursor: (busy || item.status === 'error') ? 'not-allowed' : 'pointer',
+              opacity: (busy || item.status === 'error') ? 0.5 : 1,
+              fontSize: '11px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            {busy ? 'Working…' : '✓ Approve'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompareColumn({ label, bio, imageUrl, genres, vibes, highlight }) {
+  return (
+    <div style={{
+      padding: '10px',
+      borderRadius: '8px',
+      background: highlight ? 'rgba(232,114,42,0.06)' : 'var(--bg-elevated)',
+      border: `1px solid ${highlight ? 'rgba(232,114,42,0.20)' : 'var(--border)'}`,
+    }}>
+      <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '6px' }}>
+        {label}
+      </div>
+
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageUrl}
+          alt=""
+          style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px', marginBottom: '6px' }}
+          onError={e => { e.currentTarget.style.display = 'none'; }}
+        />
+      ) : (
+        <div style={{
+          width: '60px', height: '60px', marginBottom: '6px',
+          borderRadius: '6px', background: 'var(--bg-card)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '10px', color: 'var(--text-muted)',
+        }}>
+          no image
+        </div>
+      )}
+
+      <p style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.45, margin: 0, marginBottom: '6px' }}>
+        {bio || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>(no bio)</span>}
+      </p>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+        {(Array.isArray(genres) ? genres : []).map(g => (
+          <span key={g} style={{
+            fontSize: '9px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px',
+            background: 'rgba(99,102,241,0.10)', color: '#6366f1',
+          }}>{g}</span>
+        ))}
+        {(Array.isArray(vibes) ? vibes : []).map(v => (
+          <span key={v} style={{
+            fontSize: '9px', fontWeight: 600, padding: '2px 6px', borderRadius: '4px',
+            background: 'rgba(20,184,166,0.10)', color: '#14b8a6',
+          }}>{v}</span>
+        ))}
+      </div>
     </div>
   );
 }
