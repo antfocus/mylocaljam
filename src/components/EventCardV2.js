@@ -96,6 +96,32 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const SHORT_BIO_LIMIT = 250;
   const isShortBio = desc.length > 0 && desc.length <= SHORT_BIO_LIMIT;
 
+  // Three-state card click cycle. Tapping anywhere on the card advances:
+  //   closed                → open with bio collapsed
+  //   open + bio collapsed  → bio expanded   (only if there's a long bio)
+  //   open + bio expanded   → closed
+  //   open + short bio      → closed         (no Read More step to walk)
+  // Action-row buttons stopPropagation so they bypass this cycle. The
+  // Read More / Show Less button has its own handler that participates
+  // in the same cycle but skips the "advance to bio expanded" step from
+  // the closed state (it's only reachable when the card is already open).
+  const handleCardClick = () => {
+    // Long-press just fired — swallow the click that follows pointerup.
+    if (longPressFired.current) { longPressFired.current = false; return; }
+    const hasLongBio = desc.length > 0 && !isShortBio;
+    if (!expanded) {
+      setExpanded(true);
+      setBioExpanded(false);
+      return;
+    }
+    if (!bioExpanded && hasLongBio) {
+      setBioExpanded(true);
+      return;
+    }
+    setExpanded(false);
+    setBioExpanded(false);
+  };
+
   // Check if description text is actually truncated. Short bios skip this
   // entirely (they fit in any number of lines, so the measurement is noise).
   useEffect(() => {
@@ -245,13 +271,11 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
       {/* Card body */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 
-        {/* Compact row — long-press opens shortcut menu, tap toggles expand */}
+        {/* Compact row — long-press opens shortcut menu, tap walks the
+            three-state cycle (closed → open → bio expanded → closed). See
+            handleCardClick above for the full state machine. */}
         <div
-          onClick={() => {
-            // If long-press just fired, swallow the click
-            if (longPressFired.current) { longPressFired.current = false; return; }
-            setExpanded(e => { if (e) setBioExpanded(false); return !e; });
-          }}
+          onClick={handleCardClick}
           onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
           onPointerDown={(e) => {
             setPressed(true);
@@ -449,7 +473,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
           overflow: 'hidden',
           transition: 'max-height 0.25s ease-out',
         }}>
-          <div onClick={() => { if (desc) setBioExpanded(prev => !prev); }} style={{
+          <div onClick={handleCardClick} style={{
             padding: '0 12px 12px 12px',
             background: expandedBg,
             // Very subtle hairline between header and bottom content. Much
