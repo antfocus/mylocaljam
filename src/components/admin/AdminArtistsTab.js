@@ -943,6 +943,67 @@ export default function AdminArtistsTab({
                 {aiLoading ? '\u23F3 Searching...' : '\u2728 Auto-Fill with AI'}
               </button>
               <button
+                onClick={async () => {
+                  const nowLocking = !editingArtist.is_locked;
+                  let newFieldLocks = {};
+                  if (nowLocking) {
+                    const prevLocks = editingArtist.is_human_edited || {};
+                    const fields = ['bio', 'image_url', 'genres', 'vibes', 'name'];
+                    fields.forEach((f) => {
+                      const v = editingArtist[f];
+                      const populated = Array.isArray(v) ? v.length > 0 : (v !== null && v !== undefined && String(v).trim() !== '');
+                      if (populated) {
+                        newFieldLocks[f] = !prevLocks[f];
+                      } else if (prevLocks[f] !== undefined) {
+                        newFieldLocks[f] = prevLocks[f];
+                      }
+                    });
+                  } else {
+                    newFieldLocks = {};
+                  }
+                  try {
+                    const res = await fetch('/api/admin/artists', {
+                      method: 'PUT',
+                      headers,
+                      body: JSON.stringify({
+                        id: editingArtist.id,
+                        is_locked: nowLocking,
+                        is_human_edited: newFieldLocks,
+                      }),
+                    });
+                    if (!res.ok) throw new Error('Failed to update lock state');
+                    setEditingArtist((prev) => ({ ...prev, is_locked: nowLocking, is_human_edited: newFieldLocks }));
+                    setArtistToast({ type: 'success', message: nowLocking ? 'Artist locked' : 'Artist unlocked' });
+                  } catch (err) {
+                    setArtistToast({ type: 'error', message: err.message || 'Failed to toggle lock' });
+                  }
+                }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  padding: '6px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 600,
+                  background: editingArtist.is_locked ? 'rgba(34,197,94,0.12)' : 'transparent',
+                  color: editingArtist.is_locked ? '#22c55e' : 'var(--text-muted)',
+                  border: `1px solid ${editingArtist.is_locked ? 'rgba(34,197,94,0.30)' : 'var(--border)'}`,
+                  cursor: 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: 'all 0.15s ease',
+                }}
+                title={editingArtist.is_locked ? 'Click to unlock artist' : 'Click to lock artist'}
+              >
+                {editingArtist.is_locked ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                  </svg>
+                )}
+                {editingArtist.is_locked ? 'Locked' : 'Unlocked'}
+              </button>
+              <button
                 onClick={() => { setEditingArtist(null); if (returnToTab) { setActiveTab(returnToTab); setReturnToTab(null); } }}
                 style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '18px' }}
               >{'\u2715'}</button>
