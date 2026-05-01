@@ -1008,6 +1008,19 @@ function QueueView({ password, showQueueToast, onOpenArtist }) {
   const [error, setError] = useState(null);
   const [poolSize, setPoolSize] = useState(null);
 
+  // Lightbox state — when a queue row's proposed image is clicked, opens
+  // a full-size overlay with prev/next nav across the full candidates
+  // array. `lightboxRowId` is the queue row whose lightbox is open;
+  // `lightboxIndex` is the candidate within that row's array.
+  const [lightboxRowId, setLightboxRowId] = useState(null);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+
+  // Per-row image override — when admin uses the lightbox to pick a
+  // different candidate, we store the chosen URL here. The Approve
+  // handler passes it as override.image_url so the chosen candidate
+  // (not just the top proposed one) gets written to the artist row.
+  const [chosenImages, setChosenImages] = useState({}); // { [rowId]: chosenUrl }
+
   const headers = useMemo(() => ({
     'Content-Type': 'application/json',
     Authorization: `Bearer ${password}`,
@@ -1077,12 +1090,25 @@ function QueueView({ password, showQueueToast, onOpenArtist }) {
     if (actionId) return;
     setActionId(item.id);
     try {
+      // If admin picked a non-top candidate via the lightbox, pass it as
+      // an override so the approve endpoint writes the chosen URL instead
+      // of the row's stored proposed_image_url.
+      const chosenImage = chosenImages[item.id];
+      const body = chosenImage
+        ? { override: { image_url: chosenImage } }
+        : {};
       const res = await fetch(`/api/admin/pending-enrichments/${item.id}/approve`, {
-        method: 'POST', headers, body: JSON.stringify({}),
+        method: 'POST', headers, body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       showQueueToast?.(`Approved "${item.artists?.name || 'artist'}" — ${data.fields_written?.join(', ') || 'fields'} written + locked`);
+      // Clean up the chosen-images entry now that the row is approved.
+      setChosenImages(prev => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
       await fetchQueue();
     } catch (err) {
       showQueueToast?.(`Approve failed: ${err.message}`);
@@ -1197,15 +1223,202 @@ function QueueView({ password, showQueueToast, onOpenArtist }) {
               item={item}
               busy={actionId === item.id}
               isPending={statusFilter === 'pending'}
+              chosenImage={chosenImages[item.id]}
               onApprove={() => approve(item)}
               onReject={() => reject(item)}
               onOpenArtist={() => onOpenArtist?.(item.artists)}
+              onOpenLightbox={() => {
+                // Find the index of the currently-active proposed image in
+                // the candidates array so the lightbox opens at the right
+                // starting frame. Falls back to 0 if the active URL isn't
+                // in the candidates array (rare edge case where proposed_image_url
+                // came from a different code path).
+                const candidates = lightboxCandidates(item, chosenImages[item.id]);
+                const activeUrl = chosenImages[item.id] || item.proposed_image_url;
+                const idx = Math.max(0, candidates.indexOf(activeUrl));
+                setLightboxRowId(item.id);
+                setLightboxIndex(idx);
+              }}
             />
           ))}
         </div>
       )}
+
+      {/* Image lightbox — opens when a queue row's proposed thumbnail is
+          clicked. Shows the candidate at full size with prev/next nav
+          across the row's proposed_image_candidates array, plus a "Use
+          this image" button that swaps the active candidate before the
+          admin approves. */}
+      {lightboxRowId && (() => {
+        const item = items.find(i => i.id === lightboxRowId);
+        if (!item) return null;
+        const candidates = lightboxCandidates(item, chosenImages[item.id]);
+        if (candidates.length === 0) return null;
+        const safeIdx = Math.min(Math.max(0, lightboxIndex), candidates.length - 1);
+        const url = candidates[safeIdx];
+        const isActive = url === (chosenImages[item.id] || item.proposed_image_url);
+
+        return (
+          <div
+            onClick={() => setLightboxRowId(null)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 300,
+              background: 'rgba(0,0,0,0.78)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '24px',
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                width: '100%', maxWidth: '720px',
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border)',
+                borderRadius: '14px',
+                padding: '20px',
+                display: 'flex', flexDirection: 'column', gap: '14px',
+                maxHeight: '90vh', overflow: 'auto',
+              }}
+            >
+              {/* Header — artist name + position chip */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {item.artists?.name || '(unknown artist)'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {url}
+                  </div>
+                </div>
+                {candidates.length > 1 && (
+                  <span style={{
+                    fontSize: '10px', fontWeight: 700,
+                    padding: '3px 8px', borderRadius: '4px',
+                    background: 'rgba(232,114,42,0.12)', color: '#E8722A',
+                  }}>
+                    {safeIdx + 1} of {candidates.length}
+                  </span>
+                )}
+              </div>
+
+              {/* Big preview with absolute-positioned chevrons */}
+              <div style={{
+                position: 'relative',
+                borderRadius: '8px', overflow: 'hidden',
+                background: 'var(--bg-elevated)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                minHeight: '240px',
+              }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  key={url}
+                  src={url}
+                  alt=""
+                  style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}
+                  onError={e => { e.currentTarget.style.opacity = '0.2'; }}
+                />
+                {candidates.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setLightboxIndex(prev => prev === 0 ? candidates.length - 1 : prev - 1);
+                      }}
+                      aria-label="Previous candidate"
+                      style={{
+                        position: 'absolute', left: '10px', top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: '40px', height: '40px', borderRadius: '50%',
+                        background: 'rgba(0,0,0,0.55)', color: '#fff',
+                        border: 'none', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="15 18 9 12 15 6" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setLightboxIndex(prev => prev === candidates.length - 1 ? 0 : prev + 1);
+                      }}
+                      aria-label="Next candidate"
+                      style={{
+                        position: 'absolute', right: '10px', top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: '40px', height: '40px', borderRadius: '50%',
+                        background: 'rgba(0,0,0,0.55)', color: '#fff',
+                        border: 'none', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setLightboxRowId(null)}
+                  style={{
+                    padding: '8px 14px', borderRadius: '8px',
+                    background: 'transparent', color: 'var(--text-muted)',
+                    border: '1px solid var(--border)',
+                    fontSize: '12px', fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={isActive}
+                  onClick={() => {
+                    setChosenImages(prev => ({ ...prev, [item.id]: url }));
+                    setLightboxRowId(null);
+                    showQueueToast?.('Image swapped — click Approve to commit');
+                  }}
+                  style={{
+                    padding: '8px 16px', borderRadius: '8px',
+                    background: isActive ? 'var(--bg-elevated)' : '#E8722A',
+                    color: isActive ? 'var(--text-muted)' : '#000',
+                    border: 'none',
+                    fontSize: '12px', fontWeight: 700,
+                    cursor: isActive ? 'not-allowed' : 'pointer',
+                    opacity: isActive ? 0.6 : 1,
+                  }}
+                >
+                  {isActive ? '✓ Currently active' : 'Use this image'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
+}
+
+// Helper: collect the unique candidate URLs for a queue row's image
+// lightbox. Order: chosenImage (if admin already swapped) → proposed_image_url
+// → proposed_image_candidates. Dedupe so the same URL doesn't appear twice.
+function lightboxCandidates(item, chosenImage) {
+  const list = [];
+  if (chosenImage) list.push(chosenImage);
+  if (item.proposed_image_url) list.push(item.proposed_image_url);
+  for (const url of (item.proposed_image_candidates || [])) {
+    if (url) list.push(url);
+  }
+  return [...new Set(list)];
 }
 
 // ── Single row in the review queue ──────────────────────────────────────────
@@ -1213,10 +1426,17 @@ function QueueView({ password, showQueueToast, onOpenArtist }) {
 // right so the operator can spot-compare at a glance. Approve / Reject /
 // Open Artist buttons in the footer when status='pending'; for other
 // statuses the row is read-only audit trail.
-function QueueRow({ item, busy, isPending, onApprove, onReject, onOpenArtist }) {
+function QueueRow({ item, busy, isPending, chosenImage, onApprove, onReject, onOpenArtist, onOpenLightbox }) {
   const artist = item.artists || {};
   const proposedBio = item.proposed_bio || '';
   const currentBio = artist.bio || '';
+  // The active proposed image — admin's lightbox-picked override if present,
+  // otherwise the LLM's top pick. This is what gets written on Approve.
+  const activeProposedImage = chosenImage || item.proposed_image_url;
+  const candidateCount = (() => {
+    const list = lightboxCandidates(item, chosenImage);
+    return list.length;
+  })();
 
   return (
     <div style={{
@@ -1269,13 +1489,18 @@ function QueueRow({ item, busy, isPending, onApprove, onReject, onOpenArtist }) 
             genres={artist.genres}
             vibes={artist.vibes}
           />
-          {/* Proposed */}
+          {/* Proposed — image is clickable; opens lightbox at full size
+              with prev/next nav across all candidates. activeProposedImage
+              reflects an admin-picked override if the lightbox swap was
+              used, otherwise the LLM's top pick. */}
           <CompareColumn
             label="PROPOSED"
             bio={proposedBio}
-            imageUrl={item.proposed_image_url}
+            imageUrl={activeProposedImage}
             genres={item.proposed_genres}
             vibes={item.proposed_vibes}
+            onImageClick={onOpenLightbox}
+            candidateCount={candidateCount}
             highlight
           />
         </div>
@@ -1337,7 +1562,15 @@ function QueueRow({ item, busy, isPending, onApprove, onReject, onOpenArtist }) 
   );
 }
 
-function CompareColumn({ label, bio, imageUrl, genres, vibes, highlight }) {
+function CompareColumn({ label, bio, imageUrl, genres, vibes, highlight, onImageClick, candidateCount }) {
+  // The image is clickable when an onImageClick handler is provided
+  // (proposed column only — current side is read-only). Renders as a
+  // larger 96x96 thumbnail when clickable so the admin has a better
+  // preview to evaluate, and shows a candidate-count chip if the
+  // proposal has multiple candidate URLs to choose from.
+  const clickable = typeof onImageClick === 'function';
+  const thumbSize = clickable ? 96 : 60;
+
   return (
     <div style={{
       padding: '10px',
@@ -1350,16 +1583,36 @@ function CompareColumn({ label, bio, imageUrl, genres, vibes, highlight }) {
       </div>
 
       {imageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={imageUrl}
-          alt=""
-          style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px', marginBottom: '6px' }}
-          onError={e => { e.currentTarget.style.display = 'none'; }}
-        />
+        <div style={{ position: 'relative', display: 'inline-block', marginBottom: '6px' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={imageUrl}
+            alt=""
+            onClick={clickable ? (e) => { e.stopPropagation(); onImageClick(); } : undefined}
+            style={{
+              width: `${thumbSize}px`, height: `${thumbSize}px`,
+              objectFit: 'cover', borderRadius: '6px',
+              cursor: clickable ? 'zoom-in' : 'default',
+              border: clickable ? '1px solid var(--border)' : 'none',
+              display: 'block',
+            }}
+            onError={e => { e.currentTarget.style.display = 'none'; }}
+          />
+          {clickable && candidateCount > 1 && (
+            <span style={{
+              position: 'absolute', top: '4px', right: '4px',
+              padding: '2px 6px', borderRadius: '4px',
+              background: 'rgba(0,0,0,0.65)', color: '#fff',
+              fontSize: '9px', fontWeight: 700,
+              fontFamily: "'DM Sans', sans-serif",
+            }}>
+              +{candidateCount - 1}
+            </span>
+          )}
+        </div>
       ) : (
         <div style={{
-          width: '60px', height: '60px', marginBottom: '6px',
+          width: `${thumbSize}px`, height: `${thumbSize}px`, marginBottom: '6px',
           borderRadius: '6px', background: 'var(--bg-card)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: '10px', color: 'var(--text-muted)',
