@@ -171,14 +171,37 @@ export function applyWaterfall(event, opts = {}) {
         ? (tpl?.start_time || dateDerived || venueTime || null)
         : (tpl?.start_time || e.start_time || dateDerived || venueTime || null));
 
-  // Bio — custom_bio → (human ? event → template : template → event) → artist.
+  // Bio — mirror the image waterfall (Tier 0 → Tier 1 → Tier 2 → Tier 3).
+  //
+  //   1. Tier 0: custom_bio — explicit per-event admin override (always wins).
+  //   2. Tier 1: template.bio — wins WHENEVER an event is template-linked,
+  //              regardless of the row's `is_locked` / `is_human_edited`
+  //              state. Templates exist specifically to override scraper
+  //              and artist-row noise; linking a template is the admin's
+  //              signal that the template's bio is the desired canonical.
+  //              To beat the template, set `custom_bio` (Tier 0).
+  //   3. Tier 2: e.artist_bio — denormalized snapshot from the artist row
+  //              at last sync, used only when there's no template OR the
+  //              template has no bio set.
+  //   4. Tier 3: tpl?.bio — explicit fallback for cases where template_id
+  //              is unset but a template was passed in via opts.template.
+  //   5. Tier 4: artist.bio — final live-row fallback.
+  //
+  // The previous logic had a `humanEdited` branch that gave `e.artist_bio`
+  // priority over `tpl.bio`. That made sense for fields the human edits
+  // directly on the event (event_title, category, start_time) but NOT for
+  // bio — `e.artist_bio` is a denormalized snapshot of the artist row,
+  // not a per-event human override. The actual per-event override is
+  // `custom_bio` (Tier 0). Treating the snapshot as a human override gave
+  // a stale/bad artist row priority over an admin-curated template,
+  // which is exactly the DJ Blu I'z May 24-29 symptom.
   const description =
-    cleanStr(e.custom_bio) ||
-    (humanEdited
-      ? (cleanStr(e.artist_bio) || cleanStr(tpl?.bio))
-      : (cleanStr(tpl?.bio) || cleanStr(e.artist_bio))) ||
-    cleanStr(artist?.bio) ||
-    '';
+    cleanStr(e.custom_bio)
+    || (e.template_id ? cleanStr(tpl?.bio) : null)
+    || cleanStr(e.artist_bio)
+    || cleanStr(tpl?.bio)
+    || cleanStr(artist?.bio)
+    || '';
 
   // Image waterfall.
   //

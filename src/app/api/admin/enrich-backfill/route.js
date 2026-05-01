@@ -216,10 +216,31 @@ export async function POST(request) {
       // `!artist.missing_fields?.includes('bio') === false` expression
       // immediately followed by an unconditional `if (result.bio)` that
       // overrode it. Net effect was "always write bio". Cleaned up here.
+      // ── Per-field lock guard (added 2026-05-01 after DJ Bluiz incident) ──
+      // The `missing_fields` array on the priority record is computed
+      // upstream and CAN go stale if a human added a per-field lock
+      // (`is_human_edited.bio = true` etc.) between when the row entered
+      // the queue and when it's processed here. This guard is the
+      // belt-and-suspenders re-check at write time using the live
+      // pre-write snapshot. Mirrors the helper in enrichArtist.js so the
+      // semantics stay consistent across both write paths.
+      const isFieldLocked = (row, field) => {
+        if (!row || row._snapshot_error) return false;
+        if (row.is_locked === true) return true;        // row-level lock
+        const he = row.is_human_edited;
+        if (he === true) return true;                    // legacy boolean
+        if (he && typeof he === 'object' && he[field] === true) return true;
+        return false;
+      };
+      const bioLocked    = isFieldLocked(preState, 'bio');
+      const imageLocked  = isFieldLocked(preState, 'image_url');
+      const genresLocked = isFieldLocked(preState, 'genres');
+
       const upsertData = { name: artist.artist_name };
       const missing = artist.missing_fields || [];
-      const canWriteBio = missing.includes('bio');
-      const canWriteImage = missing.includes('image_url');
+      const canWriteBio    = missing.includes('bio')       && !bioLocked;
+      const canWriteImage  = missing.includes('image_url') && !imageLocked;
+      const canWriteGenres = !genresLocked;
       let hasNewData = false;
 
       if (result?.bio && canWriteBio) {
@@ -240,8 +261,11 @@ export async function POST(request) {
         hasNewData = true;
       }
       // Genres: fill only when the artist has none (i.e. bio was also
-      // missing, which is how we got here via priority scoring).
-      if (result?.genres?.length && canWriteBio) {
+      // missing, which is how we got here via priority scoring) AND the
+      // genres field isn't independently locked. Prevents an unlocked-bio
+      // / locked-genres row from getting its genres clobbered alongside
+      // a legitimate bio refresh.
+      if (result?.genres?.length && canWriteBio && canWriteGenres) {
         upsertData.genres = result.genres;
       }
       // bio_source: record the source page the LLM used. Only relevant when
