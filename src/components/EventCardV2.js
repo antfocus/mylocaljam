@@ -582,12 +582,16 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                       // reset (appearance none, all box-modeling props zeroed)
                       // because Chrome/Safari user-agent button styles
                       // otherwise leak through as a faint pill outline.
-                      // Bold weight in BOTH states so the pill doesn't blend
-                      // into surrounding bio text — the recede happens via
-                      // color shift only (near-black → neutral-500).
+                      // Typography is "label" pattern (small uppercase tracked
+                      // 700-weight) so the pill reads as a UI element / status
+                      // indicator rather than another sentence in the bio
+                      // column. Same treatment in both states so the symmetry
+                      // holds; recede happens via color only.
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
-                      fontSize: '13px',
-                      fontWeight: 600,
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
                       padding: 0, margin: 0,
                       background: 'transparent',
                       border: 0,
@@ -643,14 +647,17 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     aria-pressed={isFavorited}
                     aria-label={isFavorited ? 'Following this event' : 'Follow this event'}
                     style={{
-                      // Same pure ghost treatment as Follow Artist. Both
-                      // pills use the Follow verb (Follow Artist / Follow
-                      // Event) so the user mental model is unified across
-                      // artist and event-only cards. Bold weight in both
-                      // states; recede via color only.
+                      // Same pure ghost treatment as Follow Artist plus the
+                      // small-uppercase-tracked label typography so both
+                      // pills read as UI indicators rather than sentences
+                      // in the bio column. Verb-unified labels (Follow
+                      // Event / Following Event) keep artist and event
+                      // cards mentally aligned.
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
-                      fontSize: '13px',
-                      fontWeight: 600,
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
                       padding: 0, margin: 0,
                       background: 'transparent',
                       border: 0,
