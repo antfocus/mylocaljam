@@ -5162,3 +5162,164 @@ Captured the planned hybrid local-plus-Claude autonomous agent setup as `AGENT_A
 - Image curation Phase 1 (PARKED #2) is the real long-term answer to image stability. The Find Images button + unstable-host deny-list is the second-best defense; saves to `photo_url` are still pointing at third-party CDNs that we don't control. Phase 1 mirrors chosen images to Supabase Storage so lifetime is fully ours.
 - The Mac mini agent loop (Phase 1 of AGENT_ARCHITECTURE) is the natural next big workstream. Concrete first move: install Ollama, pull Qwen2.5-Coder 32B, write a Node script that loops through unenriched weekend artists and calls AI Enhance against the local model. Compare to Claude output. If quality matches, the whole architecture is viable on the existing hardware.
 
+
+---
+
+## May 1 session — bulk-enrich queue, pill polish, data integrity hardening
+
+Long pre-launch session focused on building the enrichment review pipeline that closes the lock-bypass class of bug + actually unblocks the 446-artist bare-bio backlog. Plus an iteration cycle that landed the EventCardV2 pill on its final pure-ghost-uppercase-tracked-label form, a canvas-vs-card visual pass for the home feed, and a swarm of data integrity fixes triggered by a DJ Bluiz overwrite incident.
+
+### 1. DJ Bluiz incident + the two bugs it surfaced
+
+Tony reported that DJ Bluiz had `is_human_edited.bio = true` set as a per-field lock, but the bio had been overwritten with LLM-generated hedge text ("DJ Bluiz does not appear in available data; closest matches are DJ Bliss…"). The investigation surfaced **two independent bugs** that needed separate fixes.
+
+**Bug 1: enrich-backfill bypasses per-field locks.** The route's gate was `canWriteBio = missing.includes('bio')` — checking a stale `missing_fields` array computed upstream by `enrichmentPriority.js` before the row entered the queue. If an admin set `is_human_edited.bio = true` between the priority scan and the actual write, the gate didn't notice and the bio got clobbered. **Fix:** added a write-time `isFieldLocked` helper in `src/app/api/admin/enrich-backfill/route.js` that re-checks the live pre-write snapshot (`is_locked` row-level, `is_human_edited` legacy boolean, or `is_human_edited.<field>` per-field jsonb). ANDs into `canWriteBio` / `canWriteImage` / `canWriteGenres` so the lock is honored even if the priority queue is stale. Mirrors the helper pattern in `enrichArtist.js`.
+
+**Bug 2: waterfall favored stale artist snapshot over template.** Reading `src/lib/waterfall.js`, the bio resolution had a `humanEdited ? snapshot : template` branch that flipped the priority — when an event was `is_locked` or `is_human_edited`, the waterfall preferred the EVENT'S `e.artist_bio` (denormalized snapshot taken at last sync) over `tpl.bio` (the template's curated value). The intent was "humans set this directly," but `e.artist_bio` is NEVER a human override — that's `e.custom_bio` (Tier 0). The actual per-event human override already won; treating the snapshot as a human override gave a stale/bad artist row priority over admin-curated templates. **Fix:** flattened the bio waterfall to `custom_bio → (template_id ? tpl.bio) → e.artist_bio → tpl.bio → artist.bio`, mirroring the image waterfall pattern. After the fix, six DJ Bluiz events with both `template_id` and `is_locked` (Apr 24 – May 29) immediately rendered the correct template bio instead of the bad artist snapshot.
+
+The bigger lesson here: there are likely OTHER write paths in the codebase that have the same lock-bypass shape as enrich-backfill. The `/api/admin/enrich-queue` endpoint, future cron-triggered enrichment, and any agent loop we eventually add should all be audited against the `isFieldLocked` pattern.
+
+### 2. EventCardV2 pill — final pure-ghost form
+
+The pill went through two more iterations after the Apr 30 Soft Fill to Ghost (neutral palette) landed. Each one was Tony catching a real legibility issue:
+
+**First iteration — verb consistency + bold parity.** The unfollowed pill said "Follow Artist" but the followed said "Following Artist" — verb mismatch between the two states. AND the followed state used font-weight 500 while unfollowed used 600, making the followed pill blend into the surrounding bio prose. **Fix:** unified to verb-consistent `Follow Artist` ↔ `Following Artist` and `Save Event` ↔ `Following Event` (event pill rebranded from `Save` to `Follow` to keep the mental model unified). Bumped followed font-weight from 500 to 600 to match unfollowed; checkmark strokeWidth 2.5 → 3 to match the plus icon. Recede happens via color only.
+
+**Second iteration — pure ghost (no chrome).** Tony decided the pill chrome itself was unnecessary — the icon + verb already carry the affordance. **Fix:** removed background, border, padding entirely. Aggressive CSS reset (`appearance: none; -webkit-appearance: none; box-shadow: none; outline: 0; padding: 0; margin: 0`) to defeat Chrome/Safari user-agent button styling that was leaking through as a faint pill outline. Color forced via `!important` so dark-mode color-scheme overrides don't hide the text. Cursor-pointer is the only hover signal — no underline, no bg pill, no chrome ever appears.
+
+**Third iteration — small uppercase tracked label typography.** Tony noticed the followed text "Following Artist" was reading as another sentence in the bio's column rather than as a UI element — bold lowercase prose looks identical to bold lowercase UI. **Fix:** typography shifted to label pattern: `font-size: 11px`, `text-transform: uppercase`, `letter-spacing: 0.08em`, `font-weight: 700`. Same in both states. `+ FOLLOW ARTIST` / `✓ FOLLOWING ARTIST` now reads as a UI label / status indicator, classified as interactive control rather than narrative content. Same pattern as the admin form labels (`PHOTO URL`, `ADDRESS`).
+
+The pill is at its final form. Color recedes from near-black/near-white (unfollowed) to mid-gray (followed). Icon swaps plus → checkmark. Text label uppercases to small-caps. Zero chrome. This is the version to leave alone and watch in production for a week before any further iteration.
+
+### 3. Bio thresholds + LLM prompt tuning
+
+Cards were showing Read More on every bio because the previous prompts targeted 250 chars and EventCardV2 only rendered ≤150 inline. Tightened both ends.
+
+**LLM prompts (`src/lib/aiLookup.js`, `src/app/api/admin/ai-enhance/route.js`, `src/app/api/admin/enrich-probe/route.js`):** `BIO_MAX_CHARS` now 200 (was 250). Both MUSICIAN and VENUE_EVENT prompt branches updated to "Maximum 200 characters" + "1-2 complete sentences" + explicit "if you would exceed 200, rewrite shorter" instruction. Stronger hard-limit warning so the LLM doesn't try to negotiate the cap. ai-enhance was already at 150 chars for events; bumped to 200 too for consistency.
+
+**Frontend (`src/components/EventCardV2.js`):** new `SHORT_BIO_LIMIT = 250` constant. Bios at or below 250 chars render full text inline with no `-webkit-line-clamp` and no Read More button. Bios over 250 keep the existing 3-line clamp + Read More toggle. The 50-char buffer above the prompt target absorbs LLM responses that occasionally run slightly over.
+
+### 4. Canvas vs card visual pass
+
+Tony reported feed cards "blending together" while scrolling — white-on-white surfaces with no visible boundary between cards. Fixed with the canvas-vs-card pattern.
+
+- **Page bg:** `LIGHT.bg` shifted from `#F7F5F2` (warm beige, ~3% darker than white — too subtle to read as a canvas) to `#F5F5F5` (Tailwind neutral-100, true achromatic gray).
+- **Card border:** `borderColor` light mode flipped from `#F3F4F6` (lighter than the OLD page bg, edge disappeared) to `#E5E5E5` (neutral-200) — visible hairline against the gray page.
+- **Corner radius:** 12px → 16px (rounded-2xl).
+- **Feed gap:** 8px → 24px first pass felt airy → 16px settled value. Cards still read as discrete units, feed no longer feels stretched.
+
+Dark mode untouched — already had clean `#0D0D12` page vs `#1A1A24` card separation.
+
+**Card top + bottom unified.** The expanded section (image, bio, action row) used a slightly different bg (`#F9FAFB` light / `#14141E` dark) plus a `borderTop` divider against the header (time/title/venue). Tony noted this made the card feel like two glued halves. **Fix:** `expandedBg = cardBg` so the surface is uniform top-to-bottom, dropped the heavy divider. Then re-added a much subtler hairline at `rgba(0,0,0,0.08)` light / `rgba(255,255,255,0.05)` dark — about 30-40% as visible as the outer card border. Reads as a structural hint between header and action row without splitting the card.
+
+### 5. Bulk-enrich review queue — Phases 1–3 shipped end-to-end
+
+The biggest single workstream. Closes the DJ Bluiz incident class structurally: every automated enrichment proposal goes through admin review BEFORE writing to the live artist row.
+
+**`pending_enrichments` table** (Supabase migration `create_pending_enrichments_table`). Columns: `proposed_bio / proposed_image_url / proposed_image_candidates / proposed_genres / proposed_vibes / proposed_kind / proposed_is_tribute`, source-tracking (`source / llm_model / bio_source / image_source`), workflow state (`status` enum: pending/approved/rejected/archived/error, `error_message`, `notes`), audit columns (`created_at / reviewed_at / reviewer`). Partial unique index `(artist_id) WHERE status = 'pending'` enforces one-pending-row-per-artist; approved/rejected rows accumulate as audit trail. RLS enabled, admin-only via service-role key.
+
+**Five new API routes:**
+
+- `POST /api/admin/bulk-enrich` — accepts up to 10 artist IDs per call, fetches each artist + their next upcoming event for venue/city context, calls `aiLookupArtist` with `autoMode: true`, upserts proposals into `pending_enrichments`. 400ms throttle between LLM calls (matches enrich-backfill pattern). Per-artist try/catch — failures recorded as `error` rows in the queue so the UI surfaces them. Sync, ~50s for 10 artists.
+- `GET /api/admin/pending-enrichments?status=pending&limit=50` — returns queue rows with each pending proposal joined to its current artist state (artists table — bio, image_url, genres, vibes, kind, is_locked, is_human_edited). Drives the side-by-side current-vs-proposed comparison UI in one fetch.
+- `POST /api/admin/pending-enrichments/[id]/approve` — promotes a pending proposal to the live artist row. Whitelists fields (bio / image_url / genres / vibes / kind / is_tribute), normalizes `proposed_kind` from LLM uppercase (MUSICIAN/VENUE_EVENT) to schema-allowed lowercase (musician/event/billing) via the new `KIND_NORMALIZE` map (caught at deploy when first approve attempt hit `artists_kind_check` constraint violation), flips per-field `is_human_edited` locks for every field that was written, records `bio_source` / `image_source` / `image_candidates` for provenance. Optional `override.image_url` body lets the lightbox image-swap take effect on approve. Marks queue row `status='approved'` with `reviewed_at` + `reviewer`.
+- `POST /api/admin/pending-enrichments/[id]/reject` — marks queue row `rejected`, leaves artist row untouched. Optional `notes` body for audit context.
+- `GET /api/admin/bare-artists?limit=10` — returns next priority batch for the queue's "Run next 10" button. Filters: `bio IS NULL OR ''`, `kind = 'musician'`, `is_locked != true`, not already in `pending_enrichments` with `status = 'pending'`. Sorts soonest-upcoming-event first, no-event artists alphabetically last. Returns name + next_event_date + next_event_venue + next_event_city for each.
+
+**UI: Queue sub-tab inside `AdminEnrichmentTab`.** Third sub-tab alongside Backfill and Triage. Persists choice via sessionStorage + URL hash deep-link (`#queue` / `#triage` / `#backfill`) — fixes the bug where opening the artist edit modal from a queue row and returning would land back on Backfill. `QueueView` component holds the queue state, runs the bulk-enrich loop on "Run next 10" (calls bare-artists then bulk-enrich in sequence, ~50s while the LLM works), refetches the queue on every action. Status filter pills: Pending / Approved / Rejected / Errors. `QueueRow` renders a header (artist name + status badges + timestamp), side-by-side `CompareColumn` blocks (CURRENT artist data on left, PROPOSED LLM output on right with orange tint), and a footer with Open Artist / Reject / Approve buttons. Errors get a red ERROR badge with code-block error message. Rows flagged `needs_review` get a yellow REVIEW CAREFULLY badge.
+
+**Image lightbox in the queue.** Click any proposed thumbnail → centered overlay (z-index 300) at full size with prev/next chevrons across `proposed_image_candidates` array, "X of N" position chip, "Use this image" button that stores per-row `chosenImages[item.id]` override. Approve handler passes the chosen URL as `override.image_url` so the swap commits without separate API call. Same pattern as the venue Find Images lightbox.
+
+**Approve flow — kind normalization fix.** First production approve attempt failed with `new row for relation "artists" violates check constraint "artists_kind_check"`. aiLookup emits `kind` as uppercase per prompt contract; `artists.kind` CHECK constraint requires lowercase. **Fix:** added `KIND_NORMALIZE` map (`MUSICIAN → musician`, `VENUE_EVENT → event`, plus lowercase passthrough) and `normalizeKind` helper. Field-mapping loop runs through it before writing kind; unrecognized kinds get silently dropped instead of failing the whole approve so other fields (bio, image, genres) still write.
+
+### 6. kind-classification cleanup — 21 venue-event rows + EventCardV2 respect
+
+Continuation of the Apr 27 113-row reclassification work. 21 more artist rows that should be `kind='event'` instead of `kind='musician'`:
+
+**First batch (15 rows)** — Karaoke, TRIVIA: FRIENDS, Cinco de Mayo Celebration, Happy Memorial Day, Easter Brunch, BAR A's Saturday Night Dance Party, 2026 Summer Season Opening Party, 2026 Opening Party Start 2PM (long compound name), An Opera Celebration, Soup Can Magazine 5 Year Canniversary Party, Aubrey O'Day's Singalong, Maggie party 25-30, Summer House Finale Viewing Party, **Pre-Summer Happy Hour Begins**, Chris and Alexa Party. Reclassified via SQL.
+
+**Second batch (6 more rows from over-500 bio audit):**
+- Reclassified to event: AutismMVP Foundation's 9th Annual Brewing Awareness, OFF SITE: Allaire Beer Run.
+- Bios cleared (so they re-enter bulk-enrich queue under the new 200-char prompt): Alan Gross, Eddie Testa Band: Classic Hits Of Summer, REPRISE - Recreating Iconic Phish Shows, We May Be Right (Billy Joel Tribute). All four had scraper-junk bios ("21 AND OVER ADMITTED DOORS 7:00 PM..." / "Happy Hour 3pm-6pm $6 house wines...") — clearing them puts them back in the bulk-enrich queue as bare.
+
+**EventCardV2 `hasFollowableArtist` now respects kind.** Was `!!(event.artist_id && canonicalArtistName)`. Updated to also exclude `kind='event'` and `kind='billing'` so even when an event has `artist_id` set pointing to a now-event-classified row, the card renders with Save Event instead of Follow Artist. Without this, the SQL reclassification alone wouldn't change card behavior.
+
+**Events search API projects `artists.kind`.** Was missing from the Supabase select string in `/api/events/search/route.js` — the frontend kind check would have always evaluated `undefined`. Added.
+
+### 7. Just Bob events linked + alias cleanup
+
+Tony curated the Just Bob artist row, but his May 1 event card still rendered as event-only because none of the 6 Just Bob events had `artist_id` set. The Apr 29 auto-link sweep was a one-shot SQL pass — events scraped after that sweep don't get retroactively linked. Linked all 6 via SQL (`UPDATE events SET artist_id = ... WHERE artist_name IN ('Just Bob', 'Just Bob Outside')`). Added `Just Bob Outside` to `alias_names` on the artist row so future scraper hits with that variant auto-link via the existing alias-matcher.
+
+Worth noting for next session: this auto-link gap will keep biting until there's a recurring auto-link cron or a trigger on artist insert/update that re-scans matching events.
+
+### 8. Artist edit modal — row-level lock toggle in footer
+
+Tony's queue → Open Artist → edit → approve loop was missing a row-level lock step (the `is_locked` toggle is only in the directory list view, not inside the edit modal). Added a "🔒 Locked / 🔓 Unlocked" toggle to the modal — initially in the header next to Auto-Fill with AI, then moved to the footer between Save Draft and Approve & Publish per Tony's preference. Click toggles `is_locked` + flips per-field `is_human_edited` locks for all populated fields, persists immediately via PUT `/api/admin/artists`. Independent of the form save — locking doesn't require Approve, and Approve doesn't auto-lock.
+
+### 9. Artist Profile screen — upcoming shows row reorder
+
+Three-column layout went from `DAY DATE | VENUE | TIME` to `DAY DATE | TIME | VENUE`. Time bumped from 64px right-aligned to 80px left-aligned (no longer flush to right edge). Reads as `WHEN | WHERE` with the time clustered into the "when" group. Visually scans like a tour schedule.
+
+### 10. Bio audit — the launch backlog reality check
+
+Cross-table audit revealed the actual scale of the enrichment task:
+
+- **Empty bios: 446 musicians.** The bulk-enrich queue's target population. Significantly larger than the 172-bare number we were working from earlier sessions.
+- **Bios under 150 chars: 270.** Render inline with no Read More.
+- **Bios 150-200: 103.** Render inline (under the 250 frontend threshold).
+- **Bios 200-250: 154.** Render inline.
+- **Bios 250-350: 97.** Show Read More on cards.
+- **Bios 350-500: 61.** Show Read More.
+- **Bios over 500: 38 → 30 after today's cleanup.** Show Read More.
+
+The 446 bare artists are the actual launch backlog. The bulk-enrich queue + 200-char prompt is the path through it. ~17 batches of "Run next 10" to clear if quality holds.
+
+### Files Changed (May 1)
+
+| File | Change |
+|------|--------|
+| `src/components/EventCardV2.js` | Pill final form: pure ghost + small-uppercase-tracked typography. SHORT_BIO_LIMIT 250. hasFollowableArtist respects kind=event/billing. Card surface unified (expandedBg = cardBg) + subtle hairline divider. Border bumped 12→16, borderColor → #E5E5E5 |
+| `src/lib/waterfall.js` | Bio waterfall flattened — template_id beats e.artist_bio regardless of lock |
+| `src/lib/aiLookup.js` | BIO_MAX_CHARS 250 → 200; prompt branches updated |
+| `src/app/api/admin/enrich-backfill/route.js` | Added isFieldLocked write-time guard + canWrite gates |
+| `src/app/api/admin/ai-enhance/route.js` | 150 → 200 char limit |
+| `src/app/api/admin/enrich-probe/route.js` | 250 → 200 char limit (prompt mirror) |
+| `src/app/api/admin/bulk-enrich/route.js` | NEW — POST handler, calls aiLookup per artist, upserts to pending_enrichments |
+| `src/app/api/admin/pending-enrichments/route.js` | NEW — GET queue list with artist join |
+| `src/app/api/admin/pending-enrichments/[id]/approve/route.js` | NEW — promote proposal + KIND_NORMALIZE + lock flip |
+| `src/app/api/admin/pending-enrichments/[id]/reject/route.js` | NEW — mark rejected |
+| `src/app/api/admin/bare-artists/route.js` | NEW — priority list for Run next 10 |
+| `src/app/api/events/search/route.js` | Added `artists.kind` to select projection |
+| `src/components/admin/AdminEnrichmentTab.js` | Queue sub-tab + QueueView + QueueRow + CompareColumn + image lightbox + sub-tab persistence (sessionStorage + hash) |
+| `src/components/admin/AdminArtistsTab.js` | Lock toggle in modal footer |
+| `src/components/ArtistProfileScreen.js` | Upcoming shows row reorder DATE → TIME → VENUE |
+| `src/app/page.js` | LIGHT.bg #F7F5F2 → #F5F5F5; feed gap 8 → 16 |
+| Supabase migration `create_pending_enrichments_table` | NEW table for staged proposals |
+| Supabase `artists` rows | 21 reclassified to kind='event' across two batches; 6 cleared bios + linked Just Bob events; alias added |
+
+### Tasks closed this session (#52–#73)
+
+DJ Bluiz lock investigation, waterfall fix, enrich-backfill lock fix, pure ghost pills, bio threshold tuning, canvas vs card pass, hairline divider tuning, bulk-enrich Phase 1 (schema + endpoints), Phase 2 (Queue UI), Phase 3 (approve/reject), kind normalize, lock toggle in modal, sub-tab persistence, profile row reorder, 6-row over-500 cleanup. See task list for full detail.
+
+### Tasks still open
+
+- **#15** Draft VENUE_MANAGEMENT.md skill doc
+- **#17** Migrate Agent_SOP content + delete file
+- **#19** Housekeeping — fold transient docs into HANDOVER
+- **#24** Mott's Creek Bar scraper — verify second cron run is stable
+- Carryover: 446 bare artists waiting for bulk-enrich queue runs (the launch-blocking work), compound artist name pattern (PARKED #17 — 5-7 rows still need rename treatment), image curation Phase 1 (PARKED #2 — long-term answer to image stability), Mac mini agent loop (Phase 1 of AGENT_ARCHITECTURE — post-launch).
+
+### Manual follow-up Tony is handling solo
+
+- **Run the bulk-enrich queue.** First batch landed today; 4 of 10 needed rejection because Tony had already curated those artists directly. Pattern is established (`Reject` queue rows where the artist row already has bio + locks). 446 bare artists to chew through across multiple focused sessions.
+- **18 over-500 real-artist bios** with upcoming events (Steve Reilly, Felice Brothers, Built to Spill 5350 chars, Sublime 4020 chars, etc.) — bios are legitimate Wikipedia-style content, just longer than the new prompt target. Read More renders fine on cards. Optional clean-up: re-trigger AI Enhance per artist, OR add a "Force re-enrich on over-N artists" endpoint that bypasses the bare-only filter.
+- **Multi-artist disambiguation rows** (4): Mango, TBA, Steve, on point — bios begin with "There is more than one artist with this name: 1.) ..." from Last.fm/MusicBrainz import. Need NEEDS_MANUAL_REVIEW or manual artist-section pick.
+
+### Notes for next session
+
+- The bulk-enrich queue is now the central enrichment surface. Don't add more enrichment write paths without routing them through pending_enrichments — the staged-write pattern is what prevents the DJ Bluiz incident class structurally.
+- The "approved-via-direct-edit → reject the queue row" pattern is the standard cleanup. If this happens A LOT (more than 5-10 per batch), worth building an "Auto-archive already-curated" button that bulk-rejects pending rows whose linked artist now has `is_human_edited.bio = true`. Saves per-click time.
+- The auto-link cron is a real gap. The Just Bob and DJ Bluiz issues both surfaced because events scraped after a manual artist creation don't get retroactively linked. Worth considering a recurring nightly job that runs the auto-link query against `artist_id IS NULL` events. Not blocking launch, but would eliminate this whole class of one-off cleanup.
+- `EventCardV2` is at a stopping point. The pill went through ~10 design iterations across two days. Don't preemptively iterate again — let it bake in production for a week and gather usage signal before another design pass.
+- The Mac mini agent loop (AGENT_ARCHITECTURE Phase 1) is still the natural post-launch big win. The bulk-enrich queue is now the perfect host surface — Qwen on the mini writes proposals to `pending_enrichments`, Tony reviews via the same Queue UI he's already using. Same exact workflow; only the model URL changes.
+
