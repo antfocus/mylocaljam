@@ -169,7 +169,13 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const venueColor  = darkMode ? '#4DB8B2' : '#2A8F8A';
   const textDesc    = darkMode ? '#AAAACC' : '#4B5563';
   const heartOff    = darkMode ? '#6A5A7A' : '#9B8A8E';
-  const expandedBg  = darkMode ? '#14141E' : '#F9FAFB';
+  // Expanded section bg matches the card bg so the top header and the
+  // bottom content read as one unified surface rather than two glued
+  // halves. Previously sat at #F9FAFB / #14141E (one shade off cardBg)
+  // for visual hierarchy, but with the canvas-vs-card pattern shipped
+  // the outer border + page bg already do that work — the inner color
+  // shift just made cards look split.
+  const expandedBg  = cardBg;
   const flagIconCol = darkMode ? '#6A6A8A' : '#9CA3AF';
   const flagIconHov = '#E8722A';
   const sheetBg     = darkMode ? '#1A1A24' : '#FFFFFF';
@@ -428,7 +434,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
           overflow: 'hidden',
           transition: 'max-height 0.25s ease-out',
         }}>
-          <div onClick={() => { if (desc) setBioExpanded(prev => !prev); }} style={{ padding: '0 12px 12px 12px', borderTop: expanded ? `1px solid ${borderColor}` : '1px solid transparent', background: expandedBg, cursor: desc ? 'pointer' : 'default' }}>
+          <div onClick={() => { if (desc) setBioExpanded(prev => !prev); }} style={{ padding: '0 12px 12px 12px', background: expandedBg, cursor: desc ? 'pointer' : 'default' }}>
 
             {/* Hero image — 16:9 aspect ratio, no clipping */}
             {imageUrl && (
