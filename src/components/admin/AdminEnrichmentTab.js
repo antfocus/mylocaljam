@@ -68,7 +68,38 @@ export default function AdminEnrichmentTab({
   onOpenEvent,
   onOpenArtist,
 }) {
-  const [activeSubTab, setActiveSubTab] = useState('backfill');
+  // Sub-tab persistence — without this, the activeSubTab resets to
+  // 'backfill' every time AdminEnrichmentTab unmounts and remounts (which
+  // happens whenever the admin navigates to artists/venues/etc. and back,
+  // including the Queue → "Open Artist" → edit → close flow). sessionStorage
+  // remembers the operator's last sub-tab; the URL hash supports deep-linking.
+  // Same pattern as AdminVenuesTab.
+  const [activeSubTab, setActiveSubTab] = useState(() => {
+    if (typeof window === 'undefined') return 'backfill';
+    const hash = window.location.hash;
+    if (hash === '#queue' || hash === '#triage' || hash === '#backfill') {
+      return hash.slice(1);
+    }
+    try {
+      const stored = sessionStorage.getItem('mlj_enrichment_subtab');
+      if (['backfill', 'triage', 'queue'].includes(stored)) return stored;
+    } catch {}
+    return 'backfill';
+  });
+
+  // Persist sub-tab change. Wraps setActiveSubTab so every change writes to
+  // sessionStorage AND syncs the URL hash. The toggle buttons call this
+  // instead of the raw setter.
+  const handleSubTabChange = useCallback((key) => {
+    setActiveSubTab(key);
+    try { sessionStorage.setItem('mlj_enrichment_subtab', key); } catch {}
+    if (typeof window !== 'undefined') {
+      const newHash = `#${key}`;
+      if (window.location.hash !== newHash) {
+        window.history.replaceState(null, '', newHash);
+      }
+    }
+  }, []);
 
   // ── Triage sub-tab state ─────────────────────────────────────────────────
   // Default range = this weekend (Thu-Sun). Most enrichment work happens
@@ -331,7 +362,7 @@ export default function AdminEnrichmentTab({
         ].map(t => (
           <button
             key={t.key}
-            onClick={() => setActiveSubTab(t.key)}
+            onClick={() => handleSubTabChange(t.key)}
             style={{
               padding: '10px 18px', background: 'transparent',
               border: 'none', cursor: 'pointer',
