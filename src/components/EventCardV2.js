@@ -37,12 +37,6 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const [isTextTruncated, setIsTextTruncated] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [pressed, setPressed] = useState(false);
-  // Hover flags for the action-row pills — used to swap the unfollowed
-  // background to the next neutral shade darker (Tailwind neutral-300
-  // light / neutral-700 dark). The followed/saved ghost states don't
-  // change on hover; they're already at their resting weight.
-  const [followHover, setFollowHover] = useState(false);
-  const [saveHover, setSaveHover] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [cardRect, setCardRect] = useState(null);
   const cardRef = useRef(null);
@@ -554,32 +548,28 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 {onFollowArtist && hasFollowableArtist && (
                   <button
                     onClick={e => { e.stopPropagation(); onFollowArtist(canonicalArtistName); }}
-                    onMouseEnter={() => setFollowHover(true)}
-                    onMouseLeave={() => setFollowHover(false)}
                     style={{
+                      // Pure ghost — zero chrome at any state. The icon plus
+                      // verb carries the affordance; cursor pointer confirms
+                      // on hover. No bg, no border, no underline. Aggressive
+                      // reset (appearance none, all box-modeling props zeroed)
+                      // because Chrome/Safari user-agent button styles
+                      // otherwise leak through as a faint pill outline.
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
                       fontSize: '13px',
-                      // Soft Fill to Ghost on Tailwind's neutral palette (true
-                      // achromatic gray — no cool zinc tint). Unfollowed state
-                      // has presence (soft solid fill at neutral-200/800, near-
-                      // black or near-white text) inviting the click; followed
-                      // state recedes (transparent + neutral-300/700 hairline
-                      // border + neutral-500/400 text) so the action quiets
-                      // once complete. WCAG AA clean on both states.
                       fontWeight: isArtistFollowed ? 500 : 600,
-                      padding: '7px 14px', borderRadius: '999px', cursor: 'pointer',
-                      border: isArtistFollowed
-                        ? `1px solid ${darkMode ? '#404040' : '#D4D4D4'}`
-                        : 'none',
-                      background: isArtistFollowed
-                        ? 'transparent'
-                        : (darkMode
-                          ? (followHover ? '#404040' : '#262626')
-                          : (followHover ? '#D4D4D4' : '#E5E5E5')),
+                      padding: 0, margin: 0,
+                      background: 'transparent',
+                      border: 0,
+                      outline: 0,
+                      boxShadow: 'none',
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      cursor: 'pointer',
                       color: isArtistFollowed
                         ? (darkMode ? '#A3A3A3' : '#737373')
                         : (darkMode ? '#F5F5F5' : '#171717'),
-                      transition: 'all 0.2s ease-in-out',
+                      transition: 'color 0.2s ease',
                       fontFamily: "'DM Sans', sans-serif",
                       flexShrink: 0,
                     }}
@@ -593,7 +583,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                         <path d="M12 5v14M5 12h14" />
                       </svg>
                     )}
-                    {isArtistFollowed ? 'Following Artist' : 'Follow Artist'}
+                    {isArtistFollowed ? 'Artist Followed' : 'Follow Artist'}
                   </button>
                 )}
 
@@ -620,32 +610,28 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                         setPopoverFading(false);
                       }
                     }}
-                    onMouseEnter={() => setSaveHover(true)}
-                    onMouseLeave={() => setSaveHover(false)}
                     aria-pressed={isFavorited}
-                    aria-label={isFavorited ? 'Saved this event' : 'Save this event'}
+                    aria-label={isFavorited ? 'Event saved' : 'Save this event'}
                     style={{
+                      // Same pure ghost treatment as Follow Artist so the
+                      // dual-control on artist cards (Follow Artist + ticket
+                      // stub) and the single control on event-only cards
+                      // (Save Event) share identical visual language.
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
                       fontSize: '13px',
-                      // Same Soft Fill to Ghost (neutral palette) treatment
-                      // as the Follow Artist pill so artist and event-only
-                      // cards share visual language. Save Event / Saved Event
-                      // verbs match the bookmark semantics; Follow stays
-                      // reserved for the artist subscription action.
                       fontWeight: isFavorited ? 500 : 600,
-                      padding: '7px 14px', borderRadius: '999px', cursor: 'pointer',
-                      border: isFavorited
-                        ? `1px solid ${darkMode ? '#404040' : '#D4D4D4'}`
-                        : 'none',
-                      background: isFavorited
-                        ? 'transparent'
-                        : (darkMode
-                          ? (saveHover ? '#404040' : '#262626')
-                          : (saveHover ? '#D4D4D4' : '#E5E5E5')),
+                      padding: 0, margin: 0,
+                      background: 'transparent',
+                      border: 0,
+                      outline: 0,
+                      boxShadow: 'none',
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      cursor: 'pointer',
                       color: isFavorited
                         ? (darkMode ? '#A3A3A3' : '#737373')
                         : (darkMode ? '#F5F5F5' : '#171717'),
-                      transition: 'all 0.2s ease-in-out',
+                      transition: 'color 0.2s ease',
                       fontFamily: "'DM Sans', sans-serif",
                       flexShrink: 0,
                     }}
@@ -659,7 +645,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                         <path d="M12 5v14M5 12h14" />
                       </svg>
                     )}
-                    {isFavorited ? 'Saved Event' : 'Save Event'}
+                    {isFavorited ? 'Event Saved' : 'Save Event'}
                   </button>
                 )}
 
