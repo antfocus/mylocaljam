@@ -444,7 +444,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
             // seamless. transparent stand-in keeps the height consistent
             // either way (no jump on toggle).
             borderTop: expanded
-              ? `1px solid ${darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'}`
+              ? `1px solid ${darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)'}`
               : '1px solid transparent',
             cursor: desc ? 'pointer' : 'default',
           }}>
