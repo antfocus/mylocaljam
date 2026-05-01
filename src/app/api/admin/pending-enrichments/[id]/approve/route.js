@@ -36,6 +36,28 @@ const FIELD_MAP = [
 
 const OVERRIDE_ALLOWED = new Set(['bio', 'image_url', 'genres', 'vibes', 'kind', 'is_tribute']);
 
+// Schema-allowed kind values (must match the artists.kind CHECK constraint).
+// aiLookup emits MUSICIAN / VENUE_EVENT in uppercase per the prompt contract;
+// this map normalizes those (and any close variants) to the lowercase values
+// the database accepts. Anything not in the map gets dropped silently — better
+// than letting a non-conforming value reach the DB and fail the whole approve.
+const KIND_NORMALIZE = {
+  'musician': 'musician',
+  'MUSICIAN': 'musician',
+  'event': 'event',
+  'EVENT': 'event',
+  'VENUE_EVENT': 'event',
+  'venue_event': 'event',
+  'billing': 'billing',
+  'BILLING': 'billing',
+};
+
+function normalizeKind(raw) {
+  if (raw == null) return null;
+  const trimmed = String(raw).trim();
+  return KIND_NORMALIZE[trimmed] || null;
+}
+
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
   return authHeader === `Bearer ${process.env.ADMIN_PASSWORD}`;
@@ -97,6 +119,17 @@ export async function POST(request, { params }) {
     if (val === null || val === undefined) continue;
     if (Array.isArray(val) && val.length === 0) continue;
     if (typeof val === 'string' && val.trim() === '') continue;
+
+    // kind needs special handling — aiLookup emits MUSICIAN/VENUE_EVENT
+    // (uppercase) but the artists.kind CHECK constraint only accepts
+    // musician/event/billing (lowercase). Normalize before writing;
+    // drop the field entirely if the LLM emitted something we don't
+    // recognize (rather than failing the whole approve).
+    if (artistCol === 'kind') {
+      const normalized = normalizeKind(val);
+      if (!normalized) continue;
+      val = normalized;
+    }
 
     artistUpdates[artistCol] = val;
     newLocks[lockKey] = true;
