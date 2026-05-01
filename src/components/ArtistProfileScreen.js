@@ -591,7 +591,25 @@ export default function ArtistProfileScreen({
                       {dayLabel ? `${dayLabel} ${dateLabel}` : dateLabel}
                     </span>
                   )}
-                  {/* Venue — title case, light, takes remaining width */}
+                  {/* Time — moved to immediately follow the date so the row
+                      reads as a "when" cluster (DAY DATE TIME) before the
+                      venue. Same muted mono styling, fixed width so the
+                      venue column starts at the same x-coordinate on every
+                      row. Hidden entirely when no real time is known. */}
+                  {timeLabel && (
+                    <span style={{
+                      width: '80px', flexShrink: 0,
+                      fontSize: '12px', fontWeight: 500,
+                      color: textMuted,
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      letterSpacing: '0.3px',
+                    }}>
+                      {timeLabel}
+                    </span>
+                  )}
+                  {/* Venue — title case, light, takes remaining width.
+                      Moved to last column so the row reads as a schedule:
+                      when + where, with venue as the right-edge anchor. */}
                   <span style={{
                     flex: 1, minWidth: 0,
                     fontSize: '14px', fontWeight: 500,
@@ -601,21 +619,6 @@ export default function ArtistProfileScreen({
                   }}>
                     {venueRaw}
                   </span>
-                  {/* Time column — right-aligned, muted mono. Always in the
-                      same column position so a list of shows reads like a
-                      schedule. Hidden entirely when no real time is known. */}
-                  {timeLabel && (
-                    <span style={{
-                      flexShrink: 0, marginLeft: '12px',
-                      fontSize: '12px', fontWeight: 500,
-                      color: textMuted,
-                      fontFamily: "'IBM Plex Mono', monospace",
-                      letterSpacing: '0.3px',
-                      minWidth: '64px', textAlign: 'right',
-                    }}>
-                      {timeLabel}
-                    </span>
-                  )}
                 </div>
               );
             })}
