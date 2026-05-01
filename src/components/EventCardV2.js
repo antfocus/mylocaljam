@@ -88,10 +88,12 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
 
   // Short-bio threshold — bios under this length skip the line-clamp +
   // Read More entirely so cards with concise blurbs render cleanly with
-  // no truncation chrome. New AI bios target ≤150 chars; legacy long
-  // bios continue to clamp + show Read More. Tuning value lives here so
-  // a designer can dial it up/down without touching prompt logic.
-  const SHORT_BIO_LIMIT = 150;
+  // no truncation chrome. New AI bios target ≤200 chars; the 250-char
+  // frontend threshold gives a 50-char buffer so even responses that
+  // run slightly over the prompt target still render cleanly. Legacy
+  // long bios continue to clamp + show Read More. Tuning value lives
+  // here so a designer can dial it up/down without touching prompt logic.
+  const SHORT_BIO_LIMIT = 250;
   const isShortBio = desc.length > 0 && desc.length <= SHORT_BIO_LIMIT;
 
   // Check if description text is actually truncated. Short bios skip this
@@ -475,10 +477,11 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
 
             {/* Cover Charge pill — hidden until feature is set up */}
 
-            {/* Bio / Description — short bios (≤150 chars) render inline with
+            {/* Bio / Description — short bios (≤250 chars) render inline with
                 no truncation chrome; long bios get the 3-line clamp + Read
-                More toggle. Threshold tuned to match the AI prompt target
-                so newly-generated artists default to clean, untruncated cards. */}
+                More toggle. Threshold sits 50 chars above the AI prompt
+                target (200) so even slightly-over LLM responses still render
+                cleanly without the truncation toggle appearing. */}
             {desc && (
               <div style={{ margin: '6px 0 8px' }}>
                 <p ref={descRef} style={{

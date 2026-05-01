@@ -43,7 +43,7 @@ export async function POST(request) {
   // ARTIST/VENUE classification fork (see aiLookup.js) so event copy stays
   // tight and on-brand. Old version capped at 2-4 sentences (loose), used
   // an 80-word example that anchored the model to verbose output, and
-  // didn't ban repetition of the event name. New version: 150 char hard
+  // didn't ban repetition of the event name. New version: 200 char hard
   // cap, classification fork, explicit name-repetition ban, longer hype
   // word blacklist (added "high energy" per user request).
   //
@@ -70,7 +70,7 @@ STEP 2 — WRITE THE BIO
 ═══════════════════════════════════════════════════════
 
 UNIVERSAL RULES (both branches):
-- MAXIMUM 150 CHARACTERS. Count every character including spaces and punctuation. If you exceed 150, rewrite shorter.
+- MAXIMUM 200 CHARACTERS. Count every character including spaces and punctuation. If you exceed 200, rewrite shorter.
 - 1 to 2 complete sentences. End on a period.
 - DO NOT repeat the event name, artist name, or venue name in the bio. The card already shows them.
 - AVOID hype words and generic filler: "high energy", "amazing", "incredible", "electrifying", "unforgettable", "world-class", "legendary", "captivating", "mesmerizing", "powerhouse", "showstopping", "breathtaking", "soul-stirring", "mind-blowing", "vibrant", "immersive", "thrill", "savor", "dive into", "moody glow", "flickering".
@@ -106,7 +106,7 @@ Now write the bio for the provided event using this exact tone and length.`;
 
 You will return a JSON object with the following fields. ONLY the "bio" field is governed by the tone contract above — the other fields remain classification tasks.
 
-1. "bio" — The event description. Follow the rules in the description contract above to the letter. 150 char max. 1-2 sentences. ARTIST branch describes music; VENUE branch describes activity/atmosphere. No banned words. No name repetition. No reader address.
+1. "bio" — The event description. Follow the rules in the description contract above to the letter. 200 char max. 1-2 sentences. ARTIST branch describes music; VENUE branch describes activity/atmosphere. No banned words. No name repetition. No reader address.
 2. "genre" — The artist's primary genre. Pick ONE EXACTLY from this list (case and spelling must match): ${ALLOWED_GENRES.join(', ')}. Use "Cover Band" for tribute/cover acts. Use "DJ" for DJ sets. Use "Metal" for any metal subgenre (metalcore, deathcore, hardcore). If unsure, pick the closest single match — never invent a new label.
 3. "vibe" — The likely event atmosphere. Pick ONE from: ${ALLOWED_VIBES.join(', ')}. "Vibe" describes the venue experience (energy level, crowd atmosphere), NOT the artist's genre. A jazz trio at a wine bar is "Chill / Low Key". A jazz trio at a street festival is "Energetic / Party".
 4. "image_search_query" — A Google Image search query that would find a photo of this specific artist or band. Use the artist name plus terms like "band", "live", or "musician" to get relevant results. Example: "The Wallflowers band" or "DJ Jazzy Jeff live".
