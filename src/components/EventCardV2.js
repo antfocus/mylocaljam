@@ -574,9 +574,12 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                       // reset (appearance none, all box-modeling props zeroed)
                       // because Chrome/Safari user-agent button styles
                       // otherwise leak through as a faint pill outline.
+                      // Bold weight in BOTH states so the pill doesn't blend
+                      // into surrounding bio text — the recede happens via
+                      // color shift only (near-black → neutral-500).
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
                       fontSize: '13px',
-                      fontWeight: isArtistFollowed ? 500 : 600,
+                      fontWeight: 600,
                       padding: 0, margin: 0,
                       background: 'transparent',
                       border: 0,
@@ -594,7 +597,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     }}
                   >
                     {isArtistFollowed ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     ) : (
@@ -602,7 +605,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                         <path d="M12 5v14M5 12h14" />
                       </svg>
                     )}
-                    {isArtistFollowed ? 'Artist Followed' : 'Follow Artist'}
+                    {isArtistFollowed ? 'Following Artist' : 'Follow Artist'}
                   </button>
                 )}
 
@@ -630,15 +633,16 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                       }
                     }}
                     aria-pressed={isFavorited}
-                    aria-label={isFavorited ? 'Event saved' : 'Save this event'}
+                    aria-label={isFavorited ? 'Following this event' : 'Follow this event'}
                     style={{
-                      // Same pure ghost treatment as Follow Artist so the
-                      // dual-control on artist cards (Follow Artist + ticket
-                      // stub) and the single control on event-only cards
-                      // (Save Event) share identical visual language.
+                      // Same pure ghost treatment as Follow Artist. Both
+                      // pills use the Follow verb (Follow Artist / Follow
+                      // Event) so the user mental model is unified across
+                      // artist and event-only cards. Bold weight in both
+                      // states; recede via color only.
                       display: 'inline-flex', alignItems: 'center', gap: '6px',
                       fontSize: '13px',
-                      fontWeight: isFavorited ? 500 : 600,
+                      fontWeight: 600,
                       padding: 0, margin: 0,
                       background: 'transparent',
                       border: 0,
@@ -656,7 +660,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     }}
                   >
                     {isFavorited ? (
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     ) : (
@@ -664,7 +668,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                         <path d="M12 5v14M5 12h14" />
                       </svg>
                     )}
-                    {isFavorited ? 'Event Saved' : 'Save Event'}
+                    {isFavorited ? 'Following Event' : 'Follow Event'}
                   </button>
                 )}
 
