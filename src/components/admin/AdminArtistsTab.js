@@ -454,7 +454,15 @@ export default function AdminArtistsTab({
     // can flip the filter pill above search to access the others when
     // curating those rows. Rows missing a kind value are treated as
     // 'musician' so legacy data continues to show under the default view.
-    if (artistKindFilter && artistKindFilter !== 'all') {
+    //
+    // BYPASSED WHEN SEARCHING: if there's a search query, we always search
+    // across ALL kinds. Otherwise the admin types "mother" and the filter
+    // hides the kind='event' "Mother's Day" row they're trying to find /
+    // delete — exactly the dead-end Tony hit on May 2. Search is the
+    // explicit "find this thing" intent; the filter is the implicit "tidy
+    // default list" intent. Search wins.
+    const trimmedSearch = (artistsSearch || '').trim();
+    if (artistKindFilter && artistKindFilter !== 'all' && !trimmedSearch) {
       list = list.filter(a => (a.kind || 'musician') === artistKindFilter);
     }
 
@@ -576,17 +584,24 @@ export default function AdminArtistsTab({
 
           {/* Count — reflects the kind filter so admins see how many rows
               are actually visible under the current filter, not the raw
-              approved-artists total which is misleading when filtered. */}
+              approved-artists total which is misleading when filtered.
+              Mirrors the same search-bypass rule as the list filter
+              (search overrides kind), so the count never disagrees with
+              what's actually rendered. */}
           {(() => {
+            const searchActive = !!(artistsSearch && artistsSearch.trim());
             const visible = artists
               .filter(a => a.bio && a.image_url)
-              .filter(a => artistKindFilter === 'all' || (a.kind || 'musician') === artistKindFilter);
+              .filter(a => searchActive
+                || artistKindFilter === 'all'
+                || (a.kind || 'musician') === artistKindFilter
+              );
+            const noun = (searchActive || artistKindFilter === 'all')
+              ? 'row'
+              : artistKindFilter === 'musician' ? 'artist' : artistKindFilter;
             return (
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-                {visible.length} approved {artistKindFilter === 'all'
-                  ? 'row'
-                  : artistKindFilter === 'musician' ? 'artist' : artistKindFilter}
-                {visible.length !== 1 ? 's' : ''}
+                {visible.length} approved {noun}{visible.length !== 1 ? 's' : ''}
               </div>
             );
           })()}
@@ -620,6 +635,7 @@ export default function AdminArtistsTab({
             display: 'inline-flex', alignItems: 'center',
           });
 
+          const directorySearchActive = !!(artistsSearch && artistsSearch.trim());
           const approvedArtists = artists
             .filter(a => a.bio && a.image_url)
             // Same kind filter as Metadata Triage — defaults to 'musician'
@@ -627,7 +643,16 @@ export default function AdminArtistsTab({
             // plumbing rows ("Happy Mother's Day", "Trivia NIGHT", "BOGO
             // Burger"…) that exist in the artists table for join purposes.
             // Treat null kind as 'musician' so legacy rows still appear.
-            .filter(a => artistKindFilter === 'all' || (a.kind || 'musician') === artistKindFilter)
+            //
+            // BYPASSED WHEN SEARCHING — if there's a search query the filter
+            // is suspended so admin always finds matches by name regardless
+            // of which kind they live under. Same rationale as Metadata
+            // Triage: search is "find this thing", filter is the default
+            // tidy view. Search wins.
+            .filter(a => directorySearchActive
+              || artistKindFilter === 'all'
+              || (a.kind || 'musician') === artistKindFilter
+            )
             .sort((a, b) => {
               const { col, dir } = directorySort;
               const mult = dir === 'asc' ? 1 : -1;

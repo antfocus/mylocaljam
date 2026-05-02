@@ -614,7 +614,13 @@ export default function HomePage() {
       return null;
     }
 
-    const artistSet = new Map();   // normalized → display name
+    // Per-row kind affects how the badge renders. Map stores {display, kind}
+    // so rows linked to a kind='event' or 'billing' artist (Mother's Day
+    // Brunch, Kirkby Kiss + Hundreds Of Au + …) get an EVENT badge in the
+    // dropdown instead of being mis-labeled ARTIST. The end-user wants to
+    // FIND these in search (don't hide them), they just shouldn't be sold
+    // as performers.
+    const artistSet = new Map();   // normalized → { display, kind }
     const venueSet  = new Map();   // normalized → display name
     const eventSet  = new Map();   // normalized → { label, display }
 
@@ -624,12 +630,15 @@ export default function HomePage() {
       // event titles or drink specials so mis-placed scraper rows never
       // get mis-labeled "ARTIST".
       const artistName = (e.artists?.name ?? '').trim();
+      const artistKind = e.artists?.kind || 'musician';
       if (artistName
           && artistName.length <= 50
           && !classifyTitle(artistName)
           && !DRINK_SPECIAL_RE.test(artistName)) {
         const key = artistName.toLowerCase();
-        if (matchesQ(key, q) && !artistSet.has(key)) artistSet.set(key, artistName);
+        if (matchesQ(key, q) && !artistSet.has(key)) {
+          artistSet.set(key, { display: artistName, kind: artistKind });
+        }
       }
 
       // Venues: from joined venue data
@@ -677,9 +686,11 @@ export default function HomePage() {
           ) {
             // Un-classified, non-special rawTitle → treat as artist so the
             // dropdown still surfaces scraper rows where the artist FK
-            // hasn't been linked yet.
+            // hasn't been linked yet. No artist join here (artistName was
+            // empty) so default kind='musician' — best guess until the row
+            // gets linked.
             const akey = rawTitle.toLowerCase();
-            if (!artistSet.has(akey)) artistSet.set(akey, rawTitle);
+            if (!artistSet.has(akey)) artistSet.set(akey, { display: rawTitle, kind: 'musician' });
           }
         }
       }
@@ -719,9 +730,17 @@ export default function HomePage() {
       if (results.length >= 6) break;
       results.push({ type: 'venue', label: display });
     }
-    for (const [, display] of artistSet) {
+    // Translate the row's kind to the dropdown result type. kind='event'
+    // and kind='billing' rows render with the EVENT badge + calendar icon
+    // (because they aren't real performers — they're branded venue events
+    // and multi-act lineups respectively). Only kind='musician' gets the
+    // ARTIST badge + music-note icon.
+    for (const [, entry] of artistSet) {
       if (results.length >= 6) break;
-      results.push({ type: 'artist', label: display });
+      const resultType = (entry.kind === 'event' || entry.kind === 'billing')
+        ? 'event'
+        : 'artist';
+      results.push({ type: resultType, label: entry.display });
     }
     return results;
   }, [debouncedSearch, events, eventSeries]);
