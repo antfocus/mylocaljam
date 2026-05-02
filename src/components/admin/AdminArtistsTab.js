@@ -547,9 +547,49 @@ export default function AdminArtistsTab({
               </button>
             )}
           </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
-            {artists.filter(a => a.bio && a.image_url).length} approved artist{artists.filter(a => a.bio && a.image_url).length !== 1 ? 's' : ''}
-          </div>
+
+          {/* Kind filter — same control as on Metadata Triage. Defaults to
+              'musician' so opening the Directory lands on real artists; flip
+              to Events / Billings / All when curating those plumbing rows
+              ("Happy Mother's Day", "Trivia NIGHT", "BOGO Burger" etc.).
+              Highlighted in orange when not on Musicians so the change of
+              context is unmistakable. */}
+          <select
+            value={artistKindFilter}
+            onChange={e => setArtistKindFilter(e.target.value)}
+            title="Filter the Directory by row kind"
+            style={{
+              padding: '7px 28px 7px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+              fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', appearance: 'none',
+              background: artistKindFilter !== 'musician' ? 'rgba(232,114,42,0.10)' : 'var(--bg-card)',
+              border: artistKindFilter !== 'musician' ? '1px solid #E8722A' : '1px solid var(--border)',
+              color: artistKindFilter !== 'musician' ? '#E8722A' : 'var(--text-secondary)',
+              backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none'/%3E%3C/svg%3E")`,
+              backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+            }}
+          >
+            <option value="musician">Musicians</option>
+            <option value="event">Events</option>
+            <option value="billing">Billings</option>
+            <option value="all">All kinds</option>
+          </select>
+
+          {/* Count — reflects the kind filter so admins see how many rows
+              are actually visible under the current filter, not the raw
+              approved-artists total which is misleading when filtered. */}
+          {(() => {
+            const visible = artists
+              .filter(a => a.bio && a.image_url)
+              .filter(a => artistKindFilter === 'all' || (a.kind || 'musician') === artistKindFilter);
+            return (
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
+                {visible.length} approved {artistKindFilter === 'all'
+                  ? 'row'
+                  : artistKindFilter === 'musician' ? 'artist' : artistKindFilter}
+                {visible.length !== 1 ? 's' : ''}
+              </div>
+            );
+          })()}
           <div style={{ marginLeft: 'auto' }}>{addArtistButton}</div>
         </div>
         {addArtistModal}
@@ -582,6 +622,12 @@ export default function AdminArtistsTab({
 
           const approvedArtists = artists
             .filter(a => a.bio && a.image_url)
+            // Same kind filter as Metadata Triage — defaults to 'musician'
+            // so the Directory opens onto real artists, not the venue-event
+            // plumbing rows ("Happy Mother's Day", "Trivia NIGHT", "BOGO
+            // Burger"…) that exist in the artists table for join purposes.
+            // Treat null kind as 'musician' so legacy rows still appear.
+            .filter(a => artistKindFilter === 'all' || (a.kind || 'musician') === artistKindFilter)
             .sort((a, b) => {
               const { col, dir } = directorySort;
               const mult = dir === 'asc' ? 1 : -1;
