@@ -42,6 +42,7 @@
 
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
+import { sweepEventsForArtist } from '@/lib/artistSweep';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -161,9 +162,27 @@ export async function POST(request) {
     );
   }
 
+  // ── Retroactive sweep for sibling events ───────────────────────────────
+  // Promoting one event creates an artist row whose name probably matches
+  // OTHER events in the feed sharing the same artist_name. Sweep them now
+  // so the admin doesn't have to repeat the promote flow on every duplicate.
+  // Non-fatal — the originating event is already linked.
+  let siblingsSwept = 0;
+  try {
+    const { swept, error: sweepErr } = await sweepEventsForArtist(supabase, artistId);
+    if (sweepErr) console.error('[promote] sweep failed (non-fatal):', sweepErr.message);
+    else siblingsSwept = swept;
+  } catch (sweepErr) {
+    console.error('[promote] sweep threw (non-fatal):', sweepErr);
+  }
+
   return NextResponse.json({
     action,
     artist_id: artistId,
     artist_name: artistName,
+    // Number of additional events linked beyond the originating one. Surfaces
+    // in the modal toast so the admin knows when one click cleared multiple
+    // duplicates.
+    siblings_linked: siblingsSwept,
   });
 }

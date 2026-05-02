@@ -325,7 +325,11 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
       const verb = data.action === 'created'        ? 'Created artist row and linked event'
                  : data.action === 'linked'         ? 'Linked event to existing artist row'
                  : /* already-linked */               'Event already linked';
-      setToast({ message: `${verb}. Closing…`, type: 'success' });
+      const siblings = Number(data.siblings_linked) || 0;
+      const siblingNote = siblings > 0
+        ? ` (+${siblings} sibling event${siblings === 1 ? '' : 's'} also linked)`
+        : '';
+      setToast({ message: `${verb}${siblingNote}. Closing…`, type: 'success' });
       // Brief delay so admin sees the toast before the modal vanishes.
       setTimeout(() => { onClose?.(); }, 700);
     } catch (err) {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase';
+import { sweepEventsForArtist } from '@/lib/artistSweep';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -162,6 +163,21 @@ export async function POST(request) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Retroactively link any pre-existing events whose artist_name matches the
+  // new artist's name. Scenario: scraper populated events with artist_name
+  // "Tom Gannon" weeks ago (no artist_id), then admin creates the Tom Gannon
+  // artist row today. Without this sweep those orphan events stay unlinked.
+  // Non-fatal — artist is already saved.
+  if (data?.[0]?.id) {
+    try {
+      const { swept, error: sweepErr } = await sweepEventsForArtist(supabase, data[0].id);
+      if (sweepErr) console.error('[artists POST] sweep failed (non-fatal):', sweepErr.message);
+      else if (swept > 0) console.log(`[artists POST] Linked ${swept} orphan events to new artist "${name}"`);
+    } catch (sweepErr) {
+      console.error('[artists POST] sweep threw (non-fatal):', sweepErr);
+    }
   }
 
   revalidatePath('/');
@@ -371,6 +387,21 @@ export async function PUT(request) {
     } catch (aliasErr) {
       console.error('Alias mirror to artist_aliases failed (non-fatal):', aliasErr);
     }
+  }
+
+  // ── Retroactive event linkage sweep ──────────────────────────────────────
+  // The artist_aliases mirror above only helps FUTURE scrapes. For events
+  // that were ALREADY scraped with an artist_name matching the canonical
+  // name or an alias (and were never linked because the artist row / alias
+  // didn't exist at the time), we now retroactively stamp artist_id. Cheap
+  // to run on every PUT — the sweep helper queries just the unlinked
+  // upcoming events and only writes when there are matches. Non-fatal.
+  try {
+    const { swept, error: sweepErr } = await sweepEventsForArtist(supabase, id);
+    if (sweepErr) console.error('[artists PUT] sweep failed (non-fatal):', sweepErr.message);
+    else if (swept > 0) console.log(`[artists PUT] Linked ${swept} orphan events to artist ${id}`);
+  } catch (sweepErr) {
+    console.error('[artists PUT] sweep threw (non-fatal):', sweepErr);
   }
 
   // Invalidate live feed cache so artist changes reflect immediately
