@@ -88,12 +88,13 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
 
   // Short-bio threshold — bios under this length skip the line-clamp +
   // Read More entirely so cards with concise blurbs render cleanly with
-  // no truncation chrome. New AI bios target ≤200 chars; the 250-char
-  // frontend threshold gives a 50-char buffer so even responses that
-  // run slightly over the prompt target still render cleanly. Legacy
-  // long bios continue to clamp + show Read More. Tuning value lives
-  // here so a designer can dial it up/down without touching prompt logic.
-  const SHORT_BIO_LIMIT = 250;
+  // no truncation chrome. New AI bios target ≤200 chars; the 300-char
+  // frontend threshold gives a 100-char buffer so even responses that
+  // run slightly over the prompt target render fully without forcing the
+  // user into a Read More tap to see the rest. Legacy long bios (>300)
+  // continue to clamp + show Read More. Tuning value lives here so a
+  // designer can dial it up/down without touching prompt logic.
+  const SHORT_BIO_LIMIT = 300;
   const isShortBio = desc.length > 0 && desc.length <= SHORT_BIO_LIMIT;
 
   // Three-state card click cycle. Tapping anywhere on the card advances:
@@ -543,15 +544,18 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
 
             {/* Cover Charge pill — hidden until feature is set up */}
 
-            {/* Bio / Description — short bios (≤250 chars) render inline with
+            {/* Bio / Description — short bios (≤300 chars) render inline with
                 no truncation chrome; long bios get the 3-line clamp + Read
-                More toggle. Threshold sits 50 chars above the AI prompt
-                target (200) so even slightly-over LLM responses still render
-                cleanly without the truncation toggle appearing. */}
+                More toggle. Threshold sits 100 chars above the AI prompt
+                target (200) so the vast majority of LLM responses render
+                fully without forcing a Read More tap. Type sized for hero
+                readability inside the expanded panel: 17px / 1.55 (was
+                15px / 1.65) — bigger glyph, slightly tighter leading so the
+                paragraph feels less spaced out at the larger size. */}
             {desc && (
               <div style={{ margin: '6px 0 8px' }}>
                 <p ref={descRef} style={{
-                  fontSize: '15px', color: textDesc, lineHeight: 1.65, margin: 0,
+                  fontSize: '17px', color: textDesc, lineHeight: 1.55, margin: 0,
                   ...(isShortBio || bioExpanded ? {} : {
                     display: '-webkit-box',
                     WebkitLineClamp: 3,
@@ -566,7 +570,7 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     onClick={(e) => { e.stopPropagation(); setBioExpanded(prev => !prev); }}
                     style={{
                       background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0 0',
-                      fontSize: '12px', fontWeight: 600, color: '#E8722A',
+                      fontSize: '13px', fontWeight: 600, color: '#E8722A',
                       fontFamily: "'DM Sans', sans-serif",
                     }}
                   >
