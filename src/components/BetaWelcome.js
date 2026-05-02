@@ -29,15 +29,14 @@ const WHITE = '#FFFFFF';   // labels, headings, feature names
 const GREY  = '#D1D5DB';   // body text, descriptions
 
 const FEATURES = [
-  { dot: true,              label: 'Spotlight', desc: "Tonight's featured show, curated daily.", tint: 'rgba(232, 114, 42, 0.2)' },
-  { emoji: '🔍', label: 'Discover',  desc: 'Find live music, trivia, and specials nearby.', tint: 'rgba(255, 165, 0, 0.15)' },
-  { emoji: null, svg: true, label: 'Follow',    desc: 'Save events and artists for gig reminders.', tint: 'rgba(232, 114, 42, 0.15)' },
-  { emoji: '📲', label: 'Share',     desc: 'Send event details to friends in one tap.', tint: 'rgba(30, 144, 255, 0.15)' },
-  // Event Cards — uses a custom SVG (card outline with chevron-down) to read
-  // unmistakably as "tap to expand". Sits last in the list because it's
-  // behavioural discovery (how the feed works), not a destination feature
-  // like the four above.
-  { expandCardSvg: true, label: 'Event Cards', desc: 'Tap any card to expand for full details and artist bio.', tint: 'rgba(167, 139, 250, 0.15)' },
+  { dot: true,                       label: 'Spotlight',   desc: "Tonight's featured show, curated daily.",                tint: 'rgba(232, 114, 42, 0.2)'  },
+  // Event Cards sits second — right under Spotlight — because the
+  // expand-to-read-bio behaviour is the single biggest "huh, I didn't
+  // know that" moment on the feed. Teach it early so users discover
+  // the bio + details on their first tap, not by accident.
+  { expandCardSvg: true,             label: 'Event Cards', desc: 'Tap any card to expand for full details and artist bio.', tint: 'rgba(167, 139, 250, 0.15)' },
+  { emoji: null, svg: true,          label: 'Follow',      desc: 'Save events and artists for gig reminders.',             tint: 'rgba(232, 114, 42, 0.15)' },
+  { emoji: '📲',           label: 'Share',       desc: 'Send event details to friends in one tap.',              tint: 'rgba(30, 144, 255, 0.15)' },
 ];
 
 export default function BetaWelcome() {
@@ -167,20 +166,10 @@ export default function BetaWelcome() {
           </span>
         </div>
 
-        {/* ── Intro — beta-honesty paragraph. Replaces the old "Thanks for
-              being an early user…" line. Sets expectations directly (active
-              development, daily venue/event additions, real bugs likely)
-              and frames feedback as the user's contribution to the project,
-              which earns more goodwill than a generic thank-you. */}
-        <p style={{
-          margin: '0 0 22px',
-          fontSize: '15px',
-          fontFamily: font,
-          color: GREY,
-          lineHeight: 1.6,
-        }}>
-          Please excuse any hiccups you might encounter — I&rsquo;m constantly tweaking, fixing bugs, and adding new venues and events every day. Your feedback helps make it better, so thanks for being part of the journey!
-        </p>
+        {/* Intro paragraph removed (was beta-honesty copy) — header
+            tagline + outlined "Officially in Beta" label now carry the
+            framing directly into the Territory + Quick Features content,
+            which gets users to the action faster. */}
 
         {/* ── Territory header — kept the headline but dropped the explanation.
             "Currently serving Monmouth and Ocean Counties..." was removed
@@ -332,16 +321,21 @@ export default function BetaWelcome() {
           style={{
             display: 'block',
             width: '100%',
-            padding: '16px',
+            padding: '18px',
             borderRadius: '12px',
             border: 'none',
             background: accent,
             color: WHITE,
-            fontSize: '17px',
-            fontWeight: 700,
+            // All-caps + larger / heavier so the only solid-orange button
+            // on the modal reads unambiguously as the action. Pairs with
+            // the outlined "Officially in Beta" label above so the visual
+            // hierarchy is: subtle stamp at top, hero CTA at bottom.
+            fontSize: '20px',
+            fontWeight: 900,
             fontFamily: font,
             cursor: 'pointer',
-            letterSpacing: '0.3px',
+            letterSpacing: '2px',
+            textTransform: 'uppercase',
             WebkitTapHighlightColor: 'transparent',
           }}
         >
