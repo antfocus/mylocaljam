@@ -548,14 +548,15 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 no truncation chrome; long bios get the 3-line clamp + Read
                 More toggle. Threshold sits 100 chars above the AI prompt
                 target (200) so the vast majority of LLM responses render
-                fully without forcing a Read More tap. Type kept at compact
-                feed-card size (15px / 1.65) — bigger hero-style typography
-                lives in ArtistSpotlight.js for the dedicated spotlight
-                pop-up surface. */}
+                fully without forcing a Read More tap. Type sized at 18px /
+                1.55 — a readability bump above standard body text without
+                tipping into hero territory; the dedicated spotlight pop-up
+                (ArtistSpotlight.js) goes further at 20px for that surface's
+                committed-reader context. */}
             {desc && (
               <div style={{ margin: '6px 0 8px' }}>
                 <p ref={descRef} style={{
-                  fontSize: '15px', color: textDesc, lineHeight: 1.65, margin: 0,
+                  fontSize: '18px', color: textDesc, lineHeight: 1.55, margin: 0,
                   ...(isShortBio || bioExpanded ? {} : {
                     display: '-webkit-box',
                     WebkitLineClamp: 3,
@@ -569,8 +570,8 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                   <button
                     onClick={(e) => { e.stopPropagation(); setBioExpanded(prev => !prev); }}
                     style={{
-                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0 0',
-                      fontSize: '12px', fontWeight: 600, color: '#E8722A',
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '3px 0 0',
+                      fontSize: '13px', fontWeight: 600, color: '#E8722A',
                       fontFamily: "'DM Sans', sans-serif",
                     }}
                   >
