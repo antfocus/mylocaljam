@@ -46,6 +46,10 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
     template_id:      event?.template_id || null,
   });
   const [aiLoading, setAiLoading] = useState(false);
+  // Promote-to-Artist loading state. Drives the button's "Promoting..."
+  // copy + disabled state while POST /api/admin/artists/promote is in
+  // flight. Reset on response (or thrown error) so the button stays usable.
+  const [promoting, setPromoting] = useState(false);
   const [toast, setToast] = useState(null); // { message, type: 'error' | 'success' }
   const [aiResult, setAiResult] = useState(null);
   const [carouselIdx, setCarouselIdx] = useState(0);
@@ -292,6 +296,44 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
     setAiLoading(false);
   };
 
+  // ── Promote to Artist ─────────────────────────────────────────────────────
+  // One-click conversion of an unlinked event ("EVENT" badge in the feed
+  // because artist_id is null) into a linked one. Calls the promote endpoint,
+  // which either reuses an existing artist row (case-insensitive name match)
+  // or creates a new bare row, then stamps event.artist_id. The new bare row
+  // automatically appears in the bulk-enrich queue so bio/image/genres get
+  // filled in the next batch — no manual queueing needed here.
+  //
+  // On success we close the modal so the parent re-fetches and the badge
+  // flips to ARTIST in the feed. Admin can reopen the row if they want to
+  // edit other fields. Errors stay in the modal via the toast pattern.
+  const handlePromote = async () => {
+    if (!event?.id) return;
+    setPromoting(true);
+    try {
+      const res = await fetch('/api/admin/artists/promote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminPassword}` },
+        body: JSON.stringify({ event_id: event.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setToast({ message: data.error || 'Promote failed', type: 'error' });
+        setPromoting(false);
+        return;
+      }
+      const verb = data.action === 'created'        ? 'Created artist row and linked event'
+                 : data.action === 'linked'         ? 'Linked event to existing artist row'
+                 : /* already-linked */               'Event already linked';
+      setToast({ message: `${verb}. Closing…`, type: 'success' });
+      // Brief delay so admin sees the toast before the modal vanishes.
+      setTimeout(() => { onClose?.(); }, 700);
+    } catch (err) {
+      setToast({ message: 'Promote error: ' + err.message, type: 'error' });
+      setPromoting(false);
+    }
+  };
+
   // ── AI Image Search — dry-run enrich-date, populate form without saving ──
   //
   // The button next to the Event Image field POSTs the current eventId to
@@ -511,6 +553,46 @@ export default function EventFormModal({ event, artists = [], venues = [], templ
                 value={form.artist_name}
                 onChange={e => update('artist_name', e.target.value)}
               />
+
+              {/* Promote to Artist — only when this is an existing event row
+                  (event?.id), the artist_name is set, and there's no linked
+                  artist yet (no row in `artists` matches by name AND no
+                  artist_id stamped). For brand-new events created via
+                  +Add Event we hide it — the auto-link logic on save
+                  handles those when the artist exists, and there's no
+                  event row to stamp until after first save anyway. */}
+              {event?.id && form.artist_name && !event.artist_id && !hasArtist && (
+                <div style={{ marginTop: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={handlePromote}
+                    disabled={promoting}
+                    style={{
+                      padding: '7px 14px', borderRadius: '8px',
+                      fontSize: '12px', fontWeight: 700,
+                      background: 'rgba(34,197,94,0.10)',
+                      color: '#22c55e',
+                      border: '1px solid rgba(34,197,94,0.30)',
+                      cursor: promoting ? 'wait' : 'pointer',
+                      fontFamily: "'DM Sans', sans-serif",
+                      opacity: promoting ? 0.6 : 1,
+                      letterSpacing: '0.3px',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    {promoting ? 'Promoting…' : '🎤 Promote to Artist'}
+                  </button>
+                  <p style={{
+                    fontSize: '11px', marginTop: '6px', marginBottom: 0,
+                    color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif",
+                    lineHeight: 1.5,
+                  }}>
+                    Creates an artist row from <strong>{form.artist_name}</strong> and links
+                    this event. The bare row will pick up bio / image / genres in the next
+                    bulk-enrich batch.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Event Title (headline override) */}
