@@ -240,27 +240,37 @@ export async function generateMetadata({ params }) {
   // Continue waterfall: venue photo → null (let opengraph-image.js render the wordmark fallback)
   if (!rawImage) rawImage = preferQuality(event.venue_photo) || null;
 
-  // Build the date/time slug — e.g. "Mon Apr 27 · 4 PM"
+  // Build the date/time slug. Date and time joined with " at " so the
+  // pair reads as natural English ("Sat, May 2 at 9 PM") instead of a
+  // listicle of middle-dots. The major break between WHEN and WHAT uses
+  // an em-dash below — distinct enough that the reader's eye lands on
+  // the artist + venue cleanly.
   const when = timeStr
-    ? `${dateStr} · ${timeStr}`
+    ? `${dateStr} at ${timeStr}`
     : dateStr;
 
   // OG title leads with date+time so the WHEN survives iMessage's ~75-char
   // truncation. Worst case the venue gets cut, not the time. Format:
-  //   "Mon Apr 27 · 4 PM · Snow Crabs! at Sun Harbor Seafood and Grill"
-  //   "Fri May 1 · 5 PM · Steve Johnson at River Rock"
+  //   "Mon, Apr 27 at 4 PM — Snow Crabs! at Sun Harbor Seafood and Grill"
+  //   "Fri, May 1 at 5 PM — Steve Johnson at River Rock"
+  // Yes there are two "at"s — one for the time, one for the venue — but
+  // each lands in a distinct phrase separated by the em-dash, so it
+  // reads as prose rather than as awkward repetition.
   const ogTitle = when
-    ? `${when} · ${headline} at ${venueName}`
+    ? `${when} — ${headline} at ${venueName}`
     : `${headline} at ${venueName}`;
 
   // Page <title> keeps the brand suffix
   const title = `${ogTitle} — MyLocalJam`;
 
-  // OG description: prefer event bio, then date-based, then generic
+  // OG description: prefer event bio, then date-based, then generic. The
+  // date-based fallback prepends "on" so "${when}" reads naturally —
+  // "Live music on Sat, May 2 at 9 PM" rather than the bare-juxtaposed
+  // "Live music Sat, May 2 at 9 PM" which scans as a list.
   const description = eventBio
     ? eventBio.slice(0, 160) + (eventBio.length > 160 ? '...' : '')
     : when
-      ? `Live music ${when}. Tap to see details and save this show on myLocalJam.`
+      ? `Live music on ${when}. Tap to see details and save this show on myLocalJam.`
       : `Live music at ${venueName}. Tap to see details and save this show on myLocalJam.`;
 
   return {
