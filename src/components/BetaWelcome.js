@@ -16,10 +16,13 @@ import ModalWrapper from '@/components/ui/ModalWrapper';
  *   - z-index 9999.
  */
 
-// v3: bumped so returning users see the refreshed welcome (new logo, shorter
-// copy, Spotlight feature). If beta is winding down and you don't want existing
-// users to see the modal again, revert this to 'hasSeenWelcome_v2'.
-const WELCOME_KEY = 'hasSeenWelcome_v3';
+// v4: bumped so returning users see the refreshed welcome — new beta-honesty
+// copy ("excuse any hiccups…"), Event Cards feature replacing Ideas, and the
+// beta badge restyled as an outlined label so only Let's Jam reads as a CTA
+// (a user mistook the solid-orange beta pill for the action button). If beta
+// is winding down and you don't want existing users to see the modal again,
+// revert this to 'hasSeenWelcome_v3'.
+const WELCOME_KEY = 'hasSeenWelcome_v4';
 
 // ── Text hierarchy tokens ──
 const WHITE = '#FFFFFF';   // labels, headings, feature names
@@ -27,10 +30,14 @@ const GREY  = '#D1D5DB';   // body text, descriptions
 
 const FEATURES = [
   { dot: true,              label: 'Spotlight', desc: "Tonight's featured show, curated daily.", tint: 'rgba(232, 114, 42, 0.2)' },
-  { emoji: '\uD83D\uDD0D', label: 'Discover',  desc: 'Find live music, trivia, and specials nearby.', tint: 'rgba(255, 165, 0, 0.15)' },
+  { emoji: '🔍', label: 'Discover',  desc: 'Find live music, trivia, and specials nearby.', tint: 'rgba(255, 165, 0, 0.15)' },
   { emoji: null, svg: true, label: 'Follow',    desc: 'Save events and artists for gig reminders.', tint: 'rgba(232, 114, 42, 0.15)' },
-  { emoji: '\uD83D\uDCF2', label: 'Share',     desc: 'Send event details to friends in one tap.', tint: 'rgba(30, 144, 255, 0.15)' },
-  { emoji: '\uD83D\uDCA1', label: 'Ideas',     desc: 'Find Help & Feedback in your Profile.', tint: 'rgba(255, 215, 0, 0.15)' },
+  { emoji: '📲', label: 'Share',     desc: 'Send event details to friends in one tap.', tint: 'rgba(30, 144, 255, 0.15)' },
+  // Event Cards — uses a custom SVG (card outline with chevron-down) to read
+  // unmistakably as "tap to expand". Sits last in the list because it's
+  // behavioural discovery (how the feed works), not a destination feature
+  // like the four above.
+  { expandCardSvg: true, label: 'Event Cards', desc: 'Tap any card to expand for full details and artist bio.', tint: 'rgba(167, 139, 250, 0.15)' },
 ];
 
 export default function BetaWelcome() {
@@ -134,34 +141,45 @@ export default function BetaWelcome() {
           </p>
         </div>
 
-        {/* ── Beta badge — centered. Solid orange bg + white text so it
-              actually pops on the dark surface (was tinted-orange-on-orange
-              which read as low contrast). */}
+        {/* ── Beta badge — outlined label, NOT a solid pill. Earlier the
+              badge was solid-orange-on-dark, which read as a button (a user
+              tapped it expecting the welcome to dismiss instead of using the
+              actual "Let's Jam" CTA at the bottom). Outlined treatment keeps
+              the orange brand cue but explicitly removes button affordance —
+              transparent fill, thin orange stroke, smaller weight, tighter
+              padding. Now there's exactly one solid-orange "Let's Jam" CTA
+              on the modal, so there's no question what to tap. */}
         <div style={{ textAlign: 'center', marginTop: '16px', marginBottom: '22px' }}>
           <span style={{
             display: 'inline-block',
-            padding: '7px 18px',
+            padding: '5px 14px',
             borderRadius: '100px',
-            background: accent,
-            color: WHITE,
-            fontSize: '14px',
-            fontWeight: 900,
+            background: 'transparent',
+            border: `1px solid ${accent}`,
+            color: accent,
+            fontSize: '11px',
+            fontWeight: 800,
             fontFamily: font,
-            letterSpacing: '1px',
+            letterSpacing: '1.5px',
+            textTransform: 'uppercase',
           }}>
-            OFFICIALLY IN BETA!
+            Officially in Beta
           </span>
         </div>
 
-        {/* ── Intro — shortened to one line, no "My Story" paragraph ── */}
+        {/* ── Intro — beta-honesty paragraph. Replaces the old "Thanks for
+              being an early user…" line. Sets expectations directly (active
+              development, daily venue/event additions, real bugs likely)
+              and frames feedback as the user's contribution to the project,
+              which earns more goodwill than a generic thank-you. */}
         <p style={{
           margin: '0 0 22px',
-          fontSize: '16px',
+          fontSize: '15px',
           fontFamily: font,
           color: GREY,
-          lineHeight: 1.55,
+          lineHeight: 1.6,
         }}>
-          Thanks for being an early user and supporting the local music scene.
+          Please excuse any hiccups you might encounter — I&rsquo;m constantly tweaking, fixing bugs, and adding new venues and events every day. Your feedback helps make it better, so thanks for being part of the journey!
         </p>
 
         {/* ── Territory header — kept the headline but dropped the explanation.
@@ -197,7 +215,7 @@ export default function BetaWelcome() {
           gap: '8px',
           marginBottom: '22px',
         }}>
-          {FEATURES.map(({ emoji, svg, dot, label, desc, tint }) => (
+          {FEATURES.map(({ emoji, svg, dot, expandCardSvg, label, desc, tint }) => (
             <div key={label} style={{
               display: 'flex',
               gap: '12px',
@@ -239,6 +257,18 @@ export default function BetaWelcome() {
                       <path d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z" />
                       <line x1="8" y1="8.5" x2="8" y2="15.5" strokeDasharray="1.25 1.25" />
                     </g>
+                  </svg>
+                ) : expandCardSvg ? (
+                  /* Event Cards → card outline + chevron-down. Reads as
+                      "tap card to expand" — the behaviour we're teaching.
+                      Matches the stroke weight + linecap style of the
+                      Follow ticket so the icon set looks like a system. */
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                    stroke={WHITE} strokeWidth="1.75"
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="14" rx="2" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                    <polyline points="9,13.5 12,15.5 15,13.5" />
                   </svg>
                 ) : (
                   <span>{emoji}</span>
@@ -315,7 +345,7 @@ export default function BetaWelcome() {
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          Let{'\u2019'}s Jam
+          Let{'’'}s Jam
         </button>
       </div>
       </div>
