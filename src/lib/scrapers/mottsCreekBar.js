@@ -120,7 +120,18 @@ export async function scrapeMottsCreekBar() {
         price: null,
         source_url: VENUE_URL,
         external_id: externalId,
-        image_url: typeof item.assetUrl === 'string' ? item.assetUrl : null,
+        // image_url intentionally left null. Squarespace's `item.assetUrl`
+        // is frequently a static-asset directory path with no filename
+        // extension (e.g. /static/<id>/<id>/<id>/1775855161283/) that
+        // returns an HTML redirect or 404 rather than an image. Stamping
+        // those onto the event row poisons the image waterfall — the
+        // bogus URL beats the canonical artist.image_url even though it
+        // never renders. By writing null here we let the waterfall fall
+        // straight through to the artist's photo (gigsalad/bandsintown
+        // /etc.) which is more reliable for venue music nights anyway.
+        // If a Mott's Creek event ever needs a per-event poster, an
+        // admin can stamp it via custom_image_url in the edit modal.
+        image_url: null,
       });
     }
 
