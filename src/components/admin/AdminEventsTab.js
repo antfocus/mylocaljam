@@ -1244,7 +1244,33 @@ export default function AdminEventsTab({
                   >
                     {Icons.duplicate}
                   </button>
-                  <button className="p-1.5 rounded text-brand-text-muted hover:text-red-400" onClick={(e) => { e.stopPropagation(); deleteEvent(ev.id); }} title="Permanently delete">
+                  <button
+                    className="p-1.5 rounded text-brand-text-muted hover:text-red-400"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Confirm before destructive delete. Include enough
+                      // detail (artist + venue + date) that a misclick is
+                      // obvious before it goes through. Bulk delete uses
+                      // the same pattern; per-row was missing it.
+                      const labelArtist = ev.artist_name || ev.event_title || 'this event';
+                      const labelVenue  = ev.venue_name ? ` at ${ev.venue_name}` : '';
+                      let labelDate = '';
+                      try {
+                        labelDate = ev.event_date
+                          ? ` on ${new Date(ev.event_date).toLocaleDateString('en-US', {
+                              weekday: 'short', month: 'short', day: 'numeric',
+                              timeZone: 'America/New_York',
+                            })}`
+                          : '';
+                      } catch { /* ignore date format errors */ }
+                      const ok = window.confirm(
+                        `Permanently delete "${labelArtist}"${labelVenue}${labelDate}?\n\nThis cannot be undone.`
+                      );
+                      if (!ok) return;
+                      deleteEvent(ev.id);
+                    }}
+                    title="Permanently delete"
+                  >
                     {Icons.trash}
                   </button>
                 </div>
