@@ -548,16 +548,14 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 no truncation chrome; long bios get the 3-line clamp + Read
                 More toggle. Threshold sits 100 chars above the AI prompt
                 target (200) so the vast majority of LLM responses render
-                fully without forcing a Read More tap. Type sized for hero
-                readability inside the expanded panel: 20px / 1.5 (was
-                15px / 1.65, briefly 17/1.55) — editorial-feel size that
-                reads cleanly on phones for users who tapped to commit to
-                the bio. Tighter leading (1.5) keeps the paragraph compact
-                at the larger glyph. */}
+                fully without forcing a Read More tap. Type kept at compact
+                feed-card size (15px / 1.65) — bigger hero-style typography
+                lives in ArtistSpotlight.js for the dedicated spotlight
+                pop-up surface. */}
             {desc && (
               <div style={{ margin: '6px 0 8px' }}>
                 <p ref={descRef} style={{
-                  fontSize: '20px', color: textDesc, lineHeight: 1.5, margin: 0,
+                  fontSize: '15px', color: textDesc, lineHeight: 1.65, margin: 0,
                   ...(isShortBio || bioExpanded ? {} : {
                     display: '-webkit-box',
                     WebkitLineClamp: 3,
@@ -571,8 +569,8 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                   <button
                     onClick={(e) => { e.stopPropagation(); setBioExpanded(prev => !prev); }}
                     style={{
-                      background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0 0',
-                      fontSize: '14px', fontWeight: 600, color: '#E8722A',
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0 0',
+                      fontSize: '12px', fontWeight: 600, color: '#E8722A',
                       fontFamily: "'DM Sans', sans-serif",
                     }}
                   >

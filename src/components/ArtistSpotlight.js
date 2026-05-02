@@ -340,10 +340,16 @@ export default function ArtistSpotlight({ event, onClose, onFlag, darkMode = fal
             </div>
           </div>
 
-          {/* Bio text */}
+          {/* Bio text — sized for hero readability inside the pop-up
+              sheet (20px / 1.5). Bigger than the feed event-card body
+              (15px) because users who tapped a Spotlight tile have
+              committed to reading the bio in full; the sheet takes over
+              the screen and there's no compact-list constraint. Tighter
+              leading (1.5 vs. the previous 1.7) keeps the paragraph
+              from feeling spaced-out at the larger glyph size. */}
           {event.description && event.description.trim() && (
             <p style={{
-              color: t.bioColor, fontSize: '16px', lineHeight: 1.7,
+              color: t.bioColor, fontSize: '20px', lineHeight: 1.5,
               fontFamily: "'DM Sans', sans-serif", fontWeight: 400,
               margin: 0,
             }}>
