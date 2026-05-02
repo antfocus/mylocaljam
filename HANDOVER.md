@@ -5323,3 +5323,143 @@ DJ Bluiz lock investigation, waterfall fix, enrich-backfill lock fix, pure ghost
 - `EventCardV2` is at a stopping point. The pill went through ~10 design iterations across two days. Don't preemptively iterate again — let it bake in production for a week and gather usage signal before another design pass.
 - The Mac mini agent loop (AGENT_ARCHITECTURE Phase 1) is still the natural post-launch big win. The bulk-enrich queue is now the perfect host surface — Qwen on the mini writes proposals to `pending_enrichments`, Tony reviews via the same Queue UI he's already using. Same exact workflow; only the model URL changes.
 
+---
+
+## May 2 session — three-state cards, image-override fixes, kind taxonomy hardening
+
+Saturday session. Three threads ran in parallel: (a) EventCardV2 expanded into a three-state click cycle and the bio typography got cleanly differentiated between feed cards and the ArtistSpotlight pop-up; (b) two related image-override bugs were fixed in the submission flow and the Mott's Creek scraper, both of which were beating canonical artist images in the waterfall; (c) the kind taxonomy got its overdue UX surface — admin filter pill, live-search labeling, Promote-to-Artist button, and a one-shot orphan stamp + retroactive sweep helper that closes the auto-link gap flagged in the May 1 notes.
+
+### 1. EventCardV2 three-state click cycle + Spotlight typography
+
+The card click behavior expanded from a binary toggle to a three-state cycle: **closed → expanded with bio collapsed → bio expanded (only when the bio is long) → closed**. Single click handler `handleCardClick` in `src/components/EventCardV2.js` drives all three transitions. The long-press detection still works via the existing `longPressFired` ref. Action-row buttons (Follow Artist, Save Event, Share, Venue, Report) `stopPropagation` so they bypass the cycle entirely. Read More keeps its own narrow handler — clicking it inside the expanded card jumps straight to step 3 (or back) without going through the closed state.
+
+`SHORT_BIO_LIMIT` raised 250 → 300. Bios at or below 300 chars render with no clamp and no Read More — middle state of the cycle is suppressed in that case (the cycle effectively becomes 2-state for short-bio cards, which is correct because there's nothing to expand into).
+
+**Bio typography — feed cards.** Event-card bio bumped 15px / 1.65 → **18px / 1.55**. Read More 12 → 13px. Bigger and tighter; reads clearly inside the new 16px-radius card surface.
+
+**Bio typography — ArtistSpotlight pop-up.** This is the bottom-sheet pop-up at `src/components/ArtistSpotlight.js`, NOT EventCardV2. Bio bumped 16px / 1.7 → **20px / 1.5** so the spotlight has a distinct hero treatment versus the feed cards. Spotlight is a dedicated full-attention surface; the larger size + tighter line-height is correct for that context.
+
+**Documented mistake.** This iterated through several wrong surfaces before landing. Tony kept pointing at the spotlight pop-up while the assistant kept editing event cards. **The spotlight pop-up = `src/components/ArtistSpotlight.js`. NOT EventCardV2.** Future agents: when Tony says "the spotlight pop-up" or "the artist pop-up that comes up at the bottom," that's `ArtistSpotlight.js`. EventCardV2 is the feed card. They are different files with different typography requirements.
+
+### 2. Submission flow image override fix
+
+The "Add to the Jar" submission flow was stamping `events.image_url` with the user's uploaded poster — often an Instagram screenshot — and that beat the canonical artist image in the waterfall. Symptom: a submitted enjoy! show at Spring Lake Tap House rendered with a low-res Instagram crop instead of the curated artist photo.
+
+**Fix at `src/app/api/admin/queue/route.js`:** pre-resolve the artist by name BEFORE the event insert. If the artist already has an `image_url`, drop the submission poster (set `image_url: null` on the event). The post-publish enrichment hook also re-checks and clears `events.image_url` defensively if the artist gained an image during enrichment between submission and publish.
+
+Healed the Spring Lake Tap House enjoy! row in DB. The fix applies on a forward basis to all future submissions.
+
+### 3. Mott's Creek scraper image bug
+
+`src/lib/scrapers/mottsCreekBar.js` was pulling `item.assetUrl` from the Squarespace JSON feed. That field is a **directory path with no filename extension** — e.g. `/s/megan-knight` — and returns 404 when the browser tries to load it as an image. The bad URL was getting stamped onto `events.event_image_url`, beating canonical artist images in the waterfall.
+
+**Fix at line 123:** write `image_url: null` always. Let the waterfall fall through to the artist photo. Cleared 3 affected DB rows: Megan Knight, Grass Fedz, Brandon Ireland.
+
+**Pattern note for future agents.** Any other Squarespace-based scraper using `assetUrl` likely has the same bug. Worth auditing — Squarespace's JSON returns `assetUrl` as the raw blob handle, not the public-facing image URL. The image fetch needs `?format=2500w` or similar; without it, the path 404s. For our pipeline, the clean answer is always `image_url: null` from scrapers and let the waterfall do its job.
+
+### 4. Promote to Artist button + endpoint
+
+New `POST /api/admin/artists/promote` at `src/app/api/admin/artists/promote/route.js`. Body: `{ event_id }`. Reads the event's `artist_name`, finds existing artist by case-insensitive name match (links if found, returns `action: 'linked'`), otherwise creates a new bare `kind='musician'` artist row (returns `action: 'created'`). Stamps `events.artist_id`. Idempotent: if already linked returns `action: 'already-linked'`.
+
+Button wired into `src/components/EventFormModal.js`. Visible when the event has `id` set + `artist_name` set + `artist_id` null + no name match in the `artists` prop. Toast on success, modal closes after 700ms so the parent reload flips the EVENT badge to ARTIST.
+
+The endpoint also calls `sweepEventsForArtist` (see #7 below) so promoting one event into a new artist row catches every sibling event sharing the same artist_name. Toast surfaces the `siblings_linked` count returned in the response.
+
+### 5. Per-row event delete confirmation
+
+The AdminEventsTab per-row trash button now confirms via `window.confirm()` showing artist + venue + date. Bulk delete already had this; per-row was the gap. Closes the "wait, did I just delete a row I didn't mean to" footgun. `src/components/admin/AdminEventsTab.js`.
+
+### 6. OG share preview format
+
+The triple-middle-dot listicle ("Sat, May 2 · 9 PM · enjoy! at Spring Lake Tap House") was replaced with natural prose: "**Sat, May 2 at 9 PM — enjoy! at Spring Lake Tap House**". File: `src/app/event/[id]/page.js`. Date+time joined with ` at `; em-dash separates the WHEN block from the WHO/WHERE block. Description fallback also reworded ("Live music **on** ..." instead of stiff "Live music ·").
+
+Order is preserved (WHEN leads) so iMessage's ~75-char preview truncation chops the venue, not the time. That was the original reason for the listicle format; the new prose keeps that property while reading like prose.
+
+**Artist OG metadata at `src/app/artist/[id]/page.js` was left untouched.** The artist page route exists but nothing in the live UI currently links to it — the page is dormant. Tony confirmed leaving it as-is. Worth flagging for a future session: either wire the artist page into the UI (Profile screen → public-share permalink) or formally retire the route.
+
+### 7. Bulk-stamp orphan events + sweep helper (closes the May 1 auto-link gap)
+
+The May 1 notes flagged this directly: "events scraped after a manual artist creation don't get retroactively linked." Closed today.
+
+**One-shot SQL backfill.** Stamped `events.artist_id` on **2,029 of 2,306 upcoming events (88%)** by matching `artist_name` against either `artists.name` (case-insensitive) or any entry in `artists.alias_names`. All three kinds touched (musician, event, billing). The 277 still unlinked are events whose `artist_name` doesn't yet correspond to an `artists` row at all — those will resolve as new artist rows get created via Promote or scraper auto-create.
+
+**`src/lib/artistSweep.js` — new module.** Exports `sweepEventsForArtist(supabase, artistId)`. Reads the artist's current name + alias_names, finds upcoming events with null artist_id matching any of those (case-insensitive), updates in one round-trip. Returns `{ swept, error }`. Non-fatal — the caller decides whether to log or surface.
+
+**Wired into three write paths:**
+- `POST /api/admin/artists` (after create) — catches events scraped before the artist row existed.
+- `PUT /api/admin/artists` (after update) — catches alias-add and rename cases. If admin adds `Just Bob Outside` to an existing `Just Bob` row, every orphan "Just Bob Outside" event links on save.
+- `POST /api/admin/artists/promote` — catches sibling events sharing the artist_name. Endpoint returns `siblings_linked` count, EventFormModal toast surfaces it.
+
+This is the structural fix for the auto-link gap. Three high-traffic admin actions all now sweep automatically. The cron-based recurring sweep is no longer urgent — it'd only catch the narrow case of a scraper renaming an event's `artist_name` after the artist row already exists, which is rare.
+
+### 8. BetaWelcome modal redesign
+
+`WELCOME_KEY` bumped `_v3` → `_v4` so returning users see the refresh.
+
+- **Beta badge:** solid orange pill (button-like) → outlined label. Transparent fill, thin orange border, smaller weight, mixed case "Officially in Beta." Removes the button-confusion — a user mistook the previous pill for the CTA.
+- **Intro paragraph removed** entirely. The beta-honesty copy ("Please excuse any hiccups…") was making the modal feel apologetic instead of inviting.
+- **Quick Features reordered + Discover dropped.** Now: Spotlight → Event Cards → Follow → Share. Event Cards is the new entry ("Tap any card to expand for full details and artist bio.") with a custom card-with-chevron SVG matching the Follow ticket-stub icon style.
+- **Let's Jam button:** 17px / 700 → **20px / 900**, letter-spacing 0.3 → 2px, uppercase. Now unmistakably the action.
+
+### 9. Kind filter on AdminArtistsTab
+
+The artists list was always showing all kinds mixed together — admin curating musicians had to mentally skip past Trivia NIGHT and Mother's Day Brunch rows. Closed.
+
+- New state `artistKindFilter` (default `'musician'`) in `src/hooks/useAdminArtists.js`. Plumbed through `src/app/admin/page.js` to `AdminArtistsTab`.
+- Filter pill applied to **both Metadata Triage and Directory sub-tabs**. Options: Musicians / Events / Billings / All kinds. Highlights orange when not on the default Musicians.
+- **Default Category field hidden for `kind='musician'`** rows in the artist edit modal. Redundant — the AI categorizer already infers Live Music for musicians. Field stays visible for `event` and `billing` rows where the venue's intent matters (Trivia → Trivia, Brunch → Food, etc.). Helper text reworded honestly: "Auto-categorize FUTURE scraped events for this row. Existing events keep their current category. Templates and per-event edits still override."
+- **Directory's count display follows the filter.** Was always "522 approved artists"; now reads "X approved musicians" / "X approved events" / etc.
+- **Bypass when searching.** If `artistsSearch` has a value, the kind filter is suspended entirely. Both sub-tabs. Same logic in the count line. Reason: admin needs to find any row by name regardless of kind for cleanup tasks (rename, reclassify, delete).
+
+### 10. Live-site search labels rows by kind
+
+Autocomplete suggestions in `src/app/page.js` (around line 622) used to push every joined `e.artists?.name` as `type: 'artist'`. Now stores `{display, kind}` per artist match and pushes `type: 'event'` when `kind === 'event'` or `'billing'`, otherwise `type: 'artist'`.
+
+End users searching "mother" now see `Mother's Day Brunch · EVENT` instead of a misleading ARTIST badge. Connor Bracken And The Mother Leeds Band still shows as ARTIST. The events search API already includes `kind` in the artists join projection (added line 215 in the May 1 session) — this is the consumer side of that plumbing.
+
+### 11. Spring Lake Tap House data heal
+
+Side effect of fixing #2: the historical bad row (enjoy! at Spring Lake Tap House) was healed in DB. The artist image now renders correctly on that event card.
+
+### Files Changed (May 2)
+
+| File | Change |
+|------|--------|
+| `src/components/EventCardV2.js` | Three-state click cycle (`handleCardClick`); SHORT_BIO_LIMIT 250→300; bio 15px/1.65→18px/1.55; Read More 12→13px |
+| `src/components/ArtistSpotlight.js` | Bio 16px/1.7→20px/1.5 (distinct hero treatment vs feed) |
+| `src/app/api/admin/queue/route.js` | Pre-resolve artist before event insert; drop submission poster if artist has image; post-publish enrichment hook re-checks |
+| `src/lib/scrapers/mottsCreekBar.js` | Line 123: `image_url: null` always (was broken assetUrl); 3 DB rows cleared |
+| `src/app/api/admin/artists/promote/route.js` | NEW — POST endpoint, links or creates artist row from event, sweeps siblings |
+| `src/components/EventFormModal.js` | Promote to Artist button (visible when no artist_id + no name match); toast surfaces `siblings_linked` |
+| `src/components/admin/AdminEventsTab.js` | Per-row trash now confirms via `window.confirm()` showing artist + venue + date |
+| `src/app/event/[id]/page.js` | OG: " at " for date+time, em-dash WHEN/WHO; description "Live music on …" |
+| `src/lib/artistSweep.js` | NEW — `sweepEventsForArtist(supabase, artistId)` reads name+aliases, links orphans |
+| `src/app/api/admin/artists/route.js` | Calls `sweepEventsForArtist` after POST and after PUT |
+| `src/components/BetaWelcome.js` | WELCOME_KEY _v3→_v4; outlined beta badge; intro paragraph removed; features reordered (Spotlight/Event Cards/Follow/Share); Let's Jam 20px/900 uppercase |
+| `src/hooks/useAdminArtists.js` | New `artistKindFilter` state (default `'musician'`) |
+| `src/app/admin/page.js` | Plumbs kind filter to AdminArtistsTab |
+| `src/components/admin/AdminArtistsTab.js` | Kind filter pill (both sub-tabs); search bypasses filter; count follows filter; Default Category hidden for kind='musician'; helper text reworded |
+| `src/app/page.js` | Autocomplete `artistSet` keyed by `{display, kind}`; pushes `type: 'event'` when kind=event/billing |
+| Supabase `events` rows | One-shot UPDATE: 2,029 of 2,306 upcoming events stamped with `artist_id` via name + alias match |
+| `KIND_TAXONOMY.md` | NEW top-level doc — three-kind model, classification heuristics, surface-by-surface behavior, maintenance rules |
+
+### Tasks closed this session (#75–#89)
+
+Three-state card cycle, ArtistSpotlight bio bump, submission image override fix, Mott's Creek scraper image fix, Promote to Artist + endpoint, per-row delete confirmation, OG share format, bulk-stamp orphans + retroactive sweep helper, BetaWelcome redesign, kind filter on AdminArtistsTab (both sub-tabs), live-search kind labeling, search bypasses kind filter. See task list for full detail.
+
+### Tasks still open
+
+- **#15** Draft VENUE_MANAGEMENT.md skill doc (in-progress carryover)
+- **#17** Migrate Agent_SOP content + delete file
+- **#19** Housekeeping — fold transient docs into HANDOVER
+- **#24** Mott's Creek Bar scraper — verify second cron run is stable (now also requires verifying the image_url:null fix holds)
+- Carryover: 446 bare artists for bulk-enrich runs, 277 unlinked events with no matching artist row (will resolve via Promote or scraper auto-create), Mac mini agent loop (post-launch).
+
+### Notes for next session
+
+- The kind taxonomy is now a first-class concept in the code AND the docs. New `KIND_TAXONOMY.md` is the training doc — reference it when classifying scraped names or when explaining why a row is `kind='event'` to a confused future agent.
+- The retroactive sweep closed the auto-link gap from May 1. The recurring nightly cron mentioned there is no longer needed. Three admin write paths cover the realistic cases.
+- The artist page route (`src/app/artist/[id]/page.js`) is dormant. Decide next session: wire it into the UI (Profile screen permalink share?) or retire it. Today's fix only touched the event OG metadata; the artist OG metadata is intentionally left as-is.
+- The Squarespace `assetUrl` bug pattern is worth a one-shot grep across all scrapers. If any other scraper writes `image_url` from `assetUrl`, the same fix applies (set null, let waterfall handle it).
+- EventCardV2 three-state cycle is novel — watch for confused users who don't realize the card has a third state. If telemetry shows people opening cards but never reaching the bio-expanded state on long-bio events, the affordance might need a hint (e.g. a chevron rotation, a "Tap to read more" inline label).
+
