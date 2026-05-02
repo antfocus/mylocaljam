@@ -9,6 +9,11 @@ export default function useAdminArtists({ password }) {
   const [artistMissingFilters, setArtistMissingFilters] = useState({ bio: false, image_url: false, genres: false, vibes: false });
   const [artistsSortBy, setArtistsSortBy] = useState('name');
   const [artistSourceFilter, setArtistSourceFilter] = useState('all');
+  // Kind filter — defaults to 'musician' so the Artists tab opens onto
+  // actual artists, not the venue-event rows (Trivia, Karaoke, BOGO Burger
+  // etc.) that share the artists table for plumbing reasons. Admin can
+  // flip to Events / Billings / All to access those when needed.
+  const [artistKindFilter, setArtistKindFilter] = useState('musician');
   const [artistSubTab, setArtistSubTab] = useState('directory');
   const [directorySort, setDirectorySort] = useState({ col: 'date_added', dir: 'desc' });
   const [editingArtist, setEditingArtist] = useState(null);
@@ -200,6 +205,7 @@ export default function useAdminArtists({ password }) {
     artistMissingFilters, setArtistMissingFilters,
     artistsSortBy, setArtistsSortBy,
     artistSourceFilter, setArtistSourceFilter,
+    artistKindFilter, setArtistKindFilter,
     artistSubTab, setArtistSubTab,
     directorySort, setDirectorySort,
     editingArtist, setEditingArtist,

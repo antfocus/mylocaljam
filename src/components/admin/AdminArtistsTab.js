@@ -247,6 +247,7 @@ export default function AdminArtistsTab({
   artistsSearch, setArtistsSearch, artistsNeedsInfo, setArtistsNeedsInfo,
   artistMissingFilters = { bio: false, image_url: false, genres: false, vibes: false }, setArtistMissingFilters,
   artistsSortBy, setArtistsSortBy, artistSourceFilter, setArtistSourceFilter,
+  artistKindFilter = 'musician', setArtistKindFilter,
   artistSubTab, setArtistSubTab, directorySort, setDirectorySort,
   editingArtist, setEditingArtist, artistForm, setArtistForm,
   artistActionLoading, setArtistActionLoading, aiLoading, setAiLoading,
@@ -445,6 +446,16 @@ export default function AdminArtistsTab({
     // Source filter
     if (artistSourceFilter !== 'all') {
       list = list.filter(a => a.source === artistSourceFilter);
+    }
+
+    // Kind filter — defaults to 'musician'. Hides venue-event rows
+    // (Trivia, Karaoke, BOGO Burger, etc.) and multi-artist billing rows
+    // from the default Artists view so the tab is just real artists. Admin
+    // can flip the filter pill above search to access the others when
+    // curating those rows. Rows missing a kind value are treated as
+    // 'musician' so legacy data continues to show under the default view.
+    if (artistKindFilter && artistKindFilter !== 'all') {
+      list = list.filter(a => (a.kind || 'musician') === artistKindFilter);
     }
 
     // Sort
@@ -816,6 +827,34 @@ export default function AdminArtistsTab({
           );
         })()}
 
+        {/* Kind filter — sits before Source so it's the FIRST filter pill
+            (this is the primary "what am I looking at" lever). Defaults to
+            Musicians so the tab opens onto real artists, not the venue-
+            event rows (Trivia, Karaoke, BOGO Burger) and billing rows
+            (multi-artist shows) that share the artists table for plumbing.
+            Admin can flip to Events / Billings / All to access those when
+            curating. Highlighted in orange when not 'musician' so the
+            change-of-context is visually obvious. */}
+        <select
+          value={artistKindFilter}
+          onChange={e => setArtistKindFilter(e.target.value)}
+          title="Filter the artists list by row kind"
+          style={{
+            padding: '7px 28px 7px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+            fontFamily: "'DM Sans', sans-serif", cursor: 'pointer', appearance: 'none',
+            background: artistKindFilter !== 'musician' ? 'rgba(232,114,42,0.10)' : 'var(--bg-card)',
+            border: artistKindFilter !== 'musician' ? '1px solid #E8722A' : '1px solid var(--border)',
+            color: artistKindFilter !== 'musician' ? '#E8722A' : 'var(--text-secondary)',
+            backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none'/%3E%3C/svg%3E")`,
+            backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+          }}
+        >
+          <option value="musician">Musicians</option>
+          <option value="event">Events</option>
+          <option value="billing">Billings</option>
+          <option value="all">All kinds</option>
+        </select>
+
         {/* Source dropdown */}
         <select
           value={artistSourceFilter}
@@ -1086,35 +1125,48 @@ export default function AdminArtistsTab({
                       Once set, the scraper bypasses AI inference for this artist
                       and stamps every future event with this category +
                       is_category_verified=true. See HANDOVER.md "Confidence
-                      Cascade" architecture. */}
-                  <MetadataField label="Default Category" hasArtist={false}>
-                    <select
-                      value={artistForm.default_category || ''}
-                      onChange={e => setArtistForm(p => ({ ...p, default_category: e.target.value }))}
-                      disabled={isArtistLocked}
-                      style={{
-                        width: '100%', padding: '9px 12px', borderRadius: '8px',
-                        background: 'var(--bg-elevated)',
-                        border: artistForm.default_category ? '1px solid #E8722A' : '1px solid var(--border)',
-                        color: 'var(--text-primary)',
-                        fontFamily: "'DM Sans', sans-serif", fontSize: '14px',
-                        outline: 'none', cursor: isArtistLocked ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      <option value="">— None (use AI inference) —</option>
-                      <option value="Live Music">Live Music</option>
-                      <option value="Trivia">Trivia</option>
-                      <option value="Karaoke">Karaoke</option>
-                      <option value="DJ/Dance Party">DJ/Dance Party</option>
-                      <option value="Comedy">Comedy</option>
-                      <option value="Food & Drink">Food & Drink</option>
-                      <option value="Sports">Sports</option>
-                      <option value="Other">Other</option>
-                    </select>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', fontFamily: "'DM Sans', sans-serif", lineHeight: 1.4 }}>
-                      Locks this category for all future scraped events by this artist.
-                    </div>
-                  </MetadataField>
+                      Cascade" architecture.
+
+                      Hidden for kind='musician' rows: musicians' events default
+                      to "Live Music" via the AI/keyword router with high
+                      accuracy, so the field is redundant noise on the 95% case
+                      and was confusing admins (the user thought it controlled
+                      the rendered category for existing events, which it does
+                      not). The field stays visible — and useful — for kind=
+                      'event' (Trivia, Karaoke, BOGO Burger…) and 'billing'
+                      rows where the artist name *is* the category and AI
+                      inference is shakier. To set a default category on a
+                      musician, flip the KindToggle on the row first. */}
+                  {editingArtist?.kind && editingArtist.kind !== 'musician' && (
+                    <MetadataField label="Default Category" hasArtist={false}>
+                      <select
+                        value={artistForm.default_category || ''}
+                        onChange={e => setArtistForm(p => ({ ...p, default_category: e.target.value }))}
+                        disabled={isArtistLocked}
+                        style={{
+                          width: '100%', padding: '9px 12px', borderRadius: '8px',
+                          background: 'var(--bg-elevated)',
+                          border: artistForm.default_category ? '1px solid #E8722A' : '1px solid var(--border)',
+                          color: 'var(--text-primary)',
+                          fontFamily: "'DM Sans', sans-serif", fontSize: '14px',
+                          outline: 'none', cursor: isArtistLocked ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        <option value="">— None (use AI inference) —</option>
+                        <option value="Live Music">Live Music</option>
+                        <option value="Trivia">Trivia</option>
+                        <option value="Karaoke">Karaoke</option>
+                        <option value="DJ/Dance Party">DJ/Dance Party</option>
+                        <option value="Comedy">Comedy</option>
+                        <option value="Food & Drink">Food & Drink</option>
+                        <option value="Sports">Sports</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', fontFamily: "'DM Sans', sans-serif", lineHeight: 1.4 }}>
+                        Auto-categorize FUTURE scraped events for this row. Existing events keep their current category. Templates and per-event edits still override.
+                      </div>
+                    </MetadataField>
+                  )}
 
                   {/* Image */}
                   <MetadataField label="Artist Image" hasArtist={false}>

@@ -437,6 +437,7 @@ export default function AdminPage() {
           artistMissingFilters={ar.artistMissingFilters} setArtistMissingFilters={ar.setArtistMissingFilters}
           artistsSortBy={ar.artistsSortBy} setArtistsSortBy={ar.setArtistsSortBy}
           artistSourceFilter={ar.artistSourceFilter} setArtistSourceFilter={ar.setArtistSourceFilter}
+          artistKindFilter={ar.artistKindFilter} setArtistKindFilter={ar.setArtistKindFilter}
           artistSubTab={ar.artistSubTab} setArtistSubTab={ar.setArtistSubTab}
           directorySort={ar.directorySort} setDirectorySort={ar.setDirectorySort}
           editingArtist={ar.editingArtist} setEditingArtist={ar.setEditingArtist}
