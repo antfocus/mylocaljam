@@ -143,12 +143,34 @@ export default function HeroPiston({ children }) {
     // Called at mount, on window resize, and on any content-size
     // change observed via ResizeObserver. Skipping zero-height reads
     // prevents a pre-layout measurement from locking the height to 0.
+    //
+    // Past-zone guard (2026-05-02): once the user has scrolled clearly
+    // past the hero, we still record the new heroHeight (so a future
+    // scroll-back-up has accurate tracking) but we DON'T re-invoke
+    // applyScrollState. Writing wrapper.style.height while the user
+    // is mid-scroll, with overflow-anchor: none, can land as a visible
+    // jump if the height delta is non-zero. The trigger is usually
+    // the spotlight carousel auto-rotating to a slide whose inner
+    // markup nudges scrollHeight by a pixel (font metrics, paint
+    // rounding) — every 5 seconds, while the user is reading the feed.
+    // Past the zone the wrapper is clamped to 1px regardless of h, so
+    // skipping the apply call has no visible cost; the next scroll
+    // event near the hero will pick up the fresh heroHeight.
     const measure = () => {
       const h = inner.scrollHeight;
       if (!h) return;              // pre-layout or unmounting — ignore
       if (h === heroHeight.current) return;  // no change — skip reflow
       heroHeight.current = h;
-      applyScrollState();
+
+      const scrollY = scrollEl.scrollTop;
+      // Only apply if the user is in or just past the collapse zone.
+      // Safety pad of 50px keeps the apply alive during the
+      // transition-end region in case mobile-Safari momentum scroll
+      // overshoots past the threshold for a frame.
+      const stillInOrNearZone = scrollY < (heroHeight.current + THRESHOLD + 50);
+      if (stillInOrNearZone) {
+        applyScrollState();
+      }
     };
 
     // ── Scroll handler: SYNCHRONOUS, no rAF throttle ──
