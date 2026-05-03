@@ -63,6 +63,7 @@ import { scrapeCharleysOceanGrill } from '@/lib/scrapers/charleysOceanGrill';
 // which can't be scraped server-side. Events come via community submissions instead.
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
 import { enrichArtist } from '@/lib/enrichArtist';
+import { classifyArtistKind } from '@/lib/classifyArtistKind';
 import { matchTemplate } from '@/lib/matchTemplate';
 // Shared classifier — single source of truth with /api/admin/auto-categorize.
 // We invoke it here so newly scraped events get a confidence-bar pass at the
@@ -1246,9 +1247,17 @@ export async function POST(request) {
         if (ex?.is_locked) continue;
 
         if (!ex) {
-          // Create new artist row from scraper data
+          // Create new artist row from scraper data. Classify the kind
+          // up front using the heuristics in classifyArtistKind — without
+          // this, every scraper-discovered name defaulted to 'musician',
+          // including obvious venue events ("AYCE SNOW CRAB", "Family
+          // Funday Monday", "Trivia NIGHT") that then required manual
+          // KindToggle cleanup. The classifier is conservative — false
+          // positives on real musicians stay rare; false negatives just
+          // mean an admin reclassifies via the existing KindToggle.
           await supabase.from('artists').upsert({
             name: sd.name,
+            kind: classifyArtistKind(sd.name),
             bio: sd.bio,
             image_url: sd.image_url,
             last_fetched: new Date().toISOString(),

@@ -29,6 +29,7 @@ const LASTFM_BASE = 'https://ws.audioscrobbler.com/2.0/';
 
 import { buildLockSafeRecord, isFieldLocked } from './writeGuards';
 import { aiLookupArtist } from './aiLookup';
+import { classifyArtistKind } from './classifyArtistKind';
 
 // Cache TTL — skip re-enriching artists looked up within 7 days
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -422,6 +423,13 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
   const finalBioSource = bioSource || cached?.bio_source || 'Unknown';
 
   // ── 5. Build record & upsert ──────────────────────────────
+  // `kind` is set ONLY for new rows (no `cached`). On updates we keep
+  // whatever kind the row already has — admin reclassifications via
+  // KindToggle must not be silently overwritten by enrichment. The
+  // classifier seeds the kind so brand-new auto-created rows for venue
+  // events ("AYCE SNOW CRAB", "Family Funday Monday") land directly as
+  // kind='event' instead of defaulting to 'musician' and requiring
+  // manual cleanup.
   const record = {
     name: lastfm?.name || cached?.name || name,
     ...(mbid ? { mbid } : {}),
@@ -431,6 +439,7 @@ export async function enrichArtist(artistName, supabase, { blacklist } = {}) {
     tags: tags || null,
     last_fetched: new Date().toISOString(),
     ...(metadataSource ? { metadata_source: metadataSource } : {}),
+    ...(!cached ? { kind: classifyArtistKind(name) } : {}),
   };
 
   // Only set genres if artist doesn't already have curated ones

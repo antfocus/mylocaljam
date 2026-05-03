@@ -43,6 +43,7 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
 import { sweepEventsForArtist } from '@/lib/artistSweep';
+import { classifyArtistKind } from '@/lib/classifyArtistKind';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -119,12 +120,19 @@ export async function POST(request) {
   let action = 'linked';
 
   // ── Step 3: Create a new artist row if no match ─────────────────────────
+  // Kind classified via the same heuristics used at scrape time. If the
+  // admin promoted a row that's clearly an event (e.g. "Mother's Day
+  // Brunch", "Trivia NIGHT"), the row is created as kind='event' instead
+  // of 'musician'. Admin can still flip via KindToggle if the heuristic
+  // misclassifies. Prevents the same class of bug we fixed for the
+  // sync-events auto-create path (May 2 cleanup of AYCE SNOW CRAB,
+  // Family Funday Monday, Decades night, Monday Night Pizza Night 6p).
   if (!artistId) {
     const { data: created, error: createErr } = await supabase
       .from('artists')
       .insert({
         name: artistName,
-        kind: 'musician',
+        kind: classifyArtistKind(artistName),
         is_locked: false,
         // bio / image_url / genres / vibes left null — bulk-enrich will fill.
       })
