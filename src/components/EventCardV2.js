@@ -190,12 +190,22 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   // Artist. The kind check looks at the joined artist row when present;
   // events without a joined artist row fall through (no kind to check
   // → assume followable, the artist_id guard already handled it).
+  //
+  // Also exclude template-linked events: an event with a template_id set is
+  // a recurring branded event ("Snow Crabs! (All You Can Eat)", "Family
+  // Funday Monday", "Trivia NIGHT" etc.). There's no single performer to
+  // follow — the template IS the entity. This is a safety net for the
+  // common case where the linked artist row is mis-classified as 'musician'
+  // (because the scraper auto-created it before anyone flipped its kind to
+  // 'event'). Without this gate, those rows render with a misleading
+  // FOLLOW ARTIST pill that does nothing useful when tapped.
   const linkedArtistKind = event.artists?.kind;
   const hasFollowableArtist = !!(
     event.artist_id
     && canonicalArtistName
     && linkedArtistKind !== 'event'
     && linkedArtistKind !== 'billing'
+    && !event.template_id
   );
 
   // Theme colors — all dynamic based on darkMode
