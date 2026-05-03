@@ -101,10 +101,36 @@ export default function HeroPiston({ children }) {
     const scrollEl = getScrollParent(anchor);
     if (!scrollEl) return;
 
-    // ── Force overflow-anchor: none via JS on both elements ──
-    // CSS property is sometimes ignored by the browser; direct
-    // JS style injection is more reliable.
+    // ── overflow-anchor: dynamic, not blanket-disabled ──
+    // Wrapper stays 'none' permanently — piston math writes
+    // wrapper.style.height every scroll event during the collapse
+    // animation, and we cannot let the browser fight that with auto-
+    // anchoring inside the wrapper.
+    //
+    // ScrollEl, however, was previously also forced to 'none' (line
+    // 108 pre-2026-05-02). That globally disabled scroll-anchoring
+    // for the WHOLE feed — meaning any tiny layout shift above the
+    // viewport (sticky date-header transitions, late image decode,
+    // font swap, card paint) translated 1:1 to a visible jump
+    // because the browser stopped auto-compensating. The "scroll
+    // speeds up a little" feeling 3–7 cards below the hero is what
+    // it looks like when those compensations stop happening.
+    //
+    // Fix: keep scrollEl anchored when the user is past the
+    // collapse zone (no piston activity, browser's own anchoring
+    // is safe + actively useful), and only disable it when they're
+    // in or near the zone (where the piston is writing wrapper
+    // height and the browser's anchoring would conflict).
     wrapper.style.overflowAnchor = 'none';
+    const updateScrollAnchoring = () => {
+      const inZone = scrollEl.scrollTop < (heroHeight.current + THRESHOLD + 50);
+      scrollEl.style.overflowAnchor = inZone ? 'none' : 'auto';
+    };
+    // Apply once at mount with whatever heroHeight we have so far
+    // (likely 0 — the scroll-anchor disable will kick in once
+    // measure() populates heroHeight, which calls updateScrollAnchoring
+    // via applyScrollState below). Default to 'none' until we know
+    // we're past the zone.
     scrollEl.style.overflowAnchor = 'none';
 
     // ── Apply collapse state for the CURRENT scrollTop + heroHeight ──
@@ -171,6 +197,12 @@ export default function HeroPiston({ children }) {
       if (stillInOrNearZone) {
         applyScrollState();
       }
+
+      // Re-evaluate scroll-anchoring whenever heroHeight changes — the
+      // "in zone" math depends on the new heroHeight, and a stale
+      // disable would keep anchoring off forever after the initial
+      // skeleton-to-real measurement.
+      updateScrollAnchoring();
     };
 
     // ── Scroll handler: SYNCHRONOUS, no rAF throttle ──
@@ -187,7 +219,16 @@ export default function HeroPiston({ children }) {
     // synchronously on every scroll event (at most ~120/s on high-
     // refresh displays) is cheaper than one frame of jank. The browser
     // batches style writes into the next paint anyway.
-    const onScroll = () => applyScrollState();
+    //
+    // Also flip overflow-anchor based on whether we're still in the
+    // collapse zone. Once the user is past it, native scroll-anchoring
+    // takes over and absorbs minor layout shifts above the viewport
+    // (sticky date headers, font swap, etc.) without the user feeling
+    // a jump. Re-disabled if they scroll back into the zone.
+    const onScroll = () => {
+      applyScrollState();
+      updateScrollAnchoring();
+    };
 
     // ── Initial measure: deferred one frame ──
     // A synchronous read during hydration often captures the skeleton
@@ -231,6 +272,10 @@ export default function HeroPiston({ children }) {
       scrollEl.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onResize);
       if (ro) ro.disconnect();
+      // Restore default overflow-anchor on the scroll container so an
+      // unmount of HeroPiston (e.g. filter swap that hides the hero)
+      // doesn't leave anchoring permanently disabled in app state.
+      scrollEl.style.overflowAnchor = '';
     };
   }, []); // single mount — all updates via DOM refs
 
