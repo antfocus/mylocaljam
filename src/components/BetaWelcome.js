@@ -325,7 +325,12 @@ export default function BetaWelcome() {
             borderRadius: '12px',
             border: 'none',
             background: accent,
-            color: WHITE,
+            // Jet-black text on orange — much higher WCAG contrast than
+            // white-on-orange, especially at 900 weight where white loses
+            // edge definition against the bright #E8722A surface. Matches
+            // the contrast pattern used on other solid-orange pills in
+            // the app (Apr 30 WCAG fix).
+            color: '#000000',
             // All-caps + larger / heavier so the only solid-orange button
             // on the modal reads unambiguously as the action. Pairs with
             // the outlined "Officially in Beta" label above so the visual
