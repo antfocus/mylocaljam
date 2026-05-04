@@ -2676,11 +2676,22 @@ export default function HomePage() {
                             key={`${s.type}-${s.label}`}
                             onMouseDown={e => {
                               e.preventDefault(); // prevent blur before click fires
+                              // Stage the suggestion as the search term but
+                              // KEEP the filter modal open — tapping a
+                              // suggestion is "use this spelling," not a
+                              // commit. The Search button (or Enter key)
+                              // is the dedicated commit signal. Previously
+                              // this handler also called setFiltersExpanded
+                              // (false) which collapsed the modal as soon
+                              // as a suggestion was tapped, blocking users
+                              // from layering on filters before searching.
                               setSearchQuery(s.label);
                               setDebouncedSearch(s.label);
                               setShowAutoComplete(false);
-                              setFiltersExpanded(false);
-                              setActiveFilterCard(null);
+                              // Blur the input so the mobile keyboard
+                              // dismisses — that uncovers the filter cards
+                              // below so the user can interact with them
+                              // without scrolling.
                               searchInputRef.current?.blur();
                             }}
                             style={{
