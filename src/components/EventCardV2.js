@@ -407,45 +407,16 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 {artistName}
               </span>
             )}
-            {venue && (() => {
-              // Inline tickets indicator. Renders next to the venue name
-              // when the event has a price (event.cover), a ticket link,
-              // or the linked venue is flagged is_ticketed_venue=true.
-              // Examples:
-              //   "Wonder Bar · $25"     (cover string set)
-              //   "The Vogel · Tickets"  (ticketed venue, no specific price yet)
-              //   "Anchor Tavern"        (not ticketed — no indicator, current behavior)
-              // Non-interactive at this density — the EventPageClient
-              // landing page is where users click through to buy. The
-              // compact card is for at-a-glance "is this paid?" awareness.
-              const coverLabel  = (event.cover || '').trim();
-              const showTickets = !!(coverLabel || event.ticket_link || event.is_ticketed_venue);
-              const ticketText  = coverLabel || 'Tickets';
-              const venueColor  = darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.58)';
-              const dotColor    = darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)';
-              return (
-                <span style={{
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: '14px', fontWeight: 400,
-                  color: venueColor,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  display: 'block',
-                }}>
-                  {venue}
-                  {showTickets && (
-                    <>
-                      <span style={{ color: dotColor, margin: '0 6px' }}>·</span>
-                      <span style={{
-                        fontWeight: 600,
-                        color: darkMode ? '#E8722A' : '#C95717',
-                      }}>
-                        {ticketText}
-                      </span>
-                    </>
-                  )}
-                </span>
-              );
-            })()}
+            {venue && (
+              <span style={{
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '14px', fontWeight: 400,
+                color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.58)',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {venue}
+              </span>
+            )}
           </div>
 
           {/* Ticket stub save button */}
@@ -800,6 +771,48 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     modes so the cluster sits as a quiet counterweight to
                     the loud orange identity pill on the left. */}
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
+                  {/* Tickets indicator — sits IMMEDIATELY left of the
+                      Venue map pin, inside the right-aligned utility
+                      cluster. Informational only (no click target). The
+                      Venue button to its right is the action: tap that
+                      to land on the venue's site (which for ticketed
+                      venues IS the ticket purchase flow — Ticketmaster,
+                      Live Nation, Dice, etc.). Renders when the event
+                      has a cover string OR a ticket_link OR the linked
+                      venue is flagged is_ticketed_venue=true. Cover
+                      string ($25, Free w/RSVP) wins; otherwise generic
+                      "TICKETS" caps. Hidden when none of those signals
+                      are present (the 95% free-event default). */}
+                  {(() => {
+                    const coverLabel  = (event.cover || '').trim();
+                    const showTickets = !!(coverLabel || event.ticket_link || event.is_ticketed_venue);
+                    if (!showTickets) return null;
+                    const ticketText = coverLabel || 'Tickets';
+                    return (
+                      <span
+                        title={ticketText.startsWith('$')
+                          ? `Tickets: ${ticketText}`
+                          : 'This event is ticketed — tap the venue icon to buy'}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center',
+                          fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
+                          fontSize: '11px', fontWeight: 700,
+                          color: darkMode ? '#E8722A' : '#C95717',
+                          letterSpacing: '0.05em',
+                          textTransform: ticketText.startsWith('$') ? 'none' : 'uppercase',
+                          flexShrink: 0,
+                          // Visual gap matches the rest of the utility
+                          // cluster (gap: 14px on the parent), so the
+                          // text reads as a labeled badge for the
+                          // venue icon to its right rather than a
+                          // floating fragment.
+                        }}
+                      >
+                        {ticketText}
+                      </span>
+                    );
+                  })()}
+
                   {/* 2. Venue link — opens venue site or scraper source. */}
                   {venueLink && (
                     <a
