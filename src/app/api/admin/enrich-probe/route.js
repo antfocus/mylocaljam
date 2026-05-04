@@ -267,8 +267,8 @@ export async function POST(request) {
   const venue = (body?.venue || '').trim();
   const city = (body?.city || '').trim();
   // Optional: force a single provider so we can isolate which one fails for
-  // a given name. Accepts 'perplexity', 'gemini', 'grok'. When omitted, uses
-  // the default web-grounded route (Perplexity → Gemini → Grok).
+  // a given name. Accepts 'perplexity', 'gemini', 'openai'. When omitted, uses
+  // the default web-grounded route (Gemini → OpenAI → Perplexity).
   const preferProvider = typeof body?.preferProvider === 'string'
     ? body.preferProvider.trim().toLowerCase()
     : null;
@@ -307,14 +307,14 @@ Return the strict JSON object defined in STEP 5. Obey every rule for the chosen 
   const config = {
     hasGemini: !!process.env.GOOGLE_AI_KEY,
     hasPerplexity: !!process.env.PERPLEXITY_API_KEY,
-    hasGrok: !!process.env.XAI_API_KEY,
+    hasOpenAI: !!process.env.OPENAI_API_KEY,
   };
   const statsBefore = snapshotStats();
 
   // ── Pass 1: fire the LLM ───────────────────────────────────────────────
   // When preferProvider is set, use callLLM with that provider pinned so we
   // can isolate failures per provider. Otherwise use the default
-  // web-grounded route (Perplexity → Gemini → Grok).
+  // web-grounded route (Gemini → OpenAI → Perplexity).
   //
   // Fire the router call AND a raw Gemini call in parallel. The raw call
   // bypasses the router so we always get finishReason/usageMetadata back

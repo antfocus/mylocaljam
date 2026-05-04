@@ -2,9 +2,12 @@
  * LLM Router — multi-provider abstraction with automatic failover.
  *
  * Provider priority (configurable per call):
- *   1. Gemini Pro (Google AI — user's $20/month plan, high quota)
- *   2. Perplexity sonar-pro (web-grounded specialist — best for research queries)
- *   3. Grok (xAI — user's $20/month plan, overflow backup)
+ *   1. Gemini 2.5 Flash (Google AI — user's $20/month plan, high quota)
+ *   2. OpenAI gpt-4o-mini (added 2026-05-04 — cheap pay-per-token, replaces Grok)
+ *   3. Perplexity sonar-pro (web-grounded specialist — overflow / niche cases)
+ *
+ * Grok / xAI removed 2026-05-04 — user wasn't using it. Env var XAI_API_KEY
+ * can stay in Vercel (harmless) but the provider is gone from the router.
  *
  * Features:
  *   - 429 rate-limit detection → automatic fallback to next provider
@@ -17,18 +20,27 @@
  *   callLLM(systemPrompt, userPrompt, options?) → parsed JSON | null
  *
  * Env vars:
- *   - GOOGLE_AI_KEY       (Gemini Pro)
+ *   - GOOGLE_AI_KEY       (Gemini 2.5 Flash)
+ *   - OPENAI_API_KEY      (OpenAI gpt-4o-mini)
  *   - PERPLEXITY_API_KEY  (Perplexity sonar-pro)
- *   - XAI_API_KEY         (Grok / xAI)
  */
 
 // ─── Provider Definitions ─────────────────────────────────────────────────────
-
+//
+// To swap the OpenAI model (e.g. to gpt-5.4-mini, gpt-5-mini, or the flagship
+// gpt-5.5 for higher quality), change the `model` string below — that's the
+// only edit needed; everything else (URL, schema, env key) is identical.
 const PROVIDERS = {
   gemini: {
     name: 'gemini',
     model: 'gemini-2.5-flash',
     envKey: 'GOOGLE_AI_KEY',
+    timeout: 30000,
+  },
+  openai: {
+    name: 'openai',
+    model: 'gpt-4o-mini',
+    envKey: 'OPENAI_API_KEY',
     timeout: 30000,
   },
   perplexity: {
@@ -37,40 +49,29 @@ const PROVIDERS = {
     envKey: 'PERPLEXITY_API_KEY',
     timeout: 30000,
   },
-  grok: {
-    name: 'grok',
-    model: 'grok-3-mini',
-    envKey: 'XAI_API_KEY',
-    timeout: 30000,
-  },
 };
 
-// Default routing order — Gemini first (highest quota), Perplexity second
-// (web-grounded), Grok third (overflow).
-const DEFAULT_ROUTE = ['gemini', 'perplexity', 'grok'];
+// Default routing order — Gemini first (highest quota, cheapest), OpenAI second
+// (reliable pay-per-token fallback when Gemini errors), Perplexity third (catches
+// the niche Jersey Shore locals that Gemini + OpenAI may ambiguate on).
+const DEFAULT_ROUTE = ['gemini', 'openai', 'perplexity'];
 
-// For web-grounded queries (bio research, artist lookup), Gemini goes first.
-//
-// Historical note: this was ['perplexity', 'gemini', 'grok'] because
-// Perplexity's sonar-pro has live web access built in, which is ideal for
-// artist-bio research. Flipped on 2026-04-20 because the $5/month Perplexity
-// Pro API credit gets exhausted well before draining our ~1800-artist
-// queue, and every Perplexity-first attempt during exhaustion wastes ~2s
-// on a guaranteed-fail call before falling through to Gemini.
-//
-// Paid-tier Gemini 2.5 Flash (~$0.0007/call, 1000 RPM) handles most of the
-// workload cheaply and fast. Perplexity stays as fallback — when its $5
-// credit refills monthly, it'll catch the obscure Jersey Shore locals
-// Gemini may ambiguate on. Revisit this order if Perplexity gets topped up
-// to cover the full queue, or if Gemini quality drops on specific genres.
-const WEB_GROUNDED_ROUTE = ['gemini', 'perplexity', 'grok'];
+// Web-grounded route uses the same order. Historically Perplexity was #2 for
+// its live-web access (good for bio research), but the $5/month Perplexity
+// credit exhausts fast and leaving it as #3 means we burn it on the queries
+// that actually NEED web access (when Gemini + OpenAI both whiff). OpenAI
+// doesn't have live browsing in Chat Completions, but its training-data
+// knowledge is fresh enough to catch most national acts that pass through
+// Asbury Park / Sea Bright / Beach Haven. Revisit this order if Perplexity
+// quality on hyperlocal acts drops, or if OpenAI gets a browsing API.
+const WEB_GROUNDED_ROUTE = ['gemini', 'openai', 'perplexity'];
 
 // ─── Usage Tracking (in-memory, resets on cold start) ─────────────────────────
 
 const usage = {
   gemini: { calls: 0, failures: 0, rateLimits: 0 },
+  openai: { calls: 0, failures: 0, rateLimits: 0 },
   perplexity: { calls: 0, failures: 0, rateLimits: 0 },
-  grok: { calls: 0, failures: 0, rateLimits: 0 },
 };
 
 export function getUsageStats() {
@@ -188,14 +189,19 @@ async function callPerplexityProvider(systemPrompt, userPrompt, apiKey, { model,
 }
 
 /**
- * Call Grok via xAI API (OpenAI-compatible chat API).
+ * Call OpenAI Chat Completions API.
+ *
+ * response_format: { type: 'json_object' } forces the model to emit valid
+ * JSON — eliminates the parse-failure path that bites Gemini when the
+ * thinking budget cuts off mid-token. Requires the system prompt to mention
+ * "JSON" somewhere; aiLookup.js already does this.
  */
-async function callGrokProvider(systemPrompt, userPrompt, apiKey, { model, timeout }) {
+async function callOpenAIProvider(systemPrompt, userPrompt, apiKey, { model, timeout }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const res = await fetch('https://api.x.ai/v1/chat/completions', {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -209,6 +215,7 @@ async function callGrokProvider(systemPrompt, userPrompt, apiKey, { model, timeo
         ],
         max_tokens: 800,
         temperature: 0.1,
+        response_format: { type: 'json_object' },
       }),
       signal: controller.signal,
     });
@@ -250,8 +257,8 @@ function parseJSON(text) {
 
 const CALL_FNS = {
   gemini: callGemini,
+  openai: callOpenAIProvider,
   perplexity: callPerplexityProvider,
-  grok: callGrokProvider,
 };
 
 /**
@@ -329,7 +336,7 @@ export async function callLLM(systemPrompt, userPrompt, options = {}) {
 }
 
 /**
- * Convenience: call with web-grounded routing (Perplexity → Gemini → Grok).
+ * Convenience: call with web-grounded routing (Gemini → OpenAI → Perplexity).
  * Best for artist bio research where live web access improves results.
  */
 export async function callLLMWebGrounded(systemPrompt, userPrompt, options = {}) {

@@ -15,7 +15,7 @@
  *   • "Bare only" toggle — restricts to artists missing BOTH bio AND image.
  *   • Pause / Resume — cooperative stop (finishes current in-flight batch).
  *   • Progress: batches run, artists enriched, remaining in queue.
- *   • LLM usage stats — Gemini / Perplexity / Grok call counts & failures,
+ *   • LLM usage stats — Gemini / OpenAI / Perplexity call counts & failures,
  *     so the operator can spot provider-level issues mid-run.
  *   • Enrichment log — rolling list of what got written this session.
  *   • Error list — per-artist failures.
@@ -473,7 +473,7 @@ export default function AdminEnrichmentTab({
                   LLM calls <strong style={{ color: 'var(--text-primary)' }}>{totalLLM}</strong>
                   {usageStats && (
                     <span style={{ color: 'var(--text-muted)' }}>
-                      {' '}(G:{usageStats.gemini?.calls || 0} · P:{usageStats.perplexity?.calls || 0} · X:{usageStats.grok?.calls || 0})
+                      {' '}(G:{usageStats.gemini?.calls || 0} · O:{usageStats.openai?.calls || 0} · P:{usageStats.perplexity?.calls || 0})
                     </span>
                   )}
                 </span>
@@ -550,7 +550,7 @@ export default function AdminEnrichmentTab({
           label="LLM calls"
           value={usageStats ? Object.values(usageStats).reduce((s, v) => s + (v.calls || 0), 0) : 0}
           subtitle={usageStats
-            ? `G:${usageStats.gemini?.calls || 0} · P:${usageStats.perplexity?.calls || 0} · X:${usageStats.grok?.calls || 0}`
+            ? `G:${usageStats.gemini?.calls || 0} · O:${usageStats.openai?.calls || 0} · P:${usageStats.perplexity?.calls || 0}`
             : null}
         />
       </div>

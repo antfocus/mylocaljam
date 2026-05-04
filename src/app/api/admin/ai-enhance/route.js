@@ -28,8 +28,8 @@ export async function POST(request) {
   }
 
   // No more direct Perplexity fetch — the LLM router (callLLMWebGrounded)
-  // handles provider selection + failover (Perplexity → Gemini → Grok). When
-  // Perplexity returns insufficient_quota or rate-limits, the router
+  // handles provider selection + failover (Gemini → OpenAI → Perplexity). When
+  // a provider returns insufficient_quota or rate-limits, the router
   // continues down the route automatically. As long as ONE provider's API
   // key is set, this endpoint stays alive.
 
@@ -121,9 +121,10 @@ Respond with ONLY the JSON object — no markdown, no code fences, no preamble.`
 
   try {
     const systemPrompt = 'You are a metadata enrichment API for a local live music discovery app. Always respond with valid JSON only. No markdown formatting.';
-    // Web-grounded routing → Perplexity first (fresh web context for bios),
-    // Gemini second, Grok third. Returns parsed JSON or null if every
-    // provider failed.
+    // Web-grounded routing → Gemini first (highest quota, cheapest), OpenAI
+    // second (reliable pay-per-token fallback), Perplexity third (web access
+    // for niche local acts). Returns parsed JSON or null if every provider
+    // failed.
     const parsed = await callLLMWebGrounded(systemPrompt, prompt);
 
     if (!parsed) {

@@ -1,10 +1,11 @@
 /**
  * AI Artist Lookup — multi-provider LLM bio/image lookup with strict constraints.
  *
- * Uses the LLM Router (`src/lib/llmRouter.js`) for automatic Gemini → Perplexity
- * → Grok failover. Pass 1 (bio + image research) prefers Perplexity for web
- * grounding; Pass 2 (genre/vibe tagging) prefers Gemini because it's a pure
- * text-classification task. See the call sites below for the per-pass rationale.
+ * Uses the LLM Router (`src/lib/llmRouter.js`) for automatic Gemini → OpenAI
+ * → Perplexity failover. Pass 1 (bio + image research) uses the web-grounded
+ * route; Pass 2 (genre/vibe tagging) uses the default route — same provider
+ * order, but the route is named for clarity. See the call sites below for
+ * the per-pass rationale.
  *
  * Extracted from `src/app/api/admin/artists/ai-lookup/route.js` so the same
  * logic can serve three callers:
@@ -71,7 +72,7 @@
  * allowed to drift between manual admin use and automated enrichment.
  *
  * Env vars:
- *   - At least ONE of: GOOGLE_AI_KEY, PERPLEXITY_API_KEY, XAI_API_KEY
+ *   - At least ONE of: GOOGLE_AI_KEY, OPENAI_API_KEY, PERPLEXITY_API_KEY
  *     (router falls through missing-key providers; aiLookupArtist returns
  *     null only if ALL configured providers fail. Without any key, the
  *     router returns null on the first call and the flow bails gracefully.)
@@ -79,12 +80,11 @@
  *                         premium placeholder carousel, auto mode refuses)
  */
 
-// Multi-provider LLM abstraction with Gemini → Perplexity → Grok failover.
-// Pass 1 (bio + image research) uses the web-grounded route (Perplexity first)
-// because live web access materially improves artist research. Pass 2
-// (genre/vibe tagging) uses the default route (Gemini first) because it's
-// just classification from the bio text we already have — no web needed,
-// and Gemini is cheaper.
+// Multi-provider LLM abstraction with Gemini → OpenAI → Perplexity failover.
+// Pass 1 (bio + image research) uses the web-grounded route. Pass 2
+// (genre/vibe tagging) uses the default route — same order today, but kept
+// as separate route configs so we can flip Perplexity to #1 on web-grounded
+// later if its credit cap gets bumped.
 import { callLLM, callLLMWebGrounded } from './llmRouter';
 
 // Keep in lockstep with ALLOWED_GENRES in src/lib/utils.js and the admin
@@ -438,12 +438,12 @@ export async function aiLookupArtist({ artistName, venue, city, autoMode = false
 
   // NOTE: We used to hard-require PERPLEXITY_API_KEY here. That check moved
   // into the LLM router, which knows how to skip over unconfigured providers.
-  // As long as ANY of GOOGLE_AI_KEY / PERPLEXITY_API_KEY / XAI_API_KEY is set,
-  // Pass 1 / Pass 2 will succeed; if all three are missing the router returns
-  // null and this function degrades to "no-op" (caller handles null).
+  // As long as ANY of GOOGLE_AI_KEY / OPENAI_API_KEY / PERPLEXITY_API_KEY is
+  // set, Pass 1 / Pass 2 will succeed; if all three are missing the router
+  // returns null and this function degrades to "no-op" (caller handles null).
   if (!process.env.GOOGLE_AI_KEY
-    && !process.env.PERPLEXITY_API_KEY
-    && !process.env.XAI_API_KEY) {
+    && !process.env.OPENAI_API_KEY
+    && !process.env.PERPLEXITY_API_KEY) {
     return null;
   }
 
@@ -558,11 +558,13 @@ Then apply the conditional BIO RULES and IMAGE RULES for the chosen kind. If the
 
 Return the strict JSON object defined in STEP 5. Obey every rule for the chosen branch.`;
 
-  // Pass 1 uses the web-grounded route (Perplexity → Gemini → Grok). Artist
-  // bio + image research benefits from live web access, and Perplexity's
-  // sonar-pro model is built around that. If Perplexity rate-limits, the
-  // router falls through to Gemini automatically. Returns parsed JSON or
-  // null on total failure.
+  // Pass 1 uses the web-grounded route (Gemini → OpenAI → Perplexity). Bio +
+  // image research used to favor Perplexity for its live web access, but the
+  // $5/mo Perplexity credit was running out before clearing the queue, so
+  // Gemini moved to #1 (cheap + high quota) with OpenAI #2 as the reliable
+  // pay-per-token fallback. Perplexity stays as #3 for the niche local-act
+  // calls that genuinely need its web grounding. Returns parsed JSON or null
+  // on total failure.
   const bioResult = await callLLMWebGrounded(bioSystemPrompt, bioUserPrompt);
 
   // Normalize the classification decision. Anything the LLM doesn't clearly
@@ -593,9 +595,9 @@ Respond with strict JSON only, no markdown, no commentary, no code fences:
 
   const tagUserPrompt = `Artist: "${name}"\nBio: "${bioText}"\n\nCategorize using ONLY the allowed lists.`;
 
-  // Pass 2 uses the default route (Gemini → Perplexity → Grok). Genre/vibe
+  // Pass 2 uses the default route (Gemini → OpenAI → Perplexity). Genre/vibe
   // tagging is a pure classification-from-text task — no web search needed —
-  // so Gemini-first saves money and leaves Perplexity quota for Pass 1.
+  // so Gemini-first saves money and leaves Perplexity quota for niche cases.
   const tagResult = (bioText && kind === 'MUSICIAN')
     ? await callLLM(tagSystemPrompt, tagUserPrompt)
     : null;

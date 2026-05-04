@@ -13,7 +13,7 @@
  *   - batchSize: max artists per batch (default 20, max 25)
  *   - bareOnly: only process artists missing BOTH bio AND image (default false)
  *
- * Uses the LLM Router (Gemini → Perplexity → Grok) via aiLookupArtist.
+ * Uses the LLM Router (Gemini → OpenAI → Perplexity) via aiLookupArtist.
  * Pass 1 (bio/image) uses the web-grounded route; Pass 2 (genre/vibe) uses
  * the default route. See src/lib/llmRouter.js for provider details.
  *

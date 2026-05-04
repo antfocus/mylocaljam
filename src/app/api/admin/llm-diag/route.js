@@ -19,7 +19,7 @@
  *     name,
  *     perplexity: { configured, status, headers, bodySnippet, elapsedMs, error? },
  *     gemini:     { configured, status, headers, bodySnippet, elapsedMs, error? },
- *     grok:       { configured, ... } | { configured: false }
+ *     openai:     { configured, ... } | { configured: false }
  *   }
  */
 
@@ -142,27 +142,30 @@ async function probeGemini(userPrompt) {
   };
 }
 
-async function probeGrok(userPrompt) {
-  const key = process.env.XAI_API_KEY;
+async function probeOpenAI(userPrompt) {
+  const key = process.env.OPENAI_API_KEY;
   if (!key) return { configured: false };
   return {
     configured: true,
-    ...(await rawFetch('https://api.x.ai/v1/chat/completions', {
+    ...(await rawFetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${key}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'grok-3-mini',
+        // Keep this in sync with PROVIDERS.openai.model in llmRouter.js if
+        // the production model is swapped (e.g., to gpt-5.4-mini or gpt-5.5).
+        model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: userPrompt },
         ],
         max_tokens: 50,
         temperature: 0.1,
+        response_format: { type: 'json_object' },
       }),
-    }, 'grok')),
+    }, 'openai')),
   };
 }
 
@@ -180,10 +183,10 @@ export async function POST(request) {
   // Fire all three in parallel — they're independent APIs, we want the
   // full picture in one request and each one is rate-limited on its own
   // quota. Parallelism means total latency = slowest provider, not sum.
-  const [perplexity, gemini, grok] = await Promise.all([
+  const [perplexity, gemini, openai] = await Promise.all([
     probePerplexity(userPrompt),
     probeGemini(userPrompt),
-    probeGrok(userPrompt),
+    probeOpenAI(userPrompt),
   ]);
 
   return NextResponse.json({
@@ -191,6 +194,6 @@ export async function POST(request) {
     name,
     perplexity,
     gemini,
-    grok,
+    openai,
   });
 }
