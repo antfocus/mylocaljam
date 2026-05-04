@@ -890,67 +890,88 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                   </button>
                 </div>
 
-                {/* Cover / Tickets badge — sits as a sibling AFTER the
-                    icon cluster, OUTSIDE that inline-flex container. As
-                    the LAST flex item in the parent action row (which has
-                    `flex-wrap: wrap`), the badge wraps to row 2 first
-                    when the row is too tight (e.g. when the Follow pill
-                    becomes the longer "Following Event" label). The
-                    icon cluster has `flex-shrink: 0`, so it stays put on
-                    row 1. `marginLeft: 'auto'` anchors the badge to the
-                    right edge whichever row it lands on, so the visual
-                    relationship with the icon column above is preserved.
-                    See the badge-render gate logic below for which
-                    events surface this — kind='musician' only, with a
-                    price-pattern `cover` string OR is_ticketed_venue. */}
-                {(() => {
-                  const linkedKind = event.artists?.kind || 'musician';
-                  if (linkedKind !== 'musician') return null;
-                  const rawCover = (event.cover || '').trim();
-                  const looksLikePrice = /^\$\s*\d/.test(rawCover);
-                  const isTicketed = !!event.is_ticketed_venue;
-                  if (!isTicketed && !looksLikePrice) return null;
-                  const labelPrefix = isTicketed ? 'Tickets' : 'Cover';
-                  const labelLower    = labelPrefix.toLowerCase();
-                  const coverLower    = rawCover.toLowerCase();
-                  const alreadyLabeled = coverLower.includes(labelLower);
-                  const valuePart  = looksLikePrice ? rawCover : '';
-                  const display    = valuePart
-                    ? (alreadyLabeled ? valuePart : `${labelPrefix} ${valuePart}`)
-                    : labelPrefix;
-                  return (
-                    <span
-                      title={isTicketed
-                        ? (valuePart
-                            ? `Tickets ${valuePart} — tap the venue icon to buy`
-                            : 'This event is ticketed — tap the venue icon to buy')
-                        : `Cover charge ${valuePart} at the door`}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '4px',
-                        padding: '4px 10px',
-                        marginLeft: 'auto',
-                        background: darkMode
-                          ? 'rgba(232,114,42,0.16)'
-                          : 'rgba(232,114,42,0.10)',
-                        border: `1px solid ${darkMode
-                          ? 'rgba(232,114,42,0.32)'
-                          : 'rgba(232,114,42,0.30)'}`,
-                        borderRadius: '999px',
-                        fontFamily: "'DM Sans', sans-serif",
-                        fontSize: '10px', fontWeight: 700,
-                        color: darkMode ? '#E8722A' : '#C95717',
-                        letterSpacing: '0.06em',
-                        textTransform: 'uppercase',
-                        flexShrink: 0,
-                        lineHeight: 1.2,
-                      }}
-                    >
-                      {display}
-                    </span>
-                  );
-                })()}
               </div>
             )}
+
+            {/* Cover / Tickets badge — own dedicated row BELOW the action
+                row. Renders only when the event has a real cover charge
+                or is at a ticketed venue. Earlier iterations tried
+                wrapping the badge inside the action row (clumsy when the
+                Follow pill became "Following Event" and pushed everything
+                to row 2). Putting it on its own line is the simplest
+                answer: clean spacing when present, zero layout cost when
+                absent.
+
+                Gate logic, in order:
+                  • Linked artist kind must be 'musician'. Drink-special
+                    "events", trivia nights, holiday brunches don't get
+                    cover/ticket badges (their cover field is often
+                    scraper noise — see Boatyard 401 May 2 incident).
+                    Treats null kind as 'musician' for legacy rows.
+                  • cover string must look like a price ($N pattern), OR
+                    is_ticketed_venue must be true. Filters out scraper
+                    noise that doesn't fit either.
+
+                Label:
+                  • COVER $5 — casual venue with cover charge
+                  • TICKETS $25 — ticketed venue with scraped price
+                  • TICKETS — ticketed venue, no specific price yet
+                  • Smart-prefix to avoid "COVER $5 COVER" when the
+                    scraped string already contains the label word. */}
+            {(() => {
+              const linkedKind = event.artists?.kind || 'musician';
+              if (linkedKind !== 'musician') return null;
+              const rawCover = (event.cover || '').trim();
+              const looksLikePrice = /^\$\s*\d/.test(rawCover);
+              const isTicketed = !!event.is_ticketed_venue;
+              if (!isTicketed && !looksLikePrice) return null;
+
+              const labelPrefix    = isTicketed ? 'Tickets' : 'Cover';
+              const alreadyLabeled = rawCover.toLowerCase().includes(labelPrefix.toLowerCase());
+              const valuePart      = looksLikePrice ? rawCover : '';
+              const display        = valuePart
+                ? (alreadyLabeled ? valuePart : `${labelPrefix} ${valuePart}`)
+                : labelPrefix;
+
+              return (
+                <div style={{
+                  marginTop: '10px',
+                  display: 'flex',
+                  // Keep the badge LEFT-aligned to mirror the Follow
+                  // pill above. Anchoring left feels grounded; centering
+                  // would float arbitrarily, anchoring right would feel
+                  // disconnected from the left-aligned content above.
+                  justifyContent: 'flex-start',
+                }}>
+                  <span
+                    title={isTicketed
+                      ? (valuePart
+                          ? `Tickets ${valuePart} — tap the venue icon to buy`
+                          : 'This event is ticketed — tap the venue icon to buy')
+                      : `Cover charge ${valuePart} at the door`}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      padding: '5px 12px',
+                      background: darkMode
+                        ? 'rgba(232,114,42,0.16)'
+                        : 'rgba(232,114,42,0.10)',
+                      border: `1px solid ${darkMode
+                        ? 'rgba(232,114,42,0.32)'
+                        : 'rgba(232,114,42,0.30)'}`,
+                      borderRadius: '999px',
+                      fontFamily: "'DM Sans', sans-serif",
+                      fontSize: '11px', fontWeight: 700,
+                      color: darkMode ? '#E8722A' : '#C95717',
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {display}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
