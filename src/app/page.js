@@ -3295,13 +3295,11 @@ export default function HomePage() {
                     <span style={{ fontSize: '13px', fontWeight: 500, color: activeVenues.length > 0 ? '#E8722A' : (darkMode ? '#8C8CA4' : '#6B7280'), lineHeight: 1, marginRight: '6px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}>
                       {venueLabel}
                     </span>
-                    {activeVenues.length > 0 && (
-                      <span style={{
-                        background: '#E8722A', color: '#000000', fontSize: '10px', fontWeight: 700,
-                        borderRadius: '8px', padding: '1px 6px', minWidth: '18px', textAlign: 'center',
-                        fontFamily: "'DM Sans', sans-serif", flexShrink: 0,
-                      }}>{activeVenues.length}</span>
-                    )}
+                    {/* Count badge removed 2026-05-04 — duplicated info that
+                        venueLabel already conveys ("Jamian's" for one,
+                        "3 venues" for many). When stacked next to the row
+                        value + an ACTIVE chip + the checked list rows below,
+                        it became 5x repetition of the same selection. */}
                     <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0, transform: activeFilterCard === 'venue' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={activeVenues.length > 0 ? '#E8722A' : (darkMode ? '#8C8CA4' : '#9CA3AF')} strokeWidth="1.5" fill="none" /></svg>
                   </button>
                   {activeFilterCard === 'venue' && (
@@ -3335,32 +3333,16 @@ export default function HomePage() {
                           </button>
                         )}
                       </div>
-                      {/* Selected venues chips */}
-                      {activeVenues.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-                          {activeVenues.map(v => (
-                            <button key={v} onClick={() => setActiveVenues(prev => prev.filter(x => x !== v))} style={{
-                              display: 'inline-flex', alignItems: 'center', gap: '4px',
-                              padding: '4px 10px', borderRadius: '14px', border: 'none', cursor: 'pointer',
-                              background: darkMode ? '#E8722A30' : '#FFF0E6',
-                              fontSize: '12px', fontWeight: 600, color: '#E8722A',
-                              fontFamily: "'DM Sans', sans-serif",
-                            }}>
-                              {v}
-                              <svg width="8" height="8" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill="#E8722A" /></svg>
-                            </button>
-                          ))}
-                          <button onClick={() => setActiveVenues([])} style={{
-                            display: 'inline-flex', alignItems: 'center', gap: '3px',
-                            padding: '4px 8px', borderRadius: '14px', border: 'none', cursor: 'pointer',
-                            background: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-                            fontSize: '11px', fontWeight: 600, color: t.textMuted,
-                            fontFamily: "'DM Sans', sans-serif",
-                          }}>
-                            Clear
-                          </button>
-                        </div>
-                      )}
+                      {/* Selected-chip strip + bulk Clear pill removed
+                          2026-05-04. Each chip duplicated info already
+                          shown by the checked list row below — clicking
+                          a chip's X did the same thing as unchecking the
+                          box. The Clear pill cleared all selections, but
+                          the same outcome is reachable by unchecking each
+                          row, or via the modal's Clear filters button.
+                          Removing the strip means selections live in
+                          exactly one place inside the expanded card: the
+                          checkbox list. */}
                       {/* Scrollable checklist */}
                       <div style={{
                         maxHeight: '200px', overflowY: 'auto',
