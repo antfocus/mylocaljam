@@ -127,3 +127,8 @@ Files that implement or consume this taxonomy:
 - **Promote endpoint** — `src/app/api/admin/artists/promote/route.js` (links existing or creates `kind='musician'`).
 - **Kind normalization on approve** — `src/app/api/admin/pending-enrichments/[id]/approve/route.js` (`KIND_NORMALIZE` map: `MUSICIAN → musician`, `VENUE_EVENT → event`).
 - **Default Category visibility rule** — `src/components/admin/AdminArtistsTab.js` (modal hides field for `kind='musician'`).
+- **Auto-classifier** — `src/lib/classifyArtistKind.js`: `classifyArtistKind(name)` returns `'event' | 'billing' | 'musician'` from a name string using the heuristics in §3 of this doc. Conservative — defaults to `'musician'` on ambiguous input. Patterns must stay in lockstep with §3 — update both together.
+- **Auto-classifier wired into:**
+  - `src/app/api/sync-events/route.js` Phase 0 (line ~1248) — scraper-first artist row creation. New rows get `kind: classifyArtistKind(name)`.
+  - `src/lib/enrichArtist.js` (line ~425) — universal enrichment. Sets `kind` ONLY when `!cached` (brand-new row) so admin reclassifications on existing rows are preserved.
+  - `src/app/api/admin/artists/promote/route.js` — Promote-to-Artist endpoint classifies the new row instead of hardcoding `'musician'`. Admin can override via the kind toggle in the artist modal if the heuristic misses.

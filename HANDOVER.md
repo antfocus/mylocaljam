@@ -5463,3 +5463,150 @@ Three-state card cycle, ArtistSpotlight bio bump, submission image override fix,
 - The Squarespace `assetUrl` bug pattern is worth a one-shot grep across all scrapers. If any other scraper writes `image_url` from `assetUrl`, the same fix applies (set null, let waterfall handle it).
 - EventCardV2 three-state cycle is novel — watch for confused users who don't realize the card has a third state. If telemetry shows people opening cards but never reaching the bio-expanded state on long-bio events, the affordance might need a hint (e.g. a chevron rotation, a "Tap to read more" inline label).
 
+---
+
+## May 2 (afternoon/evening) — continuation: scroll diagnostics, scrape-time classifier, tickets badge, share-page wiring, scroll-back, security audit
+
+Long second-half of May 2. Six workstreams in parallel: a recurring scroll-jump symptom that resisted three diagnostic fixes (parked), a new scrape-time `kind` classifier wired into three auto-create paths, a multi-revision tickets/cover indicator that took 5 attempts to land, share-landing-page action wires + bio bump, a scroll-back-on-collapse interaction polish, and a full security audit with two findings shipped same-session.
+
+### 1. Scroll-speeds-up symptom — three diagnostic fixes, none resolved (parked #95)
+
+Tony reported a recurring "scroll speeds up" sensation around 3-7 event cards below the hero. Layout-shift flash confirmed via Chrome DevTools (Rendering panel → Layout Shift Regions). Three fixes attempted today, none resolved:
+
+1. **`HeroPiston.measure()` skips synchronous `applyScrollState()` write past the collapse zone.** Theory: ResizeObserver fires during spotlight auto-rotate, causing a wrapper-height shift mid-scroll. Guard added so `measure()` no-ops the synchronous write once `scrollY` is past the collapse zone. File: `src/components/HeroPiston.js` `measure()` function.
+2. **Dynamic `overflow-anchor` on the scroll container.** HeroPiston had globally disabled scroll-anchoring on the entire feed scroll container, so any tiny layout shift translated to a visible jump. Fix disables anchoring inside the collapse zone (where the hero is actively resizing) and restores `overflow-anchor: auto` past it. Same file.
+3. **`applyScrollState` runs synchronously without rAF throttle.** This was already in place pre-session but documented as part of the diagnostic chain.
+
+User confirmed the symptom persists after all three. Static-read diagnosis couldn't identify the shifting element. **Parked as task #95.** Next move: capture a Performance trace on a real device — a static read of the source can't see what we need.
+
+### 2. Scrape-time kind classifier (`src/lib/classifyArtistKind.js`)
+
+New pure-function classifier. Returns `'event' | 'billing' | 'musician'` from a name string. Patterns drawn directly from `KIND_TAXONOMY.md` Section 3. Conservative on purpose: **false positives (a real musician misclassified as an event) are louder failures than false negatives**, so ambiguous input defaults to `'musician'`.
+
+Wired into three auto-create paths so the scraper / enrichment / admin-promote flows stop creating mis-classified `kind='musician'` rows for venue events:
+
+- `src/app/api/sync-events/route.js` Phase 0 (line ~1248) — scraper-first artist row creation. New rows get `kind: classifyArtistKind(name)`.
+- `src/lib/enrichArtist.js` (line ~425) — universal enrichment. Sets kind ONLY when `!cached` (brand new row); preserves admin reclassifications on updates.
+- `src/app/api/admin/artists/promote/route.js` — Promote-to-Artist endpoint now classifies the new row instead of hardcoding `'musician'`. Admin can override via KindToggle if the heuristic misses.
+
+This is the structural fix for PARKED #15 ("Auto-create artist flow tags everything as `kind='musician'`"). Closes the new-row case; existing legacy rows still need the cleanup pass tracked in #15 / #9.
+
+**Manual data cleanup tied to the same loop:**
+- Reclassified the `"$5 High Noons, White Claws…"` artist row (Boatyard 401) from `kind='billing'` → `kind='event'`. Was misclassified by the comma-count heuristic — it's a drink special, not a multi-artist lineup. Comma-count alone isn't sufficient when the leading token is a price.
+- Cleared the `cover` field on 4 affected Boatyard 401 rows (the `cover` was actually drink-promo "$5 Cover" copy from the venue page, not a real door price).
+- Reclassified 4 obvious-event artist rows from `kind='musician'` → `'event'`: AYCE SNOW CRAB, Family Funday Monday, Decades night, Monday Night Pizza Night 6p.
+- (Earlier in the day): cleared `event_image_url` on 3 Mott's Creek events (Squarespace `assetUrl` directory paths). Already documented in §3 above; noting here because it's the same "scrapers extract noise into ticket / image / cover fields" pattern that motivated the strict gating rules in §3 below.
+
+### 3. Tickets indicator — schema + admin + display (the long iteration)
+
+Multi-revision design loop. Capturing all of it because the rationale matters for future agents.
+
+**Schema layer.** New column on `venues`:
+```sql
+ALTER TABLE venues ADD COLUMN is_ticketed_venue BOOLEAN NOT NULL DEFAULT false;
+```
+Migration name: `add_is_ticketed_venue_to_venues`. Backfilled `is_ticketed_venue = true` on 13 venues: Stone Pony, Wonder Bar, The Vogel, Asbury Lanes, House of Independents, The Saint, ParkStage, Algonquin Arts Theatre, Crossroads, PNC Bank Arts Center, Starland Ballroom, Tim McLoone's Supper Club, Stone Pony Summer Stage. Convention Hall + Brighton Bar were named in the list but don't exist in the venues table — skipped.
+
+**Admin layer.**
+- `src/app/api/admin/venues/route.js` — `EDITABLE_FIELDS` whitelist now includes `is_ticketed_venue` with boolean coercion in `sanitize()`.
+- `src/components/admin/AdminVenuesDirectory.js` — toggle in the venue edit modal labeled "Events at this venue are sold via tickets" with helper text. Orange "TICKETED" badge next to the venue_type pill in the directory list. Both gated on the field.
+- `src/hooks/useAdminVenues.js` — `fetchVenuesFull` SELECT now includes `is_ticketed_venue` so the field round-trips. Without this the toggle wouldn't persist visually after save (one-line bug fix; would have been silent corruption otherwise).
+
+**Data flow layer.**
+- `src/app/api/events/search/route.js` — venues join projection includes `is_ticketed_venue`; `transformEvent` flattens it onto the event payload as `event.is_ticketed_venue`.
+- `src/app/event/[id]/page.js` — share-page server component does the same flatten.
+- `src/app/api/sync-events/route.js` line ~238 — added a known-ticketing-host whitelist (`ticketmaster.com`, `livenation.com`, `dice.fm`, `etix.com`, `seetickets.us`, `eventbrite.com`, `showclix.com`, `axs.com`) so the cross-domain check in `ticket_link` resolution doesn't null out Ticketmaster URLs. Previously: both `source_url` and `ticket_url` were on `ticketmaster.com`, the cross-domain heuristic flagged them as suspicious and cleared the ticket_link. Whitelist short-circuits that.
+
+**Display iterations — 5 attempts to land.**
+
+1. **Inline next to venue name** in compact row + on share landing date strip. Tony rejected — wrong surface.
+2. **Third line in the time column** (TIME / PM / $25 stack). Rejected — wanted it not in the time area, not in the title row.
+3. **In expanded action row, immediately left of the map-pin icon, plain orange text.** Position liked, but it looked "lost" — needed visual definition.
+4. **Wrapped in a pill badge with COVER vs TICKETS label prefix.** Cover string vs `is_ticketed_venue` determines label. Smart-prefix to avoid `"COVER $5 COVER"` when the `cover` field already contains the word.
+5. **Badge moved to wrap to row 2** when the Follow pill is tight (Following Event longer label). Still in the action row.
+6. **FINAL** (#109): badge pulled out of the action row entirely. Renders as its own dedicated block below the action row, only when present. Left-aligned to mirror the Follow Artist pill above. No wrap edge cases.
+
+**Display gating logic (final).**
+- Linked artist `kind` must be `'musician'` (drink-special "events", trivia, holiday brunches don't get the badge — their `cover` field is often scraper noise like "From $4" drink promos).
+- `cover` string must match `/^\$\s*\d/` (a price-pattern), OR `is_ticketed_venue` must be true.
+- Smart prefix: if `cover` already contains "cover" or "tickets" (case-insensitive), don't double-label.
+
+**Why the strict gate.** The Pig & Parrot scraper (and likely several other casual-venue scrapers) extracts drink specials into `events.cover` and artist homepage URLs into `events.ticket_link`. Display-side strict gating prevents these from rendering as price/ticket badges. Data pollution still remains in DB — see PARKED #106 for the data-side audit.
+
+### 4. Share landing page — Save Show + Follow Artist actually wire
+
+`src/app/event/[id]/EventPageClient.js`:
+
+- `handleSoftCTA` was previously a no-op for logged-in users (only fired the sign-up hint for guests). Replaced with `handleSaveShow` + `handleFollowArtist` that POST to `/api/saved-events` and `/api/follows` with the user's bearer token. Optimistic state flip with revert on failure. Posthog events: `share_page_save_show`, `share_page_follow_artist`.
+- Bio paragraph bumped 14px → 18px / 1.55 line-height to match the feed.
+- Action row split into 4 buttons: **Save Show** / **Follow Artist** / **Venue** (website) / **Map** (Google Maps directions). Was 3 with a confusingly-labeled Venue button that opened Google Maps.
+- Venue button uses `event.venue_website` with `source_url` fallback (mirrors EventCardV2's `venueLink` resolution).
+
+This closes a real launch hole: clicking a shared-event link from iMessage / Twitter and tapping Save Show silently did nothing if you were logged in.
+
+### 5. Scroll-back on card collapse
+
+`src/components/EventCardV2.js handleCardClick`: when the user collapses an expanded card (3rd state of the click cycle → closed), the card scrolls itself back into the viewport center. `setTimeout(..., 260)` waits for the max-height collapse transition (250ms) to settle before scrolling. `behavior: 'smooth', block: 'center'` — center avoids the sticky top nav clipping the title flush at top:0.
+
+Closes the "user gets stranded in whitespace below a card after closing a long-bio expansion" footgun. Especially noticeable on long-bio cards where the expanded card pushed the user 600+ pixels below where they started.
+
+### 6. Security audit + initial fixes (full report: `SECURITY_AUDIT_2026-05-02.md`)
+
+Full security audit performed. **22 findings — 4 Critical, 6 High, 8 Medium, 4 Low.** Two fixes shipped same-session:
+
+- **C2 — Admin analytics auth.** `src/app/api/admin/analytics/route.js` + `src/app/admin/page.js`: admin password moved from `?password=` URL query param to `Authorization: Bearer` header. Old query-param shape now rejected explicitly so a stale client fails loudly. The query-param shape was leaking the password into Vercel access logs.
+- **C3 partial — Public POST hardening.** New shared library at `src/lib/publicPostGuards.js` exporting `enforceRateLimit(request, NextResponse)`, `capString(s, max)`, `capEmail(s)`, `capUrl(s, max)`. In-memory rate limiter with 1-hour rolling window keyed by `(route, ip)`. Honest doc comment about the Vercel cold-start bypass — flagged for Upstash Redis upgrade. Applied to 4 public POST endpoints: `submissions` (10/hr), `feedback` (20/hr), `support` (20/hr), `reports` (30/hr). All now have length caps, format validation on email/URL, allowlists on enum-shaped fields, and generic error responses (no `err.message` leaks).
+
+**Outstanding from audit (deferred — see `SECURITY_AUDIT_2026-05-02.md`):** C1 secret rotation (Tony's manual task — checklist in the audit doc), C4 (`npm audit fix --force` for protobufjs/next/picomatch — requires Next 16 upgrade), H1 (move admin auth from shared password to Supabase role-based), H2 (SSRF allowlist on upload-image), H3 (anon client for public reads + RLS audit), H4 (`safeHref` helper for scraper-output URLs), H5 (Upstash Redis rate limit on flag-event), H6 (httpOnly cookies via `@supabase/ssr`), M1 security headers, C3 full (Upstash + captcha on the same 4 POSTs).
+
+Tracked in PARKED #4 (security audit follow-ups).
+
+### Files Changed (May 2 PM)
+
+| File | Change |
+|------|--------|
+| `src/components/HeroPiston.js` | `measure()` skips synchronous write past collapse zone; dynamic `overflow-anchor` (off in zone, `auto` past it). Symptom not resolved — see #1. |
+| `src/lib/classifyArtistKind.js` | NEW — `classifyArtistKind(name)` returns `'event' \| 'billing' \| 'musician'`. Patterns from KIND_TAXONOMY §3. Conservative default to `'musician'`. |
+| `src/app/api/sync-events/route.js` | Phase 0 (~line 1248) uses `classifyArtistKind` for new artist rows. Line ~238 ticket-host whitelist (Ticketmaster/LiveNation/etc.) for `ticket_link` cross-domain check. |
+| `src/lib/enrichArtist.js` | Line ~425: sets `kind` from classifier on `!cached` only (preserves admin overrides on updates). |
+| `src/app/api/admin/artists/promote/route.js` | Promote endpoint now classifies new row instead of hardcoding `'musician'`. |
+| Supabase `venues` schema | NEW column `is_ticketed_venue BOOLEAN NOT NULL DEFAULT false`. Migration `add_is_ticketed_venue_to_venues`. Backfilled true on 13 venues. |
+| `src/app/api/admin/venues/route.js` | `EDITABLE_FIELDS` includes `is_ticketed_venue`; boolean coercion in `sanitize()`. |
+| `src/components/admin/AdminVenuesDirectory.js` | Edit-modal toggle ("Events at this venue are sold via tickets"); orange TICKETED badge in directory list. |
+| `src/hooks/useAdminVenues.js` | `fetchVenuesFull` SELECT includes `is_ticketed_venue` (round-trip fix). |
+| `src/app/api/events/search/route.js` | Venues join projection + `transformEvent` flatten `is_ticketed_venue` onto event payload. |
+| `src/app/event/[id]/page.js` | Share-page server component flattens `is_ticketed_venue` (mirrors search API). |
+| `src/components/EventCardV2.js` | Tickets/cover badge final form: own block below action row. Strict gate (musician kind + price-pattern OR ticketed venue + smart prefix). Scroll-back on 3rd-click collapse. |
+| `src/app/event/[id]/EventPageClient.js` | `handleSaveShow` + `handleFollowArtist` actually POST (was no-op for logged-in users). Bio 14→18px / 1.55. Action row: Save Show / Follow Artist / Venue / Map (was 3 with mislabeled button). |
+| `src/app/api/admin/analytics/route.js` | C2: admin auth moved from `?password=` query to `Authorization: Bearer` header. Old shape explicitly rejected. |
+| `src/app/admin/page.js` | C2: client sends Bearer header (was query param). |
+| `src/lib/publicPostGuards.js` | NEW — `enforceRateLimit(request, NextResponse)`, `capString`, `capEmail`, `capUrl`. In-memory limiter, 1hr window, keyed by `(route, ip)`. Doc comment flags Vercel cold-start bypass for future Upstash upgrade. |
+| `src/app/api/submissions/route.js` | C3: rate limit (10/hr), length caps, email/URL format validation, generic errors. |
+| `src/app/api/feedback/route.js` | C3: rate limit (20/hr) + caps + validation. |
+| `src/app/api/support/route.js` | C3: rate limit (20/hr) + caps + validation. |
+| `src/app/api/reports/route.js` | C3: rate limit (30/hr) + caps + validation. |
+| Supabase `artists` rows | Reclassified: Boatyard 401 "$5 High Noons…" billing→event; AYCE SNOW CRAB, Family Funday Monday, Decades night, Monday Night Pizza Night 6p musician→event. |
+| Supabase `events` rows | Cleared `cover` on 4 Boatyard 401 rows (drink-promo noise). |
+| `KIND_TAXONOMY.md` | §6 extended with `classifyArtistKind` reference + three wire points. |
+| `PARKED.md` | New entries: #95 scroll jump, #103 venue_type cleanup, #106 Pig & Parrot extraction noise, #4 security follow-ups (cross-ref to SECURITY_AUDIT). |
+| `SECURITY_AUDIT_2026-05-02.md` | NEW — 22 findings, status block, rotation checklist. |
+
+### Tasks closed this session (#91–#94, #96–#102, #104–#111)
+
+Scroll diagnosis (3 fixes, parked), scrape-time kind classifier, share-landing Save Show + Follow Artist wires, share-landing action-row split (Venue + Map), `is_ticketed_venue` schema + backfill + admin toggle + badge, tickets indicator (5 design iterations to land #109), scroll-back on collapse, security C2 + C3-partial. See task list.
+
+### Tasks still open / parked
+
+- **#95** Scroll jump near Ilhan Saferali Quartet — needs Performance trace on real device.
+- **#103** venue_type cleanup pass — freeform field needs normalization.
+- **#106** Pig & Parrot scraper extraction noise — display gate ships, data audit pending.
+- Security follow-ups: C1 secret rotation, C4 npm audit, H1–H6, M1, C3 full. See `SECURITY_AUDIT_2026-05-02.md`.
+
+### Notes for next session
+
+- **Scroll-jump diagnosis is data-bound.** Three plausible static-read fixes haven't moved the needle. The next attempt should start with a Performance trace from Tony's iPhone — the Layout Shift Region overlay confirmed *something* shifts, but we can't see what without runtime data. Don't iterate more static fixes until the trace exists.
+- **`classifyArtistKind` should be the single source of truth for new-row classification.** If a future scraper or admin path creates artist rows, route it through this module. Don't reimplement the heuristics inline. Update the patterns in this module + KIND_TAXONOMY §3 in lockstep.
+- **Tickets badge gate is intentionally strict.** Don't loosen it ("show the cover field even on event-kind rows") without thinking through the Pig & Parrot / Boatyard 401 noise pattern. The strict gate is what prevents drink-special copy from rendering as a door price. PARKED #106 is the data-side companion.
+- **Share-page CTAs were silently broken.** `handleSoftCTA` no-op for logged-in users was a launch hole — anyone clicking a shared-link Save/Follow button got no response. Worth scanning other "soft CTA" handlers in the codebase for the same pattern.
+- **Security audit is the durable doc.** `SECURITY_AUDIT_2026-05-02.md` is the working list. Don't fold the outstanding items into HANDOVER or PARKED line-by-line; cross-reference and let that doc carry the detail. Fold into HANDOVER when items ship (the "Status as of end of day" block in the audit gets updated as fixes land).
+

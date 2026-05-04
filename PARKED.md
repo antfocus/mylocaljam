@@ -608,6 +608,93 @@ Same artist, same time, different `external_id`, both get inserted as separate e
 
 ---
 
+## 20. Scroll jump near Ilhan Saferali Quartet (task #95)
+
+**Why parked:** May 2, 2026. Tony reports a recurring "scroll speeds up" sensation on the home feed roughly 3-7 event cards below the hero. Layout-shift flash confirmed via Chrome DevTools (Rendering panel → Layout Shift Regions overlay). Three static-read fixes shipped today, none resolved the symptom:
+
+1. `HeroPiston.measure()` skips synchronous `applyScrollState()` write when `scrollY` is past the collapse zone (theory: ResizeObserver fires during spotlight auto-rotate, causing wrapper-height shift mid-scroll). File: `src/components/HeroPiston.js`.
+2. Dynamic `overflow-anchor` on the scroll container — disabled inside the collapse zone, restored to `auto` past it (theory: HeroPiston had globally disabled scroll anchoring, so any tiny layout shift translated to a visible jump). Same file.
+3. `applyScrollState` running synchronously without rAF throttle (already in place pre-session; documented as part of the diagnostic chain).
+
+User confirmed the symptom persists after all three. Static-read diagnosis can't identify the shifting element from this point.
+
+**Next move:** Performance trace on a real device (Tony's iPhone). The Layout Shift Region overlay confirms *something* shifts; the trace will name the element and the trigger. Don't iterate more static fixes until the trace exists.
+
+**Risk:** None — the issue is observable but not blocking. Symptom is a UX irritant, not a data correctness or breakage issue.
+
+**Effort:** ~30 min trace capture + ~30 min triage. Fix scope unknown until then.
+
+**See also:** `HANDOVER.md` May 2 PM continuation §1.
+
+---
+
+## 21. venue_type cleanup pass (task #103)
+
+**Why parked:** May 2, 2026. The `venues.venue_type` column is freeform text inconsistently filled. Surfaced when adding the `is_ticketed_venue` toggle next to the venue_type pill in the directory list — the inconsistent values made the row reads noisy ("venue", "Bar", "brewery", "Pub", "Tavern", "Restaurant" all in the same list).
+
+**Scope:**
+
+1. **Null out tautological values.** Rows with `venue_type = 'venue'` carry no information beyond what the table itself implies. `UPDATE venues SET venue_type = NULL WHERE LOWER(venue_type) IN ('venue', 'venues');`
+2. **Normalize obvious ones.** Brewery → `brewery`, Bar/Tavern/Pub → `bar`, Restaurant → `restaurant`, Theater/Theatre → `theater`, Music venue / Concert hall → `concert_hall`. Audit query first to surface the worklist:
+   ```sql
+   SELECT venue_type, COUNT(*) FROM venues GROUP BY venue_type ORDER BY COUNT(*) DESC;
+   ```
+3. **Consider making the field a required dropdown going forward.** AdminVenuesDirectory edit modal currently accepts any string. A controlled enum (with an "other" escape hatch) would prevent drift from re-accumulating. Migration would need a check constraint or app-layer validation.
+
+**Risk:** Low. Targets a single denormalized field; no FK implications.
+
+**Effort:** ~30 min for the normalization SQL pass. Dropdown conversion is an additional ~1 hour (admin form change + light migration).
+
+**See also:** `HANDOVER.md` May 2 PM continuation §3 (is_ticketed_venue addition exposed the noise); `VENUE_MANAGEMENT.md` (canonical venue field reference, will need an update once normalization ships).
+
+---
+
+## 22. Pig & Parrot scraper extraction noise (task #106)
+
+**Why parked:** May 2, 2026. The Pig & Parrot scraper extracts drink specials into `events.cover` (e.g., "From $4") and artist homepage URLs into `events.ticket_link`. Display-side strict gating shipped today (May 2 PM continuation §3) prevents these from rendering as price/ticket badges — the gate requires `kind='musician'` + price-pattern match OR `is_ticketed_venue=true`. **Data pollution remains in DB.**
+
+Same noise pattern caused the May 2 Boatyard 401 "$5 Cover" badge bug (the `cover` field was actually drink-promo copy from the venue page, not a real door price). Cleared 4 affected rows that day, but the underlying scraper is still emitting the same shape.
+
+**Scope:**
+
+1. **Audit Pig & Parrot scraper output.** Find which DOM/JSON field it's pulling for `cover` and `ticket_link`. Likely the venue page has a "drink specials" block adjacent to the event listing and the scraper is grabbing the wrong selector.
+2. **Same audit on other casual-venue scrapers** that resemble P&P's structure: Anchor Tavern, Joe's Surf Shack, Wild Air Beerworks, Boatyard 401. Each could have the same "venue-wide promo copy leaks into per-event cover" pattern.
+3. **Fix scraper output to write `null`** instead of drink-promo strings when the cover field is uncertain. Better to fall through to no-badge than render misleading copy.
+4. **Cleanup pass on existing rows** affected by the noise — query for events with `cover` matching drink-promo patterns (`/(\$\d+\s+(beer|drink|cocktail|wing|drafts?|specials?))/i`, `/(BOGO|happy hour)/i`, `/^From\s+\$/i`) and clear the field.
+
+**Risk:** Low. Display gate already prevents user-facing damage; this is data hygiene.
+
+**Effort:** ~1-2 hours per scraper to audit + fix. Cleanup SQL is ~15 minutes.
+
+**See also:** `HANDOVER.md` May 2 PM continuation §2 + §3; `KIND_TAXONOMY.md` §3 (scraper noise is part of why the strict classifier defaults conservative); PARKED #15 (auto-create artist flow tags) — adjacent class of scraper-noise problem now closed for new rows but not retroactively.
+
+---
+
+## 23. Security audit follow-ups (task #111)
+
+**Why parked:** May 2, 2026. Full security audit performed; report at `SECURITY_AUDIT_2026-05-02.md` (22 findings — 4 Critical, 6 High, 8 Medium, 4 Low). Two fixes shipped same-session (C2 admin analytics auth + C3-partial public POST hardening). Outstanding work tracked in the audit doc itself; this entry is the breadcrumb so the work surfaces in the parked list.
+
+**Outstanding by priority:**
+
+- **C1** — Rotate every secret in `.env.local`. Most urgent — `ADMIN_PASSWORD` is a low-entropy English word and was leaked into Vercel access logs via the C2 query-param bug we just fixed. Rotation checklist in `SECURITY_AUDIT_2026-05-02.md`. **Tony's manual task.**
+- **C4** — `npm audit fix --force`. Addresses 1 critical (`protobufjs` RCE) + 2 high (`next` DoS CVEs, `picomatch` ReDoS). Bumps Next to 16.x — budget half a day to test app-router behavior.
+- **H1** — Move admin auth from shared password to Supabase role-based. Today's bearer token is a single shared password; a stolen token is a full bypass. Supabase row-level role check would scope-narrow the blast radius.
+- **H2** — SSRF allowlist on `upload-image`. Today the route fetches arbitrary URLs server-side; an attacker could probe internal Vercel/AWS metadata endpoints.
+- **H3** — Anon Supabase client for public reads + RLS audit. Public routes currently use the service-role client, which bypasses RLS. Switch to anon + ensure RLS is restrictive.
+- **H4** — `safeHref` helper for scraper-output URLs. Scraper-emitted `ticket_link` / `source_url` render in DOM `href` attributes without normalization. `javascript:` and other dangerous schemes need blocking.
+- **H5** — Upstash Redis rate limit on `flag-event`. The in-memory limiter from C3 doesn't scale across Vercel instances; flag-event is a write path that needs durable rate limiting.
+- **H6** — httpOnly cookies via `@supabase/ssr`. Auth tokens currently land in localStorage (XSS-readable). Migration to SSR cookies is the right hardening.
+- **M1** — Security headers (`Strict-Transport-Security`, `Content-Security-Policy`, `X-Frame-Options`, `Referrer-Policy`). Add via `next.config.js` headers function or `vercel.json`.
+- **C3 full** — Upgrade C3-partial in-memory limiter to Upstash Redis + add captcha (hcaptcha or Cloudflare Turnstile) on the same 4 public POSTs. Determined attackers can fan across cold-start instances and bypass the in-memory shape.
+
+**Risk:** Varies by item. C1 is highest-leverage fix (low effort, high impact). H1-H6 each take 1-3 hours; should be sequenced when there's runway for an auth/security sprint.
+
+**Effort:** Cumulative ~1-2 days of focused work for the high-priority items (C1 + C4 + H1-H6 + M1). Items M2-M8 + L1-L4 in the audit doc are smaller follow-ups.
+
+**See also:** `SECURITY_AUDIT_2026-05-02.md` (full report — read this before picking up any of the outstanding items); `HANDOVER.md` May 2 PM continuation §6.
+
+---
+
 ## See also
 
 - **CATEGORIES-HANDOFF.md** — category/shortcut audit + auto-templates from event history (parking lot section)
