@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
+import { enforceRateLimit, capString, capEmail } from '@/lib/publicPostGuards';
 
 /**
  * POST /api/support
@@ -18,6 +19,10 @@ import { getAdminClient } from '@/lib/supabase';
  *   );
  */
 export async function POST(request) {
+  // Per-IP rate limit (20/hr). C3 audit fix May 2 2026.
+  const limited = enforceRateLimit(request, NextResponse);
+  if (limited) return limited;
+
   const supabase = getAdminClient();
 
   let body;
@@ -29,29 +34,30 @@ export async function POST(request) {
 
   const { rating, category, message, email } = body;
 
+  const safeMessage = capString(message, 2000);
+  const safeRating  = typeof rating === 'number' && rating >= 1 && rating <= 5 ? rating : null;
+
   // Need at least a rating or a message
-  if (!rating && !message?.trim()) {
+  if (!safeRating && !safeMessage) {
     return NextResponse.json({ error: 'Rating or message required' }, { status: 400 });
   }
 
   const validCategories = ['account', 'event', 'bug', 'feature', 'general'];
   const safeCategory = validCategories.includes(category) ? category : 'general';
 
-  const safeRating = typeof rating === 'number' && rating >= 1 && rating <= 5
-    ? rating : null;
-
   const { error } = await supabase
     .from('support_requests')
     .insert({
       rating: safeRating,
       category: safeCategory,
-      message: message?.trim() || null,
-      email: email || null,
+      message: safeMessage,
+      email: capEmail(email),
     });
 
   if (error) {
     console.error('[support POST] DB error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Generic outward; details only in server logs.
+    return NextResponse.json({ error: 'Support submission failed' }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });

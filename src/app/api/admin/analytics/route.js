@@ -84,9 +84,28 @@ async function hogql(projectId, query) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
 
-  // Auth: require admin password
-  const password = searchParams.get('password');
-  if (password !== process.env.ADMIN_PASSWORD) {
+  // Auth: require admin password via Authorization header.
+  // SECURITY (May 2 2026 audit C2): previously read from `?password=`
+  // query param, which leaked the secret into Vercel access logs,
+  // browser history, and any outbound Referer header on responses.
+  // Switched to Bearer header — same pattern used by every other
+  // admin route. The query-param branch is rejected outright (no
+  // backward-compat) so an old client URL fails fast and obviously
+  // rather than silently falling through to 401 with the password
+  // already logged.
+  const authHeader = request.headers.get('authorization') || '';
+  const expected   = `Bearer ${process.env.ADMIN_PASSWORD}`;
+  if (authHeader !== expected) {
+    if (searchParams.get('password')) {
+      // Caller is using the deprecated query-param shape. Tell them
+      // explicitly so devtools don't waste time on a "wrong password"
+      // hunt. The secret already leaked into logs at this point — the
+      // only mitigation now is rotation + this hard rejection.
+      return NextResponse.json(
+        { error: 'Auth via ?password= query param has been removed. Send Authorization: Bearer <password> instead.' },
+        { status: 401 }
+      );
+    }
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

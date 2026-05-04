@@ -98,7 +98,16 @@ export default function AdminPage() {
     try {
       const r = range || dashDateRange;
       const e = env || analyticsEnv;
-      const res = await fetch(`/api/admin/analytics?password=${encodeURIComponent(password)}&range=${r}&env=${e}`);
+      // SECURITY (May 2 2026 audit C2): admin password sent via
+      // Authorization header instead of query param. Query param
+      // version leaked the secret into access logs / browser history /
+      // Referer. Backward-compat is intentionally NOT preserved —
+      // the route now rejects ?password= explicitly so a stale build
+      // fails loudly rather than silently leaking.
+      const res = await fetch(
+        `/api/admin/analytics?range=${r}&env=${e}`,
+        { headers: { Authorization: `Bearer ${password}` } }
+      );
       if (res.ok) {
         const data = await res.json();
         setAnalyticsData(data);

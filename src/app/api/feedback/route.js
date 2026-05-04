@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
+import { enforceRateLimit, capString, capEmail } from '@/lib/publicPostGuards';
 
 /**
  * POST /api/feedback
@@ -17,6 +18,10 @@ import { getAdminClient } from '@/lib/supabase';
  *   );
  */
 export async function POST(request) {
+  // Per-IP rate limit (20/hr). C3 audit fix May 2 2026.
+  const limited = enforceRateLimit(request, NextResponse);
+  if (limited) return limited;
+
   const supabase = getAdminClient();
 
   let body;
@@ -29,22 +34,29 @@ export async function POST(request) {
   const { rating, type, message, email } = body;
 
   // Basic validation — need at least a rating or a message
-  if (!rating && !message) {
+  const safeMessage = capString(message, 2000);
+  const safeRating  = typeof rating === 'number' && rating >= 1 && rating <= 5 ? rating : null;
+  if (!safeRating && !safeMessage) {
     return NextResponse.json({ error: 'Rating or message required' }, { status: 400 });
   }
+
+  // Type allowlist — anything else falls back to 'general'.
+  const validTypes = ['general', 'bug', 'feature'];
+  const safeType = validTypes.includes(type) ? type : 'general';
 
   const { error } = await supabase
     .from('app_feedback')
     .insert({
-      rating: rating || null,
-      type: type || 'general',
-      message: message || null,
-      email: email || null,
+      rating: safeRating,
+      type: safeType,
+      message: safeMessage,
+      email: capEmail(email),
     });
 
   if (error) {
     console.error('[feedback POST] DB error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Generic outward; details only in server logs.
+    return NextResponse.json({ error: 'Feedback submission failed' }, { status: 500 });
   }
 
   return NextResponse.json({ success: true });
