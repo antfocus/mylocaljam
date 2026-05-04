@@ -234,15 +234,31 @@ function mapEvent(ev, venueMap, defaultTimes) {
     _scraper_bio: ev.description || null,
     _scraper_image: ev.image_url || null,
     // Only store ticket_link if it points to a real external ticketing site
-    // (different domain than the venue's own source_url)
+    // (different domain than the venue's own source_url) — UNLESS the URL is
+    // on a known ticketing platform, in which case we always keep it. The
+    // Ticketmaster scraper, for instance, sets BOTH source_url and
+    // ticket_url to ticketmaster.com (the source is a TM search page, the
+    // ticket is the specific event page). Without the whitelist, the
+    // same-host check would null out the ticket link for every Ticketmaster
+    // event — which is exactly what was happening before May 2 2026.
     ticket_link: (() => {
       const t = ev.ticket_url || null;
       const s = ev.source_url || null;
       if (!t) return null;
       if (!s) return t;
+      const TICKETING_HOSTS = [
+        'ticketmaster.com', 'livenation.com', 'dice.fm',
+        'etix.com', 'seetickets.us', 'eventbrite.com',
+        'showclix.com', 'axs.com',
+      ];
       try {
-        const tHost = new URL(t).hostname.replace(/^www\./, '');
-        const sHost = new URL(s).hostname.replace(/^www\./, '');
+        const tHost = new URL(t).hostname.replace(/^www\./, '').toLowerCase();
+        const sHost = new URL(s).hostname.replace(/^www\./, '').toLowerCase();
+        // Whitelist: known ticketing platform → always keep, regardless
+        // of whether the source is on the same host.
+        if (TICKETING_HOSTS.some(h => tHost === h || tHost.endsWith('.' + h))) return t;
+        // Otherwise apply the cross-domain rule: same host as source = no
+        // need for a separate Tickets affordance (it'd be redundant).
         return tHost === sHost ? null : t;
       } catch { return t; }
     })(),

@@ -407,16 +407,45 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                 {artistName}
               </span>
             )}
-            {venue && (
-              <span style={{
-                fontFamily: "'DM Sans', sans-serif",
-                fontSize: '14px', fontWeight: 400,
-                color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.58)',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {venue}
-              </span>
-            )}
+            {venue && (() => {
+              // Inline tickets indicator. Renders next to the venue name
+              // when the event has a price (event.cover), a ticket link,
+              // or the linked venue is flagged is_ticketed_venue=true.
+              // Examples:
+              //   "Wonder Bar · $25"     (cover string set)
+              //   "The Vogel · Tickets"  (ticketed venue, no specific price yet)
+              //   "Anchor Tavern"        (not ticketed — no indicator, current behavior)
+              // Non-interactive at this density — the EventPageClient
+              // landing page is where users click through to buy. The
+              // compact card is for at-a-glance "is this paid?" awareness.
+              const coverLabel  = (event.cover || '').trim();
+              const showTickets = !!(coverLabel || event.ticket_link || event.is_ticketed_venue);
+              const ticketText  = coverLabel || 'Tickets';
+              const venueColor  = darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.58)';
+              const dotColor    = darkMode ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)';
+              return (
+                <span style={{
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: '14px', fontWeight: 400,
+                  color: venueColor,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  display: 'block',
+                }}>
+                  {venue}
+                  {showTickets && (
+                    <>
+                      <span style={{ color: dotColor, margin: '0 6px' }}>·</span>
+                      <span style={{
+                        fontWeight: 600,
+                        color: darkMode ? '#E8722A' : '#C95717',
+                      }}>
+                        {ticketText}
+                      </span>
+                    </>
+                  )}
+                </span>
+              );
+            })()}
           </div>
 
           {/* Ticket stub save button */}

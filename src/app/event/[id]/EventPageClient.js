@@ -309,32 +309,113 @@ export default function EventPageClient({ event }) {
             </p>
           )}
 
-          {/* Venue — orange pin link to Google Maps. Outfit weight 600 so it
-              feels like part of the headline group, not metadata. */}
-          {venue && (
-            <a
-              href={mapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                fontFamily: "'Outfit', sans-serif",
-                fontSize: '17px', fontWeight: 600,
-                color: t.accent, textDecoration: 'none',
+          {/* Venue + inline tickets indicator. Venue itself is the orange
+              pin link to Google Maps (Outfit 600 — part of the headline
+              group, not metadata). When the event is ticketed (cover or
+              ticket_link present, OR the venue is_ticketed_venue=true),
+              a small price tag follows after a dot separator: e.g.
+              "📍 The Vogel · 🎫 $25". Click → opens ticket_link in a new
+              tab when set; otherwise falls back to the venue's source
+              URL. Hidden entirely when nothing ticket-related is known. */}
+          {venue && (() => {
+            // Resolve display + click target. Priority: explicit cover
+            // string ("$25") wins over generic "Tickets" label. Click
+            // target is ticket_link, fallback to source URL.
+            const coverLabel  = (event.cover || '').trim();
+            const showTickets = !!(coverLabel || event.ticket_link || event.is_ticketed_venue);
+            const ticketHref  = event.ticket_link
+              || (event.is_ticketed_venue ? sourceLink : null)
+              || null;
+            const ticketText  = coverLabel || 'Tickets';
+
+            return (
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap',
+                gap: '6px',
                 margin: '12px 0 0',
                 lineHeight: 1.2,
-              }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" strokeWidth="2.25"
-                strokeLinecap="round" strokeLinejoin="round"
-                style={{ flexShrink: 0 }}>
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                <circle cx="12" cy="10" r="3" />
-              </svg>
-              {venue}
-            </a>
-          )}
+              }}>
+                <a
+                  href={mapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    fontFamily: "'Outfit', sans-serif",
+                    fontSize: '17px', fontWeight: 600,
+                    color: t.accent, textDecoration: 'none',
+                  }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2.25"
+                    strokeLinecap="round" strokeLinejoin="round"
+                    style={{ flexShrink: 0 }}>
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                  {venue}
+                </a>
+
+                {/* Ticket meta — only renders when we have a price OR a
+                    ticket link OR the venue is flagged ticketed. Subtle
+                    treatment: muted text, ticket-stub icon. Wrapped in
+                    an <a> when we have a click target; otherwise plain
+                    span (informative only). Dashed underline on the
+                    clickable variant to signal interactivity without
+                    competing with the orange venue link. */}
+                {showTickets && (
+                  <>
+                    <span style={{ color: t.textDim, fontSize: '15px', fontWeight: 400 }}>·</span>
+                    {ticketHref ? (
+                      <a
+                        href={ticketHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => {
+                          try { posthog.capture?.('share_page_tickets_inline', { event_id: event.id, artist_name: artistName, venue_name: venue, ticket_href: ticketHref }); } catch {}
+                        }}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '4px',
+                          fontFamily: "'DM Sans', sans-serif",
+                          fontSize: '13px', fontWeight: 600,
+                          color: t.textMuted, textDecoration: 'none',
+                          borderBottom: `1px dashed ${t.textDim}`,
+                          paddingBottom: '1px',
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" strokeWidth="2"
+                          strokeLinecap="round" strokeLinejoin="round"
+                          style={{ flexShrink: 0 }}>
+                          <g transform="rotate(-18 12 12)">
+                            <path d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z" />
+                          </g>
+                        </svg>
+                        {ticketText}
+                      </a>
+                    ) : (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        fontFamily: "'DM Sans', sans-serif",
+                        fontSize: '13px', fontWeight: 600,
+                        color: t.textMuted,
+                      }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" strokeWidth="2"
+                          strokeLinecap="round" strokeLinejoin="round"
+                          style={{ flexShrink: 0 }}>
+                          <g transform="rotate(-18 12 12)">
+                            <path d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z" />
+                          </g>
+                        </svg>
+                        {ticketText}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Date + time strip — IBM Plex Mono caps, day-of-week in orange,
               dot separators between fields. Reads like a magazine dateline. */}

@@ -56,7 +56,7 @@ const EVENT_SELECT = [
   'source', 'status', 'category', 'artist_id', 'template_id',
   'event_image_url', 'image_url',
   'custom_bio', 'custom_genres', 'custom_vibes', 'custom_image_url', 'is_custom_metadata',
-  'venues(name, address, color, photo_url, website, venue_type)',
+  'venues(name, address, color, photo_url, website, venue_type, is_ticketed_venue)',
   'artists(name, bio, image_url, genres, vibes, is_tribute)',
   // New: pull the AI-enriched template name + bio + image so the priority ladders
   // (title, bio, image) can reach them without a second round-trip.
@@ -127,6 +127,9 @@ function flattenEvent(e) {
     venue_website:  e.venues?.website || null,
     venue_address:  e.venues?.address || '',
     venue_color:    e.venues?.color || null,
+    // Drives the inline "Tickets" indicator on the share landing page.
+    // Same field flattened on the events search API for the in-app feed.
+    is_ticketed_venue: !!e.venues?.is_ticketed_venue,
     venue_type:     e.venues?.venue_type || null,
   };
 }

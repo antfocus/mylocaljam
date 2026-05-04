@@ -161,6 +161,10 @@ function transformEvent(e) {
     venue_lng:     e.venues?.longitude || null,
     venue_type:    e.venues?.venue_type || null,
     venue_tags:    e.venues?.tags || [],
+    // Drives the inline "Tickets" indicator on event cards + share landing.
+    // Flattened onto the event so frontend reads `event.is_ticketed_venue`
+    // instead of having to destructure the nested venue join.
+    is_ticketed_venue: !!e.venues?.is_ticketed_venue,
     // Date as YYYY-MM-DD in Eastern time (parity with page.js)
     date: (() => {
       const raw = e.event_date || '';
@@ -212,7 +216,7 @@ export async function GET(request) {
   // doesn't always stick on local/staging instances). The hint syntax
   // bypasses the cache entirely — works regardless of reload state.
   // Ref: https://postgrest.org/en/stable/references/api/resource_embedding.html
-  const selectColumns = '*, venues(name, address, city, color, photo_url, website, latitude, longitude, venue_type, tags, default_start_time), artists(name, bio, genres, vibes, is_tribute, image_url, kind), event_templates!fk_events_template_id(template_name, bio, image_url, category, start_time, genres)';
+  const selectColumns = '*, venues(name, address, city, color, photo_url, website, latitude, longitude, venue_type, tags, default_start_time, is_ticketed_venue), artists(name, bio, genres, vibes, is_tribute, image_url, kind), event_templates!fk_events_template_id(template_name, bio, image_url, category, start_time, genres)';
 
   // ── Search: build the ILIKE filter (tokenized AND-of-ORs) ───────────────
   // Multi-word search uses an AND-of-ORs strategy: each token must appear
