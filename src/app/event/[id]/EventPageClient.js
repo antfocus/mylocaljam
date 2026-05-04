@@ -381,9 +381,14 @@ export default function EventPageClient({ event }) {
                   link exists. Color = orange so it pops alongside the
                   white date/time, signaling "paid event" at a glance. */}
               {(() => {
+                // Strict gate (matches EventCardV2): only show on rows whose
+                // venue is is_ticketed_venue=true. Casual-venue scrapers
+                // pollute cover/ticket_link with drink specials and artist
+                // homepage URLs (May 2 audit found Pig & Parrot's "$4
+                // Corona" drink special parked in events.cover). Trusting
+                // the venue flag alone keeps the indicator honest.
+                if (!event.is_ticketed_venue) return null;
                 const coverLabel  = (event.cover || '').trim();
-                const showTickets = !!(coverLabel || event.ticket_link || event.is_ticketed_venue);
-                if (!showTickets) return null;
                 const ticketText = coverLabel || 'Tickets';
                 return (
                   <>

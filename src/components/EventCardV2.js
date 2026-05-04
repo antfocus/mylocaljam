@@ -784,9 +784,18 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                       "TICKETS" caps. Hidden when none of those signals
                       are present (the 95% free-event default). */}
                   {(() => {
-                    const coverLabel  = (event.cover || '').trim();
-                    const showTickets = !!(coverLabel || event.ticket_link || event.is_ticketed_venue);
-                    if (!showTickets) return null;
+                    // Strict gate: ONLY show the tickets indicator when the
+                    // venue is on the ticketed-venue list (Stone Pony, Wonder
+                    // Bar, The Vogel, etc.). Casual-venue scrapers turned out
+                    // to extract noise into cover/ticket_link fields — e.g.
+                    // Pig & Parrot's $4 Corona drink special landed in
+                    // events.cover, and the artist's homepage URL landed in
+                    // events.ticket_link. Without the strict gate, a casual
+                    // bar event would falsely render as "FROM $4 → tickets".
+                    // is_ticketed_venue is the human-curated source of truth
+                    // for "tickets are sold here" — trust it alone.
+                    if (!event.is_ticketed_venue) return null;
+                    const coverLabel = (event.cover || '').trim();
                     const ticketText = coverLabel || 'Tickets';
                     return (
                       <span
