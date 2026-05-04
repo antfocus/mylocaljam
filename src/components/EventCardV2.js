@@ -797,12 +797,24 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     //                price; otherwise just "TICKETS" caps.
                     //
                     // Hidden when:
+                    //   • Linked artist row's kind is anything other than
+                    //     'musician'. Cover/ticket charges don't apply to
+                    //     drink-special "events", trivia nights, holiday
+                    //     brunches, etc. (We hit this with Boatyard 401's
+                    //     "$5 Drink Specials" mistakenly classified billing
+                    //     — the badge was rendering on what's really just
+                    //     a venue special.) Treats null kind as 'musician'
+                    //     so legacy rows pre-dating the kind taxonomy still
+                    //     pass the gate.
                     //   • cover is null AND venue isn't ticketed — the 95%
                     //     free walk-in default
                     //   • cover is set but doesn't start with "$" or look
                     //     like a price (filters out scraper noise like
                     //     "Free", "Donation", random words). We accept
                     //     "$N" / "$N-N" / "$N Cover" / etc.
+                    const linkedKind = event.artists?.kind || 'musician';
+                    if (linkedKind !== 'musician') return null;
+
                     const rawCover = (event.cover || '').trim();
                     const looksLikePrice = /^\$\s*\d/.test(rawCover);
                     const isTicketed = !!event.is_ticketed_venue;
@@ -810,8 +822,20 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     if (!isTicketed && !looksLikePrice) return null;
 
                     const labelPrefix = isTicketed ? 'Tickets' : 'Cover';
-                    const valuePart   = looksLikePrice ? rawCover : '';
-                    const display     = valuePart ? `${labelPrefix} ${valuePart}` : labelPrefix;
+                    // Smart prefix: don't double-up the label word when the
+                    // scraped cover string already contains "cover" or
+                    // "tickets". Scrapers often write "$5 Cover" or "$25
+                    // tickets" verbatim; without this guard the badge would
+                    // read "COVER $5 COVER" — exactly the May 2 Boatyard 401
+                    // bug. We compare lowercased so "Cover", "COVER",
+                    // "cover" all collapse to one mention.
+                    const labelLower    = labelPrefix.toLowerCase();
+                    const coverLower    = rawCover.toLowerCase();
+                    const alreadyLabeled = coverLower.includes(labelLower);
+                    const valuePart  = looksLikePrice ? rawCover : '';
+                    const display    = valuePart
+                      ? (alreadyLabeled ? valuePart : `${labelPrefix} ${valuePart}`)
+                      : labelPrefix;
 
                     return (
                       <span
