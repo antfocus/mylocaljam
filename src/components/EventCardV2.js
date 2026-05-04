@@ -771,102 +771,15 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     modes so the cluster sits as a quiet counterweight to
                     the loud orange identity pill on the left. */}
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
-                  {/* Tickets indicator — sits IMMEDIATELY left of the
-                      Venue map pin, inside the right-aligned utility
-                      cluster. Informational only (no click target). The
-                      Venue button to its right is the action: tap that
-                      to land on the venue's site (which for ticketed
-                      venues IS the ticket purchase flow — Ticketmaster,
-                      Live Nation, Dice, etc.). Renders when the event
-                      has a cover string OR a ticket_link OR the linked
-                      venue is flagged is_ticketed_venue=true. Cover
-                      string ($25, Free w/RSVP) wins; otherwise generic
-                      "TICKETS" caps. Hidden when none of those signals
-                      are present (the 95% free-event default). */}
-                  {(() => {
-                    // Cover / Tickets badge — wraps the cost info in a pill
-                    // so it reads as a discrete brand element rather than
-                    // floating orange text next to the icon cluster. Two
-                    // label variants, same pill chrome:
-                    //
-                    //   COVER $5   — casual venue with a cover charge
-                    //                (event.cover set, is_ticketed_venue
-                    //                false). Tells the user "pay at the door".
-                    //   TICKETS $25 — ticketed venue (is_ticketed_venue true).
-                    //                Append cover when the scraper got a
-                    //                price; otherwise just "TICKETS" caps.
-                    //
-                    // Hidden when:
-                    //   • Linked artist row's kind is anything other than
-                    //     'musician'. Cover/ticket charges don't apply to
-                    //     drink-special "events", trivia nights, holiday
-                    //     brunches, etc. (We hit this with Boatyard 401's
-                    //     "$5 Drink Specials" mistakenly classified billing
-                    //     — the badge was rendering on what's really just
-                    //     a venue special.) Treats null kind as 'musician'
-                    //     so legacy rows pre-dating the kind taxonomy still
-                    //     pass the gate.
-                    //   • cover is null AND venue isn't ticketed — the 95%
-                    //     free walk-in default
-                    //   • cover is set but doesn't start with "$" or look
-                    //     like a price (filters out scraper noise like
-                    //     "Free", "Donation", random words). We accept
-                    //     "$N" / "$N-N" / "$N Cover" / etc.
-                    const linkedKind = event.artists?.kind || 'musician';
-                    if (linkedKind !== 'musician') return null;
-
-                    const rawCover = (event.cover || '').trim();
-                    const looksLikePrice = /^\$\s*\d/.test(rawCover);
-                    const isTicketed = !!event.is_ticketed_venue;
-
-                    if (!isTicketed && !looksLikePrice) return null;
-
-                    const labelPrefix = isTicketed ? 'Tickets' : 'Cover';
-                    // Smart prefix: don't double-up the label word when the
-                    // scraped cover string already contains "cover" or
-                    // "tickets". Scrapers often write "$5 Cover" or "$25
-                    // tickets" verbatim; without this guard the badge would
-                    // read "COVER $5 COVER" — exactly the May 2 Boatyard 401
-                    // bug. We compare lowercased so "Cover", "COVER",
-                    // "cover" all collapse to one mention.
-                    const labelLower    = labelPrefix.toLowerCase();
-                    const coverLower    = rawCover.toLowerCase();
-                    const alreadyLabeled = coverLower.includes(labelLower);
-                    const valuePart  = looksLikePrice ? rawCover : '';
-                    const display    = valuePart
-                      ? (alreadyLabeled ? valuePart : `${labelPrefix} ${valuePart}`)
-                      : labelPrefix;
-
-                    return (
-                      <span
-                        title={isTicketed
-                          ? (valuePart
-                              ? `Tickets ${valuePart} — tap the venue icon to buy`
-                              : 'This event is ticketed — tap the venue icon to buy')
-                          : `Cover charge ${valuePart} at the door`}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', gap: '4px',
-                          padding: '4px 10px',
-                          background: darkMode
-                            ? 'rgba(232,114,42,0.16)'
-                            : 'rgba(232,114,42,0.10)',
-                          border: `1px solid ${darkMode
-                            ? 'rgba(232,114,42,0.32)'
-                            : 'rgba(232,114,42,0.30)'}`,
-                          borderRadius: '999px',
-                          fontFamily: "'DM Sans', sans-serif",
-                          fontSize: '10px', fontWeight: 700,
-                          color: darkMode ? '#E8722A' : '#C95717',
-                          letterSpacing: '0.06em',
-                          textTransform: 'uppercase',
-                          flexShrink: 0,
-                          lineHeight: 1.2,
-                        }}
-                      >
-                        {display}
-                      </span>
-                    );
-                  })()}
+                  {/* Tickets/cover badge moved OUT of this inline-flex cluster
+                      (May 2 2026). Was inside here, but when the Follow pill
+                      switched to the longer "Following Event" label and the
+                      whole right cluster wrapped to a second row, the icons
+                      went with it — sloppy. Pulling the badge out as its own
+                      flex sibling AFTER this cluster means flex-wrap drops
+                      the badge first (it's the last flex item) while the
+                      icons stay on row 1. See the badge render below the
+                      Flag button. */}
 
                   {/* 2. Venue link — opens venue site or scraper source. */}
                   {venueLink && (
@@ -976,6 +889,66 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                     </svg>
                   </button>
                 </div>
+
+                {/* Cover / Tickets badge — sits as a sibling AFTER the
+                    icon cluster, OUTSIDE that inline-flex container. As
+                    the LAST flex item in the parent action row (which has
+                    `flex-wrap: wrap`), the badge wraps to row 2 first
+                    when the row is too tight (e.g. when the Follow pill
+                    becomes the longer "Following Event" label). The
+                    icon cluster has `flex-shrink: 0`, so it stays put on
+                    row 1. `marginLeft: 'auto'` anchors the badge to the
+                    right edge whichever row it lands on, so the visual
+                    relationship with the icon column above is preserved.
+                    See the badge-render gate logic below for which
+                    events surface this — kind='musician' only, with a
+                    price-pattern `cover` string OR is_ticketed_venue. */}
+                {(() => {
+                  const linkedKind = event.artists?.kind || 'musician';
+                  if (linkedKind !== 'musician') return null;
+                  const rawCover = (event.cover || '').trim();
+                  const looksLikePrice = /^\$\s*\d/.test(rawCover);
+                  const isTicketed = !!event.is_ticketed_venue;
+                  if (!isTicketed && !looksLikePrice) return null;
+                  const labelPrefix = isTicketed ? 'Tickets' : 'Cover';
+                  const labelLower    = labelPrefix.toLowerCase();
+                  const coverLower    = rawCover.toLowerCase();
+                  const alreadyLabeled = coverLower.includes(labelLower);
+                  const valuePart  = looksLikePrice ? rawCover : '';
+                  const display    = valuePart
+                    ? (alreadyLabeled ? valuePart : `${labelPrefix} ${valuePart}`)
+                    : labelPrefix;
+                  return (
+                    <span
+                      title={isTicketed
+                        ? (valuePart
+                            ? `Tickets ${valuePart} — tap the venue icon to buy`
+                            : 'This event is ticketed — tap the venue icon to buy')
+                        : `Cover charge ${valuePart} at the door`}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        padding: '4px 10px',
+                        marginLeft: 'auto',
+                        background: darkMode
+                          ? 'rgba(232,114,42,0.16)'
+                          : 'rgba(232,114,42,0.10)',
+                        border: `1px solid ${darkMode
+                          ? 'rgba(232,114,42,0.32)'
+                          : 'rgba(232,114,42,0.30)'}`,
+                        borderRadius: '999px',
+                        fontFamily: "'DM Sans', sans-serif",
+                        fontSize: '10px', fontWeight: 700,
+                        color: darkMode ? '#E8722A' : '#C95717',
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        flexShrink: 0,
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      {display}
+                    </span>
+                  );
+                })()}
               </div>
             )}
           </div>
