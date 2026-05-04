@@ -119,8 +119,23 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
       setBioExpanded(true);
       return;
     }
+    // Closing transition. When the user reads a long bio they often
+    // scroll several hundred px down past the card's compact row, then
+    // tap to collapse — the card shrinks but their viewport stays where
+    // it was, leaving them stranded in whitespace below the now-tiny
+    // card. Scroll the card back into view so they don't lose their
+    // place. block:'center' puts the card mid-viewport (avoids the
+    // sticky top nav clipping the title flush at top:0). The setTimeout
+    // waits for the max-height collapse transition (250ms) to finish so
+    // the smooth scroll lands at the card's final compact position
+    // rather than chasing a moving target.
     setExpanded(false);
     setBioExpanded(false);
+    setTimeout(() => {
+      try {
+        cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch { /* older browsers — ignore */ }
+    }, 260);
   };
 
   // Check if description text is actually truncated. Short bios skip this
