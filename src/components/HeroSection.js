@@ -696,14 +696,16 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
           </>
         )}
 
-        {/* Slide indicator — minimal pill + dots in the top-left corner.
-            Bottom-center placement collided with the meta row's bottom: 14
-            anchor; top-left is clean (top-right is the SPOTLIGHT sticker).
-            "Very subtle" pass: drop the glassmorphism container, swap to
-            brand orange (active 100%, inactive 35%), shrink everything
-            ~50%. Soft drop-shadow for legibility on bright posters.
-            Active pill still expands so position is readable, just at
-            half the scale. */}
+        {/* Slide indicator — pagination dots, top-left corner.
+            Previous version was a row of 3px-tall pills where the active
+            one expanded to 12px wide. The width asymmetry read as a
+            glitch ("orange dashes that look broken"), so 2026-05-04 swap
+            to uniform 6px circles. White inactive + orange active rather
+            than all-orange because hero images often have warm/orange
+            tones (sunsets, stage lights, brand logos) — low-opacity
+            orange would camouflage. White inactive reads cleanly against
+            varied poster art and lets the active orange dot pop.
+            Soft drop-shadow preserved for legibility on bright posters. */}
         {canSwipe && (
           <div
             aria-hidden="true"
@@ -714,7 +716,7 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
               pointerEvents: 'none',
               display: 'flex',
               alignItems: 'center',
-              gap: 4,
+              gap: 6,
               filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))',
             }}
           >
@@ -724,12 +726,11 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                 <div
                   key={i}
                   style={{
-                    width: isActive ? 12 : 3,
-                    height: 3,
-                    borderRadius: 999,
-                    background: '#E8722A',
-                    opacity: isActive ? 1 : 0.35,
-                    transition: 'width 0.3s ease, opacity 0.3s ease',
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: isActive ? '#E8722A' : 'rgba(255,255,255,0.55)',
+                    transition: 'background 0.3s ease',
                   }}
                 />
               );
