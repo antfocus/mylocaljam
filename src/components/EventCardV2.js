@@ -784,40 +784,62 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
                       "TICKETS" caps. Hidden when none of those signals
                       are present (the 95% free-event default). */}
                   {(() => {
-                    // Strict gate: ONLY show the tickets indicator when the
-                    // venue is on the ticketed-venue list (Stone Pony, Wonder
-                    // Bar, The Vogel, etc.). Casual-venue scrapers turned out
-                    // to extract noise into cover/ticket_link fields — e.g.
-                    // Pig & Parrot's $4 Corona drink special landed in
-                    // events.cover, and the artist's homepage URL landed in
-                    // events.ticket_link. Without the strict gate, a casual
-                    // bar event would falsely render as "FROM $4 → tickets".
-                    // is_ticketed_venue is the human-curated source of truth
-                    // for "tickets are sold here" — trust it alone.
-                    if (!event.is_ticketed_venue) return null;
-                    const coverLabel = (event.cover || '').trim();
-                    const ticketText = coverLabel || 'Tickets';
+                    // Cover / Tickets badge — wraps the cost info in a pill
+                    // so it reads as a discrete brand element rather than
+                    // floating orange text next to the icon cluster. Two
+                    // label variants, same pill chrome:
+                    //
+                    //   COVER $5   — casual venue with a cover charge
+                    //                (event.cover set, is_ticketed_venue
+                    //                false). Tells the user "pay at the door".
+                    //   TICKETS $25 — ticketed venue (is_ticketed_venue true).
+                    //                Append cover when the scraper got a
+                    //                price; otherwise just "TICKETS" caps.
+                    //
+                    // Hidden when:
+                    //   • cover is null AND venue isn't ticketed — the 95%
+                    //     free walk-in default
+                    //   • cover is set but doesn't start with "$" or look
+                    //     like a price (filters out scraper noise like
+                    //     "Free", "Donation", random words). We accept
+                    //     "$N" / "$N-N" / "$N Cover" / etc.
+                    const rawCover = (event.cover || '').trim();
+                    const looksLikePrice = /^\$\s*\d/.test(rawCover);
+                    const isTicketed = !!event.is_ticketed_venue;
+
+                    if (!isTicketed && !looksLikePrice) return null;
+
+                    const labelPrefix = isTicketed ? 'Tickets' : 'Cover';
+                    const valuePart   = looksLikePrice ? rawCover : '';
+                    const display     = valuePart ? `${labelPrefix} ${valuePart}` : labelPrefix;
+
                     return (
                       <span
-                        title={ticketText.startsWith('$')
-                          ? `Tickets: ${ticketText}`
-                          : 'This event is ticketed — tap the venue icon to buy'}
+                        title={isTicketed
+                          ? (valuePart
+                              ? `Tickets ${valuePart} — tap the venue icon to buy`
+                              : 'This event is ticketed — tap the venue icon to buy')
+                          : `Cover charge ${valuePart} at the door`}
                         style={{
-                          display: 'inline-flex', alignItems: 'center',
-                          fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
-                          fontSize: '11px', fontWeight: 700,
+                          display: 'inline-flex', alignItems: 'center', gap: '4px',
+                          padding: '4px 10px',
+                          background: darkMode
+                            ? 'rgba(232,114,42,0.16)'
+                            : 'rgba(232,114,42,0.10)',
+                          border: `1px solid ${darkMode
+                            ? 'rgba(232,114,42,0.32)'
+                            : 'rgba(232,114,42,0.30)'}`,
+                          borderRadius: '999px',
+                          fontFamily: "'DM Sans', sans-serif",
+                          fontSize: '10px', fontWeight: 700,
                           color: darkMode ? '#E8722A' : '#C95717',
-                          letterSpacing: '0.05em',
-                          textTransform: ticketText.startsWith('$') ? 'none' : 'uppercase',
+                          letterSpacing: '0.06em',
+                          textTransform: 'uppercase',
                           flexShrink: 0,
-                          // Visual gap matches the rest of the utility
-                          // cluster (gap: 14px on the parent), so the
-                          // text reads as a labeled badge for the
-                          // venue icon to its right rather than a
-                          // floating fragment.
+                          lineHeight: 1.2,
                         }}
                       >
-                        {ticketText}
+                        {display}
                       </span>
                     );
                   })()}
