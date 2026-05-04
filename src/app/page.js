@@ -1130,7 +1130,10 @@ export default function HomePage() {
       if (serverParams.dateTo) params.set('date_to', serverParams.dateTo);
       if (serverParams.q) params.set('q', serverParams.q);
 
-      const res = await fetch(`/api/events/search?${params.toString()}`);
+      // `cache: 'no-store'` defense in depth — same rationale as the
+      // /api/spotlight fetch. Server is already no-cache; this guards
+      // against any browser/SW layer holding a stale body.
+      const res = await fetch(`/api/events/search?${params.toString()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`Search API returned ${res.status}`);
       const json = await res.json();
 
@@ -1615,7 +1618,15 @@ export default function HomePage() {
     const pad = n => String(n).padStart(2, '0');
     const today = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
     try {
-      const r = await fetch(`/api/spotlight?date=${today}`);
+      // `cache: 'no-store'` defense in depth. The /api/spotlight route
+      // is already configured `dynamic = 'force-dynamic'` + `fetchCache
+      // = 'force-no-store'` server-side, so the response carries
+      // Cache-Control: no-store. But on iOS Safari + service workers
+      // in the wild, that header doesn't always reach the actual
+      // browser cache layer. Pull-to-refresh should ALWAYS hit the
+      // network, never a cached body. The query string already varies
+      // by `today` so this is mostly safety, not a primary bypass.
+      const r = await fetch(`/api/spotlight?date=${today}`, { cache: 'no-store' });
       const data = await r.json();
       if (!Array.isArray(data) || data.length === 0) { setSpotlightData([]); return; }
         // Normalize spotlight events using the same mapping as fetchEvents
