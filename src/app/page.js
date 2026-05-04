@@ -3449,37 +3449,48 @@ export default function HomePage() {
                   borderTop: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
                   borderRadius: '0 0 12px 12px',
                 }}>
-                  {/* Clear filters — outlined sentence case, single line.
-                      Earlier iterations went all-caps tracked + stacked, but
-                      that created a visual mismatch with the single-line
-                      Search button next to it (felt like two design systems
-                      in one row) and read as shouty in a tap-target context.
-                      Sentence case + outline keeps the button discoverable
-                      without competing with Search's filled-orange primary. */}
-                  <button onClick={clearAllFilters} style={{
-                    flex: '1 1 0', minWidth: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                    padding: '10px 10px', borderRadius: '10px',
-                    background: 'transparent',
-                    border: `1px solid ${darkMode ? '#3A3A4E' : '#D1D5DB'}`,
-                    cursor: 'pointer',
-                    fontSize: '13px', fontWeight: 600,
-                    color: darkMode ? '#C8C8D8' : '#374151',
-                    fontFamily: "'DM Sans', sans-serif",
-                    transition: 'opacity 0.15s ease, border-color 0.15s ease',
-                    whiteSpace: 'nowrap',
-                    minHeight: '44px',
-                  }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                  {/* Clear filters — text link, sentence case, with refresh
+                      icon. Always rendered (hiding it when no filters are
+                      active made the footer asymmetric — Search would
+                      shift left in the empty-state, which read as off-
+                      balance). Disabled state used instead: dim the link
+                      to ~40% and disable pointer events so it's clearly
+                      "nothing to clear" without changing the layout.
+                      fontStyle: 'normal' explicit to defend against any
+                      ::placeholder italic leakage; not actually a problem
+                      today (globals.css:87-92 scopes italic to inputs)
+                      but cheap insurance. */}
+                  <button
+                    onClick={clearAllFilters}
+                    disabled={!hasActiveFilters}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                      padding: '10px 12px', borderRadius: '8px',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: hasActiveFilters ? 'pointer' : 'default',
+                      fontSize: '13px', fontWeight: 600, fontStyle: 'normal',
+                      color: darkMode ? '#B0B0C8' : '#525B68',
+                      fontFamily: "'DM Sans', sans-serif",
+                      transition: 'opacity 0.15s ease, color 0.15s ease',
+                      whiteSpace: 'nowrap',
+                      minHeight: '44px',
+                      flexShrink: 0,
+                      opacity: hasActiveFilters ? 1 : 0.4,
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                       <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor" />
                     </svg>
                     Clear filters
                   </button>
-                  {/* Search — primary, 50%. Slightly heavier vertical padding
-                      than the side buttons so it visually steps forward in
-                      the row. Black text on orange. */}
+                  {/* Search — primary, takes all remaining horizontal room.
+                      Sole filled button in the footer — clearly the next
+                      step. With Clear filters and Close demoted to text
+                      links, Search dominates without needing extra padding
+                      tricks. */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
-                    flex: '2 1 0', minWidth: 0,
+                    flex: 1, minWidth: 0,
                     padding: '12px 24px', borderRadius: '10px', border: 'none',
                     background: t.accent, color: '#000000', cursor: 'pointer',
                     fontSize: '14px', fontWeight: 700, fontFamily: "'DM Sans', sans-serif",
@@ -3487,25 +3498,27 @@ export default function HomePage() {
                   }}>
                     Search
                   </button>
-                  {/* Close — outlined sentence case, single line. Mirror
-                      styling of "Clear filters" so the row reads consistently.
-                      Search still dominates because filled-orange beats
-                      outline. */}
+                  {/* Close — text link, sentence case, with X icon. Mirror
+                      typography of Clear filters (600 weight, same color)
+                      so both side links read consistently. Always visible
+                      (every modal needs an exit).
+                      fontStyle: 'normal' explicit to match Clear filters
+                      and rule out any future ::placeholder italic leakage. */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
-                    flex: '1 1 0', minWidth: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                    padding: '10px 10px', borderRadius: '10px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                    padding: '10px 12px', borderRadius: '8px',
                     background: 'transparent',
-                    border: `1px solid ${darkMode ? '#3A3A4E' : '#D1D5DB'}`,
+                    border: 'none',
                     cursor: 'pointer',
-                    fontSize: '13px', fontWeight: 600,
-                    color: darkMode ? '#C8C8D8' : '#374151',
+                    fontSize: '13px', fontWeight: 600, fontStyle: 'normal',
+                    color: darkMode ? '#B0B0C8' : '#525B68',
                     fontFamily: "'DM Sans', sans-serif",
-                    transition: 'opacity 0.15s ease, border-color 0.15s ease',
+                    transition: 'color 0.15s ease',
                     whiteSpace: 'nowrap',
                     minHeight: '44px',
+                    flexShrink: 0,
                   }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" style={{ flexShrink: 0 }}>
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
