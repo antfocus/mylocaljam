@@ -155,8 +155,74 @@ export default function EventPageClient({ event }) {
   const sourceLink = event.source && /^https?:\/\//i.test(event.source) ? event.source : null;
   const mapsQuery  = encodeURIComponent(`${venue}${venueAddress ? ' ' + venueAddress : ' NJ'}`);
   const mapsUrl    = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
+  // Venue website link — mirrors EventCardV2's venueLink resolution
+  // (venue.website preferred, source URL fallback). Keeps the share-page
+  // and in-app feed treatment of the "Venue" button consistent: both
+  // surfaces send the user to the venue's own site, not a map. The Map
+  // button (separate, see action row below) is what opens Google Maps.
+  const rawVenueSite = event.venue_website || null;
+  const venueSite    = rawVenueSite && /^https?:\/\//i.test(rawVenueSite) ? rawVenueSite : null;
+  const venueLink    = venueSite || sourceLink;
 
-  const handleSoftCTA = () => { if (!isLoggedIn) setShowSignupHint(true); };
+  // Save Show + Follow Artist handlers. Two paths each:
+  //   • Logged-out → show the sign-up hint (existing UX). The page is the
+  //     primary on-ramp for shared links from non-users, so guarding the
+  //     write behind auth is intentional.
+  //   • Logged-in → actually call the API (idempotent POST upsert) and
+  //     flip a local "Saved" / "Following" flag so the button text reflects
+  //     state instead of silently doing nothing.
+  // Both APIs use Bearer auth via supabase.auth.getSession() — same pattern
+  // as the in-app feed (see toggleFavorite + followEntity in src/app/page.js).
+  const [isSaved, setIsSaved] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [actionToast, setActionToast] = useState(null);
+
+  const handleSaveShow = async () => {
+    if (!isLoggedIn) { setShowSignupHint(true); return; }
+    if (isSaved) return; // already saved — POST is idempotent but skip the round-trip
+    setIsSaved(true);    // optimistic
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) { setIsSaved(false); setShowSignupHint(true); return; }
+      const res = await fetch('/api/saved-events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ event_id: event.id }),
+      });
+      if (!res.ok) throw new Error(`save failed (${res.status})`);
+      setActionToast('Show saved to your jam');
+      setTimeout(() => setActionToast(null), 2500);
+      try { posthog.capture?.('share_page_save_show', { event_id: event.id, artist_name: artistName, venue_name: venue }); } catch {}
+    } catch (err) {
+      setIsSaved(false); // revert optimistic
+      setActionToast('Save failed — try again');
+      setTimeout(() => setActionToast(null), 2500);
+    }
+  };
+
+  const handleFollowArtist = async () => {
+    if (!isLoggedIn) { setShowSignupHint(true); return; }
+    if (!artistName) { setActionToast("This event has no linked artist to follow"); setTimeout(() => setActionToast(null), 2500); return; }
+    if (isFollowing) return;
+    setIsFollowing(true); // optimistic
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) { setIsFollowing(false); setShowSignupHint(true); return; }
+      const res = await fetch('/api/follows', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ artist_name: artistName }),
+      });
+      if (!res.ok) throw new Error(`follow failed (${res.status})`);
+      setActionToast(`Following ${artistName}`);
+      setTimeout(() => setActionToast(null), 2500);
+      try { posthog.capture?.('share_page_follow_artist', { event_id: event.id, artist_name: artistName }); } catch {}
+    } catch (err) {
+      setIsFollowing(false); // revert
+      setActionToast('Follow failed — try again');
+      setTimeout(() => setActionToast(null), 2500);
+    }
+  };
 
   // ── Action button — shared style so the three reads as a row ──────────────
   const actionBtnStyle = {
@@ -383,10 +449,15 @@ export default function EventPageClient({ event }) {
           </div>
         ) : null}
 
-        {/* ── Description ───────────────────────────────────────────────── */}
+        {/* ── Description ─────────────────────────────────────────────────
+            Sized to match the feed event-card bio (18px / 1.55 — see
+            EventCardV2.js, May 2 typography pass). The share-page bio
+            had been smaller (14px) since first launch; bumping it brings
+            the experience in line with what users see in the in-app
+            feed and gives shared links a more readable hero. */}
         {desc && (
           <p style={{
-            fontSize: '14px', color: t.textMuted, lineHeight: 1.6,
+            fontSize: '18px', color: t.textMuted, lineHeight: 1.55,
             margin: '0 0 22px',
           }}>
             {desc}
@@ -400,27 +471,35 @@ export default function EventPageClient({ event }) {
         {!isCanceled && (
           <div style={{ display: 'flex', gap: '8px' }}>
             {/* Save Show — ticket-stub icon, neutral stroke (matches the
-                other two so the row reads as a balanced action set). */}
-            <button onClick={handleSoftCTA} style={actionBtnStyle}>
+                other two so the row reads as a balanced action set).
+                Switches label to "Saved" + filled stroke after the user
+                taps it (logged-in users only — guests get the sign-up
+                hint via handleSaveShow). */}
+            <button onClick={handleSaveShow} style={actionBtnStyle} aria-pressed={isSaved}>
               <svg
-                width="20" height="20" viewBox="0 0 24 24" fill="none"
-                stroke={t.iconStroke} strokeWidth="1.75"
+                width="20" height="20" viewBox="0 0 24 24"
+                fill={isSaved ? '#E8722A' : 'none'}
+                stroke={isSaved ? '#E8722A' : t.iconStroke} strokeWidth="1.75"
                 strokeLinecap="round" strokeLinejoin="round"
               >
                 <g transform="rotate(-18 12 12)">
                   <path d="M3.5 7 L20.5 7 A1.5 1.5 0 0 1 22 8.5 L22 10 A2 2 0 0 0 22 14 L22 15.5 A1.5 1.5 0 0 1 20.5 17 L3.5 17 A1.5 1.5 0 0 1 2 15.5 L2 14 A2 2 0 0 0 2 10 L2 8.5 A1.5 1.5 0 0 1 3.5 7 Z" />
-                  <line x1="8" y1="8.5" x2="8" y2="15.5" strokeDasharray="1.25 1.25" />
+                  <line x1="8" y1="8.5" x2="8" y2="15.5" strokeDasharray="1.25 1.25"
+                    stroke={isSaved ? 'rgba(255,255,255,0.85)' : (t.iconStroke || 'currentColor')} />
                 </g>
               </svg>
-              <span style={{ fontSize: '12px', fontWeight: 600 }}>Save Show</span>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: isSaved ? '#E8722A' : undefined }}>
+                {isSaved ? 'Saved' : 'Save Show'}
+              </span>
             </button>
 
             {/* Follow Artist — person + plus, inline SVG (no equivalent icon
-                in Icons.js, and not worth adding for a single use). */}
-            <button onClick={handleSoftCTA} style={actionBtnStyle}>
+                in Icons.js, and not worth adding for a single use). Switches
+                label to "Following" + orange tint after tap. */}
+            <button onClick={handleFollowArtist} style={actionBtnStyle} aria-pressed={isFollowing}>
               <svg
                 width="20" height="20" viewBox="0 0 24 24" fill="none"
-                stroke={t.iconStroke} strokeWidth="1.75"
+                stroke={isFollowing ? '#E8722A' : t.iconStroke} strokeWidth="1.75"
                 strokeLinecap="round" strokeLinejoin="round"
               >
                 <circle cx="12" cy="8" r="4" />
@@ -428,14 +507,20 @@ export default function EventPageClient({ event }) {
                 <line x1="20" y1="9" x2="20" y2="15" />
                 <line x1="17" y1="12" x2="23" y2="12" />
               </svg>
-              <span style={{ fontSize: '12px', fontWeight: 600 }}>Follow Artist</span>
+              <span style={{ fontSize: '12px', fontWeight: 600, color: isFollowing ? '#E8722A' : undefined }}>
+                {isFollowing ? 'Following' : 'Follow Artist'}
+              </span>
             </button>
 
-            {/* Venue — opens Google Maps for the venue. Uses the existing
-                `map` icon from Icons.js (location-pin shape). */}
-            {venue && (
+            {/* Venue — opens the venue's own website (or the event source
+                URL as fallback). Mirrors EventCardV2's "Venue" button on
+                the in-app feed: both surfaces send the user to the venue's
+                site rather than a map. Storefront/globe icon distinguishes
+                this from Map (location pin) below. Hidden when there's no
+                site at all — the Map button still gives them directions. */}
+            {venueLink && (
               <a
-                href={mapsUrl}
+                href={venueLink}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => {
@@ -443,7 +528,40 @@ export default function EventPageClient({ event }) {
                     venue_name: venue,
                     artist_name: artistName,
                     event_id: event.id || '',
-                    source_url: sourceLink || mapsUrl,
+                    source_url: venueLink,
+                  });
+                }}
+                style={actionBtnStyle}
+              >
+                {/* Storefront/globe — readable at 20px as "venue homepage" */}
+                <svg
+                  width="20" height="20" viewBox="0 0 24 24" fill="none"
+                  stroke={t.iconStroke} strokeWidth="1.75"
+                  strokeLinecap="round" strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                  <path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z" />
+                </svg>
+                <span style={{ fontSize: '12px', fontWeight: 600 }}>Venue</span>
+              </a>
+            )}
+
+            {/* Map — opens Google Maps for the venue's address. Always
+                rendered when we know the venue name (we always do —
+                the page has a venue header at top). Distinct from Venue
+                above so users have a clear "directions" affordance. */}
+            {venue && (
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => {
+                  posthog.capture?.('venue_map_clicked', {
+                    venue_name: venue,
+                    artist_name: artistName,
+                    event_id: event.id || '',
+                    maps_url: mapsUrl,
                   });
                 }}
                 style={actionBtnStyle}
@@ -456,9 +574,26 @@ export default function EventPageClient({ event }) {
                   <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                   <circle cx="12" cy="10" r="3" />
                 </svg>
-                <span style={{ fontSize: '12px', fontWeight: 600 }}>Venue</span>
+                <span style={{ fontSize: '12px', fontWeight: 600 }}>Map</span>
               </a>
             )}
+          </div>
+        )}
+
+        {/* ── Action toast — transient confirmation for logged-in users
+              after Save Show or Follow Artist succeeds (or fails). 2.5s
+              auto-dismiss. Sits in the same slot as the signup hint but
+              only shows when the hint isn't, so we never stack two
+              competing affordances. */}
+        {actionToast && !showSignupHint && (
+          <div style={{
+            marginTop: '16px',
+            padding: '12px 16px', borderRadius: '12px',
+            background: t.surface, border: `1px solid ${t.border}`,
+            fontSize: '14px', fontWeight: 600, color: t.text,
+            textAlign: 'center',
+          }}>
+            {actionToast}
           </div>
         )}
 
