@@ -80,7 +80,7 @@ const LIGHT = {
 
 // ── Date filter options ───────────────────────────────────────────────────────
 const DATE_OPTIONS = [
-  { key: 'all',      label: 'Any time'      },
+  { key: 'all',      label: 'All upcoming'  },
   { key: 'today',    label: 'Today'        },
   { key: 'tomorrow', label: 'Tomorrow'     },
   { key: 'weekend',  label: 'Weekend'      },
@@ -2058,8 +2058,19 @@ export default function HomePage() {
 
   const radiusIsOverridden = milesRadius !== profileRadiusRef.current;
   const townOnlyActive = townOnly && locationOrigin.trim() !== '';
+  // hasActiveFilters drives the omnibar's orange-border "something is
+  // happening" treatment — keeps search query in the count because users
+  // expect the pill to look "active" when they've typed something.
   const hasActiveFilters = dateKey !== 'all' || radiusIsOverridden || searchQuery.trim() !== '' || activeShortcut !== null || activeVenues.length > 0 || townOnlyActive;
   const activeFilterCount = [dateKey !== 'all', radiusIsOverridden, searchQuery.trim() !== '', activeShortcut !== null, activeVenues.length > 0, townOnlyActive].filter(Boolean).length;
+  // hasNonSearchFilters / nonSearchFilterCount drive the filter BADGE and
+  // the Row 2 active-filter chip strip. Excluding the search query from
+  // these is deliberate — counting "Kevin Hill" as "1 filter" while the
+  // chip strip below has nothing to show creates the trust problem of
+  // "what is the 1?" The search term is already visible in the input;
+  // double-counting it as a filter just confuses.
+  const hasNonSearchFilters = dateKey !== 'all' || radiusIsOverridden || activeShortcut !== null || activeVenues.length > 0 || townOnlyActive;
+  const nonSearchFilterCount = [dateKey !== 'all', radiusIsOverridden, activeShortcut !== null, activeVenues.length > 0, townOnlyActive].filter(Boolean).length;
   const clearAllFilters = useCallback(() => {
     setDateKey('all');
     setPickedDate('');
@@ -2085,9 +2096,12 @@ export default function HomePage() {
   // Filter panel labels
   const whenLabel = dateKey === 'pick' && pickedDate
     ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-    : DATE_OPTIONS.find(o => o.key === dateKey)?.label || 'Any time';
-  const venueLabel = activeVenues.length === 0 ? 'Any venue' : activeVenues.length === 1 ? activeVenues[0] : `${activeVenues.length} venues`;
-  const distanceLabel = milesRadius === null ? 'Any distance' : `${milesRadius} mi`;
+    : DATE_OPTIONS.find(o => o.key === dateKey)?.label || 'All upcoming';
+  // Default labels reworded 2026-05-04 from "Any X" to natural-English
+  // equivalents — "Any distance" especially read as engineered (radius
+  // units), "Anywhere" reads how users actually think about geography.
+  const venueLabel = activeVenues.length === 0 ? 'All venues' : activeVenues.length === 1 ? activeVenues[0] : `${activeVenues.length} venues`;
+  const distanceLabel = milesRadius === null ? 'Anywhere' : `${milesRadius} mi`;
   const artistLabel = artistSearch.trim() ? artistSearch.trim() : 'Any Artist';
 
 
@@ -2226,83 +2240,40 @@ export default function HomePage() {
                 Search<span style={{ color: darkMode ? 'rgba(255, 255, 255, 0.32)' : 'rgba(0, 0, 0, 0.3)', margin: '0 3px' }}>/</span>Filters
               </span>
             )}
-            {/* Active filter pills inline + passive radius indicator */}
-            {(hasActiveFilters || milesRadius !== null) && (
-              <div style={{ display: 'flex', gap: '3px', alignItems: 'center', overflow: 'hidden', flex: 1, minWidth: 0 }}>
-                <span style={{ color: t.textMuted, fontSize: '8px', opacity: 0.5, flexShrink: 0 }}>|</span>
-                {dateKey !== 'all' && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-2 .9-2 2v14a2 2 0 002 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z" fill="#E8722A" /></svg>
-                    {dateKey === 'pick' && pickedDate
-                      ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                      : ({ today: 'Today', tomorrow: 'Tmrw', weekend: 'Wknd' }[dateKey] || dateKey)}
-                  </span>
-                )}
-                {/* Town-only takes precedence over the radius indicator —
-                    when the user has pinned to a single town, "5mi" would be
-                    misleading. Pin icon + town name, accent-colored. */}
-                {townOnlyActive ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill="#E8722A" /></svg>
-                    {(() => {
-                      const t = locationOrigin.trim();
-                      return t.length > 14 ? t.slice(0, 14) + '…' : t;
-                    })()}
-                  </span>
-                ) : milesRadius !== null && (() => {
-                  const isOverride = milesRadius !== profileRadiusRef.current;
-                  const clr = isOverride ? '#E8722A' : (darkMode ? 'rgba(255,255,255,0.35)' : '#9CA3AF');
-                  return (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: isOverride ? 600 : 500, color: clr, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 010-5 2.5 2.5 0 010 5z" fill={clr} /></svg>
-                      {milesRadius}mi
-                    </span>
-                  );
-                })()}
-                {activeShortcut && (() => {
-                  const pill = dbPills.find(p => p.id === activeShortcut) || SHORTCUT_PILLS.find(p => p.id === activeShortcut);
-                  if (!pill) return null;
-                  const iconPath = MATERIAL_ICON_PATHS[pill.icon_name] || MATERIAL_ICON_PATHS.label;
-                  return (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d={iconPath} fill="#E8722A" /></svg>
-                      {pill.label}
-                    </span>
-                  );
-                })()}
-                {activeVenues.length > 0 && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px', fontSize: '9px', fontWeight: 600, color: '#E8722A', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z" fill="#E8722A" /></svg>
-                    {activeVenues.length === 1 ? activeVenues[0].length > 12 ? activeVenues[0].slice(0, 12) + '…' : activeVenues[0] : `${activeVenues.length} venues`}
-                  </span>
-                )}
-              </div>
-            )}
-            {!hasActiveFilters && milesRadius === null && <div style={{ flex: 1 }} />}
-            {/* Right: badge or tune icon */}
-            {hasActiveFilters ? (<>
+            {/* Inline chip strip removed 2026-05-04. Used to pack tiny
+                date/town/shortcut/venue pills into the search input next to
+                the search term — fine in isolation, terrible when the user
+                had multiple filters and a long search query. The query got
+                truncated to "Kevin Hill - …" while a row of 9px chips
+                competed for attention next to it. Active filters now live
+                in the dedicated Row 2 strip below the header (rendered as
+                a sibling of <header>). */}
+            {!searchQuery.trim() && <div style={{ flex: 1 }} />}
+            {/* Right: badge or tune icon. Icon bumped from 9px to 12px and
+                gap widened so the three horizontal sliders read as a tune
+                glyph instead of resembling a "#" sign — that ambiguity was
+                a real readability problem at the smaller size.
+                Gated on hasNonSearchFilters (not hasActiveFilters) so the
+                badge stays hidden when the user has only typed a search
+                query — counting that as "1 filter" while Row 2 shows nothing
+                created a confusing "what is the 1?" trust problem.
+                The standalone clear-all X that used to sit next to the
+                badge was removed 2026-05-04 — Row 2 chips now expose a per-
+                filter × each, and bulk clearing lives behind the modal's
+                "Clear filters" button. The bare X next to the badge looked
+                visually inconsistent with the rest of the bar and was
+                redundant with the per-chip clears. */}
+            {hasNonSearchFilters ? (
               <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: '2px',
-                fontSize: '9px', fontWeight: 700, color: '#1C1917',
+                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                fontSize: '10px', fontWeight: 700, color: '#1C1917',
                 background: t.accent, borderRadius: '8px',
-                padding: '1px 5px', flexShrink: 0, lineHeight: '14px',
+                padding: '2px 6px', flexShrink: 0, lineHeight: '14px',
               }}>
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="#1C1917" /></svg>
-                {activeFilterCount}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill="#1C1917" /></svg>
+                {nonSearchFilterCount}
               </span>
-              {/* Quick clear X — resets all filters without opening the panel */}
-              <button
-                onClick={(e) => { e.stopPropagation(); clearAllFilters(); }}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0, borderRadius: '50%',
-                }}
-                title="Reset filters"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" fill={darkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF'} /></svg>
-              </button>
-            </>) : (
+            ) : (
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, opacity: 0.5 }}>
                 <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" fill={darkMode ? 'rgba(255,255,255,0.5)' : '#6B7280'} />
               </svg>
@@ -2367,6 +2338,95 @@ export default function HomePage() {
             )}
           </div>
         </header>
+
+        {/* ── Active Filter Chip Strip (Row 2) ─────────────────────────────
+            Mirrors the in-modal active-filter chip row at the closed-state
+            header level. Same data, same one-tap × per chip — gives users a
+            persistent "what's applied" indicator without making them open
+            the modal to see, and lets them clear individual filters
+            without leaving the feed.
+            Hidden when no filters active (only renders chips for non-default
+            state — search query intentionally NOT chipped because it's
+            already visible in the header search input).
+            Kept as a header-adjacent strip rather than sticky for now —
+            scrolls away with content. If users want it pinned, follow-up
+            change to wrap header + this strip in a single sticky block. */}
+        {hasNonSearchFilters && activeTab === 'home' && !filtersExpanded && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            padding: '6px 16px',
+            background: darkMode ? '#1B1B28' : '#F5F3F0',
+            borderBottom: `1px solid ${t.border}`,
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none', msOverflowStyle: 'none',
+          }}>
+            <span style={{
+              fontSize: '9px', fontWeight: 700, letterSpacing: '0.06em',
+              color: darkMode ? '#8C8CA4' : '#6B7280',
+              flexShrink: 0, textTransform: 'uppercase',
+            }}>ACTIVE</span>
+            {[
+              activeShortcut && {
+                key: 'shortcut',
+                label: (dbPills.find(p => p.id === activeShortcut) || SHORTCUT_PILLS.find(p => p.id === activeShortcut))?.label || activeShortcut,
+                onClear: () => setActiveShortcut(null),
+              },
+              dateKey !== 'all' && {
+                key: 'date',
+                label: dateKey === 'pick' && pickedDate
+                  ? new Date(pickedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                  : ({ today: 'Today', tomorrow: 'Tomorrow', weekend: 'Weekend' }[dateKey] || dateKey),
+                onClear: () => { setDateKey('all'); setPickedDate(''); },
+              },
+              townOnlyActive && {
+                key: 'town',
+                label: locationOrigin.trim() ? `${locationOrigin.trim()} only` : 'Town only',
+                onClear: () => { setTownOnly(false); setLocationOrigin(''); },
+              },
+              radiusIsOverridden && !townOnlyActive && {
+                key: 'radius',
+                label: distanceLabel,
+                onClear: () => setMilesRadius(null),
+              },
+              activeVenues.length > 0 && {
+                key: 'venues',
+                label: activeVenues.length === 1
+                  ? (activeVenues[0].length > 18 ? activeVenues[0].slice(0, 18) + '…' : activeVenues[0])
+                  : `${activeVenues.length} venues`,
+                onClear: () => setActiveVenues([]),
+              },
+            ].filter(Boolean).map(chip => (
+              <span key={chip.key} style={{
+                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                fontSize: '11px', fontWeight: 600,
+                color: '#E8722A',
+                background: darkMode ? 'rgba(232,114,42,0.14)' : '#FFF4ED',
+                border: `1px solid ${darkMode ? 'rgba(232,114,42,0.35)' : 'rgba(232,114,42,0.30)'}`,
+                padding: '3px 4px 3px 10px', borderRadius: '12px',
+                whiteSpace: 'nowrap',
+                fontFamily: "'DM Sans', sans-serif", flexShrink: 0,
+              }}>
+                {chip.label}
+                <button
+                  onClick={chip.onClear}
+                  aria-label={`Clear ${chip.key} filter`}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: '0', marginLeft: '1px',
+                    width: '16px', height: '16px', borderRadius: '50%',
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#E8722A" strokeWidth="2.5" strokeLinecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* ── Notification Popup (floating dropdown from bell) ──────────── */}
         {notifDrawerOpen && (
@@ -2544,9 +2604,13 @@ export default function HomePage() {
                 boxShadow: darkMode ? '0 4px 20px rgba(0,0,0,0.4)' : '0 2px 12px rgba(0,0,0,0.08)',
                 background: darkMode ? '#20202E' : '#F5F3F0',
               }}>
-                {/* Search input + inline close button */}
+                {/* Search input + inline close button.
+                    Bottom padding intentionally tighter than top (10/6) to
+                    snug the input up to the shortcut pills below — combined
+                    with pills' reduced top padding it shaves ~8px of dead
+                    vertical space without crowding the input itself. */}
                 <div style={{
-                  padding: '10px 14px',
+                  padding: '10px 14px 6px',
                   borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
                   background: darkMode ? '#262636' : '#FFFFFF',
                   borderRadius: '12px 12px 0 0',
@@ -2680,7 +2744,10 @@ export default function HomePage() {
                     className="shortcut-pills"
                     style={{
                       display: 'flex', overflowX: 'auto', gap: '8px',
-                      padding: '8px 14px',
+                      // 4px top (paired with search container's tighter
+                      // 6px bottom) so the gap between input and pills
+                      // reads as ~11px instead of the prior 19px.
+                      padding: '4px 14px 8px',
                       WebkitOverflowScrolling: 'touch',
                       scrollbarWidth: 'none', msOverflowStyle: 'none',
                     }}
@@ -2727,6 +2794,95 @@ export default function HomePage() {
                     pointerEvents: 'none',
                   }} />
                 </div>
+
+                {/* ── Active Filter Chips ───────────────────────────────────
+                    Beta users were saying they couldn't tell what filters
+                    were applied without scrolling through the modal. This
+                    row makes filter state visible at a glance and gives
+                    each filter its own ✕ for one-tap clearing — much faster
+                    than scrolling to the offending filter card and
+                    resetting it. Hidden when no filters are active so the
+                    modal stays compact for first-time users.
+                    Gated on hasNonSearchFilters (not hasActiveFilters) so a
+                    user with only a search query doesn't see a stranded
+                    "ACTIVE" label with no chips below it — the search term
+                    is already visible in the input above this row.
+                    Order matches the filter cards below for spatial
+                    consistency. */}
+                {hasNonSearchFilters && (
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: '6px',
+                    padding: '8px 14px',
+                    background: darkMode ? '#1F1F2E' : '#FAF9F7',
+                    borderBottom: `1px solid ${darkMode ? '#2A2A3A' : '#E0DDD8'}`,
+                  }}>
+                    <span style={{
+                      fontSize: '9px', fontWeight: 700, letterSpacing: '0.06em',
+                      color: darkMode ? '#8C8CA4' : '#6B7280',
+                      alignSelf: 'center', flexShrink: 0, marginRight: '2px',
+                    }}>ACTIVE</span>
+                    {/* Search query is intentionally NOT chipped here — it
+                        already lives in the input above this row, so a chip
+                        for it would be duplicate signal. The chip row is
+                        reserved for filters that aren't otherwise visible
+                        (date, distance, venue, etc.). */}
+                    {[
+                      activeShortcut && {
+                        key: 'shortcut',
+                        label: SHORTCUT_PILLS.find(p => p.id === activeShortcut)?.label || activeShortcut,
+                        onClear: () => setActiveShortcut(null),
+                      },
+                      dateKey !== 'all' && {
+                        key: 'date',
+                        label: whenLabel,
+                        onClear: () => { setDateKey('all'); setPickedDate(''); },
+                      },
+                      radiusIsOverridden && {
+                        key: 'radius',
+                        label: distanceLabel,
+                        onClear: () => setMilesRadius(null),
+                      },
+                      activeVenues.length > 0 && {
+                        key: 'venues',
+                        label: venueLabel,
+                        onClear: () => setActiveVenues([]),
+                      },
+                      townOnlyActive && {
+                        key: 'town',
+                        label: locationOrigin.trim() ? `${locationOrigin.trim()} only` : 'Town only',
+                        onClear: () => { setTownOnly(false); setLocationOrigin(''); },
+                      },
+                    ].filter(Boolean).map(chip => (
+                      <span key={chip.key} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        fontSize: '11px', fontWeight: 600,
+                        color: '#E8722A',
+                        background: darkMode ? 'rgba(232,114,42,0.14)' : '#FFF4ED',
+                        border: `1px solid ${darkMode ? 'rgba(232,114,42,0.35)' : 'rgba(232,114,42,0.30)'}`,
+                        padding: '3px 4px 3px 10px', borderRadius: '12px',
+                        whiteSpace: 'nowrap',
+                        fontFamily: "'DM Sans', sans-serif",
+                      }}>
+                        {chip.label}
+                        <button
+                          onClick={chip.onClear}
+                          aria-label={`Clear ${chip.key} filter`}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            padding: '0', marginLeft: '1px',
+                            width: '16px', height: '16px', borderRadius: '50%',
+                          }}
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#E8722A" strokeWidth="2.5" strokeLinecap="round">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 {/* 1. DATE card (Date Picker) */}
                 <div style={{
@@ -2912,7 +3068,7 @@ export default function HomePage() {
                     <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: locationCoords && milesRadius !== null ? '#E8722A' : (darkMode ? '#A0A0BE' : '#374151'), lineHeight: 1 }}>Location</span>
                     <span style={{ flex: 1 }} />
                     <span style={{ fontSize: '13px', fontWeight: 500, color: locationCoords && milesRadius !== null ? '#E8722A' : (darkMode ? '#8C8CA4' : '#6B7280'), lineHeight: 1, marginRight: '6px', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '150px' }}>
-                      {locationCoords && milesRadius !== null ? `${locationLabel} + ${milesRadius} mi` : locationCoords ? locationLabel : 'Any distance'}
+                      {locationCoords && milesRadius !== null ? `${locationLabel} + ${milesRadius} mi` : locationCoords ? locationLabel : 'Anywhere'}
                     </span>
                     <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0, transform: activeFilterCard === 'distance' ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}><path d="M2 3.5L5 6.5L8 3.5" stroke={locationCoords && milesRadius !== null ? '#E8722A' : (darkMode ? '#8C8CA4' : '#9CA3AF')} strokeWidth="1.5" fill="none" /></svg>
                   </button>
@@ -3264,45 +3420,53 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {/* Footer — Reset (outline, hugs) + Search (primary, flex) + Close (text)
-                    All three action affordances sit on one row. The old top-right
-                    X collided visually with the input's clear-X; collapsing exit
-                    into the footer lets us keep just one close action and put it
-                    next to where the user is making decisions about filters. */}
+                {/* Footer — CLEAR FILTERS (outlined caps) + Search (primary,
+                    flex) + CLOSE (outlined caps). Beta users were bouncing
+                    off the old ghost-text Reset + Close pair: they didn't
+                    read as buttons, so the actions felt buried. Switched to
+                    outlined caps with letter-spacing — matches the small
+                    uppercase tracked pill typography elsewhere (#60) and
+                    makes both side buttons clearly tappable without
+                    competing with Search (filled orange still dominates).
+                    Old "Reset" relabeled to "CLEAR FILTERS" so the action
+                    reads as what it does, not as a generic verb.
+                    The old top-right X collided visually with the input's
+                    clear-X; that's why exit lives in this footer instead. */}
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: '10px',
                   padding: '10px 12px', background: darkMode ? '#262636' : '#FFFFFF',
                   borderTop: `1px solid ${darkMode ? '#2E2E40' : '#E0DDD8'}`,
                   borderRadius: '0 0 12px 12px',
                 }}>
-                  {/* Symmetrical trio: Reset 25% (ghost) | Search 50% (primary)
-                      | Close 25% (ghost). The outer two are background-less
-                      "ghost" buttons — text + small icon in muted gray — so
-                      Search dominates by contrast. Fixed flex bases keep the
-                      row balanced regardless of label length. */}
-                  {/* Reset — ghost left, 25% */}
+                  {/* Clear filters — outlined sentence case, single line.
+                      Earlier iterations went all-caps tracked + stacked, but
+                      that created a visual mismatch with the single-line
+                      Search button next to it (felt like two design systems
+                      in one row) and read as shouty in a tap-target context.
+                      Sentence case + outline keeps the button discoverable
+                      without competing with Search's filled-orange primary. */}
                   <button onClick={clearAllFilters} style={{
                     flex: '1 1 0', minWidth: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                    padding: '10px 8px', borderRadius: '10px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    padding: '10px 10px', borderRadius: '10px',
                     background: 'transparent',
-                    border: 'none',
+                    border: `1px solid ${darkMode ? '#3A3A4E' : '#D1D5DB'}`,
                     cursor: 'pointer',
-                    fontSize: '13px', fontWeight: 500,
-                    color: darkMode ? '#9090A8' : '#6B7280',
+                    fontSize: '13px', fontWeight: 600,
+                    color: darkMode ? '#C8C8D8' : '#374151',
                     fontFamily: "'DM Sans', sans-serif",
-                    transition: 'opacity 0.15s ease',
+                    transition: 'opacity 0.15s ease, border-color 0.15s ease',
                     whiteSpace: 'nowrap',
                     minHeight: '44px',
                   }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                       <path d="M12 5V2L8 6l4 4V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" fill="currentColor" />
                     </svg>
-                    Reset
+                    Clear filters
                   </button>
                   {/* Search — primary, 50%. Slightly heavier vertical padding
-                      than the ghost buttons so it visually steps forward in
-                      the row. White text on orange. */}
+                      than the side buttons so it visually steps forward in
+                      the row. Black text on orange. */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                     flex: '2 1 0', minWidth: 0,
                     padding: '12px 24px', borderRadius: '10px', border: 'none',
@@ -3312,24 +3476,25 @@ export default function HomePage() {
                   }}>
                     Search
                   </button>
-                  {/* Close — ghost right, 25%. X icon kept (recognizable
-                      affordance) so Close reads as "exit this panel" rather
-                      than "discard" or "cancel." */}
+                  {/* Close — outlined sentence case, single line. Mirror
+                      styling of "Clear filters" so the row reads consistently.
+                      Search still dominates because filled-orange beats
+                      outline. */}
                   <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
                     flex: '1 1 0', minWidth: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                    padding: '10px 8px', borderRadius: '10px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    padding: '10px 10px', borderRadius: '10px',
                     background: 'transparent',
-                    border: 'none',
+                    border: `1px solid ${darkMode ? '#3A3A4E' : '#D1D5DB'}`,
                     cursor: 'pointer',
-                    fontSize: '13px', fontWeight: 500,
-                    color: darkMode ? '#9090A8' : '#6B7280',
+                    fontSize: '13px', fontWeight: 600,
+                    color: darkMode ? '#C8C8D8' : '#374151',
                     fontFamily: "'DM Sans', sans-serif",
-                    transition: 'opacity 0.15s ease',
+                    transition: 'opacity 0.15s ease, border-color 0.15s ease',
                     whiteSpace: 'nowrap',
                     minHeight: '44px',
                   }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" style={{ flexShrink: 0 }}>
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
