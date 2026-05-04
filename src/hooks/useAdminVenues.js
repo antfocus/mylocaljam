@@ -40,7 +40,7 @@ export default function useAdminVenues({ password, showQueueToast }) {
     try {
       const { data, error } = await supabase
         .from('venues')
-        .select('id, name, address, city, slug, latitude, longitude, website, photo_url, venue_type, tags, default_start_time, color, created_at')
+        .select('id, name, address, city, slug, latitude, longitude, website, photo_url, venue_type, tags, default_start_time, is_ticketed_venue, color, created_at')
         .order('name');
       if (!error && data) setVenues(data);
     } catch (err) { console.error('Failed to load venues (full):', err); }
