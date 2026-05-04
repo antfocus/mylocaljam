@@ -1046,6 +1046,13 @@ function QueueView({ password, showQueueToast, onOpenArtist }) {
   const [lightboxRowId, setLightboxRowId] = useState(null);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
+  // Separate lightbox for the CURRENT artist image. The proposed-side
+  // lightbox above includes a "Use this image" footer that flips the
+  // chosenImages override; for the current image we don't need swap UI
+  // (admins click the small USE THIS chip under the thumb instead) — so
+  // a stripped-down viewer keeps the flows from getting tangled.
+  const [currentLightboxRowId, setCurrentLightboxRowId] = useState(null);
+
   // Per-row image override — when admin uses the lightbox to pick a
   // different candidate, we store the chosen URL here. The Approve
   // handler passes it as override.image_url so the chosen candidate
@@ -1268,6 +1275,13 @@ function QueueView({ password, showQueueToast, onOpenArtist }) {
                 setChosenImages(prev => ({ ...prev, [item.id]: url }));
                 showQueueToast?.('Current image staged — click Approve to lock it in');
               }}
+              // Click the CURRENT thumbnail itself to enlarge — admins need
+              // a clear view to compare with the proposed image before
+              // deciding which to lock.
+              onOpenCurrentLightbox={() => {
+                if (!item.artists?.image_url) return;
+                setCurrentLightboxRowId(item.id);
+              }}
               onOpenLightbox={() => {
                 // Find the index of the currently-active proposed image in
                 // the candidates array so the lightbox opens at the right
@@ -1445,6 +1459,114 @@ function QueueView({ password, showQueueToast, onOpenArtist }) {
           </div>
         );
       })()}
+
+      {/* Current-image lightbox — single image, no nav, no swap. Footer
+          carries a USE THIS button that mirrors the small chip behavior:
+          stages the current URL as the chosenImage so Approve writes it
+          back and locks the image_url field. */}
+      {currentLightboxRowId && (() => {
+        const item = items.find(i => i.id === currentLightboxRowId);
+        if (!item) return null;
+        const url = item.artists?.image_url;
+        if (!url) return null;
+        const isStaged = chosenImages[item.id] === url;
+
+        return (
+          <div
+            onClick={() => setCurrentLightboxRowId(null)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 300,
+              background: 'rgba(0,0,0,0.78)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '24px',
+              fontFamily: "'DM Sans', sans-serif",
+            }}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              style={{
+                width: '100%', maxWidth: '720px',
+                background: 'var(--bg-primary)',
+                border: '1px solid var(--border)',
+                borderRadius: '14px',
+                padding: '20px',
+                display: 'flex', flexDirection: 'column', gap: '14px',
+                maxHeight: '90vh', overflow: 'auto',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {item.artists?.name || '(unknown artist)'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {url}
+                  </div>
+                </div>
+                <span style={{
+                  fontSize: '10px', fontWeight: 700,
+                  padding: '3px 8px', borderRadius: '4px',
+                  background: 'rgba(255,255,255,0.06)', color: 'var(--text-muted)',
+                  letterSpacing: '0.06em',
+                }}>
+                  CURRENT
+                </span>
+              </div>
+
+              <div style={{
+                borderRadius: '8px', overflow: 'hidden',
+                background: 'var(--bg-elevated)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                minHeight: '240px',
+              }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt=""
+                  style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block' }}
+                  onError={e => { e.currentTarget.style.opacity = '0.2'; }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setCurrentLightboxRowId(null)}
+                  style={{
+                    padding: '8px 14px', borderRadius: '8px',
+                    background: 'transparent', color: 'var(--text-muted)',
+                    border: '1px solid var(--border)',
+                    fontSize: '12px', fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={isStaged}
+                  onClick={() => {
+                    setChosenImages(prev => ({ ...prev, [item.id]: url }));
+                    setCurrentLightboxRowId(null);
+                    showQueueToast?.('Current image staged — click Approve to lock it in');
+                  }}
+                  style={{
+                    padding: '8px 16px', borderRadius: '8px',
+                    background: isStaged ? 'var(--bg-elevated)' : '#E8722A',
+                    color: isStaged ? 'var(--text-muted)' : '#000',
+                    border: 'none',
+                    fontSize: '12px', fontWeight: 700,
+                    cursor: isStaged ? 'not-allowed' : 'pointer',
+                    opacity: isStaged ? 0.6 : 1,
+                  }}
+                >
+                  {isStaged ? '✓ Staged' : 'Use this image'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1467,7 +1589,7 @@ function lightboxCandidates(item, chosenImage) {
 // right so the operator can spot-compare at a glance. Approve / Reject /
 // Open Artist buttons in the footer when status='pending'; for other
 // statuses the row is read-only audit trail.
-function QueueRow({ item, busy, isPending, chosenImage, onApprove, onReject, onOpenArtist, onOpenLightbox, onUseCurrentImage }) {
+function QueueRow({ item, busy, isPending, chosenImage, onApprove, onReject, onOpenArtist, onOpenLightbox, onUseCurrentImage, onOpenCurrentLightbox }) {
   const artist = item.artists || {};
   const proposedBio = item.proposed_bio || '';
   const currentBio = artist.bio || '';
@@ -1529,13 +1651,17 @@ function QueueRow({ item, busy, isPending, chosenImage, onApprove, onReject, onO
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           {/* Current — only allow "Use this" on pending rows that actually
               have a current image to keep. After clicking, the button label
-              flips to "Selected" so the admin can see their pick registered. */}
+              flips to "Selected" so the admin can see their pick registered.
+              The image itself is also clickable when a current image exists,
+              opening a simple enlarge-only lightbox so admins can compare
+              with the proposed image at a readable size. */}
           <CompareColumn
             label="CURRENT"
             bio={currentBio}
             imageUrl={artist.image_url}
             genres={artist.genres}
             vibes={artist.vibes}
+            onImageClick={artist.image_url ? onOpenCurrentLightbox : undefined}
             onUseCurrent={(isPending && artist.image_url) ? onUseCurrentImage : undefined}
             useCurrentActive={currentImageStaged}
           />
