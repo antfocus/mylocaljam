@@ -126,7 +126,11 @@ export default function SavedGigCard({
       borderRadius: '6px',
       overflow: 'hidden',
       border: `1px solid ${borderClr}`,
-      borderTop: `8px solid ${BRAND_ORANGE}`,
+      // Thin top accent — was 8px, reduced to 5px (~37%) so a stack of
+      // saved cards stops reading as orange-striped wallpaper. Still
+      // preserves the ticket-stub silhouette but lets the event titles
+      // become the focal point. Brand orange retained.
+      borderTop: `5px solid ${BRAND_ORANGE}`,
       boxShadow: darkMode
         ? '0 2px 12px rgba(0,0,0,0.35)'
         : '0 2px 8px rgba(0,0,0,0.06)',
