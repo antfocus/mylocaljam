@@ -1258,6 +1258,16 @@ function QueueView({ password, showQueueToast, onOpenArtist }) {
               onApprove={() => approve(item)}
               onReject={() => reject(item)}
               onOpenArtist={() => onOpenArtist?.(item.artists)}
+              // "Use this" on the CURRENT image — copies the artist's existing
+              // image_url into chosenImages so Approve writes the same URL back
+              // (no-op for value, but the FIELD_MAP loop in approve/route.js
+              // flips is_human_edited.image_url = true, locking it).
+              onUseCurrentImage={() => {
+                const url = item.artists?.image_url;
+                if (!url) return;
+                setChosenImages(prev => ({ ...prev, [item.id]: url }));
+                showQueueToast?.('Current image staged — click Approve to lock it in');
+              }}
               onOpenLightbox={() => {
                 // Find the index of the currently-active proposed image in
                 // the candidates array so the lightbox opens at the right
@@ -1457,13 +1467,18 @@ function lightboxCandidates(item, chosenImage) {
 // right so the operator can spot-compare at a glance. Approve / Reject /
 // Open Artist buttons in the footer when status='pending'; for other
 // statuses the row is read-only audit trail.
-function QueueRow({ item, busy, isPending, chosenImage, onApprove, onReject, onOpenArtist, onOpenLightbox }) {
+function QueueRow({ item, busy, isPending, chosenImage, onApprove, onReject, onOpenArtist, onOpenLightbox, onUseCurrentImage }) {
   const artist = item.artists || {};
   const proposedBio = item.proposed_bio || '';
   const currentBio = artist.bio || '';
   // The active proposed image — admin's lightbox-picked override if present,
   // otherwise the LLM's top pick. This is what gets written on Approve.
   const activeProposedImage = chosenImage || item.proposed_image_url;
+  // True when the staged override is the same URL as the current artist
+  // image — i.e., admin clicked "Use this" on the CURRENT side. The
+  // CompareColumn uses this to flip the button label to a confirmed state.
+  const currentImageStaged =
+    !!chosenImage && !!artist.image_url && chosenImage === artist.image_url;
   const candidateCount = (() => {
     const list = lightboxCandidates(item, chosenImage);
     return list.length;
@@ -1512,13 +1527,17 @@ function QueueRow({ item, busy, isPending, chosenImage, onApprove, onReject, onO
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-          {/* Current */}
+          {/* Current — only allow "Use this" on pending rows that actually
+              have a current image to keep. After clicking, the button label
+              flips to "Selected" so the admin can see their pick registered. */}
           <CompareColumn
             label="CURRENT"
             bio={currentBio}
             imageUrl={artist.image_url}
             genres={artist.genres}
             vibes={artist.vibes}
+            onUseCurrent={(isPending && artist.image_url) ? onUseCurrentImage : undefined}
+            useCurrentActive={currentImageStaged}
           />
           {/* Proposed — image is clickable; opens lightbox at full size
               with prev/next nav across all candidates. activeProposedImage
@@ -1593,13 +1612,16 @@ function QueueRow({ item, busy, isPending, chosenImage, onApprove, onReject, onO
   );
 }
 
-function CompareColumn({ label, bio, imageUrl, genres, vibes, highlight, onImageClick, candidateCount }) {
+function CompareColumn({ label, bio, imageUrl, genres, vibes, highlight, onImageClick, candidateCount, onUseCurrent, useCurrentActive }) {
   // The image is clickable when an onImageClick handler is provided
   // (proposed column only — current side is read-only). Renders as a
   // larger 96x96 thumbnail when clickable so the admin has a better
   // preview to evaluate, and shows a candidate-count chip if the
   // proposal has multiple candidate URLs to choose from.
   const clickable = typeof onImageClick === 'function';
+  // The CURRENT side renders a "Use this" button under its image when
+  // onUseCurrent is provided; useCurrentActive flips the label after click.
+  const showUseCurrent = typeof onUseCurrent === 'function';
   const thumbSize = clickable ? 96 : 60;
 
   return (
@@ -1650,6 +1672,27 @@ function CompareColumn({ label, bio, imageUrl, genres, vibes, highlight, onImage
         }}>
           no image
         </div>
+      )}
+
+      {showUseCurrent && imageUrl && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onUseCurrent(); }}
+          style={{
+            display: 'inline-block',
+            marginBottom: '8px',
+            padding: '3px 8px', borderRadius: '4px',
+            fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em',
+            fontFamily: "'DM Sans', sans-serif",
+            cursor: 'pointer',
+            background: useCurrentActive ? 'rgba(232,114,42,0.18)' : 'transparent',
+            color: useCurrentActive ? '#E8722A' : 'var(--text-muted)',
+            border: `1px solid ${useCurrentActive ? 'rgba(232,114,42,0.45)' : 'var(--border)'}`,
+          }}
+          title="Lock the current image instead of using the LLM's proposal"
+        >
+          {useCurrentActive ? '✓ SELECTED' : 'USE THIS'}
+        </button>
       )}
 
       <p style={{ fontSize: '12px', color: 'var(--text-primary)', lineHeight: 1.45, margin: 0, marginBottom: '6px' }}>
