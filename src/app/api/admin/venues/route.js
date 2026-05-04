@@ -15,6 +15,13 @@ const EDITABLE_FIELDS = [
   'website', 'photo_url',
   'venue_type', 'tags',
   'default_start_time',
+  // Drives the "Tickets" indicator on event cards + share landing pages
+  // for any event linked to this venue. Toggled from the admin Venue
+  // edit modal. Default false; set true for Ticketmaster / Dice / Etix
+  // venues whose events are paid + ticketed (Stone Pony, Wonder Bar,
+  // The Vogel, Starland, etc.). See KIND_TAXONOMY.md / HANDOVER for
+  // the rendering rules and the May 2 2026 backfill list.
+  'is_ticketed_venue',
 ];
 
 // Sanitize incoming payload to whitelist + normalize types. Returns a
@@ -36,6 +43,14 @@ function sanitize(input) {
     if ((key === 'latitude' || key === 'longitude') && val != null) {
       const n = Number(val);
       val = Number.isFinite(n) ? n : null;
+    }
+    // Boolean coercion for is_ticketed_venue. Form might post 'true'/'false'
+    // strings (some HTML forms serialize checkboxes that way) so we coerce
+    // explicitly rather than letting postgres trip on a string-into-bool cast.
+    if (key === 'is_ticketed_venue') {
+      if (val === null || val === undefined) val = false;
+      else if (typeof val === 'string') val = val.toLowerCase() === 'true';
+      else val = !!val;
     }
     out[key] = val;
   }

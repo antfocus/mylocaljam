@@ -40,6 +40,10 @@ const EMPTY_VENUE = {
   venue_type: '',
   tags: [],
   default_start_time: '',
+  // is_ticketed_venue — drives the inline "Tickets" indicator on event
+  // cards + share landing for any event linked to this venue. False by
+  // default; admins toggle it on for Ticketmaster / Dice / Etix venues.
+  is_ticketed_venue: false,
 };
 
 // Common venue types as a non-authoritative dropdown helper. The column is
@@ -63,6 +67,10 @@ export default function AdminVenuesDirectory({
 }) {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('name'); // 'name' | 'city' | 'scraper'
+  // QC filter — when on, list narrows to venues missing at least one of
+  // latitude, longitude, or photo_url. Single switch replaces the prior
+  // workflow of scanning the right-edge indicator chips row by row.
+  const [showOnlyIncomplete, setShowOnlyIncomplete] = useState(false);
   const [editing, setEditing] = useState(null); // venue object or null
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -78,9 +86,10 @@ export default function AdminVenuesDirectory({
     return map;
   }, [scraperHealth]);
 
-  // Filter + sort the list based on search + sortBy. Search is case-insensitive
-  // substring across name, city, and address so admins can find a venue by
-  // any of those three identifiers.
+  // Filter + sort the list based on search + sortBy + showOnlyIncomplete.
+  // Search is case-insensitive substring across name, city, and address.
+  // Incomplete filter narrows to venues missing coords or photo — the QC
+  // shortcut for "which venues need attention" without scanning row chips.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let list = (venues || []).slice();
@@ -89,6 +98,11 @@ export default function AdminVenuesDirectory({
         (v.name || '').toLowerCase().includes(q) ||
         (v.city || '').toLowerCase().includes(q) ||
         (v.address || '').toLowerCase().includes(q)
+      );
+    }
+    if (showOnlyIncomplete) {
+      list = list.filter(v =>
+        v.latitude == null || v.longitude == null || !v.photo_url
       );
     }
     list.sort((a, b) => {
@@ -103,7 +117,15 @@ export default function AdminVenuesDirectory({
       return (a.name || '').localeCompare(b.name || '');
     });
     return list;
-  }, [venues, search, sortBy, scraperByVenueName]);
+  }, [venues, search, sortBy, showOnlyIncomplete, scraperByVenueName]);
+
+  // Derived counts for the filter pill badge — surfaces "X venues need
+  // attention" so the admin can decide whether the filter is worth flipping.
+  const incompleteCount = useMemo(() => (
+    (venues || []).filter(v =>
+      v.latitude == null || v.longitude == null || !v.photo_url
+    ).length
+  ), [venues]);
 
   // ── Modal handlers ──────────────────────────────────────────────────
 
@@ -150,6 +172,7 @@ export default function AdminVenuesDirectory({
         venue_type: editing.venue_type?.trim() || null,
         tags: (editing.tags || []).filter(t => t && t.trim()),
         default_start_time: editing.default_start_time || null,
+        is_ticketed_venue: !!editing.is_ticketed_venue,
       };
 
       if (editing.id) {
@@ -249,6 +272,46 @@ export default function AdminVenuesDirectory({
         >
           + New Venue
         </button>
+
+        {/* Incomplete filter pill — toggles a list filter that narrows
+            to venues missing at least one of latitude / longitude /
+            photo_url. Replaces the chip-scanning workflow with a single
+            switch. The pill shows the incomplete count when off (so the
+            admin sees how much work is queued before flipping); when on,
+            the pill itself is the active state and the row counter
+            already reflects the filtered list. */}
+        <button
+          onClick={() => setShowOnlyIncomplete(p => !p)}
+          aria-pressed={showOnlyIncomplete}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '7px 12px', borderRadius: '999px',
+            border: showOnlyIncomplete ? '1px solid #E8722A' : '1px solid var(--border)',
+            background: showOnlyIncomplete ? 'rgba(232,114,42,0.12)' : 'transparent',
+            color: showOnlyIncomplete ? '#E8722A' : 'var(--text-muted)',
+            fontSize: '12px', fontWeight: 600,
+            fontFamily: "'DM Sans', sans-serif", cursor: 'pointer',
+            transition: 'all 0.15s ease',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {showOnlyIncomplete && (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+          Show only incomplete
+          {!showOnlyIncomplete && incompleteCount > 0 && (
+            <span style={{
+              padding: '1px 7px', borderRadius: '999px',
+              background: 'rgba(232,114,42,0.18)', color: '#E8722A',
+              fontSize: '10px', fontWeight: 700,
+            }}>
+              {incompleteCount}
+            </span>
+          )}
+        </button>
+
         <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontFamily: "'DM Sans', sans-serif" }}>
           {filtered.length} of {(venues || []).length}
         </span>
@@ -288,6 +351,23 @@ export default function AdminVenuesDirectory({
                         fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.4px', textTransform: 'uppercase',
                       }}>
                         {v.venue_type}
+                      </span>
+                    )}
+                    {/* TICKETED badge — orange-tinted to match the brand's
+                        primary-action color, signaling that events at this
+                        venue trigger the Tickets affordance on cards. Sits
+                        next to venue_type so admins scanning the directory
+                        see classification + ticketed status side-by-side. */}
+                    {v.is_ticketed_venue && (
+                      <span
+                        title="Events at this venue render with a Tickets indicator"
+                        style={{
+                          fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '4px',
+                          background: 'rgba(232,114,42,0.14)', color: '#E8722A',
+                          fontFamily: "'DM Sans', sans-serif", letterSpacing: '0.4px', textTransform: 'uppercase',
+                        }}
+                      >
+                        Ticketed
                       </span>
                     )}
                     {scraper && (
@@ -783,6 +863,50 @@ function VenueEditModal({ venue, setVenue, onClose, onSave, onDelete, saving, de
               />
             </Field>
           </div>
+
+          {/* Ticketed-venue toggle. When ON, every event linked to this
+              venue picks up an inline "Tickets" indicator on its card +
+              share landing page (driven by venues.is_ticketed_venue +
+              the event's cover/ticket_link fields). Toggle this for
+              Ticketmaster / Dice / Etix / Live Nation venues — Stone
+              Pony, Wonder Bar, The Vogel, Starland, etc. Casual bars
+              and restaurants stay off (their events are walk-in / free
+              by default). */}
+          <Field label="Ticketed venue">
+            <label style={{
+              display: 'flex', alignItems: 'flex-start', gap: '10px',
+              padding: '10px 12px', borderRadius: '8px',
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+              cursor: 'pointer',
+              fontFamily: "'DM Sans', sans-serif",
+            }}>
+              <input
+                type="checkbox"
+                checked={!!venue.is_ticketed_venue}
+                onChange={e => set('is_ticketed_venue', e.target.checked)}
+                style={{
+                  marginTop: '2px',
+                  accentColor: '#E8722A',
+                  cursor: 'pointer',
+                  width: '16px', height: '16px',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)',
+                  marginBottom: '2px',
+                }}>
+                  Events at this venue are sold via tickets
+                </div>
+                <div style={{
+                  fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4,
+                }}>
+                  Adds a Tickets indicator on event cards + share landing pages. Toggle on for Ticketmaster / Dice / Etix venues (Stone Pony, Wonder Bar, etc.). Leave off for casual bars and restaurants.
+                </div>
+              </div>
+            </label>
+          </Field>
 
           <Field label="Tags (comma-separated)">
             <input
