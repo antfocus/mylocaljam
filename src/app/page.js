@@ -1200,6 +1200,11 @@ export default function HomePage() {
       fetchEvents(1, false),
       fetchSpotlightRef.current ? fetchSpotlightRef.current() : Promise.resolve(),
     ]);
+    // Visible cue that pull-to-refresh actually fired — even when the new
+    // payload is identical to the old one, the hero snaps back to slide 0
+    // so the user sees motion. goToSlide(0) routes through handleDotClick,
+    // which pauses + reschedules auto-rotate, so the rhythm stays sane.
+    heroRef.current?.goToSlide(0);
   }, [fetchEvents]);
   const { pull: ptrPull, refreshing: ptrRefreshing, threshold: ptrThreshold } =
     usePullToRefresh(homeScrollRef, handlePullRefresh);

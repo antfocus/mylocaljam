@@ -1185,11 +1185,30 @@ export async function POST(request) {
   } catch { /* table may not exist yet */ }
 
   // --- Phase 0: Scraper-First Artist Enrichment ─────────────────────────────
-  // Before Last.fm, seed the artists table with bios/images from scrapers.
-  // Scrapers are the primary source for local artists that Last.fm doesn't know.
+  // Before Last.fm, seed the artists table with bios/images from scrapers
+  // AND with bare rows for naked-name scrapes that didn't return any
+  // bio/image at all. Scrapers are the primary source for local artists
+  // that Last.fm doesn't know.
+  //
+  // BARE-CREATE LOOSENING (May 2 2026):
+  //   The earlier shape skipped any event whose scraper hadn't returned
+  //   bio OR image. Most casual venue scrapers (Reef & Barrel, Eventide
+  //   Grille, Crab's Claw Inn, Lighthouse Tavern, MJ's, Palmetto, etc.)
+  //   only yield artist_name + date + venue. Result: ~17 events/day landing
+  //   `artist_id = null` and showing "UNLINKED" in admin Triage forever.
+  //
+  //   Removed the bio/image gate so every distinct scraped name now seeds
+  //   a bare artist row. classifyArtistKind decides the kind (drink-special
+  //   strings → kind='event', multi-comma names → kind='billing', everything
+  //   else → kind='musician'). Bio + image stay null until the bulk-enrich
+  //   queue picks them up — but the event_id → artist_id link gets stamped
+  //   immediately so the row stops counting as "unlinked" anywhere.
   let scraperEnrichResult = { created: 0, updated: 0 };
   try {
-    // Collect scraper bio/image data grouped by artist name
+    // Collect scraper bio/image data grouped by artist name. We process
+    // EVERY distinct artist_name now, not just ones with scraper-supplied
+    // bio/image. Names without metadata land as bare rows; names with
+    // bio/image carry that data through to the artist row.
     const scraperArtistData = {};
     for (const ev of validEvents) {
       const name = ev.artist_name?.trim();
@@ -1197,7 +1216,7 @@ export async function POST(request) {
       if (blacklistedNames.has(name.toLowerCase())) continue;
       const bio = ev._scraper_bio;
       const image = ev._scraper_image;
-      if (!bio && !image) continue;
+      // (No bio/image gate — bare rows are now a valid outcome.)
       const key = name.toLowerCase();
       // Keep the longest bio and first image found across events
       if (!scraperArtistData[key]) {
