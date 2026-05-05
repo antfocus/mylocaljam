@@ -73,10 +73,10 @@ export async function generateMetadata({ params }) {
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://mylocaljam.com';
   const name = artist.name || 'Artist';
   const bio = artist.bio || '';
-  // Brand-consistent OG fallback (May 5, 2026) — was v5 (off-brand
-  // cyan-jam jar artwork). Now uses the wordmark-on-dark-navy avatar
-  // matching the OG card and social media accounts.
-  const imageUrl = artist.image_url || `${baseUrl}/myLocaljam_avatar_dark_1024.png`;
+  // Brand-consistent OG fallback (May 5, 2026) — wordmark-on-dark-navy
+  // avatar matching the OG card and social media accounts. v9 includes
+  // the soundwave glyph from the ChatGPT rebrand.
+  const imageUrl = artist.image_url || `${baseUrl}/myLocaljam_avatar_v9_dark_1024.png`;
   const genres = artist.genres || [];
 
   const ogTitle = `${name} — MyLocalJam`;
