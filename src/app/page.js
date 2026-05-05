@@ -2173,19 +2173,27 @@ export default function HomePage() {
           minHeight: '60px',
           width: '100%', maxWidth: '100%', boxSizing: 'border-box',
         }}>
-          {/* Logo — left */}
+          {/* Logo — left. May 5, 2026: swapped from CSS-text spans to the
+              v9 wordmark+soundwave PNG (ChatGPT rebrand). Mode-responsive:
+              dark variant has white "myLocal", light variant has slate
+              "myLocal", both share the orange "jam" + soundwave glyph.
+              Plain <img> over next/image because the asset is small (~250KB),
+              header-critical (don't want lazy-load latency), and avoiding
+              the import keeps this single change isolated. */}
           <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
-            <span style={{
-              fontFamily: "'Outfit', sans-serif",
-              fontSize: '17px',
-              fontWeight: 700,
-              letterSpacing: '-0.035em',
-              lineHeight: 1,
-              whiteSpace: 'nowrap',
-            }}>
-              <span style={{ color: darkMode ? '#FFFFFF' : '#1F2937' }}>myLocal</span>
-              <span style={{ fontStyle: 'italic', color: '#E8722A' }}>Jam</span>
-            </span>
+            <img
+              src={darkMode ? '/myLocaljam_Logo_v9_soundwave_dark.png' : '/myLocaljam_Logo_v9_soundwave_light.png'}
+              alt="myLocalJam"
+              loading="eager"
+              decoding="async"
+              style={{
+                height: '28px',
+                width: 'auto',
+                display: 'block',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+              }}
+            />
           </div>
 
           {/* Spacer + Omnibar — hidden on saved/profile tabs */}
