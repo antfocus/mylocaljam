@@ -2187,7 +2187,12 @@ export default function HomePage() {
               loading="eager"
               decoding="async"
               style={{
-                height: '28px',
+                // Reduced from 28px → 22px May 5, 2026 — at 28px the wordmark
+                // was crowding the SEARCH/FILTERS omnibar on iPhone-width
+                // viewports (truncating to "SEA..."). 22px keeps the
+                // soundwave glyph readable while leaving the search pill
+                // its full pill width.
+                height: '22px',
                 width: 'auto',
                 display: 'block',
                 userSelect: 'none',
