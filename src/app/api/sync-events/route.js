@@ -1318,27 +1318,89 @@ export async function POST(request) {
   }
 
   // --- Auto-enrich new artists via Last.fm + link events → artists via artist_id ---
-  // Gated by skipEnrich so the cron run can fit under the 60s Hobby cap.
-  // When skipped, the struct below stays at zeros and a separate backfill
-  // cron (/api/enrich-backfill) picks up the unenriched rows out-of-band.
+  // ARCHITECTURE NOTE (2026-05-05): Linking and enrichment used to live in
+  // the same skipEnrich-gated block. The cron always runs with skipEnrich=
+  // true (60s Vercel cap), so artist_id linking was effectively never
+  // happening on cron — events sat as orphans until an admin manually
+  // triggered backfill. Split into two phases:
+  //
+  //   • Pass 1 (linking) ALWAYS runs. Cheap: two indexed reads + bulk UPDATE
+  //     of a null FK. Never overwrites admin work. Phase 0 above already
+  //     ensures every scraped name has an artist row, so by the time we
+  //     get here, alias-resolved linkMap covers nearly 100% of cases.
+  //
+  //   • Pass 2 (image/bio cascade + LLM enrichment) stays gated by
+  //     skipEnrich. These are the slow paths that can't fit in 60s.
   let enrichResult = { artistsLookedUp: 0, eventsEnriched: 0, eventsLinked: 0, blacklisted: 0, humanSkipped: 0, defaultCategoryApplied: 0, errors: [], skipped: skipEnrich };
-  if (!skipEnrich) try {
-    // Fetch all future published LIVE MUSIC events for enrichment + artist linking
-    // Only enrich events categorized as Live Music (or uncategorized) — skip drink specials, trivia, etc.
-    // Order by event_date ASC so artists playing soonest get enriched first.
-    // With the 30-per-run cap, this ensures tonight's acts have bios/images
-    // before someone playing 3 weeks from now.
-    const { data: unenriched } = await supabase
-      .from('events')
-      .select('id, artist_name, image_url, artist_bio, artist_id, is_human_edited, is_locked, category, template_id, is_category_verified, category_source')
-      .eq('status', 'published')
-      .not('artist_name', 'is', null)
-      .gte('event_date', new Date().toISOString())
-      .or('category.is.null,category.eq.Live Music')
-      .order('event_date', { ascending: true })
-      .limit(500);
 
-    if (unenriched?.length) {
+  // Fetch all future published LIVE MUSIC events for enrichment + artist linking
+  // Only enrich events categorized as Live Music (or uncategorized) — skip drink specials, trivia, etc.
+  // Order by event_date ASC so artists playing soonest get enriched first.
+  // With the 30-per-run cap, this ensures tonight's acts have bios/images
+  // before someone playing 3 weeks from now.
+  const { data: unenriched } = await supabase
+    .from('events')
+    .select('id, artist_name, image_url, artist_bio, artist_id, is_human_edited, is_locked, category, template_id, is_category_verified, category_source')
+    .eq('status', 'published')
+    .not('artist_name', 'is', null)
+    .gte('event_date', new Date().toISOString())
+    .or('category.is.null,category.eq.Live Music')
+    .order('event_date', { ascending: true })
+    .limit(500);
+
+  // ── Pass 1: Artist-ID linking (ALWAYS, regardless of skipEnrich) ──
+  // The orphan window between scrape-insert and admin-backfill is
+  // unacceptable — events not linked to artists don't get share-page
+  // OG images, can't show in the artist's upcoming-shows list, and
+  // surface as "UNLINKED" in admin Triage. Fix: always run linking,
+  // even on skipEnrich runs. Linking is non-destructive (only sets a
+  // null FK) so the locked/human-edited guard doesn't apply.
+  if (unenriched?.length) {
+    try {
+      const allUnlinked = unenriched.filter(e => !e.artist_id && !blacklistedNames.has(e.artist_name.trim().toLowerCase()));
+      if (allUnlinked.length > 0) {
+        const linkNames = [...new Set(allUnlinked.map(e => e.artist_name.trim()))];
+        const { data: linkArtists } = await supabase
+          .from('artists')
+          .select('id, name')
+          .in('name', linkNames.slice(0, 200));
+
+        const linkMap = {};
+        for (const a of (linkArtists || [])) linkMap[a.name.toLowerCase()] = a.id;
+
+        // Alias fallback for names that don't match an artist's canonical
+        // name (e.g. "E BORO BANDITS" → alias of "E-Boro Bandits").
+        try {
+          const unmatchedLowers = linkNames.map(n => n.toLowerCase()).filter(n => !linkMap[n]);
+          if (unmatchedLowers.length > 0) {
+            const { data: aliasRows } = await supabase
+              .from('artist_aliases')
+              .select('artist_id, alias_lower')
+              .in('alias_lower', unmatchedLowers.slice(0, 200));
+            if (aliasRows?.length) {
+              for (const row of aliasRows) {
+                if (!linkMap[row.alias_lower]) linkMap[row.alias_lower] = row.artist_id;
+              }
+            }
+          }
+        } catch { /* artist_aliases table may not exist */ }
+
+        for (const ev of allUnlinked) {
+          const evNameLower = ev.artist_name.trim().toLowerCase();
+          const artistId = linkMap[evNameLower];
+          if (!artistId) continue;
+          const { error: linkErr } = await supabase.from('events').update({ artist_id: artistId }).eq('id', ev.id);
+          if (!linkErr) enrichResult.eventsLinked++;
+        }
+      }
+    } catch (linkErr) {
+      enrichResult.errors.push(`Linking failed: ${linkErr.message}`);
+    }
+  }
+
+  // ── Pass 2: Bio/image enrichment + category cascade (gated by skipEnrich) ──
+  if (!skipEnrich && unenriched?.length) try {
+    {
       // Golden Rule: skip human-edited or locked events — never overwrite admin changes
       const enrichable = unenriched.filter(e => {
         if (e.is_human_edited || e.is_locked) { enrichResult.humanSkipped++; return false; }
@@ -1416,20 +1478,10 @@ export async function POST(request) {
         }
       } catch { /* artist_aliases table may not exist yet */ }
 
-      // ── Pass 1: Artist-ID linking (ALL events, including locked/human-edited) ──
-      // Linking artist_id is non-destructive (only sets a null FK) and is the
-      // foundation for the image/bio waterfall. Skipping locked rows here was
-      // the root cause of OCR-scraped events (Captain's Inn, Palmetto, etc.)
-      // never getting their artist image — the admin's category edit set
-      // is_human_edited=true, which blocked the entire enrichment loop.
-      const allUnlinked = unenriched.filter(e => !e.artist_id && !blacklistedNames.has(e.artist_name.trim().toLowerCase()));
-      for (const ev of allUnlinked) {
-        const evNameLower = ev.artist_name.trim().toLowerCase();
-        const artistData = freshMap[evNameLower];
-        if (!artistData?.id) continue;
-        const { error: linkErr } = await supabase.from('events').update({ artist_id: artistData.id }).eq('id', ev.id);
-        if (!linkErr) enrichResult.eventsLinked++;
-      }
+      // Pass 1 linking moved out of this gated block — see top of
+      // the enrichment section. The linkMap built there is independent
+      // of this freshMap (which has bio + image_url + default_category
+      // for the Pass 2 cascade below).
 
       // ── Pass 2: Bio/image enrichment + category cascade (unlocked only) ──
       // These writes can overwrite existing data, so they respect the
