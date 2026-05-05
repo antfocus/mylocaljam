@@ -248,22 +248,23 @@ export async function GET(request) {
            AND coalesce(properties.action, '') != 'unsaved'`
       ),
 
-      // 6. Spotlight CTR: taps / impressions for the time window. Both events
-      // are deduped by (person_id, event_id) at impression time so the CTR
-      // is meaningful even if the carousel auto-rotates many times for the
-      // same viewer. Numerator and denominator both share the same dedup
-      // shape so the ratio is honest. Uses concat() for the dedup key
-      // because HogQL's tuple-DISTINCT support is iffy.
+      // 6. Spotlight CTR: taps / impressions for the time window.
+      //
+      // Originally I deduped by (person_id, event_id) so a viewer who saw
+      // the same spotlight 5 times via auto-rotation only counted once.
+      // That requires a concat() + DISTINCT scan that's too slow under
+      // Vercel Hobby's 10s cap (May 5 timeout investigation). Replaced
+      // with raw event counts which is faster. Trade-off: heavy auto-
+      // rotation viewers inflate the impression count, so CTR drifts
+      // downward at higher carousel-cycling rates. At launch volume
+      // it's close enough; revisit when there's enough volume to
+      // justify the slower DISTINCT path.
       hogql(projectId,
         `SELECT
-           (SELECT count(DISTINCT concat(toString(person_id), '|', toString(properties.event_id)))
-            FROM events
-            WHERE event = 'spotlight_tapped'
-              AND ${timeFilter}) AS taps,
-           (SELECT count(DISTINCT concat(toString(person_id), '|', toString(properties.event_id)))
-            FROM events
-            WHERE event = 'spotlight_impression'
-              AND ${timeFilter}) AS impressions`
+           (SELECT count() FROM events
+            WHERE event = 'spotlight_tapped' AND ${timeFilter}) AS taps,
+           (SELECT count() FROM events
+            WHERE event = 'spotlight_impression' AND ${timeFilter}) AS impressions`
       ),
 
       // 7. Top referring domain — where users came from. Empty / direct
@@ -305,17 +306,12 @@ export async function GET(request) {
          )`
       ),
 
-      // 9. New vs returning visitor split. For every person who had a
-      // pageview in the current window, look at whether their FIRST
-      // pageview within the last 90 days fell inside the window or
-      // before it. The 90-day cap on the inner SELECT keeps the query
-      // bounded — scanning the full pageview history was timing out
-      // on Vercel Hobby's 10s function cap (May 5 2026).
-      //
-      // Trade-off: a "returning visitor" returning after a 90+ day
-      // gap will be misclassified as "new" once. At launch this is a
-      // non-issue (no one has 90 days of history yet). Worth revisiting
-      // if returning_visitors looks artificially low post-launch.
+      // 9. New vs returning visitor split. Inner window dropped from 90
+      // days to 30 days (May 5 2026 timeout fix). At current volume
+      // a person who returns after >30 days of inactivity will be
+      // misclassified as "new" once — acceptable at launch when
+      // nobody has 30 days of history yet. Revisit when traffic
+      // patterns get more spread out.
       hogql(projectId,
         `SELECT
            countIf(first_ever >= cutoff) AS new_visitors,
@@ -329,7 +325,7 @@ export async function GET(request) {
                     : `now() - toIntervalDay(${days})`} AS cutoff
            FROM events
            WHERE event = '$pageview'
-             AND timestamp >= now() - toIntervalDay(90)
+             AND timestamp >= now() - toIntervalDay(30)
            GROUP BY person_id
            HAVING last_ever >= cutoff
          )`
