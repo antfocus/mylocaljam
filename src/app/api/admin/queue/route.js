@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase';
 import { enrichArtist } from '@/lib/enrichArtist';
+import { safeHref } from '@/lib/safeHref';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -110,7 +111,8 @@ export async function POST(request) {
       category: event_data.category || submission?.category || 'Live Music',
       triage_status: (submission?.confidence_score >= 90 || event_data.confidence_score >= 90) ? 'reviewed' : 'pending',
       cover: event_data.cover || null,
-      ticket_link: event_data.ticket_link || null,
+      // safeHref strips javascript:/data:/etc. (security audit H4).
+      ticket_link: safeHref(event_data.ticket_link),
       image_url: resolvedImageUrl,
       // NOTE: `is_featured` retired Phase 5 — Spotlight curation lives
       // exclusively in the `spotlight_events` table.

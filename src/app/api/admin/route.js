@@ -3,6 +3,7 @@ import { revalidatePath } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase';
 import { getEasternDayBounds } from '@/lib/utils';
 import { stripLockedFields } from '@/lib/writeGuards';
+import { safeHref } from '@/lib/safeHref';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -299,7 +300,9 @@ export async function POST(request) {
       genre: body.genre || null,
       vibe: body.vibe || null,
       cover: body.cover || null,
-      ticket_link: body.ticket_link || null,
+      // safeHref strips javascript:/data:/etc. so a compromised admin can't
+      // write a malicious URL into a render-bound href (security audit H4).
+      ticket_link: safeHref(body.ticket_link),
       recurring: body.recurring || false,
       // NOTE: `is_spotlight` / `is_featured` retired Phase 5 — Spotlight
       // curation lives exclusively in the `spotlight_events` table.
@@ -434,7 +437,8 @@ export async function PUT(request) {
     ...(body.genre !== undefined && { genre: body.genre || null }),
     ...(body.vibe !== undefined && { vibe: body.vibe || null }),
     ...(body.cover !== undefined && { cover: body.cover || null }),
-    ...(body.ticket_link !== undefined && { ticket_link: body.ticket_link || null }),
+    // safeHref strips javascript:/data:/etc. (security audit H4).
+    ...(body.ticket_link !== undefined && { ticket_link: safeHref(body.ticket_link) }),
     ...(body.recurring !== undefined && { recurring: body.recurring }),
     // `is_spotlight` / `is_featured` retired Phase 5. Silently ignored
     // if legacy clients still send them — we don't 400 to avoid breaking

@@ -18,6 +18,10 @@
 - **C2** — Admin analytics auth moved from `?password=` URL query param to `Authorization: Bearer` header. Old query-param shape now rejected explicitly so a stale client fails loudly. Files: `src/app/api/admin/analytics/route.js`, `src/app/admin/page.js`.
 - **C3 partial** — Per-IP rate limit + length caps + email/URL format validation added to all four unauthenticated POST endpoints. New shared library at `src/lib/publicPostGuards.js`. Files: `src/app/api/submissions/route.js`, `src/app/api/feedback/route.js`, `src/app/api/support/route.js`, `src/app/api/reports/route.js`. **Caveat:** the rate limiter is in-memory, resets per Vercel cold start, per-instance. Determined attackers can fan across instances and bypass. Full Upstash Redis fix is documented as a TODO in the lib.
 
+### ✅ Shipped May 5, 2026 (afternoon session)
+
+- **H4** — `safeHref()` helper at `src/lib/safeHref.js` (URL parse + protocol allowlist of http/https/mailto). Applied at every render-side `<a href>` binding for scraper-emitted URLs (EventCardV2, SiteEventCard, EventPageClient, SavedGigCard, AdminEventsTab, AdminTriageTab, AdminArtistsTab, AdminVenuesScrapers). Replaces the per-site inline `/^https?:\/\//i.test(...)` check pattern with a centralized helper, so future render sites can't forget the check. Also applied at write paths so bad data never enters the DB: `sync-events/route.js mapEvent`, `admin/force-sync/route.js`, `admin/route.js` (POST + PUT), `admin/queue/route.js`, `admin/venues/route.js` (`website` field). Closes the `javascript:` URL XSS class for `events.ticket_link`, `events.source`, and `venues.website`.
+
 ### ⏳ Outstanding — requires Tony
 
 - **C1** — Rotate every secret in `.env.local`. Most urgent, especially `ADMIN_PASSWORD` (currently a low-entropy English word, plus already leaked into Vercel access logs via the C2 query-param bug we just fixed). Rotation checklist below.
@@ -149,9 +153,11 @@ vercel --prod               # ship a fresh deploy
 
 #### H4: `events.ticket_link` / `events.source` originate from scrapers and are rendered as `<a href>` — `javascript:` URL XSS feasible
 
-**Files:** `src/components/EventCardV2.js:803`, `src/components/SiteEventCard.js:211,228`, `src/app/event/[id]/EventPageClient.js:319,561,594`, `src/components/SavedGigCard.js:514`, `src/components/admin/AdminEventsTab.js:1029`, `src/components/admin/AdminTriageTab.js:65`
-**Why it's a problem:** `validateUrl()` exists in `src/app/api/admin/route.js:38-44` (rejects non-`http(s)`), but it's only applied on the `event_image_url` and `image_url` fields and only in admin write paths. The scraper pipeline writes `ticket_link` / `source` directly via `mapEvent()` in `src/app/api/sync-events/route.js:244-265` and `src/app/api/admin/force-sync/route.js:273-283` with no scheme validation. A malicious venue page could publish `<a href="javascript:fetch(...)">` → scraped → rendered. `target="_blank" rel="noopener noreferrer"` doesn't block `javascript:` execution.
-**Fix:** Add a `safeHref(url)` helper that returns `null` unless the URL parses and `protocol === 'http:' || 'https:' || 'mailto:'`. Apply it in every component before binding to `href`. Also add the same validation in scraper-side `mapEvent` and in `events_template`/series writes.
+**Status:** ✅ Fixed May 5, 2026.
+**Helper:** `src/lib/safeHref.js` (URL parse + http/https/mailto allowlist).
+**Render sites updated:** `EventCardV2.js`, `SiteEventCard.js`, `EventPageClient.js`, `SavedGigCard.js`, `AdminEventsTab.js`, `AdminTriageTab.js`, `AdminArtistsTab.js`, `AdminVenuesScrapers.js`.
+**Write sites updated:** `sync-events/route.js mapEvent`, `admin/force-sync/route.js`, `admin/route.js` POST + PUT, `admin/queue/route.js`, `admin/venues/route.js` (`website` field).
+**Original finding:** `validateUrl()` in `src/app/api/admin/route.js` only ran on image fields. The scraper pipeline wrote `ticket_link` / `source` directly via `mapEvent()` with no scheme validation, so a malicious venue page publishing `<a href="javascript:fetch(...)">` could be scraped and rendered. `target="_blank" rel="noopener noreferrer"` doesn't block `javascript:` execution.
 
 #### H5: `flag-event` is in-memory rate-limited per Vercel instance — trivially bypassed
 

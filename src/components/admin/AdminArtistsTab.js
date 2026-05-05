@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { formatDate } from '@/lib/utils';
+import { safeHref } from '@/lib/safeHref';
 import Badge from '@/components/ui/Badge';
 import { MetadataField, StyleMoodSelector, ImagePreviewSection } from '@/components/admin/shared';
 
@@ -1288,9 +1289,10 @@ export default function AdminArtistsTab({
                     <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{ev.venue_name || ev.venues?.name || '\u2014'}</span>
                     <span>{'\u00B7'}</span>
                     <span>{formatDate(ev.event_date)}</span>
-                    {ev.source && /^https?:\/\//i.test(ev.source) && (
-                      <a href={ev.source} target="_blank" rel="noopener noreferrer" style={{ color: '#E8722A', fontSize: '10px', textDecoration: 'none' }}>
-                        {(() => { try { return new URL(ev.source).hostname.replace('www.', ''); } catch { return 'source'; } })()}
+                    {/* safeHref drops non-http(s) URLs (security audit H4). */}
+                    {safeHref(ev.source) && (
+                      <a href={safeHref(ev.source)} target="_blank" rel="noopener noreferrer" style={{ color: '#E8722A', fontSize: '10px', textDecoration: 'none' }}>
+                        {(() => { try { return new URL(safeHref(ev.source)).hostname.replace('www.', ''); } catch { return 'source'; } })()}
                       </a>
                     )}
                   </div>

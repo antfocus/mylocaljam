@@ -64,6 +64,7 @@ import { scrapeCharleysOceanGrill } from '@/lib/scrapers/charleysOceanGrill';
 import { enrichWithLastfm } from '@/lib/enrichLastfm';
 import { enrichArtist } from '@/lib/enrichArtist';
 import { classifyArtistKind } from '@/lib/classifyArtistKind';
+import { safeHref } from '@/lib/safeHref';
 import { matchTemplate } from '@/lib/matchTemplate';
 // Shared classifier — single source of truth with /api/admin/auto-categorize.
 // We invoke it here so newly scraped events get a confidence-bar pass at the
@@ -241,9 +242,12 @@ function mapEvent(ev, venueMap, defaultTimes) {
     // ticket is the specific event page). Without the whitelist, the
     // same-host check would null out the ticket link for every Ticketmaster
     // event — which is exactly what was happening before May 2 2026.
+    // safeHref strips javascript:/data:/etc. before they hit the DB so the
+    // render-side defense in EventCardV2 / SiteEventCard / EventPageClient
+    // is backed by a clean DB column (security audit H4).
     ticket_link: (() => {
-      const t = ev.ticket_url || null;
-      const s = ev.source_url || null;
+      const t = safeHref(ev.ticket_url);
+      const s = safeHref(ev.source_url);
       if (!t) return null;
       if (!s) return t;
       const TICKETING_HOSTS = [
@@ -263,7 +267,7 @@ function mapEvent(ev, venueMap, defaultTimes) {
       } catch { return t; }
     })(),
     cover: ev.price || null,
-    source: ev.source_url || null,
+    source: safeHref(ev.source_url),
     // Write to event_image_url so the frontend waterfall can find it
     event_image_url: ev.image_url || null,
     external_id: ev.external_id,

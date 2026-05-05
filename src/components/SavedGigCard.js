@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { formatTimeRange } from '@/lib/utils';
+import { safeHref } from '@/lib/safeHref';
 import Badge from '@/components/ui/Badge';
 
 // ── Brand palette ───────────────────────────────────────────────────────────
@@ -48,8 +49,9 @@ export default function SavedGigCard({
   const imageUrl   = event.event_image || event.artist_image || event.venue_photo || null;
   const genres     = event.artist_genres || [];
   const isTribute  = event.is_tribute || false;
-  const rawSource  = event.source       || null;
-  const sourceLink = rawSource && /^https?:\/\//i.test(rawSource) ? rawSource : null;
+  // safeHref drops anything that isn't http(s)/mailto so a `javascript:` URL
+  // emitted by a malicious venue page (security audit H4) can't reach href.
+  const sourceLink = safeHref(event.source);
   const isCanceled = event.status === 'cancelled' || event.status === 'canceled';
 
   const timeStr = formatTimeRange(event.start_time, event.end_time);

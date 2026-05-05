@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { formatTimeRange } from '@/lib/utils';
+import { safeHref } from '@/lib/safeHref';
 
 const CATEGORY_CONFIG = {
   'Live Music':      { color: '#FF6B35', emoji: '🎵' },
@@ -35,13 +36,14 @@ export default function SiteEventCard({ event, isFavorited = false, onToggleFavo
   const category   = event.genre || event.vibe || 'Live Music';
   const config     = CATEGORY_CONFIG[category] ?? DEFAULT_CONFIG;
   const timeStr    = formatTimeRange(event.start_time, event.end_time);
-  const ticketLink = event.ticket_link || null;
-  const sourceLink = event.source || null;
+  // safeHref drops anything that isn't http(s)/mailto so a `javascript:` URL
+  // emitted by a malicious venue page (security audit H4) can't reach href.
+  const ticketLink = safeHref(event.ticket_link);
+  const sourceLink = safeHref(event.source);
   // Venue link: prefer the venue's official website over the scraper origin
   // (e.g. Ticketmaster URLs for Stone Pony / Wonder Bar). See EventCardV2 for
   // the same pattern.
-  const venueWebsite = event.venue_website || event.venues?.website || null;
-  const venueLink    = venueWebsite || sourceLink;
+  const venueLink  = safeHref(event.venue_website || event.venues?.website) || sourceLink;
   const isFree     = event.cover === '0' || event.cover === 0 || (event.cover && String(event.cover).toLowerCase() === 'free');
   const showArtistSubtitle = ARTIST_SUBTITLE_CATEGORIES.includes(event.category) && eventTitle && artistName && eventTitle !== artistName;
 

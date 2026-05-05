@@ -1,5 +1,7 @@
 'use client';
 
+import { safeHref } from '@/lib/safeHref';
+
 /**
  * Venue Scrapers sub-tab — formerly the entire AdminVenuesTab.js.
  * Now lives as a child of AdminVenuesTab alongside AdminVenuesDirectory.
@@ -128,8 +130,9 @@ export default function AdminVenuesScrapers({
                     <span style={{ fontFamily: "'DM Sans', sans-serif", fontWeight: 700, fontSize: '13px', color: 'var(--text-primary)' }}>
                       {s.venue_name}
                     </span>
-                    {s.website_url && (
-                      <a href={s.website_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-muted)', textDecoration: 'none', display: 'inline-flex' }}>
+                    {/* safeHref drops non-http(s) URLs (security audit H4). */}
+                    {safeHref(s.website_url) && (
+                      <a href={safeHref(s.website_url)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-muted)', textDecoration: 'none', display: 'inline-flex' }}>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                       </a>
                     )}

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
+import { safeHref } from '@/lib/safeHref';
 
 function checkAuth(request) {
   const authHeader = request.headers.get('authorization');
@@ -51,6 +52,12 @@ function sanitize(input) {
       if (val === null || val === undefined) val = false;
       else if (typeof val === 'string') val = val.toLowerCase() === 'true';
       else val = !!val;
+    }
+    // safeHref strips javascript:/data:/etc. before the venue website lands
+    // on a render-bound `<a href>` (security audit H4). photo_url isn't
+    // gated since javascript: in img-src isn't an XSS vector.
+    if (key === 'website' && typeof val === 'string') {
+      val = safeHref(val);
     }
     out[key] = val;
   }

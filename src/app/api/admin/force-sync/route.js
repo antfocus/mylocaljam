@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase';
+import { safeHref } from '@/lib/safeHref';
 
 // Import all scrapers
 import { scrapePigAndParrot } from '@/lib/scrapers/pigAndParrot';
@@ -270,9 +271,11 @@ function mapEvent(ev, venueMap, defaultTimes) {
     venue_name: ev.venue,
     venue_id: venueId,
     event_date: eventDate,
+    // safeHref strips javascript:/data:/etc. before they hit the DB
+    // (security audit H4). Mirrors sync-events/route.js mapEvent.
     ticket_link: (() => {
-      const t = ev.ticket_url || null;
-      const s = ev.source_url || null;
+      const t = safeHref(ev.ticket_url);
+      const s = safeHref(ev.source_url);
       if (!t) return null;
       if (!s) return t;
       try {
@@ -282,7 +285,7 @@ function mapEvent(ev, venueMap, defaultTimes) {
       } catch { return t; }
     })(),
     cover: ev.price || null,
-    source: ev.source_url || null,
+    source: safeHref(ev.source_url),
     image_url: ev.image_url || null,
     external_id: ev.external_id,
     status: 'published',

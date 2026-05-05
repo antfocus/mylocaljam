@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { formatTimeRange } from '@/lib/utils';
 import { posthog } from '@/lib/posthog';
+import { safeHref } from '@/lib/safeHref';
 import Badge from '@/components/ui/Badge';
 import QuickActions from '@/components/QuickActions';
 
@@ -143,15 +144,15 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const imageUrl   = cleanImg(event.event_image) || cleanImg(event.artist_image) || cleanImg(event.venue_photo) || null;
   const genres     = event.artist_genres || [];
   const isTribute  = event.is_tribute || false;
-  const rawSource  = event.source       || null;
-  const sourceLink = rawSource && /^https?:\/\//i.test(rawSource) ? rawSource : null;
+  // safeHref drops anything that isn't http(s)/mailto so a `javascript:` URL
+  // emitted by a malicious venue page (security audit H4) can't reach href.
+  const sourceLink = safeHref(event.source);
   // Venue link: prefer the venue's official website (venues.website) over the
   // event's scraper origin (event.source). Stone Pony and Wonder Bar events
   // come in via the Ticketmaster scraper, so source = ticketmaster URL — but
   // the 🌐 Venue button should land users on the venue's own calendar page.
   // Falls back to sourceLink for venues without a website populated.
-  const rawVenueSite = event.venue_website || event.venues?.website || null;
-  const venueSite    = rawVenueSite && /^https?:\/\//i.test(rawVenueSite) ? rawVenueSite : null;
+  const venueSite    = safeHref(event.venue_website || event.venues?.website);
   const venueLink    = venueSite || sourceLink;
   // Smart waterfall: merged arrays (artist-enriched) → legacy event columns → fallback
   const category   = event.artist_vibes?.[0] || event.artist_genres?.[0] || event.genre || event.vibe || 'Live Music';

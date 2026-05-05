@@ -20,6 +20,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { posthog } from '@/lib/posthog';
+import { safeHref } from '@/lib/safeHref';
 import useTheme from '@/hooks/useTheme';
 import { Icons } from '@/components/Icons';
 
@@ -152,7 +153,9 @@ export default function EventPageClient({ event }) {
   const timeStr    = fmtTime(event.start_time);
   const dateBlock  = parseDateBlock(event.event_date);
   const isCanceled = event.status === 'cancelled' || event.status === 'canceled';
-  const sourceLink = event.source && /^https?:\/\//i.test(event.source) ? event.source : null;
+  // safeHref drops anything that isn't http(s)/mailto so a `javascript:` URL
+  // emitted by a malicious venue page (security audit H4) can't reach href.
+  const sourceLink = safeHref(event.source);
   const mapsQuery  = encodeURIComponent(`${venue}${venueAddress ? ' ' + venueAddress : ' NJ'}`);
   const mapsUrl    = `https://www.google.com/maps/search/?api=1&query=${mapsQuery}`;
   // Venue website link — mirrors EventCardV2's venueLink resolution
@@ -160,8 +163,7 @@ export default function EventPageClient({ event }) {
   // and in-app feed treatment of the "Venue" button consistent: both
   // surfaces send the user to the venue's own site, not a map. The Map
   // button (separate, see action row below) is what opens Google Maps.
-  const rawVenueSite = event.venue_website || null;
-  const venueSite    = rawVenueSite && /^https?:\/\//i.test(rawVenueSite) ? rawVenueSite : null;
+  const venueSite    = safeHref(event.venue_website);
   const venueLink    = venueSite || sourceLink;
 
   // Save Show + Follow Artist handlers. Two paths each:

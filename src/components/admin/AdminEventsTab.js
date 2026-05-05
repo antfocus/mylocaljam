@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useRef, useEffect } from 'react';
 import { formatDate, formatTime } from '@/lib/utils';
+import { safeHref } from '@/lib/safeHref';
 import { Icons } from '@/components/Icons';
 import Badge from '@/components/ui/Badge';
 import { matchTemplate } from '@/lib/matchTemplate';
@@ -1022,15 +1023,16 @@ export default function AdminEventsTab({
                       {/* Source chain-link — relocated from the right-side action
                           cluster. Sits next to the time so the "source" feels
                           tethered to the venue/time context, matching the
-                          Triage UI pattern. */}
-                      {ev.source && /^https?:\/\//i.test(ev.source) && (
+                          Triage UI pattern.
+                          safeHref drops non-http(s) URLs (security audit H4). */}
+                      {safeHref(ev.source) && (
                         <a
-                          href={ev.source}
+                          href={safeHref(ev.source)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={e => e.stopPropagation()}
                           className="ml-2"
-                          title={`Source: ${(() => { try { return new URL(ev.source).hostname; } catch { return 'link'; } })()}`}
+                          title={`Source: ${(() => { try { return new URL(safeHref(ev.source)).hostname; } catch { return 'link'; } })()}`}
                           style={{
                             color: 'var(--text-muted)',
                             flexShrink: 0,
