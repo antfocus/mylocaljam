@@ -19,6 +19,23 @@ function rangeToDays(range) {
   }
 }
 
+// Build the timestamp WHERE clause for a given range.
+// 'today' → calendar day in America/New_York (was rolling 24h before May 5,
+//   2026 — that didn't match what 'Today' implies on the admin chip).
+// '7d' / '30d' / 'all' → rolling N-day window (unchanged).
+//
+// ClickHouse pattern: convert both sides to NY tz so the day boundary aligns
+// with what the admin sees on their phone in NJ. Without toTimeZone the
+// `toStartOfDay` would be UTC midnight, which is 7-8pm Eastern — events
+// between 7pm-midnight last night would wrongly count as "today."
+function buildTimeFilter(range) {
+  if (range === 'today') {
+    return `toTimeZone(timestamp, 'America/New_York') >= toStartOfDay(toTimeZone(now(), 'America/New_York'))`;
+  }
+  const days = rangeToDays(range);
+  return `${timeFilter}`;
+}
+
 // Resolve PostHog project ID dynamically
 // Supports environment switching: picks the project whose name includes the env hint
 // If POSTHOG_PROJECT_ID is set explicitly, use that
@@ -132,6 +149,7 @@ export async function GET(request) {
   const range = searchParams.get('range') || '7d';
   const env = searchParams.get('env') || ''; // 'dev' | 'production' | '' (auto)
   const days = rangeToDays(range);
+  const timeFilter = buildTimeFilter(range);
 
   try {
     const projectId = await getProjectId(env);
@@ -148,13 +166,23 @@ export async function GET(request) {
     console.log(`[Analytics] Querying PostHog — project: ${projectId}, range: ${range} (${days}d), key: ${keyPrefix}, host: ${POSTHOG_API_HOST}`);
 
     // Run all queries in parallel
-    const [visitorsRes, deviceRes, venueClicksRes, topVenueRes, bookmarksRes] = await Promise.all([
+    const [
+      visitorsRes,
+      deviceRes,
+      venueClicksRes,
+      topVenueRes,
+      bookmarksRes,
+      spotlightRes,
+      referrerRes,
+      njRes,
+      newReturningRes,
+    ] = await Promise.all([
       // 1. Unique visitors — count distinct persons with a $pageview
       hogql(projectId,
         `SELECT count(DISTINCT person_id)
          FROM events
          WHERE event = '$pageview'
-           AND timestamp >= now() - toIntervalDay(${days})`
+           AND ${timeFilter}`
       ),
 
       // 2. Device breakdown — use $device_type property on $pageview events
@@ -164,17 +192,21 @@ export async function GET(request) {
            count(DISTINCT person_id) AS visitors
          FROM events
          WHERE event = '$pageview'
-           AND timestamp >= now() - toIntervalDay(${days})
+           AND ${timeFilter}
          GROUP BY device_type
          ORDER BY visitors DESC`
       ),
 
-      // 3. Total venue_link_clicked count
+      // 3. Total venue_link_clicked count — only saves count (not unsaves).
+      // The May 5 audit added an `action` property to event_bookmarked. Old
+      // events (pre-rename) have no `action` so a NULL check counts them as
+      // saves to preserve historical totals; new events with action='unsaved'
+      // are excluded.
       hogql(projectId,
         `SELECT count() AS clicks
          FROM events
          WHERE event = 'venue_link_clicked'
-           AND timestamp >= now() - toIntervalDay(${days})`
+           AND ${timeFilter}`
       ),
 
       // 4. Top venue by venue_link_clicked → venue_name property
@@ -184,7 +216,7 @@ export async function GET(request) {
            count() AS clicks
          FROM events
          WHERE event = 'venue_link_clicked'
-           AND timestamp >= now() - toIntervalDay(${days})
+           AND ${timeFilter}
            AND properties.venue_name IS NOT NULL
            AND properties.venue_name != ''
          GROUP BY venue
@@ -192,12 +224,92 @@ export async function GET(request) {
          LIMIT 5`
       ),
 
-      // 5. Total event_bookmarked count
+      // 5. Total event_bookmarked count — only count saves, not unsaves.
+      // Pre-May-5 events have no `action` property — count those as saves
+      // (the action column was added May 5; old data is save-only by design).
       hogql(projectId,
         `SELECT count() AS bookmarks
          FROM events
          WHERE event = 'event_bookmarked'
-           AND timestamp >= now() - toIntervalDay(${days})`
+           AND ${timeFilter}
+           AND (properties.action IS NULL OR properties.action = 'saved')`
+      ),
+
+      // 6. Spotlight CTR: taps / impressions for the time window. Both events
+      // are deduped by (person_id, event_id) at impression time so the CTR
+      // is meaningful even if the carousel auto-rotates many times for the
+      // same viewer. Numerator and denominator both share the same dedup
+      // shape so the ratio is honest.
+      hogql(projectId,
+        `SELECT
+           (SELECT count(DISTINCT (person_id, properties.event_id))
+            FROM events
+            WHERE event = 'spotlight_tapped'
+              AND ${timeFilter}) AS taps,
+           (SELECT count(DISTINCT (person_id, properties.event_id))
+            FROM events
+            WHERE event = 'spotlight_impression'
+              AND ${timeFilter}) AS impressions`
+      ),
+
+      // 7. Top referring domain — where users came from. Empty / direct
+      // visits show as ''. Strip mylocaljam.com self-referrals so internal
+      // navigation doesn't dominate.
+      hogql(projectId,
+        `SELECT
+           properties.$referring_domain AS domain,
+           count(DISTINCT person_id) AS visitors
+         FROM events
+         WHERE event = '$pageview'
+           AND ${timeFilter}
+           AND properties.$referring_domain IS NOT NULL
+           AND properties.$referring_domain != ''
+           AND NOT (properties.$referring_domain LIKE '%mylocaljam.com%')
+         GROUP BY domain
+         ORDER BY visitors DESC
+         LIMIT 5`
+      ),
+
+      // 8. % of traffic from NJ. PostHog's geo-IP autocaptures
+      // $geoip_subdivision_1_code (state code, e.g. "NJ"). We compute NJ
+      // visitors / total visitors with non-null geo (some browsers / VPNs
+      // may have null geo; excluding them gives a more honest %).
+      hogql(projectId,
+        `SELECT
+           sumIf(1, properties.$geoip_subdivision_1_code = 'NJ') AS nj_visits,
+           count() AS total_visits_with_geo
+         FROM (
+           SELECT DISTINCT person_id,
+                  any(properties.$geoip_subdivision_1_code) AS subdivision_code,
+                  any(properties.$geoip_subdivision_1_code) IS NOT NULL AS has_geo
+           FROM events
+           WHERE event = '$pageview'
+             AND ${timeFilter}
+             AND properties.$geoip_subdivision_1_code IS NOT NULL
+           GROUP BY person_id
+         )
+         WHERE has_geo`
+      ),
+
+      // 9. New vs returning visitor split. PostHog auto-tags first-time
+      // pageviews with $is_identified=false and $session_count=1; we use
+      // a simpler heuristic: a person whose earliest pageview is in the
+      // current window is "new"; everyone else is "returning".
+      hogql(projectId,
+        `SELECT
+           sumIf(1, first_seen_in_window) AS new_visitors,
+           sumIf(1, NOT first_seen_in_window) AS returning_visitors
+         FROM (
+           SELECT person_id,
+                  min(timestamp) AS first_ever,
+                  ${range === 'today'
+                    ? `min(timestamp) >= toTimeZone(toStartOfDay(toTimeZone(now(), 'America/New_York')), 'UTC')`
+                    : `min(timestamp) >= now() - toIntervalDay(${days})`} AS first_seen_in_window
+           FROM events
+           WHERE event = '$pageview'
+             AND ${timeFilter}
+           GROUP BY person_id
+         )`
       ),
     ]);
 
@@ -239,6 +351,46 @@ export async function GET(request) {
     // Parse bookmarks
     const bookmarks = bookmarksRes.data?.results?.[0]?.[0] || 0;
 
+    // Parse Spotlight CTR — taps / impressions, with safe divide-by-zero
+    let spotlightTaps = 0;
+    let spotlightImpressions = 0;
+    let spotlightCtr = 0;
+    if (spotlightRes.data?.results?.[0]) {
+      spotlightTaps = spotlightRes.data.results[0][0] || 0;
+      spotlightImpressions = spotlightRes.data.results[0][1] || 0;
+      spotlightCtr = spotlightImpressions > 0
+        ? Math.round((spotlightTaps / spotlightImpressions) * 1000) / 10  // one decimal
+        : 0;
+    }
+
+    // Parse top referring domain
+    let topReferrer = '—';
+    let topReferrerVisitors = 0;
+    if (referrerRes.data?.results?.length > 0) {
+      topReferrer = referrerRes.data.results[0][0] || '—';
+      topReferrerVisitors = referrerRes.data.results[0][1] || 0;
+    }
+
+    // Parse % NJ traffic
+    let njPct = 0;
+    let njVisits = 0;
+    let totalGeoVisits = 0;
+    if (njRes.data?.results?.[0]) {
+      njVisits = njRes.data.results[0][0] || 0;
+      totalGeoVisits = njRes.data.results[0][1] || 0;
+      njPct = totalGeoVisits > 0
+        ? Math.round((njVisits / totalGeoVisits) * 100)
+        : 0;
+    }
+
+    // Parse new vs returning split
+    let newVisitors = 0;
+    let returningVisitors = 0;
+    if (newReturningRes.data?.results?.[0]) {
+      newVisitors = newReturningRes.data.results[0][0] || 0;
+      returningVisitors = newReturningRes.data.results[0][1] || 0;
+    }
+
     const response = {
       uniqueVisitors,
       mobile,
@@ -247,6 +399,17 @@ export async function GET(request) {
       topVenue,
       topVenueClicks,
       bookmarks,
+      // New tiles (May 5, 2026 — see ANALYTICS_PLAN.md item 8)
+      spotlightTaps,
+      spotlightImpressions,
+      spotlightCtr,           // percent, one decimal
+      topReferrer,
+      topReferrerVisitors,
+      njPct,                  // integer percent
+      njVisits,
+      totalGeoVisits,
+      newVisitors,
+      returningVisitors,
       range,
       projectId,
     };
@@ -266,6 +429,10 @@ export async function GET(request) {
           venueClicks: venueClicksRes.error || venueClicksRes.data?.results,
           topVenue: topVenueRes.error || topVenueRes.data?.results,
           bookmarks: bookmarksRes.error || bookmarksRes.data?.results,
+          spotlight: spotlightRes.error || spotlightRes.data?.results,
+          referrer: referrerRes.error || referrerRes.data?.results,
+          nj: njRes.error || njRes.data?.results,
+          newReturning: newReturningRes.error || newReturningRes.data?.results,
         },
       };
     }

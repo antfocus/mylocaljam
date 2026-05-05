@@ -16,6 +16,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { posthog } from '@/lib/posthog';
 
 const SKELETON = '__skeleton__';
 
@@ -86,6 +87,28 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
 
   // Keep activeRef in sync
   useEffect(() => { activeRef.current = active; }, [active]);
+
+  // REQ-A3 impression tracking — fire spotlight_impression when a slide
+  // becomes the active one (visible to the user). Pairs with spotlight_tapped
+  // so admin can compute CTR = taps / impressions per position. Fires once
+  // per active-index change, including auto-rotation. We swallow the very
+  // first effect call (initial mount with active=0) is fine — that IS the
+  // first impression. Skip if there's no event at the active position
+  // (loading state).
+  useEffect(() => {
+    const ev = featured?.[active];
+    if (!ev || !ev.id) return;
+    try {
+      posthog.capture?.('spotlight_impression', {
+        event_id: ev.id,
+        artist_name: ev.artist_name || ev.name || '',
+        venue_name: ev.venue_name || ev.venue || '',
+        position: active,
+        slot_type: ev.is_runner_up ? 'runner_up' : 'main',
+        event_date: ev.event_date,
+      });
+    } catch {}
+  }, [active, featured]);
 
   const getSlideWidth = useCallback(() => {
     const vp = viewportRef.current;
@@ -456,7 +479,24 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
               // index key is safe and avoids the duplicate-key warning.
               <div
                 key={`slide-${i}`}
-                onClick={() => { if (showMeetArtist && !didSwipe.current && onArtistTap) onArtistTap(ev); }}
+                onClick={() => {
+                  if (showMeetArtist && !didSwipe.current && onArtistTap) {
+                    // REQ-A3: capture spotlight tap with full context so we can
+                    // measure CTR per slot, attribute clicks to position, and
+                    // distinguish manual taps from auto-rotation views.
+                    try {
+                      posthog.capture?.('spotlight_tapped', {
+                        event_id: ev.id,
+                        artist_name: ev.artist_name || ev.name || '',
+                        venue_name: ev.venue_name || ev.venue || '',
+                        position: i,
+                        slot_type: ev.is_runner_up ? 'runner_up' : 'main',
+                        event_date: ev.event_date,
+                      });
+                    } catch {}
+                    onArtistTap(ev);
+                  }
+                }}
                 style={{
                   width: '100%',
                   flexShrink: 0,

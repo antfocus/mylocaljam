@@ -3,7 +3,7 @@
 > **Scope.** Active feature plan for PostHog-based product analytics. Requirements, status of each, and what's still open.
 >
 > **Originally drafted:** March 14, 2026
-> **Last audited:** April 27, 2026
+> **Last audited:** May 5, 2026
 >
 > **Companion docs.** Once analytics events are wired up, `DATA_LIFECYCLE.md` covers how user actions move data through the system. This doc is purely about *what we measure and why*, not about state changes the events trigger.
 
@@ -31,7 +31,7 @@
 
 ---
 
-### REQ-A2: Core Metrics Dashboard (DAU, MAU, Session Length, Retention) ⏳
+### REQ-A2: Core Metrics Dashboard (DAU, MAU, Session Length, Retention) 🟠 (Recipe shipped, awaiting Tony's UI clicks)
 
 **Rationale:** All four metrics come free from PostHog once the SDK is initialized — no custom code needed. Requirement is to actually build the dashboard tiles in the PostHog UI.
 
@@ -42,90 +42,95 @@
 4. Top Pages — breakdown of `$pageview` by `$current_url`.
 5. Device/Browser Split — breakdown by `$browser` and `$device_type`.
 
-**Files touched:** None (PostHog dashboard config only).
+**Files touched:** None (PostHog dashboard config only). Step-by-step recipe in `POSTHOG_SETUP.md`.
 
 ---
 
-### REQ-A3: Custom Event — `spotlight_tapped` ⏳
+### REQ-A3: Custom Events — `spotlight_tapped` + `spotlight_impression` ✅ (Shipped May 5, 2026)
 
-**Trigger:** User taps/clicks a spotlight card in the hero carousel.
+**`spotlight_tapped`** — User taps/clicks a spotlight card in the hero carousel. Properties: `event_id`, `artist_name`, `venue_name`, `position`, `slot_type` ('main' | 'runner_up'), `event_date`.
 
-**Properties:** `event_id`, `artist_name`, `venue_name`, `position` (0–4), `event_date`.
+**`spotlight_impression`** — Fires when a slide becomes the active one (visible to the user). Same property shape. Pairs with `spotlight_tapped` so admin can compute CTR = taps / impressions.
 
-**File:** `src/components/HeroSection.js` — add `posthog.capture?.('spotlight_tapped', {...})` inside carousel card onClick.
-
----
-
-### REQ-A4: Custom Event — `filter_applied` 🟡
-
-**Original spec:** Single event named `filter_applied` fired on any filter change with `filter_type`, `filter_value`, `active_filters` properties.
-
-**As shipped:** Captured as `List Sorted/Filtered` (different name, different shape) in `src/components/FollowingTab.js` only. The main filter bar in `SearchFilterRedesign.js` / `FilterBar.js` does NOT emit a filter event yet.
-
-**Resolution path:** either rename `List Sorted/Filtered` → `filter_applied` and extend coverage to the main filter bar, or update this REQ to match the shipped name and acknowledge the gap on the main filter bar. Recommendation: rename + extend, because the current shape leaks the implementation detail (component name) into the event vocabulary.
-
-**Files:** `src/components/SearchFilterRedesign.js`, `src/components/FilterBar.js`, `src/components/FollowingTab.js`.
+**File:** `src/components/HeroSection.js`.
 
 ---
 
-### REQ-A5: Custom Event — `event_saved` 🟡
+### REQ-A4: Custom Event — `filter_applied` ✅ (Shipped May 5, 2026)
 
-**Original spec:** Event `event_saved` fired on heart/save tap with `event_id`, `artist_name`, `venue_name`, `genre`, `action` ('saved' or 'unsaved').
+**Trigger:** Two fire points on the main search modal — Search-button commit (`filter_type: 'search_committed'`) snapshots all current filters, and Clear filters (`filter_type: 'cleared_all'`).
 
-**As shipped:** Captured as `event_bookmarked` in `src/app/page.js:787`. Same intent, different name.
+**Properties:** `filter_type`, plus on commit: `has_search_query`, `date_key`, `date_picked`, `active_shortcut`, `miles_radius`, `venue_count`, `town_only`, `active_filter_count`.
 
-**Resolution path:** rename `event_bookmarked` → `event_saved` to match the spec, or update spec to match shipped. Recommendation: keep `event_bookmarked` (it's already in the data warehouse with history) and update this REQ to reflect.
+**Renamed companion:** `List Sorted/Filtered` (FollowingTab sort menu) → `following_list_sorted` for snake_case consistency.
+
+**Files:** `src/app/page.js`, `src/components/FollowingTab.js`.
+
+---
+
+### REQ-A5: Custom Event — `event_bookmarked` ✅ (Shipped; renamed from spec, action property added May 5, 2026)
+
+**Decision:** kept the shipped name `event_bookmarked` (instead of renaming to spec's `event_saved`) because of accumulated history in PostHog.
+
+**Properties:** `event_id`, `artist_name`, `venue_name`, `action` ('saved' | 'unsaved').
+
+**May 5, 2026 fix:** previously fired only on save. Now fires on both save and unsave with the `action` property so admin can measure abandoned saves.
 
 **File:** `src/app/page.js`.
 
 ---
 
-### REQ-A6: Custom Event — `add_to_jar_clicked` ⏳
+### REQ-A6: Custom Events — `add_to_jar_clicked` + `add_to_jar_submitted` ✅ (Shipped May 5, 2026)
 
-**Trigger:** Two tracking points — modal open (intent) and form submit (completion).
+**`add_to_jar_clicked`** fires once on modal mount (intent signal).
 
-**Properties (open):** `source` (which UI element triggered the modal).
-**Properties (submit):** `artist_name`, `venue_name`, `genre`, `has_email`.
+**`add_to_jar_submitted`** fires on successful POST. Properties: `method` ('poster' | 'manual'), plus on manual: `artist_name`, `venue_name`.
 
-**File:** `src/components/SubmitEventModal.js` — add `posthog.capture?.('add_to_jar_clicked', {...})` on open, `add_to_jar_submitted` on successful POST.
+**File:** `src/components/SubmitEventModal.js`.
 
 ---
 
-### REQ-A7: Funnel Analysis ⏳ (blocked on A3, A6)
+### REQ-A7: Funnel Analysis 🟠 (Recipe shipped, awaiting Tony's UI clicks)
 
-**Funnel:** `$pageview → spotlight_tapped → event_saved → add_to_jar_clicked`.
+**Funnel:** `$pageview → spotlight_tapped → event_bookmarked (action='saved') → user_signed_in`.
 
 **Purpose:** Measures conversion from visitor → engaged → contributor.
 
-**Files touched:** None (PostHog funnel config). Cannot be built until A3 and A6 ship.
+**Files touched:** None (PostHog funnel config). Step-by-step recipe in `POSTHOG_SETUP.md` Part 2.
 
 ---
 
 ## Bonus events (shipped but not in original spec)
 
-The following events were added during ad-hoc work and aren't tracked above. Either add formal REQ rows for them or accept them as "implementation details we can query against."
-
 | Event | File | Notes |
 |---|---|---|
-| `$pageview` | PostHogProvider.js:20 | Auto-fired by SDK; powers DAU/MAU. |
-| `Local Followed` | page.js:909 | Artist follow action. Title-case naming diverges from the snake_case convention for other custom events — worth normalizing. |
-| `User Signed In` | page.js:1292 | Login event with `method` and `is_new_user`. Same naming inconsistency as above. |
-| `venue_link_clicked` | EventCardV2.js:568, EventPageClient.js:442 | Added April 27 with the venue-website fix. Includes `link_type: 'official' \| 'scraper_source'` to track whether the user reached the venue's own site or fell back to the scraper origin. |
-
-**Recommendation:** standardize on snake_case event names (`local_followed`, `user_signed_in`) for consistency. Renames break dashboard history, so do this once, after A3/A6 ship, in a single coordinated rename pass.
+| `$pageview` | PostHogProvider.js | Auto-fired by SDK; powers DAU/MAU. |
+| `local_followed` | page.js | Artist follow action. **Renamed from `Local Followed` May 5, 2026.** |
+| `user_signed_in` | page.js | Login event with `method` and `is_new_user`. **Renamed from `User Signed In` May 5, 2026.** |
+| `venue_link_clicked` | EventCardV2.js, EventPageClient.js | Added April 27 with the venue-website fix. Includes `link_type: 'official' \| 'scraper_source'`. |
+| `venue_map_clicked` | EventPageClient.js | Tracks share-page Map button taps. |
+| `share_page_save_show` | EventPageClient.js | Save Show button tap on the share landing page (May 2 wire-up). |
+| `share_page_follow_artist` | EventPageClient.js | Follow Artist button tap on the share landing page (May 2 wire-up). |
+| `following_list_sorted` | FollowingTab.js | **Renamed from `List Sorted/Filtered` May 5, 2026.** |
 
 ---
 
 ## Open work, prioritized
 
-1. **REQ-A4 + REQ-A5 reconciliation** — decide rename direction, update the spec or the code, ship the gap on the main filter bar.
-2. **REQ-A3 spotlight_tapped** — small, one-component change.
-3. **REQ-A6 add_to_jar_clicked** — small, one-component change.
-4. **REQ-A2 dashboards** — PostHog UI work, no code, can happen any time.
-5. **REQ-A7 funnel** — depends on A3 and A6.
-6. **Naming normalization** — once A3 and A6 ship, sweep all event names to snake_case in one PR.
+1. ✅ **REQ-A4 + REQ-A5 reconciliation** — shipped May 5, 2026.
+2. ✅ **REQ-A3 spotlight_tapped + spotlight_impression** — shipped May 5, 2026.
+3. ✅ **REQ-A6 add_to_jar_clicked + add_to_jar_submitted** — shipped May 5, 2026.
+4. 🟠 **REQ-A2 dashboards** — recipe in `POSTHOG_SETUP.md`, awaiting Tony's UI clicks.
+5. 🟠 **REQ-A7 funnel** — recipe in `POSTHOG_SETUP.md`, awaiting Tony's UI clicks.
+6. ✅ **Naming normalization** — `local_followed`, `user_signed_in`, `following_list_sorted` shipped May 5, 2026.
 
-Total remaining effort: ~30 minutes of code + 30 minutes of PostHog dashboard config.
+## New admin dashboard tiles (May 5, 2026)
+
+Audience section added: Spotlight CTR (taps/impressions), Top Referring Domain, % NJ Traffic (PostHog `$geoip_subdivision_1_code = 'NJ'`), New vs Returning visitor split. Powered by 4 new HogQL queries in `src/app/api/admin/analytics/route.js`.
+
+## Deferred
+
+- **Off-by-one bookmark drift investigation** — at current volume (5/day) we can't distinguish a real drift from one user's double-tap. Revisit when volume hits ~50/day. See May 5 audit notes in HANDOVER.
 
 ---
 

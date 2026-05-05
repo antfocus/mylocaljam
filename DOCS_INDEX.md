@@ -43,6 +43,7 @@ Active project docs that change frequently or retire when their work ships.
 - **[HANDOVER.md](./HANDOVER.md)** — Running session-by-session diary. The durable record of what changed and why. Worth an archive policy once it crosses ~10K lines (split into `HANDOVER_2026Q1.md` etc.).
 - **[PARKED.md](./PARKED.md)** — Backlog of deferred work, cross-referenced with the task tracker.
 - **[ANALYTICS_PLAN.md](./ANALYTICS_PLAN.md)** — Active feature plan for PostHog product analytics. Status of each REQ, open items.
+- **[POSTHOG_SETUP.md](./POSTHOG_SETUP.md)** — Step-by-step PostHog UI recipe for dashboards (REQ-A2) and the conversion funnel (REQ-A7). One-time setup; retire when configuration stabilizes.
 - **[TRUST_REFACTOR.md](./TRUST_REFACTOR.md)** — Active refactor of the lock model (`is_locked` / `is_human_edited`). Phase 1 shipped; Phases 2–4 pending. Retires when Phase 4 lands.
 - **[AGENT_ARCHITECTURE.md](./AGENT_ARCHITECTURE.md)** — Hybrid local + Claude autonomous agent plan. Three agents (Maintenance, QC, Marketing) on Mac mini host with Ollama + Qwen for local, Claude Sonnet via Max for marketing. Phased rollout, guardrails, first concrete step. Promotes to Tier 2 once the architecture is stable in production.
 - **[SECURITY_AUDIT_2026-05-02.md](./SECURITY_AUDIT_2026-05-02.md)** — Point-in-time security audit (May 2, 2026). 22 findings (4 Critical / 6 High / 8 Medium / 4 Low), shipped vs outstanding status, secret-rotation checklist. Storage caveat in the doc header about whether to commit. Retires when all findings ship or get superseded.

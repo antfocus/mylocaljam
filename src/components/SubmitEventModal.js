@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { posthog } from '@/lib/posthog';
 // Badge import removed with the recent-submissions list (Apr 25 redesign).
 
 // Palette aligned with AuthModal's recent refresh: translucent borders +
@@ -72,6 +73,14 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const todayStr = new Date().toISOString().split('T')[0];
+
+  // REQ-A6 (May 5, 2026) — fire 'add_to_jar_clicked' on modal mount as the
+  // intent signal. The submit handlers below fire 'add_to_jar_submitted' on
+  // successful POST as the completion signal. The pair lets us compute the
+  // open-to-submit conversion rate and identify drop-off in the form flow.
+  useEffect(() => {
+    try { posthog.capture?.('add_to_jar_clicked'); } catch {}
+  }, []);
 
   // Clean up object URLs to prevent memory leaks
   useEffect(() => {
@@ -177,6 +186,8 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
         body: JSON.stringify({ image_url: urlData.publicUrl, status: 'pending' }),
       });
       if (!res.ok) { const errBody = await res.json().catch(() => ({})); throw new Error(errBody.error || 'Submission failed'); }
+      // REQ-A6 — completion signal for the photo-poster path
+      try { posthog.capture?.('add_to_jar_submitted', { method: 'poster' }); } catch {}
       onSubmit?.();
       handleClose();
     } catch (err) {
@@ -200,6 +211,14 @@ export default function SubmitEventModal({ onClose, onSubmit, darkMode = true })
         body: JSON.stringify({ artist_name: artist.trim(), venue_name: venue.trim(), event_date: date, status: 'pending' }),
       });
       if (!res.ok) { const errBody = await res.json().catch(() => ({})); throw new Error(errBody.error || 'Submission failed'); }
+      // REQ-A6 — completion signal for the manual-entry path
+      try {
+        posthog.capture?.('add_to_jar_submitted', {
+          method: 'manual',
+          artist_name: artist.trim(),
+          venue_name: venue.trim(),
+        });
+      } catch {}
       onSubmit?.();
       handleClose();
     } catch (err) {

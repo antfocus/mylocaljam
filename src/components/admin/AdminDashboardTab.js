@@ -146,6 +146,46 @@ export default function AdminDashboardTab({
             />
           </div>
 
+          {/* Audience — May 5, 2026 (item 8 from analytics audit). Surfaces
+              acquisition / geography / loyalty signals from PostHog autocapture
+              + the new spotlight tracking. CTR is the most actionable: low
+              numbers mean the spotlights aren't earning their position. */}
+          <SectionHeader title="Audience" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
+            <MetricCard
+              label="Spotlight CTR"
+              value={analyticsLoading ? '…' : `${(analyticsData?.spotlightCtr ?? 0).toFixed(1)}%`}
+              sub={analyticsData?.spotlightImpressions > 0
+                ? `${analyticsData.spotlightTaps} of ${analyticsData.spotlightImpressions} views`
+                : dateLabels[dashDateRange]}
+              color={analyticsData?.spotlightCtr > 0 ? '#E8722A' : undefined}
+            />
+            <MetricCard
+              label="Top Referrer"
+              value={analyticsLoading ? '…' : (analyticsData?.topReferrer || '—')}
+              sub={analyticsData?.topReferrerVisitors > 0
+                ? `${analyticsData.topReferrerVisitors} visitors`
+                : dateLabels[dashDateRange]}
+              color={analyticsData?.topReferrerVisitors > 0 ? '#3B82F6' : undefined}
+            />
+            <MetricCard
+              label="NJ Traffic"
+              value={analyticsLoading ? '…' : `${analyticsData?.njPct ?? 0}%`}
+              sub={analyticsData?.totalGeoVisits > 0
+                ? `${analyticsData.njVisits} of ${analyticsData.totalGeoVisits} geo-known`
+                : dateLabels[dashDateRange]}
+              color={analyticsData?.njPct > 0 ? '#22C55E' : undefined}
+            />
+            <MetricCard
+              label="New vs Returning"
+              value={analyticsLoading ? '…' : (analyticsData?.newVisitors ?? 0) + (analyticsData?.returningVisitors ?? 0) > 0
+                ? `${analyticsData?.newVisitors ?? 0} / ${analyticsData?.returningVisitors ?? 0}`
+                : '—'}
+              sub={dateLabels[dashDateRange]}
+              color={(analyticsData?.newVisitors ?? 0) + (analyticsData?.returningVisitors ?? 0) > 0 ? '#A855F7' : undefined}
+            />
+          </div>
+
           {/* Venue Value */}
           <SectionHeader title="Venue Value (Outbound)" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>

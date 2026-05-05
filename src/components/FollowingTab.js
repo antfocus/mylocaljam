@@ -408,7 +408,9 @@ export default function FollowingTab({
             ].map(opt => (
               <button
                 key={opt.key}
-                onClick={() => { setSortBy(opt.key); setShowSortMenu(false); posthog.capture?.('List Sorted/Filtered', { sort_type: opt.key === 'alpha' ? 'A-Z' : opt.key === 'next_event' ? 'Next Event' : 'Recent' }); }}
+                // Renamed from 'List Sorted/Filtered' → 'following_list_sorted'
+                // (snake_case) May 5, 2026 — coordinated rename, see page.js
+                onClick={() => { setSortBy(opt.key); setShowSortMenu(false); posthog.capture?.('following_list_sorted', { sort_type: opt.key === 'alpha' ? 'A-Z' : opt.key === 'next_event' ? 'Next Event' : 'Recent' }); }}
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   width: '100%', padding: '9px 10px', border: 'none',

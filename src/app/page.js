@@ -834,12 +834,14 @@ export default function HomePage() {
     setFavorites(prev => { const next = new Set(prev); next.add(id); return next; });
     const event = events.find(e => e.id === id);
     if (event && notifEnabled) scheduleReminder(event);
-    // PostHog: track event bookmarked
+    // PostHog: track event bookmarked. `action: 'saved'` distinguishes from
+    // the unsave path below (REQ-A5 May 5 fix — was save-only before).
     if (event) {
       posthog.capture?.('event_bookmarked', {
         event_id: id,
         artist_name: event.name || event.artist_name || '',
         venue_name: event.venue || event.venue_name || '',
+        action: 'saved',
       });
     }
     try {
@@ -857,6 +859,16 @@ export default function HomePage() {
   const unsaveEventFromDb = useCallback(async (id) => {
     setFavorites(prev => { const next = new Set(prev); next.delete(id); return next; });
     cancelReminder(id);
+    // PostHog: track unsave (REQ-A5 May 5 — measures abandoned saves).
+    const event = events.find(e => e.id === id);
+    if (event) {
+      posthog.capture?.('event_bookmarked', {
+        event_id: id,
+        artist_name: event.name || event.artist_name || '',
+        venue_name: event.venue || event.venue_name || '',
+        action: 'unsaved',
+      });
+    }
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
@@ -866,7 +878,7 @@ export default function HomePage() {
         body: JSON.stringify({ event_id: id }),
       });
     } catch {}
-  }, []);
+  }, [events]);
 
   const toggleFavorite = useCallback(async (id) => {
     if (!id) return;
@@ -958,7 +970,13 @@ export default function HomePage() {
     };
     // PostHog: track local followed
     if (entityType === 'artist') {
-      posthog.capture?.('Local Followed', {
+      // Renamed from 'Local Followed' (Title Case) → 'local_followed' (snake_case)
+      // May 5, 2026 — coordinated rename with user_signed_in for consistency
+      // (other custom events all use snake_case: event_bookmarked,
+      // venue_link_clicked, spotlight_tapped, etc.). PostHog dashboards built
+      // against the old name will need to be updated to query the new name —
+      // no event aliasing in PostHog, the rename starts new history.
+      posthog.capture?.('local_followed', {
         artist_name: entityName,
       });
     }
@@ -1349,7 +1367,9 @@ export default function HomePage() {
           const provider = u.app_metadata?.provider || (u.app_metadata?.providers || [])[0] || 'email';
           const method = provider === 'google' ? 'google' : 'magic_link';
           const isNew = u.created_at && (Date.now() - new Date(u.created_at).getTime()) < 60000;
-          posthog.capture?.('User Signed In', { method, is_new_user: isNew });
+          // Renamed from 'User Signed In' (Title Case) → 'user_signed_in'
+          // (snake_case) May 5, 2026 — see local_followed rename note.
+          posthog.capture?.('user_signed_in', { method, is_new_user: isNew });
         }
       }
       if (u && showAuthModal) {
@@ -2091,6 +2111,8 @@ export default function HomePage() {
     setLocationCoords(null);
     setLocationLabel('Current Location');
     setLocationSuggestions([]);
+    // REQ-A4: capture clear-all as a distinct filter intent.
+    try { posthog.capture?.('filter_applied', { filter_type: 'cleared_all' }); } catch {}
   }, []);
 
   // Filter panel labels
@@ -3471,7 +3493,26 @@ export default function HomePage() {
                       step. With Clear filters and Close demoted to text
                       links, Search dominates without needing extra padding
                       tricks. */}
-                  <button onClick={() => { setFiltersExpanded(false); setActiveFilterCard(null); }} style={{
+                  <button onClick={() => {
+                    // REQ-A4: snapshot the user's committed filter set on Search
+                    // tap. Single fire (vs per-setter) keeps the event volume
+                    // sane and matches user intent — the moment they say "go".
+                    try {
+                      posthog.capture?.('filter_applied', {
+                        filter_type: 'search_committed',
+                        has_search_query: !!searchQuery.trim(),
+                        date_key: dateKey,
+                        date_picked: dateKey === 'pick' ? pickedDate : null,
+                        active_shortcut: activeShortcut,
+                        miles_radius: milesRadius,
+                        venue_count: activeVenues.length,
+                        town_only: townOnlyActive,
+                        active_filter_count: nonSearchFilterCount,
+                      });
+                    } catch {}
+                    setFiltersExpanded(false);
+                    setActiveFilterCard(null);
+                  }} style={{
                     flex: 1, minWidth: 0,
                     padding: '12px 24px', borderRadius: '10px', border: 'none',
                     background: t.accent, color: '#000000', cursor: 'pointer',
