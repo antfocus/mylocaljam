@@ -41,7 +41,7 @@ function buildTimeFilter(range) {
     return `toTimeZone(timestamp, 'America/New_York') >= toStartOfDay(toTimeZone(now(), 'America/New_York'))`;
   }
   const days = rangeToDays(range);
-  return `${timeFilter}`;
+  return `timestamp >= now() - toIntervalDay(${days})`;
 }
 
 // Resolve PostHog project ID dynamically
