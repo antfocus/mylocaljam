@@ -557,9 +557,14 @@ const HeroSection = forwardRef(function HeroSection({ events = [], spotlightEven
                     textTransform: 'uppercase',
                     lineHeight: 0.95,
                     margin: 0,
-                    // Clamp long names to 2 lines so the meta row never gets pushed off
+                    // Clamp to 3 lines so billing-style titles ("Customer
+                    // Service (Canada), Regency Club, Caveart") show all
+                    // their acts. Single-artist names rarely hit 2 lines so
+                    // the common case is unaffected; the meta row still
+                    // never gets pushed off because the gradient overlay
+                    // and image height have room. Was 2, bumped 2026-05-04.
                     display: '-webkit-box',
-                    WebkitLineClamp: 2,
+                    WebkitLineClamp: 3,
                     WebkitBoxOrient: 'vertical',
                     overflow: 'hidden',
                     textShadow: '0 2px 12px rgba(0,0,0,0.5)',
