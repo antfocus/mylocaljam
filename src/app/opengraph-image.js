@@ -61,24 +61,36 @@ export default async function Image() {
             justifyContent: 'center',
           }}
         >
-          {/* Orange highlight moved from "spot." to "local" (May 5, 2026)
-              — "Local" is the differentiator (we're not Bandsintown / Songkick
-              / Ticketmaster aggregators, we're Jersey-Shore-specific) so that's
-              the word the eye should land on. "All in one spot." kept intact
-              because the idiom carries the comprehensiveness signal — "in one
-              spot" alone reads positionally, not aggregationally.
-              Satori quirk: literal space between an inline child and adjacent
-              text gets collapsed unless the parent uses `whiteSpace: 'pre'` AND
-              the flex div has exactly one outer span child. So line 1 wraps
-              "Your <orange>local</orange>" inside a single pre-whitespace span;
-              lines 2 and 3 have no inline child and need no special handling. */}
+          {/* Orange highlight on "local" (May 5, 2026) — "Local" is the
+              differentiator (we're not Bandsintown / Songkick / Ticketmaster
+              aggregators, we're Jersey-Shore-specific) so that's the word the
+              eye should land on. "All in one spot." kept intact because the
+              idiom carries the comprehensiveness signal.
+
+              Satori quirk: the column-flex parent measures each child's
+              height to position the next one. A flex child whose contents are
+              "single outer span containing text + nested color span" measures
+              differently from a flex child whose contents are just plain text.
+              When the nested-span line was the LAST child (the original
+              shape), this didn't matter — no subsequent siblings to
+              misposition. When it became the FIRST child, lines 2-3 collapsed
+              onto line 1's Y because Satori miscalculated line 1's height.
+
+              Workaround: normalize ALL three lines to the same outer-span
+              shape (single outer span with whiteSpace:pre), so Satori
+              measures them identically regardless of whether the inner
+              content has a nested color span or not. */}
           <div style={{ display: 'flex' }}>
             <span style={{ whiteSpace: 'pre' }}>
               Your <span style={{ color: '#E8722A' }}>local</span>
             </span>
           </div>
-          <div style={{ display: 'flex' }}>music source,</div>
-          <div style={{ display: 'flex' }}>all in one spot.</div>
+          <div style={{ display: 'flex' }}>
+            <span style={{ whiteSpace: 'pre' }}>music source,</span>
+          </div>
+          <div style={{ display: 'flex' }}>
+            <span style={{ whiteSpace: 'pre' }}>all in one spot.</span>
+          </div>
         </div>
       </div>
     ),
