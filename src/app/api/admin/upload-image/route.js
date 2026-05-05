@@ -83,7 +83,13 @@ export async function POST(request) {
 
     return NextResponse.json({ url: urlData.publicUrl });
   } catch (err) {
-    console.error('[upload-image] Error:', err.message);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    // Full error to Vercel runtime logs; generic message in prod response
+    // (security audit M8) so admin-password compromise doesn't leak schema
+    // / API / stack info via the response body. Dev mode keeps err.message.
+    console.error('[upload-image] Error:', err);
+    return NextResponse.json(
+      { error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message },
+      { status: 500 }
+    );
   }
 }

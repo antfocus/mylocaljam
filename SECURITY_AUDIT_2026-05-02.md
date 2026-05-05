@@ -22,6 +22,7 @@
 
 - **H4** — `safeHref()` helper at `src/lib/safeHref.js` (URL parse + protocol allowlist of http/https/mailto). Applied at every render-side `<a href>` binding for scraper-emitted URLs (EventCardV2, SiteEventCard, EventPageClient, SavedGigCard, AdminEventsTab, AdminTriageTab, AdminArtistsTab, AdminVenuesScrapers). Replaces the per-site inline `/^https?:\/\//i.test(...)` check pattern with a centralized helper, so future render sites can't forget the check. Also applied at write paths so bad data never enters the DB: `sync-events/route.js mapEvent`, `admin/force-sync/route.js`, `admin/route.js` (POST + PUT), `admin/queue/route.js`, `admin/venues/route.js` (`website` field). Closes the `javascript:` URL XSS class for `events.ticket_link`, `events.source`, and `venues.website`.
 - **M1 Phase 1** — Five security headers added in `next.config.js`: `Strict-Transport-Security` (2-year HSTS without preload), `X-Frame-Options: DENY` (clickjacking), `X-Content-Type-Options: nosniff` (MIME-sniff defense for upload-image flow), `Referrer-Policy: strict-origin-when-cross-origin` (privacy on outbound clicks), `Permissions-Policy: camera=() microphone=() geolocation=(self)` (lock down browser APIs). Applied to every route via a second `headers()` entry. **Phase 2 (Content-Security-Policy) still pending** — will ship in `Content-Security-Policy-Report-Only` mode first to tune the third-party allowlist against PostHog, Supabase, Google Fonts, postimages, scraped CDN images, IPRoyal proxy.
+- **M8 finished** — `err.message` no longer returned in production HTTP responses on the four remaining admin routes: `upload-image`, `ai-enhance`, `migrate-base64`, `analytics`. Pattern: `process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message`. Full error still goes to Vercel runtime logs via `console.error(err)` so admin debugging is unchanged. `migrate-base64` keeps the artist NAME in `errors[]` (admins need to know which artist failed) but strips message detail in prod. `analytics` `?debug=1` mode now NODE_ENV-gated so prod never returns `err.stack` or config diagnostics regardless of query string. The audit's "(multiple)" annotation on `sync-events/route.js` was over-broad — it only uses `err.message` in `console.error` and internal aggregations, never in the production HTTP response, so no change there.
 
 ### ⏳ Outstanding — requires Tony
 
@@ -228,9 +229,9 @@ vercel --prod               # ship a fresh deploy
 
 #### M8: Production stack traces leak via error responses
 
-**Status:** ✅ Partial fix shipped today — submissions, feedback, support, reports POST now return generic messages (`'Submission failed'`) and only log details server-side.
-**Files still leaking `err.message`:** `src/app/api/admin/upload-image/route.js:87`, `src/app/api/admin/ai-enhance/route.js:188`, `src/app/api/admin/migrate-base64/route.js:35`, `src/app/api/admin/analytics/route.js:255`, `src/app/api/sync-events/route.js` (multiple).
-**Fix:** In production, return generic `{ error: 'Internal Server Error' }` and `console.error(err)` server-side. Drop the `?debug=1` mode in analytics or gate it on `process.env.NODE_ENV !== 'production'`.
+**Status:** ✅ Fixed May 5, 2026.
+**Phase 1 (May 2):** submissions, feedback, support, reports POST returned generic messages (`'Submission failed'`) instead of `err.message`.
+**Phase 2 (May 5):** `upload-image`, `ai-enhance`, `migrate-base64`, `analytics` all now use the `process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message` pattern. Full error still goes to Vercel logs via `console.error(err)`. `analytics` `?debug=1` mode also NODE_ENV-gated. `sync-events/route.js` reviewed — never returned `err.message` in HTTP response (audit annotation was over-broad).
 
 ---
 

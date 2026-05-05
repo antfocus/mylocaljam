@@ -85,14 +85,26 @@ export async function POST(request) {
         .eq('id', artist.id);
 
       if (updateErr) {
-        errors.push(`${artist.name}: DB update failed \u2014 ${updateErr.message}`);
+        // Full error to Vercel runtime logs; generic detail in prod response
+        // (security audit M8). Dev mode keeps the message for fast debugging.
+        console.error(`[migrate-base64] ${artist.name} DB update failed:`, updateErr);
+        errors.push(
+          process.env.NODE_ENV === 'production'
+            ? `${artist.name}: DB update failed`
+            : `${artist.name}: DB update failed \u2014 ${updateErr.message}`
+        );
         continue;
       }
 
       migrated++;
       console.log(`[migrate-base64] \u2713 ${artist.name} \u2192 ${urlData.publicUrl}`);
     } catch (err) {
-      errors.push(`${artist.name}: ${err.message}`);
+      console.error(`[migrate-base64] ${artist.name} failed:`, err);
+      errors.push(
+        process.env.NODE_ENV === 'production'
+          ? `${artist.name}: failed`
+          : `${artist.name}: ${err.message}`
+      );
     }
   }
 

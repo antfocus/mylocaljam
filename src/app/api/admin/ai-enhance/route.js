@@ -185,7 +185,12 @@ Respond with ONLY the JSON object — no markdown, no code fences, no preamble.`
       image_search_query: parsed.image_search_query || null,
     });
   } catch (err) {
+    // Full error to Vercel runtime logs; generic message in prod response
+    // (security audit M8). Dev mode keeps err.message for fast debugging.
     console.error('[AI Enhance] Error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message },
+      { status: 500 }
+    );
   }
 }

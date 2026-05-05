@@ -109,8 +109,11 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Debug mode: ?debug=1 returns raw PostHog responses
-  const debug = searchParams.get('debug') === '1';
+  // Debug mode: ?debug=1 returns raw PostHog responses + config diagnostics.
+  // Gated to non-production builds (security audit M8) so prod never leaks
+  // err.stack, key prefixes, or internal config via the response body —
+  // even with the right query string and a valid admin Bearer.
+  const debug = searchParams.get('debug') === '1' && process.env.NODE_ENV !== 'production';
 
   // Key diagnostics
   const keyPrefix = POSTHOG_API_KEY ? POSTHOG_API_KEY.slice(0, 4) + '...' : 'MISSING';
@@ -269,9 +272,12 @@ export async function GET(request) {
 
     return NextResponse.json(response);
   } catch (err) {
+    // Full error to Vercel runtime logs; generic message in prod response
+    // (security audit M8). `debug` is now NODE_ENV-gated above, so the
+    // stack-and-config payload is automatically suppressed in prod.
     console.error('[Analytics] API error:', err);
     return NextResponse.json({
-      error: err.message,
+      error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message,
       debug: debug ? { keyPrefix, projectIdEnv, apiHost: POSTHOG_API_HOST, stack: err.stack?.slice(0, 300) } : undefined,
       uniqueVisitors: 0, mobile: 0, desktop: 0,
       venueClicks: 0, topVenue: '—', topVenueClicks: 0,
