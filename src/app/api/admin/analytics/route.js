@@ -3,6 +3,14 @@ import { NextResponse } from 'next/server';
 // Prevent Next.js / Vercel from caching this route — always fetch fresh from PostHog
 export const dynamic = 'force-dynamic';
 
+// Allow up to 60s for the 9 parallel PostHog queries to complete before
+// Vercel kills the function. Hobby plan caps at 10s; Pro+ honors this.
+// Empty-body 500s on the admin dashboard May 5, 2026 traced to the new
+// vs returning query exceeding Hobby's 10s cap. The maxDuration export
+// lets Pro plan users see the full response while Hobby users get a
+// faster degraded path (next fix below) for slow queries.
+export const maxDuration = 60;
+
 // us.i.posthog.com = ingestion (client-side events)
 // us.posthog.com   = API (server-side queries with Personal API Key)
 const POSTHOG_API_HOST = process.env.POSTHOG_API_HOST || 'https://us.posthog.com';
@@ -165,18 +173,14 @@ export async function GET(request) {
 
     console.log(`[Analytics] Querying PostHog — project: ${projectId}, range: ${range} (${days}d), key: ${keyPrefix}, host: ${POSTHOG_API_HOST}`);
 
-    // Run all queries in parallel
-    const [
-      visitorsRes,
-      deviceRes,
-      venueClicksRes,
-      topVenueRes,
-      bookmarksRes,
-      spotlightRes,
-      referrerRes,
-      njRes,
-      newReturningRes,
-    ] = await Promise.all([
+    // Run all queries in parallel via allSettled so one rejection can't
+    // poison the whole response. Each entry below is a Promise<{data,error}>
+    // from hogql(); allSettled gives us a Promise<{status,value|reason}> per
+    // entry. Then we normalize back to the {data,error} shape so the parsing
+    // code below doesn't have to know the difference. This is what was
+    // returning empty-body 500s on Hobby (May 5 2026) — one slow query was
+    // exceeding the 10s function cap and Vercel killed the whole process.
+    const settled = await Promise.allSettled([
       // 1. Unique visitors — count distinct persons with a $pageview
       hogql(projectId,
         `SELECT count(DISTINCT person_id)
@@ -293,15 +297,16 @@ export async function GET(request) {
       ),
 
       // 9. New vs returning visitor split. For every person who had a
-      // pageview in the time window, look at their FIRST EVER pageview
-      // (no time filter) and compare against the cutoff. If their first
-      // ever pageview falls inside the window, they're new this period;
-      // otherwise they're returning.
+      // pageview in the current window, look at whether their FIRST
+      // pageview within the last 90 days fell inside the window or
+      // before it. The 90-day cap on the inner SELECT keeps the query
+      // bounded — scanning the full pageview history was timing out
+      // on Vercel Hobby's 10s function cap (May 5 2026).
       //
-      // The previous shape was buggy: it filtered events to the window
-      // first then asked "is min(timestamp) >= cutoff?" — by definition
-      // every windowed event passed that check, so returning_visitors
-      // was always 0.
+      // Trade-off: a "returning visitor" returning after a 90+ day
+      // gap will be misclassified as "new" once. At launch this is a
+      // non-issue (no one has 90 days of history yet). Worth revisiting
+      // if returning_visitors looks artificially low post-launch.
       hogql(projectId,
         `SELECT
            countIf(first_ever >= cutoff) AS new_visitors,
@@ -315,11 +320,42 @@ export async function GET(request) {
                     : `now() - toIntervalDay(${days})`} AS cutoff
            FROM events
            WHERE event = '$pageview'
+             AND timestamp >= now() - toIntervalDay(90)
            GROUP BY person_id
            HAVING last_ever >= cutoff
          )`
       ),
     ]);
+
+    // Normalize allSettled output back to the {data,error} shape the rest
+    // of the route expects. Rejected promises become {data:null, error:msg}
+    // so the parsing code below treats them like a soft PostHog error.
+    const normalize = (s, name) => {
+      if (s.status === 'fulfilled') return s.value;
+      console.error(`[Analytics] Query '${name}' rejected:`, s.reason);
+      return { data: null, error: String(s.reason?.message || s.reason || 'rejected') };
+    };
+    const [
+      visitorsRes,
+      deviceRes,
+      venueClicksRes,
+      topVenueRes,
+      bookmarksRes,
+      spotlightRes,
+      referrerRes,
+      njRes,
+      newReturningRes,
+    ] = [
+      normalize(settled[0], 'visitors'),
+      normalize(settled[1], 'device'),
+      normalize(settled[2], 'venueClicks'),
+      normalize(settled[3], 'topVenue'),
+      normalize(settled[4], 'bookmarks'),
+      normalize(settled[5], 'spotlight'),
+      normalize(settled[6], 'referrer'),
+      normalize(settled[7], 'nj'),
+      normalize(settled[8], 'newReturning'),
+    ];
 
     // Log raw results for debugging
     console.log('[Analytics] visitors raw:', JSON.stringify(visitorsRes.data?.results || visitorsRes.error));
