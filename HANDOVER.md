@@ -5727,3 +5727,192 @@ Search filter UX overhaul (multiple rounds), LLM router OpenAI integration, hero
 - **OpenAI cost tracking.** $10 deposited; gpt-4o-mini at ~$0.0005/call. The router increments `usage.openai.calls` per call — surface that in admin diag if billing visibility becomes important.
 - **EventCardV2 reverts.** The 3-state cycle was a deliberate experiment — it failed because users expected the simpler 2-state. Don't reintroduce it without explicit user request.
 
+---
+
+## Session — May 5 2026 (afternoon: launch-prep punch list — security, analytics, brand)
+
+Long focused session walking through the PARKED + SECURITY_AUDIT priority list. Five security findings shipped (H4, M1 Phase 1, M8), a comprehensive analytics overhaul (audit + REQ-A3/A4/A5/A6 + new admin tiles + PostHog setup recipe), a brand consolidation pass (v8 teal-removal then v9 wordmark+soundwave from external rebrand), and homepage logo refresh.
+
+### 1. H4 — `safeHref()` helper for scraper-emitted URLs
+
+New `src/lib/safeHref.js` (URL parse + `http`/`https`/`mailto` allowlist + auto-`https://` prepend for bare hosts). Returns null for `javascript:`, `data:`, `vbscript:`, malformed URLs, and non-strings. Applied at every render-side `<a href>` binding for scraper-emitted URLs and at every write path so bad URLs never enter the DB.
+
+**Render sites updated (8):** EventCardV2.js, SiteEventCard.js, EventPageClient.js, SavedGigCard.js, AdminEventsTab.js, AdminTriageTab.js, AdminArtistsTab.js, AdminVenuesScrapers.js. Replaces the per-site inline `/^https?:\/\//i.test(...)` regex check pattern with a centralized helper, so future render sites can't forget the check.
+
+**Write sites updated (5):** sync-events/route.js mapEvent, admin/force-sync/route.js, admin/route.js (POST + PUT), admin/queue/route.js, admin/venues/route.js (`website` field).
+
+**Verified clean post-deploy:** SQL audit on prod confirmed 0 bad rows in `events.ticket_link`, `events.source` (excluding `Admin` / `Community Submitted` sentinels), and `venues.website`. The fix is purely forward-looking — closes the `javascript:` URL XSS class without needing a backfill.
+
+**SiteEventCard had the actually-unguarded surface.** It was the only render site with NO scheme check on `ticket_link`. EventCardV2 / EventPageClient / SavedGigCard all had inline regex checks that worked but were fragile.
+
+### 2. M1 Phase 1 — five security headers in `next.config.js`
+
+Five no-risk one-liners added via a second `headers()` entry applied to every route via `source: '/(.*)'`:
+
+- `Strict-Transport-Security: max-age=63072000; includeSubDomains` (2-year HSTS, no `preload` yet)
+- `X-Frame-Options: DENY` (clickjacking)
+- `X-Content-Type-Options: nosniff` (MIME-sniff defense for upload-image flow)
+- `Referrer-Policy: strict-origin-when-cross-origin` (privacy on outbound clicks)
+- `Permissions-Policy: camera=() microphone=() geolocation=(self)` (lock down browser APIs)
+
+Verified live via Chrome on `/`, `/admin`, `/api/events` — all five headers present on every route. `cache-control: no-cache, no-store, must-revalidate` from the prior `headers()` entry still works (no regression).
+
+**Phase 2 (Content-Security-Policy) deferred** — needs `Content-Security-Policy-Report-Only` rollout to tune the third-party allowlist (PostHog, Supabase, Google Fonts, postimages, scraped CDN images, IPRoyal proxy) before enforcing. Multi-day work; post-launch.
+
+### 3. M8 — gated `err.message` behind NODE_ENV in 4 admin routes
+
+Four admin routes were returning raw `err.message` in their 500 HTTP responses, leaking schema names, query shapes, and stack-trace excerpts. Lower-priority than C1/H4/M1 because exploitation requires admin auth first, but it's a recon-leverage class once an attacker is inside.
+
+Pattern applied uniformly:
+
+```js
+} catch (err) {
+  console.error('[route-name] Error:', err);
+  return NextResponse.json(
+    { error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message },
+    { status: 500 }
+  );
+}
+```
+
+**Files:** `admin/upload-image`, `admin/ai-enhance`, `admin/migrate-base64` (per-artist `errors[]` keeps artist NAME but strips message detail in prod), `admin/analytics` (500-path gated AND `?debug=1` mode now AND-gates against `NODE_ENV !== 'production'` so prod never returns `err.stack` / `keyPrefix` regardless of query string).
+
+**Pushback on audit:** `sync-events/route.js` was listed as "(multiple)" but actually only uses `err.message` in `console.error` (server-side log only) and internal `errors.push(...)` aggregation that never returns to the HTTP response. Its production response is hardcoded `'Unauthorized'`. No fix needed there; the audit annotation was over-broad.
+
+**Verified live via Chrome:** triggered a deliberate fetch error against `/api/admin/upload-image` with admin auth and an unreachable hostname. Response was `{error: 'Internal Server Error'}` — generic message in body, full error logged server-side via `console.error`.
+
+### 4. OG image — orange highlight from SPOT to LOCAL (with Satori bug recovery)
+
+ChatGPT recommended emphasizing "LOCAL" in the tagline as the brand differentiator (Jersey-Shore-specific vs. generic Bandsintown/Songkick/Ticketmaster aggregators). Agreed. **Pushback:** ChatGPT also recommended dropping "All" from "all in one spot" — disagreed because the idiom carries the comprehensiveness signal and "in one spot" alone reads positionally. Kept "All in one spot."
+
+**The Satori bug.** First refactor moved the orange `<span>` from line 3 ("all in one **spot.**") to line 1 ("Your **local**"). The original code had a comment warning about Satori's column-flex height calculation breaking when an inline-color span is present — but the workaround only worked when applied to the LAST flex child (no subsequent siblings to misposition). Moving it to line 1 broke height calculations and lines 2 + 3 collapsed onto line 1's Y axis, producing overlapping text in iMessage previews.
+
+**Fix:** normalize all three lines to the same outer-span shape (`<span style={{ whiteSpace: 'pre' }}>...</span>` wrapping each text node), so Satori sees a consistent flex-child shape across all three regardless of whether the inner content has a nested color span. Verified live via Chrome — clean rendering.
+
+**Lesson:** the workaround comment in the original code captured the symptom but not the rule. When the inline-span needed to move from last-child to first-child, the constraint became visible. Worth re-reading any code comment that says "this fix" before assuming the fix is general.
+
+### 5. Analytics audit + comprehensive ship
+
+Did a full audit of the admin dashboard's PostHog integration. Surfaced:
+
+- **Mobile + Desktop double-counting** — independent `count(DISTINCT person_id)` queries with $device_type filters; same person counted in both buckets if they visited from both. Math quirk, not a bug. Worth relabeling "Visited on mobile" / "Visited on desktop" eventually.
+- **"Mobile Web" silently includes tablets** — `dt === 'mobile' || dt === 'tablet'` rolls them up. Worth splitting at higher volume.
+- **Bookmarks count was 5 PostHog vs 4 Supabase saved_events for the same window** — likely double-tap, save+unsave round-trip, or silent DB write failure. At current volume can't distinguish; deferred.
+- **`event_bookmarked` only captured saves, not unsaves** — original spec called for `action: 'saved' | 'unsaved'` but only the save direction was instrumented. Couldn't measure abandoned saves.
+- **"Today" range was actually rolling 24 hours** — `now() - toIntervalDay(1)` rather than calendar-day Eastern. Off-by-half-day in the worst case.
+- **Spotlight clicks completely untracked.** REQ-A3 was specced in March but never shipped. `HeroSection.js` had zero `posthog.capture` calls.
+- **"Add to the Jar" submission untracked.** REQ-A6 — never shipped.
+- **Main search/filter bar didn't emit events.** REQ-A4 only fired from the FollowingTab sort menu.
+- **Auth events fired but invisible on admin dashboard.** `User Signed In` (Title Case) carried `method` and `is_new_user` but admin couldn't see new-signup count without checking Supabase.
+- **No funnel.** No retention. No referrer. No geographic split. All free from PostHog autocapture; none surfaced.
+
+**Shipped (May 5 PM):**
+
+- **REQ-A3 — `spotlight_tapped` + `spotlight_impression`** in HeroSection.js. Tap fires on the carousel slide click; impression fires on every active-slot change (including auto-rotation). Both carry `event_id`, `position`, `slot_type` ('main' | 'runner_up'), `artist_name`, `venue_name`, `event_date`. Pairs the two so admin can compute CTR.
+- **REQ-A4 — `filter_applied`** on the Search-button commit and the Clear-filters tap in `page.js`. Single fire per user intent (vs per-setter) keeps event volume sane and matches the moment the user says "go." Snapshots full filter state.
+- **REQ-A5 fix — `action` property on `event_bookmarked` + capture unsave path.** Lets admin measure abandoned saves.
+- **REQ-A6 — `add_to_jar_clicked` + `add_to_jar_submitted`** in `SubmitEventModal.js`. Click on modal mount, submit on successful POST with `method` ('poster' | 'manual') tag.
+- **"Today" range fixed** — `buildTimeFilter('today')` now uses `toTimeZone(timestamp, 'America/New_York') >= toStartOfDay(toTimeZone(now(), 'America/New_York'))`. Calendar-day Eastern instead of rolling 24h.
+- **Snake_case rename** — `Local Followed` → `local_followed`, `User Signed In` → `user_signed_in`, `List Sorted/Filtered` → `following_list_sorted`. No event aliasing in PostHog so historical data under old names won't show in dashboards built against new names — accepted the discontinuity at current volume.
+- **New admin "Audience" section** — four new tiles: Spotlight CTR (taps/impressions), Top Referrer, NJ Traffic %, New vs Returning. Powered by 4 new HogQL queries in `analytics/route.js`.
+- **Default range `'7d'` → `'today'`** — at beta volume the day-to-day signal is what's actionable.
+
+**Empty-body 500 saga.** First deploy after the audit shipped showed all-zeros across the dashboard. Diagnostic via Chrome console showed 500 with empty body. Three rounds of fixes:
+- Round 1: assumed timeout; added `maxDuration = 60`, swapped `Promise.all` → `Promise.allSettled`, capped new/returning inner window to 90 days (then 30 days), simplified Spotlight CTR to drop the slow `count(DISTINCT concat(...))` dedup. Still 500.
+- Round 2: realized the failure was returning IMMEDIATELY, not on timeout. Read the route end-to-end. Found the bug — my earlier `replace_all` of `timestamp >= now() - toIntervalDay(${days})` → `${timeFilter}` had accidentally rewritten the *body of `buildTimeFilter` itself* on the non-`today` branch, making it return `${timeFilter}` (an undefined variable). For `range=today` the early-return on line 41 saved us; everything else threw `ReferenceError` outside the try/catch. Restored the literal in the second branch.
+- Round 3: bookmarks tile still showed 0 even after the route worked. The `properties.action IS NULL OR properties.action = 'saved'` filter was excluding ALL events because HogQL's NULL handling on missing JSON properties is inconsistent. Replaced with `coalesce(properties.action, '') != 'unsaved'` — legacy events with missing action coalesce to empty string, fail the `!= 'unsaved'` check by being a different value, so they're correctly counted as saves.
+
+**Lesson on `replace_all`:** an overzealous broad replace caught a usage of the pattern that wasn't intended. Should have edited each occurrence manually. The symptom (timeout-shaped 500) wasn't the cause (ReferenceError); only the "returns immediately" feedback from Tony made the actual cause visible.
+
+**Final live response (range=7d):** `bookmarks: 79`, `visitors: 59`, `spotlight: 3/340 = 0.88% CTR`. The 79 PostHog bookmarks vs 22 Supabase rows suggests save+unsave round-trips or silent DB failures — flagged for post-launch investigation when there's enough volume to distinguish patterns.
+
+**`POSTHOG_SETUP.md` — new doc.** Step-by-step recipe for the 4 PostHog UI dashboards (DAU/MAU & Growth, Top Pages, Device & Browser Split, Retention) and the conversion funnel ($pageview → spotlight_tapped → event_bookmarked → user_signed_in). 30 minutes of UI clicking; Tony's task.
+
+### 6. Brand pass — v8 teal-removal then v9 wordmark+soundwave
+
+**v8 (didn't ship to prod, superseded by v9):** stripped teal from the v7 wordmark by recoloring the dominant teal cluster (~#1E5E60) to slate `#1F2937` (light-mode variant) and white `#FFFFFF` (dark-mode variant) via PIL. Generated a 1024×1024 social avatar (wordmark on dark navy bg) for IG/Twitter/FB profile pics. **Pushback on the cyan jar artwork (v5):** offered four PIL recolor variants but Tony correctly rejected — "you can clearly see that the orange was overlayed on top of the teal." Pixel-recoloring a generative-AI artwork is fundamentally a paint-over job; the underlying composition keeps showing. Decided to retire the jar mark from the launch path and use only the wordmark + OG card across all surfaces.
+
+**v9 (shipped):** Tony provided ChatGPT-generated wordmark+soundwave PNGs (`myLocaljam_wordmark_soundwave_dark.png` / `_light.png` at 1672×941 with baked-in solid backgrounds). Preprocessed via PIL: detected the corner background color, replaced bg-matching pixels with transparency (with soft fade for anti-aliased edges), cropped to content bbox. Output: 1225×209 dark and 1382×245 light, both transparent-bg, ready to drop into the header.
+
+**Discovered `SiteHeader.js` is dead code.** Did NOT find any imports. The homepage `<header>` is inline in `page.js` and rendered the wordmark as styled CSS text spans — not an Image. My initial v8 swap into SiteHeader.js was a no-op for what users see. Updated `page.js` directly to render the v9 PNG via plain `<img>` (instead of `next/image`, to keep the change minimal and avoid a new import).
+
+**Sized iteratively:** 28px height felt too big on iPhone (truncated SEARCH/FILTERS pill to "SEA..."). Dropped to 22px — comfortable. Removed a stale 6px spacer between logo and omnibar (parent `<header>` has `gap: 10px` which already provides spacing; the explicit spacer was double-counting at 26px total).
+
+**Header layout audit:** rest of the header is well-architected. Right-side icon group uses contained `gap: 8px`; saved/profile-tab spacer (`flex: 1`) is intentional push-bell-to-right; omnibar inner spacer same pattern; flex shrink rules correct (logo and icons `flexShrink: 0`, omnibar `flex: 1`). One harmless redundancy (logo wrapper has `display: flex, alignItems: center` which is redundant with the parent header's `alignItems: center`). On iPhone SE-class devices (375px width), the available omnibar width drops to ~128px — tight but workable; if "SEARCH / FILTERS" placeholder ever truncates on a real SE, drop the logo to 20px or shorten the placeholder via a media query.
+
+### Files Changed (May 5 PM)
+
+| File | Change |
+|------|--------|
+| `src/lib/safeHref.js` | NEW — URL parse + http/https/mailto allowlist + auto-https prepend |
+| `src/components/EventCardV2.js` | safeHref on `event.source`, `event.venue_website` |
+| `src/components/SiteEventCard.js` | safeHref on `ticket_link`, `source`, `venue_website` (was actually-unguarded) |
+| `src/app/event/[id]/EventPageClient.js` | safeHref on `event.source`, `event.venue_website` |
+| `src/components/SavedGigCard.js` | safeHref on `event.source` |
+| `src/components/admin/AdminEventsTab.js` | safeHref on `ev.source` (3 references) |
+| `src/components/admin/AdminTriageTab.js` | safeHref on `ev.source` |
+| `src/components/admin/AdminArtistsTab.js` | safeHref on `ev.source` |
+| `src/components/admin/AdminVenuesScrapers.js` | safeHref on `s.website_url` |
+| `src/app/api/sync-events/route.js` | safeHref on `mapEvent` writes (`ticket_link`, `source`) |
+| `src/app/api/admin/force-sync/route.js` | Same as sync-events |
+| `src/app/api/admin/route.js` | safeHref on POST + PUT `ticket_link` |
+| `src/app/api/admin/queue/route.js` | safeHref on submission promotion `ticket_link` |
+| `src/app/api/admin/venues/route.js` | safeHref on `website` field in `sanitize()` |
+| `next.config.js` | NEW SECURITY_HEADERS array; second headers() entry applied to `/(.*)` |
+| `src/app/api/admin/upload-image/route.js` | M8 gate; full err to console.error, generic to body in prod |
+| `src/app/api/admin/ai-enhance/route.js` | M8 gate same shape |
+| `src/app/api/admin/migrate-base64/route.js` | M8 gate; per-artist `errors[]` keeps artist NAME |
+| `src/app/api/admin/analytics/route.js` | M8 gate + ?debug=1 NODE_ENV-gated; calendar-day-Eastern timeFilter; allSettled wrapper; 4 new HogQL queries (Spotlight CTR, top referrer, NJ %, new vs returning); `coalesce(properties.action, '') != 'unsaved'` for bookmarks; `maxDuration = 60`; ReferenceError fix in `buildTimeFilter` |
+| `src/app/admin/page.js` | Default `dashDateRange` `'7d'` → `'today'` |
+| `src/components/admin/AdminDashboardTab.js` | NEW Audience section: 4 new MetricCards |
+| `src/app/opengraph-image.js` | Orange highlight moved from "spot." to "local"; all three lines normalized to outer-span-pre shape (Satori fix) |
+| `src/components/HeroSection.js` | NEW import posthog; spotlight_tapped on slide click; spotlight_impression useEffect on active-index change |
+| `src/components/SubmitEventModal.js` | NEW import posthog; add_to_jar_clicked on mount; add_to_jar_submitted on poster + manual paths |
+| `src/app/page.js` | safeHref nothing here; REQ-A4 filter_applied on Search button + clearAllFilters; REQ-A5 fix on saveEventToDb + unsaveEventFromDb; rename Local Followed → local_followed and User Signed In → user_signed_in; v9 wordmark <img> replacing CSS-text spans (22px height, mode-responsive, plain img); removed 6px logo↔omnibar spacer |
+| `src/components/FollowingTab.js` | rename List Sorted/Filtered → following_list_sorted |
+| `src/components/SiteHeader.js` | (Dead-code component; updated to v8/v9 in this session but NOT imported anywhere — flagged in PARKED) |
+| `src/app/artist/[id]/page.js` | OG fallback flipped from off-brand v5 jar → v9 dark navy avatar |
+| `public/myLocaljam_Logo_v9_soundwave_dark.png` | NEW — 1225×209 transparent, white myLocal + orange jam + soundwave |
+| `public/myLocaljam_Logo_v9_soundwave_light.png` | NEW — 1382×245 transparent, slate myLocal + orange jam + soundwave |
+| `public/myLocaljam_avatar_v9_dark_1024.png` | NEW — 1024×1024 dark navy with v9 wordmark composite |
+| `social-share/avatar-v9-1024x1024.png` + `avatar-v9-512x512.png` | NEW — for social profile pic upload |
+| `myLocaljam rebrand_chatgpt/` | 11 PNGs from external rebrand committed (NOT used directly; ChatGPT raw exports). Worth `.gitignore`-ing post-launch. |
+| `POSTHOG_SETUP.md` | NEW — step-by-step UI recipe for 4 dashboards + funnel |
+| `ANALYTICS_PLAN.md` | All REQ statuses updated; bonus events table refreshed; new Audience section |
+| `SECURITY_AUDIT_2026-05-02.md` | H4 / M1 Phase 1 / M8 marked shipped with detail |
+| `DOCS_INDEX.md` | Added POSTHOG_SETUP.md reference |
+
+### Tasks closed this session
+
+Audit + priority list, H4 (helper + render sites + write sites + DB audit), M1 Phase 1 (5 headers), M8 (4 admin routes), OG image orange-on-LOCAL + Satori fix, analytics audit, REQ-A3, REQ-A4, REQ-A5 fix, REQ-A6, calendar-day-Eastern range, snake_case rename, new Audience admin tiles, multiple analytics route bugs (tuple-DISTINCT, NJ subquery column, new/returning logic, ReferenceError, bookmarks coalesce), POSTHOG_SETUP.md recipe, v8 logo recolor (didn't ship), v9 logo wired into homepage header, logo size + spacing tuning, header audit.
+
+### Tasks still open / parked
+
+- **C1 secret rotation** — Tony's manual task; checklist in SECURITY_AUDIT.
+- **C4 npm audit fix** — Next 16 bump risk; deferred decision.
+- **H1 admin auth** — multi-day Supabase role-based migration.
+- **H2 SSRF allowlist** on upload-image — admin-gated, lower priority.
+- **H3 anon client + RLS audit** — multi-hour, needs live RLS map via Supabase MCP.
+- **H5 Upstash for flag-event** — multi-hour.
+- **H6 httpOnly cookies** — big migration.
+- **C3 full** — Upstash + captcha on 4 public POSTs.
+- **M1 Phase 2 — CSP** in Report-Only mode → enforce.
+- **PostHog UI clicks** — 4 dashboards + funnel per POSTHOG_SETUP.md.
+- **PARKED #5** Triage audit (still pending; orphan-event notification path).
+- **Sentry / error monitoring hookup** — flagged as launch-blocking; not yet started.
+- **BetaWelcome → public welcome** copy refresh — pre-launch.
+- **OG share preview verification** across iMessage / Twitter / FB / LinkedIn — partial (verified iMessage).
+- **Privacy / Terms freshness check** — pre-launch.
+
+### Notes for next session
+
+- **`SiteHeader.js` is dead code.** Defined but never imported. The homepage header lives inline in `page.js`. Either delete `SiteHeader.js` post-launch or wire it in as the canonical header component (clean architecture but bigger change). Flagged in PARKED.
+- **Asset cleanup needed pre- or post-launch.** v7 wordmark, v8 variants, v9 variants, plus 11 PNGs in `myLocaljam rebrand_chatgpt/` all sit in the repo. ~10MB of duplicate logo art. The `myLocaljam rebrand_chatgpt/` folder shouldn't have been committed — it's raw design exports. Consider `.gitignore`-ing it.
+- **Spotlight CTR currently uses raw event counts (no dedup).** With auto-rotation every 5s, a single 5-min session inflates impression count to ~60. Real-user CTR will read low. Switch back to deduped impressions when volume justifies the slower `DISTINCT` path or when on Pro plan with the longer function timeout.
+- **Bookmark off-by-one (PostHog 79 vs Supabase 22 over 7d) — investigate at ~50/day volume.** At current 5/day we can't distinguish a real drift from one user's double-tap. Three plausible explanations: save→unsave round-trips, silent DB write failures, multiple posthog events per single save action.
+- **iPhone SE width budget** — at 375px CSS, omnibar gets ~128px after logo + icons. If SEARCH/FILTERS placeholder ever truncates, options: drop logo to 20px, shorten placeholder via media query.
+- **Vercel plan affects function caps.** Hobby is 10s for serverless. Adding more parallel HogQL queries to the analytics route will keep hitting this wall. Pro ($20/mo) gives 60s and removes the constraint. Not urgent but worth knowing if more analytics surface lands.
+- **Replace_all caution.** The buildTimeFilter ReferenceError happened because a broad string replace caught the function's own definition. Manually edit each occurrence when the pattern appears in semantically-different contexts.
+- **Header layout discipline.** The 6px stale spacer + parent `gap: 10px` double-count was a real bug that took a screenshot to surface. When introducing flex `gap` on a container, audit explicit-spacer divs in the children.
+
+

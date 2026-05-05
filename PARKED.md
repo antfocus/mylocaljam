@@ -729,6 +729,108 @@ Two flavors discussed:
 
 ---
 
+## #7 — `SiteHeader.js` is dead code
+
+**Why parked:** May 5, 2026. Surfaced when wiring the new v9 wordmark into the homepage header. `src/components/SiteHeader.js` defines a `SiteHeader` component but **nothing imports it** — verified via `grep -r SiteHeader src/`. The homepage's `<header>` lives inline in `src/app/page.js` (around lines 2166-2381) with the wordmark rendered as styled CSS text spans (now an `<img>` post-May-5). My initial v8/v9 swap into `SiteHeader.js` was a no-op for what users see — wasted ~20 minutes of debugging time before realizing the file was unused.
+
+**Two paths forward:**
+
+1. **Delete `src/components/SiteHeader.js`.** Cleanest. Nothing depends on it. ~30 seconds.
+2. **Wire it in as the canonical header component.** Refactor the homepage's inline `<header>` block to import and render `SiteHeader`. Better architecture (DRY, easier to update header design across routes if other routes ever need a header). But the inline header in `page.js` has tight coupling with state that lives in `page.js` (`searchOpen`, `setShowSubmit`, `notifDrawerOpen`, `unreadCount`, etc.) — extracting cleanly means either passing all those as props (~12 props) or moving them into the component via context. Multi-hour refactor.
+
+**Recommendation:** delete (option 1) for now; the architecture cleanup (option 2) is post-launch work, only worth doing if a second route ever needs a header.
+
+**Risk:** Zero — file is unused.
+
+**Effort:** Option 1: ~1 minute. Option 2: 2-4 hours.
+
+---
+
+## #8 — Asset cleanup (logo PNG sprawl + committed design exports)
+
+**Why parked:** May 5, 2026. The repo currently carries multiple generations of logo art that aren't all in use:
+
+- `public/myLocaljam_Logo_v4.png` — jar+dancers icon, used as push-notification icon in `src/lib/notifications.js`. Keep.
+- `public/myLocaljam_Logo_v5.png` — off-brand cyan-jam jar artwork. No longer referenced anywhere (artist OG fallback flipped to v9 avatar May 5). Safe to delete.
+- `public/myLocaljam_Logo_v7_transparent_031126.png` — original teal+orange wordmark. Still referenced as SiteHeader.js fallback (which is itself dead code). Safe to delete after #7 ships.
+- `public/myLocaljam_Logo_v8_*` — teal-removal recolor variants, never deployed. Safe to delete.
+- `public/myLocaljam_Logo_v9_soundwave_*` — current logo. Keep.
+- `public/myLocaljam_avatar_dark_1024.png` (v8 era) — superseded by v9 avatar. Safe to delete.
+- `public/myLocaljam_avatar_v9_dark_1024.png` — current. Keep.
+- `myLocaljam rebrand_chatgpt/` directory — 11 PNGs from external rebrand process. Raw exports. **Should not have been committed.** Roughly 9MB. Should be `.gitignore`d.
+- `revert-files/` directory — apple-touch-icon.png + favicons + old logos. Looks like a one-time backup; may or may not still be needed.
+
+**Scope:**
+
+1. `git rm` the v5, v7, v8 PNGs after verifying they're no longer referenced.
+2. Move `myLocaljam rebrand_chatgpt/` outside the repo (or delete) and add to `.gitignore`.
+3. Decide whether `revert-files/` is still useful or should be removed.
+4. Run `du -sh public/` before and after to confirm meaningful reduction.
+
+**Risk:** Low if the grep verifies no references. Each PNG should be `git grep`'d before deletion to confirm.
+
+**Effort:** ~30 minutes.
+
+---
+
+## #9 — Spotlight CTR uses raw event counts (not deduped)
+
+**Why parked:** May 5, 2026. The `spotlight_tapped / spotlight_impression` ratio in the new admin Audience tile uses raw `count()` of both events, not deduped per (person_id, event_id). The original implementation used `count(DISTINCT concat(...))` to dedup but that exceeded Vercel Hobby's 10s function timeout when included alongside the other 8 parallel HogQL queries.
+
+**Practical implication:** with the carousel auto-rotating every 5s, a single 5-minute viewer-session generates ~60 impressions per viewer. So 340 impressions in a window represents roughly 6 viewer-sessions worth of carousel cycling, not 340 distinct people. The CTR will read low — 0.88% in the May 5 sample — when the "true" per-viewer CTR is probably 20-50%.
+
+**Resolution paths:**
+
+1. **Switch to PostHog Pro** ($20/mo) — gives 60s function timeout, allowing the slower DISTINCT query to run.
+2. **Move the slow query out of the parallel batch.** Lazy-load Spotlight CTR via a separate `?metric=spotlight` endpoint that the dashboard fetches AFTER the main response renders. Adds complexity but stays on Hobby.
+3. **Accept the raw-count metric and rename the tile** to "Spotlight Tap Rate (raw)" so the meaning is honest. Still trackable as a trend.
+
+**When to revisit:** when the CTR number starts driving real product decisions and the rough-vs-accurate distinction matters. At launch we just need to know the trend (going up or down over time), not the absolute.
+
+**Risk:** Low. The metric is directionally useful even at raw count.
+
+**Effort:** Option 1: $20/mo + nothing else. Option 2: ~30 min. Option 3: 5 min rename.
+
+---
+
+## #10 — Bookmark count off-by-one between PostHog and Supabase
+
+**Why parked:** May 5, 2026. PostHog reports 79 `event_bookmarked` events over 7 days; Supabase `user_saved_events` table has 22 rows for the same window. That's a 3.6x gap.
+
+**Plausible explanations:**
+
+- **Save → unsave round-trips.** Each pair fires 2 PostHog events but leaves 0 net rows. Now that the May 5 capture adds `action: 'saved' | 'unsaved'`, this is quantifiable on go-forward.
+- **Silent DB write failures.** Auth token race, RLS issue, network blip — the `setFavorites` optimistic UI succeeds but the `/api/saved-events` POST silently fails. The catch block in `saveEventToDb` swallows the error.
+- **Multiple PostHog events per single user save action.** React re-render or double-tap firing the handler twice.
+
+**Why now is OK to defer:** at 5-10 saves/day we can't distinguish patterns from noise. One distracted user double-tapping accounts for a meaningful fraction.
+
+**When to revisit:** when daily save volume hits ~50. Then run a same-window comparison query and look at the action='unsaved' count, the auth-fail logs, and the time-clustering of bookmark events from the same person_id.
+
+**Risk:** Zero. The displayed bookmark count is still directionally useful.
+
+**Effort:** ~1-2 hours of investigation + targeted instrumentation when ready.
+
+---
+
+## #11 — Logo width budget on iPhone SE
+
+**Why parked:** May 5, 2026. The new v9 wordmark+soundwave logo at 22px height renders ~127px wide. On iPhone SE (375px CSS width), after subtracting 32px header padding + 22px parent gaps + 68px right-side icon group, the omnibar is left with ~128px. The "SEARCH / FILTERS" placeholder text just barely fits.
+
+**Watch for:** truncation to "SEARCH / ..." or "SEA..." on real SE-class devices. None reported yet (Tony's iPhone is wider).
+
+**Resolutions if it surfaces:**
+
+1. Drop the logo to 20px height (reduces width by ~9%).
+2. Shorten the placeholder via a media query — show just "SEARCH" on viewports under 400px.
+3. Drop the SEARCH/FILTERS placeholder entirely on narrow widths and lean on the magnifying-glass icon alone.
+
+**Risk:** Zero unless it surfaces.
+
+**Effort:** ~5 minutes.
+
+---
+
 ## See also
 
 - **CATEGORIES-HANDOFF.md** — category/shortcut audit + auto-templates from event history (parking lot section)
