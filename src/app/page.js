@@ -2201,9 +2201,15 @@ export default function HomePage() {
             />
           </div>
 
-          {/* Spacer + Omnibar — hidden on saved/profile tabs */}
+          {/* Omnibar — hidden on saved/profile tabs.
+              Removed the 6px spacer May 5, 2026: the parent <header> uses
+              flex `gap: 10px`, which already places 10px between every
+              direct child. The 6px spacer was adding another 16px of
+              dead space between the logo and the omnibar (10 gap + 6
+              spacer + 10 gap = 26px) which read as "search is far away
+              from logo" on iPhone-width viewports. Now just the parent's
+              10px gap. */}
           {activeTab !== 'saved' && activeTab !== 'profile' && <>
-          <div style={{ width: '6px', flexShrink: 0 }} />
 
           {/* Omnibar pill — Fake search bar (div wrapper to avoid button-in-button hydration error) */}
           <div role="button" tabIndex={0} onClick={(e) => {
