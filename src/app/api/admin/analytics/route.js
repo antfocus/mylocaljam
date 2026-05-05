@@ -229,14 +229,23 @@ export async function GET(request) {
       ),
 
       // 5. Total event_bookmarked count — only count saves, not unsaves.
-      // Pre-May-5 events have no `action` property — count those as saves
-      // (the action column was added May 5; old data is save-only by design).
+      // Pre-May-5 events have no `action` property; the action property was
+      // added May 5 2026 with the unsave-tracking change.
+      //
+      // HogQL's NULL handling on missing JSON properties is inconsistent
+      // (some accessor paths return NULL, others return empty string),
+      // which is why the original `action IS NULL OR action = 'saved'`
+      // filter was excluding ALL events on production. Coalescing the
+      // property to a sentinel and then NOT matching 'unsaved' is the
+      // resilient form: legacy events with missing action coalesce to
+      // empty string, which fails the != 'unsaved' check by being a
+      // different value, so they're correctly counted as saves.
       hogql(projectId,
         `SELECT count() AS bookmarks
          FROM events
          WHERE event = 'event_bookmarked'
            AND ${timeFilter}
-           AND (properties.action IS NULL OR properties.action = 'saved')`
+           AND coalesce(properties.action, '') != 'unsaved'`
       ),
 
       // 6. Spotlight CTR: taps / impressions for the time window. Both events
