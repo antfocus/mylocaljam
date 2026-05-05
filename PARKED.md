@@ -695,6 +695,40 @@ Same noise pattern caused the May 2 Boatyard 401 "$5 Cover" badge bug (the `cove
 
 ---
 
+## #5 — Triage tab over-permissiveness + orphan-event notification
+
+**Why parked:** User flagged that the admin Triage tab is "letting too many events into the triage" — false-positive load makes it hard to spot real orphans. Also wants a separate notification mechanism so genuine orphans surface without the admin having to remember to check Triage.
+
+Two sub-problems that should be solved in this order:
+
+1. **Audit the Triage filter logic.** Capture a screenshot of what's currently in there, identify the false-positive pattern, tighten the rule. Don't bolt notifications onto a leaky filter — fix the filter first.
+2. **Notification channel.** Once Triage is reliable, decide where the signal goes: email digest? in-app admin badge? Slack? User checks email + app, not Slack.
+
+**Why now is OK to defer:** The May 5 session lifted artist_id linking out of `skipEnrich` (`sync-events/route.js`). Cron runs now link every event they insert at scrape time — orphan rate should drop dramatically. Notifications are nice-to-have, not critical, until we see the post-fix orphan rate over a few cron cycles.
+
+**Risk:** Low. Without notifications, orphans still self-heal eventually (admin manually triggers backfill, retroactive alias sweep on artist save, etc.) — just slower than ideal.
+
+**Effort:** ~1-2 hours for the Triage audit + filter tightening. Notification mechanism depends on channel choice (in-app badge is fastest; email digest needs a cron + template; Slack needs a webhook).
+
+---
+
+## #6 — Automated enrich-backfill cron
+
+**Why parked:** Currently `/api/admin/enrich-backfill` only runs when an admin manually triggers it from the Backfill tab. With Pass 1 (artist_id linking) lifted out of `skipEnrich` in the May 5 session, the orphan rate should drop dramatically. A scheduled backfill is now optional polish rather than required infrastructure.
+
+Two flavors discussed:
+
+- **Light** — `?linkOnly=true` mode. Runs every 4 hours. Just stamps `artist_id` for any orphan whose name now matches an alias added since the event was scraped. Cheap, no LLM cost, catches the "alias added after event scrape" gap.
+- **Full** — existing endpoint (LLM + image/bio cascade). Runs once or twice daily. Slow + costly but covers everything.
+
+**When to revisit:** After watching post-fix orphan rate for a week. If orphans persist > a small handful per day, ship the light cron. The full cron is overkill if the light handles 95% of the gap.
+
+**Risk:** Low. Manual backfill + retroactive alias sweep cover the edge cases today.
+
+**Effort:** Light cron: ~30 min (one vercel.json entry + a `linkOnly` branch in the existing endpoint). Full cron: same vercel.json entry pointing at the existing endpoint, but cost monitoring needed.
+
+---
+
 ## See also
 
 - **CATEGORIES-HANDOFF.md** — category/shortcut audit + auto-templates from event history (parking lot section)

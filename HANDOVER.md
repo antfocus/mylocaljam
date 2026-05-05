@@ -5610,3 +5610,120 @@ Scroll diagnosis (3 fixes, parked), scrape-time kind classifier, share-landing S
 - **Share-page CTAs were silently broken.** `handleSoftCTA` no-op for logged-in users was a launch hole — anyone clicking a shared-link Save/Follow button got no response. Worth scanning other "soft CTA" handlers in the codebase for the same pattern.
 - **Security audit is the durable doc.** `SECURITY_AUDIT_2026-05-02.md` is the working list. Don't fold the outstanding items into HANDOVER or PARKED line-by-line; cross-reference and let that doc carry the detail. Fold into HANDOVER when items ship (the "Status as of end of day" block in the audit gets updated as fixes land).
 
+---
+
+## Session — May 5 2026 (search filter UX overhaul, OpenAI LLM router, orphan-linking fix)
+
+A long iterative session anchored on the search filter modal redesign (multi-round ChatGPT collaboration), an LLM router refresh, and the discovery + fix of a critical artist_id orphan bug in the cron path.
+
+### 1. Search filter modal — full UX overhaul
+
+Multiple rounds of user feedback + ChatGPT review. Ended at this shape:
+
+**Footer.** Was: bold ghost text "Reset" / "Close" with tiny icons → users said the buttons "didn't read as buttons." Tried: outlined caps stacked → felt mismatched with single-line Search. Settled: plain text-link side actions, sentence case (`↻ Clear filters` / `✕ Close`), weight 600, color `#B0B0C8` dark / `#525B68` light, 13px, single-line, with their icons. Search stays the only filled-orange primary in the row. `Clear filters` always rendered (was hiding when no filters → asymmetric layout) but disabled (40% opacity, `cursor: default`) when there's nothing to clear.
+
+Why text-link works *now* but didn't before: Row 2 (active filter chip strip — see below) carries the visual weight of filter management. The footer is a utility row (bulk-clear + exit), not a decision row. With Row 2 in place, outlined buttons over-weighted the footer relative to its job.
+
+**Active filter chip rows.** Two new strips, both with per-filter `✕`:
+- *Inside the modal* — between shortcut pills and the DATE card. Renders chips for each non-default filter (date, distance, shortcut, venues, town-only). Search query intentionally NOT chipped — already in the input above.
+- *Closed-state header* (Row 2) — between the sticky header and the feed when `hasNonSearchFilters` is true. Same chip data, same one-tap clearing. Lets users see and unset filters without opening the modal.
+
+**Filter badge.** Was: orange chip with tune-icon at 9px font + 9px svg → at small sizes the three-line tune svg visually echoed `#`, plus the count was inflated by `searchQuery.trim() !== ''` so a one-search-term state showed "1" with no chip strip ("what is the 1?"). Fixed: bumped icon to 12px, separated `hasNonSearchFilters` / `nonSearchFilterCount` from `hasActiveFilters` / `activeFilterCount` so the badge counts filters only (search lives in the input, doesn't double-count). Removed the bare clear-all `✕` next to the badge — Row 2 chips have their own per-filter clears, modal's Clear filters covers bulk.
+
+**Default labels.** "Any time / Any distance / Any venue" → "All upcoming / Anywhere / All venues." More natural English; "Anywhere" especially reads better than "Any distance" (most users think geographically, not in radius units).
+
+**Suggestion-click.** Was: tapping an autocomplete suggestion staged the term AND closed the modal. Fixed: suggestion now stages the term, dismisses the autocomplete dropdown + keyboard, and KEEPS the modal open so users can layer on filters before tapping Search. Enter still commits as before.
+
+**Tighter gap.** Search input ↔ shortcut pills was 19px (10 + 1 + 8); shaved to ~11px (6 + 1 + 4) by tightening padding on both sides.
+
+**Venue selection dedupe.** "Jamian's" was appearing 5 times when selected (ACTIVE chip, Venue row label, orange "1" badge, selected chip in expanded picker, checkbox row). Removed: the count badge (label already says "Jamian's" or "3 venues"), the selected-chip strip + bulk Clear pill inside the expanded picker (checkbox row is canonical). Now appears 3 times, each doing a different job.
+
+### 2. LLM router — added OpenAI gpt-4o-mini, dropped Grok
+
+`src/lib/llmRouter.js` refactored: removed the `grok` provider (user wasn't using it), added `openai` with `gpt-4o-mini` as the default model. New routes:
+- `DEFAULT_ROUTE = ['gemini', 'openai', 'perplexity']`
+- `WEB_GROUNDED_ROUTE = ['gemini', 'openai', 'perplexity']`
+
+OpenAI provider uses `response_format: { type: 'json_object' }` for guaranteed valid JSON — cuts the parse-failure path that occasionally bit Gemini when its thinking budget truncated mid-token.
+
+**Real bug found in `aiLookup.js`:** the early-bail check at line 444 was gating on `!process.env.XAI_API_KEY` — if a deployment had only `OPENAI_API_KEY` set (no Gemini, no Perplexity, no XAI), `aiLookupArtist` would wrongly return null. Swapped to `OPENAI_API_KEY`.
+
+Cleanup: `AdminEnrichmentTab` usage stats display flipped `G:/P:/X:` → `G:/O:/P:`. `llm-diag` endpoint's `probeGrok` → `probeOpenAI` (model `gpt-4o-mini`, same response_format). Comment updates in `enrich-probe`, `ai-enhance`, `enrich-backfill`.
+
+User added $10 of OpenAI credits + Vercel env var `OPENAI_API_KEY` (Production + Preview). Cost projection: at 1700 input tokens / 400 output per call and gpt-4o-mini pricing, $10 covers ~20k calls — effectively unlimited for the current ~50-200 artists/wk volume.
+
+### 3. Hero pagination dots
+
+`HeroSection.js` indicator was a row of 3px-tall pills where the active one stretched to 12px wide. The width asymmetry read as broken orange dashes. Replaced with uniform 6px circles, white inactive (55% opacity) + orange active. White-not-orange for inactive because hero posters often have warm tones; low-opacity orange dots would camouflage.
+
+### 4. Spotlight title — 3-line clamp
+
+`HeroSection.js:562` artist-name `WebkitLineClamp: 2` → `3`. Billing-style titles like "Customer Service (Canada), Regency Club, Caveart" were truncating mid-second-act. 3 lines covers most billings; single-artist names rarely hit 2 so the common case is unaffected.
+
+### 5. SavedGigCard top stripe thinned
+
+`SavedGigCard.js:129` `borderTop: 8px solid #E8722A` → `5px`. Stack of 3+ saved cards was reading as orange-striped wallpaper. ~37% reduction lets event titles lead the visual hierarchy while preserving the ticket-stub silhouette.
+
+### 6. Queue: USE THIS for current image + lightbox enlargement
+
+`AdminEnrichmentTab.js`:
+- Added a small `USE THIS` chip under the CURRENT image in the queue review row. Clicking stages the artist's existing image_url as the override, so Approve writes the same URL back (no-op for value, but `is_human_edited.image_url = true` flips, locking it). Useful when the LLM proposed an image but the current one is already correct.
+- Added a lightbox for the CURRENT image too (was only on PROPOSED). Click the thumbnail → simple full-size viewer (single image, no candidate nav, no swap UI). Lightbox footer has a "Use this image" button that mirrors the chip behavior.
+- Confirmed via SQL that historical approved rows already have `is_human_edited` flags set for every field with content (zero missing locks across the queue's history) — no backfill needed.
+
+### 7. CRITICAL — artist_id linking lifted out of skipEnrich gate
+
+The discovery: `vercel.json` has every cron set to `?skipEnrich=true` (60s timeout fit). The artist_id linking step lived inside an `if (!skipEnrich) {...}` block in `sync-events/route.js`, so cron runs **never linked the events they inserted**. Result: every scrape day created N orphan events that sat unlinked until an admin manually clicked Run-Backfill.
+
+Confirmed by finding two such orphans from today's 02:54 AM scrape: "E BORO BANDITS" and "Pat Guadagno every" — both names had aliases in `artist_aliases` from April 23 that the linker should have matched. Stamped both retroactively via SQL.
+
+**Refactor in `src/app/api/sync-events/route.js`:**
+- Pass 1 (artist_id linking + alias resolution) lifted OUT of the `if (!skipEnrich)` block — runs on every cron now. Builds a minimal id-only `linkMap` so the queries stay cheap (two indexed reads + one bulk UPDATE).
+- Pass 2 (image/bio cascade + LLM enrichment via Last.fm/etc.) stays gated by `skipEnrich`. Phase 0 (bare-create) was already always-on, so by the time linking runs, every scraped name has an artist row.
+
+Linking is fundamentally different from enrichment: cheap, sets a null FK, never overwrites admin work. Should always run, regardless of timeout budget. This eliminates the orphan window for any name whose alias is already known at scrape time.
+
+### 8. EventCardV2 — reverted to 2-state click cycle
+
+Reverted two changes from the May 2 PM session:
+- 3-state cycle (closed → expanded → bio expanded → closed) → 2-state (closed ↔ expanded). Long-bio expansion is now ONLY reachable via the inline "Read More" link inside the open card — tapping the card body always toggles between the two card-level states. Restored the simpler mental model: one tap to peek, one tap to close.
+- `scrollIntoView` on collapse removed. Was added to keep users from getting stranded after reading a long bio, but the snap-back motion itself was disorienting. Card now collapses in place.
+
+### Files Changed (May 5)
+
+| File | Change |
+|------|--------|
+| `src/app/page.js` | Active filter chip strip in modal + Row 2 (closed-state header). Footer hierarchy: text-link side actions w/ icons, sentence case, weight 600, hidden `Clear filters` replaced with disabled state. `hasNonSearchFilters` / `nonSearchFilterCount` separation for badge + chip-row gating. Default labels reworded. Suggestion-click no longer closes modal. Tighter input/pills gap. Venue card: count badge removed, selected-chip strip + Clear pill removed. Inline closed-header chip rendering replaced by Row 2. |
+| `src/components/HeroSection.js` | Pagination dots: uniform 6px (white inactive 55% + orange active). Title clamp 2 → 3 lines. |
+| `src/components/SavedGigCard.js` | Top accent stripe 8px → 5px. |
+| `src/components/EventCardV2.js` | `handleCardClick` reverted to 2-state toggle. `scrollIntoView` on collapse removed. |
+| `src/components/admin/AdminEnrichmentTab.js` | `USE THIS` chip on CURRENT image + lightbox enlarge. Usage stats display G:/O:/P:. |
+| `src/lib/llmRouter.js` | Grok provider removed; OpenAI provider added (gpt-4o-mini, response_format json_object). Both routes now `[gemini, openai, perplexity]`. |
+| `src/lib/aiLookup.js` | Early-bail `XAI_API_KEY` check → `OPENAI_API_KEY`. Comments updated for new route order. |
+| `src/app/api/admin/llm-diag/route.js` | `probeGrok` → `probeOpenAI`. |
+| `src/app/api/admin/enrich-probe/route.js` | `hasGrok: !!XAI_API_KEY` → `hasOpenAI: !!OPENAI_API_KEY`. Comments. |
+| `src/app/api/admin/ai-enhance/route.js` | Comment updates. |
+| `src/app/api/admin/enrich-backfill/route.js` | Comment updates. |
+| `src/app/api/sync-events/route.js` | **Pass 1 linking lifted out of `skipEnrich` gate.** Always runs. Self-contained `linkMap` build (artists by name + aliases). Pass 2 (image/bio + LLM) stays gated. |
+| Vercel env | `OPENAI_API_KEY` added (Production + Preview). |
+| Supabase `events` rows | Retroactive `artist_id` stamp on 2 orphans (E BORO BANDITS, Pat Guadagno every). |
+
+### Tasks closed this session
+
+Search filter UX overhaul (multiple rounds), LLM router OpenAI integration, hero pagination dots, SavedGigCard stripe, Spotlight title clamp, suggestion-click stay-open, sync-events linking refactor, EventCardV2 revert. Plus the Queue USE-THIS + lightbox features.
+
+### Tasks still open / parked
+
+- **Automated enrich-backfill cron.** Discussed but not shipped. Two flavors: light (link-only) every few hours to catch the "alias added after event scrape" gap, and full (LLM + image/bio) once or twice daily. With Pass 1 lifted out of `skipEnrich`, the orphan rate should drop dramatically — the light cron is now optional polish rather than required infra. Park for now; revisit if orphans persist.
+- **Orphan notification mechanism.** User wants a signal when orphans exist (something better than the Triage tab, which is currently over-permissive and lets too many events leak in). Two sub-problems: (1) the notification channel itself (email digest? admin badge? Slack?) and (2) tightening Triage filter rules. Investigation deferred — start by capturing a screenshot of what's currently leaking into Triage and audit the filter logic.
+- All PARKED + SECURITY_AUDIT items still standing.
+
+### Notes for next session
+
+- **The orphan-linking fix is the most important shipped change.** Pass 1 now runs on every cron regardless of `skipEnrich`. Watch the `enrichResult.eventsLinked` counter on the next cron run to verify — should be non-zero on most runs (was 0 on every cron before this fix). If it's still 0, look at `linkMap` population — Phase 0 should be seeding artists for new names, but if Phase 0 is also skipped somewhere, the chain breaks.
+- **Triage tab needs an audit before adding orphan notifications.** Don't bolt notifications onto a leaky filter — fix the filter first, then wire the signal.
+- **Suggestion-click change is small but UX-heavy.** Worth watching feedback — users who tap a suggestion expecting it to commit (Pattern A) may be confused now that it stages-and-stays-open (Pattern B). If complaints land, consider a hybrid: stage on tap, but show a hint banner ("Pick filters then tap Search").
+- **Search filter footer iterated 4-5 times.** Don't iterate on it again in isolation — the current shape is the negotiated balance between "doesn't read as a button" (original feedback) and "feels crowded / shouty" (later feedback). If users complain again, treat it as a real new signal, not the same one repeating.
+- **OpenAI cost tracking.** $10 deposited; gpt-4o-mini at ~$0.0005/call. The router increments `usage.openai.calls` per call — surface that in admin diag if billing visibility becomes important.
+- **EventCardV2 reverts.** The 3-state cycle was a deliberate experiment — it failed because users expected the simpler 2-state. Don't reintroduce it without explicit user request.
+
