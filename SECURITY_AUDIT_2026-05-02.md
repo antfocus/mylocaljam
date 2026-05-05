@@ -21,6 +21,7 @@
 ### ✅ Shipped May 5, 2026 (afternoon session)
 
 - **H4** — `safeHref()` helper at `src/lib/safeHref.js` (URL parse + protocol allowlist of http/https/mailto). Applied at every render-side `<a href>` binding for scraper-emitted URLs (EventCardV2, SiteEventCard, EventPageClient, SavedGigCard, AdminEventsTab, AdminTriageTab, AdminArtistsTab, AdminVenuesScrapers). Replaces the per-site inline `/^https?:\/\//i.test(...)` check pattern with a centralized helper, so future render sites can't forget the check. Also applied at write paths so bad data never enters the DB: `sync-events/route.js mapEvent`, `admin/force-sync/route.js`, `admin/route.js` (POST + PUT), `admin/queue/route.js`, `admin/venues/route.js` (`website` field). Closes the `javascript:` URL XSS class for `events.ticket_link`, `events.source`, and `venues.website`.
+- **M1 Phase 1** — Five security headers added in `next.config.js`: `Strict-Transport-Security` (2-year HSTS without preload), `X-Frame-Options: DENY` (clickjacking), `X-Content-Type-Options: nosniff` (MIME-sniff defense for upload-image flow), `Referrer-Policy: strict-origin-when-cross-origin` (privacy on outbound clicks), `Permissions-Policy: camera=() microphone=() geolocation=(self)` (lock down browser APIs). Applied to every route via a second `headers()` entry. **Phase 2 (Content-Security-Policy) still pending** — will ship in `Content-Security-Policy-Report-Only` mode first to tune the third-party allowlist against PostHog, Supabase, Google Fonts, postimages, scraped CDN images, IPRoyal proxy.
 
 ### ⏳ Outstanding — requires Tony
 
@@ -177,8 +178,9 @@ vercel --prod               # ship a fresh deploy
 
 #### M1: No security headers (HSTS, X-Frame-Options, X-Content-Type-Options, Permissions-Policy, Referrer-Policy, CSP)
 
-**File:** `next.config.js:4-11` — only sets `Cache-Control`. `vercel.json` only has crons. No `middleware.js`.
-**Why it's a problem:** Site is clickjackable (any iframe), Referer leaks to third parties on every outbound click, no HSTS preload, MIME-sniffing, no CSP to mitigate H6.
+**Status:** ✅ Phase 1 shipped May 5, 2026 (HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy in `next.config.js`). ⏳ Phase 2 (CSP) pending — needs Report-Only rollout.
+**File:** `next.config.js:4-11` — previously only `Cache-Control`.
+**Why it's a problem:** Site was clickjackable (any iframe), Referer leaked full URLs on every outbound click, no HSTS, MIME-sniffing, no CSP to mitigate H6.
 **Fix:** Add a headers block in `next.config.js`:
 ```js
 { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
