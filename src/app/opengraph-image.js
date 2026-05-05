@@ -61,25 +61,24 @@ export default async function Image() {
             justifyContent: 'center',
           }}
         >
-          <div style={{ display: 'flex' }}>Your local</div>
-          <div style={{ display: 'flex' }}>music source,</div>
-          {/* The space between "one" and "spot." kept getting collapsed by
-              Satori. Every previous fix that touched the third div's flex
-              children — trailing space, NBSP, gap on the parent, marginRight
-              on the child — either lost the word break OR collapsed the
-              parent's column-flex height calc and stacked all three lines
-              at the same Y.
-              Fix: keep the line as a single outer span (so the flex div has
-              exactly one child and the column layout stays intact), and add
-              `whiteSpace: 'pre'` so Satori preserves the literal space
-              between "all in one " and the inline orange "spot." span.
-              Verified locally with the og-preview Satori harness before
-              deploying. */}
+          {/* Orange highlight moved from "spot." to "local" (May 5, 2026)
+              — "Local" is the differentiator (we're not Bandsintown / Songkick
+              / Ticketmaster aggregators, we're Jersey-Shore-specific) so that's
+              the word the eye should land on. "All in one spot." kept intact
+              because the idiom carries the comprehensiveness signal — "in one
+              spot" alone reads positionally, not aggregationally.
+              Satori quirk: literal space between an inline child and adjacent
+              text gets collapsed unless the parent uses `whiteSpace: 'pre'` AND
+              the flex div has exactly one outer span child. So line 1 wraps
+              "Your <orange>local</orange>" inside a single pre-whitespace span;
+              lines 2 and 3 have no inline child and need no special handling. */}
           <div style={{ display: 'flex' }}>
             <span style={{ whiteSpace: 'pre' }}>
-              all in one <span style={{ color: '#E8722A' }}>spot.</span>
+              Your <span style={{ color: '#E8722A' }}>local</span>
             </span>
           </div>
+          <div style={{ display: 'flex' }}>music source,</div>
+          <div style={{ display: 'flex' }}>all in one spot.</div>
         </div>
       </div>
     ),
