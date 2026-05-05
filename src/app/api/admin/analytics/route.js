@@ -239,14 +239,15 @@ export async function GET(request) {
       // are deduped by (person_id, event_id) at impression time so the CTR
       // is meaningful even if the carousel auto-rotates many times for the
       // same viewer. Numerator and denominator both share the same dedup
-      // shape so the ratio is honest.
+      // shape so the ratio is honest. Uses concat() for the dedup key
+      // because HogQL's tuple-DISTINCT support is iffy.
       hogql(projectId,
         `SELECT
-           (SELECT count(DISTINCT (person_id, properties.event_id))
+           (SELECT count(DISTINCT concat(toString(person_id), '|', toString(properties.event_id)))
             FROM events
             WHERE event = 'spotlight_tapped'
               AND ${timeFilter}) AS taps,
-           (SELECT count(DISTINCT (person_id, properties.event_id))
+           (SELECT count(DISTINCT concat(toString(person_id), '|', toString(properties.event_id)))
             FROM events
             WHERE event = 'spotlight_impression'
               AND ${timeFilter}) AS impressions`
@@ -274,41 +275,48 @@ export async function GET(request) {
       // $geoip_subdivision_1_code (state code, e.g. "NJ"). We compute NJ
       // visitors / total visitors with non-null geo (some browsers / VPNs
       // may have null geo; excluding them gives a more honest %).
+      // One row per person (not per pageview) so heavy users don't skew.
       hogql(projectId,
         `SELECT
-           sumIf(1, properties.$geoip_subdivision_1_code = 'NJ') AS nj_visits,
+           countIf(subdivision_code = 'NJ') AS nj_visits,
            count() AS total_visits_with_geo
          FROM (
-           SELECT DISTINCT person_id,
-                  any(properties.$geoip_subdivision_1_code) AS subdivision_code,
-                  any(properties.$geoip_subdivision_1_code) IS NOT NULL AS has_geo
+           SELECT person_id,
+                  any(properties.$geoip_subdivision_1_code) AS subdivision_code
            FROM events
            WHERE event = '$pageview'
              AND ${timeFilter}
              AND properties.$geoip_subdivision_1_code IS NOT NULL
+             AND properties.$geoip_subdivision_1_code != ''
            GROUP BY person_id
-         )
-         WHERE has_geo`
+         )`
       ),
 
-      // 9. New vs returning visitor split. PostHog auto-tags first-time
-      // pageviews with $is_identified=false and $session_count=1; we use
-      // a simpler heuristic: a person whose earliest pageview is in the
-      // current window is "new"; everyone else is "returning".
+      // 9. New vs returning visitor split. For every person who had a
+      // pageview in the time window, look at their FIRST EVER pageview
+      // (no time filter) and compare against the cutoff. If their first
+      // ever pageview falls inside the window, they're new this period;
+      // otherwise they're returning.
+      //
+      // The previous shape was buggy: it filtered events to the window
+      // first then asked "is min(timestamp) >= cutoff?" — by definition
+      // every windowed event passed that check, so returning_visitors
+      // was always 0.
       hogql(projectId,
         `SELECT
-           sumIf(1, first_seen_in_window) AS new_visitors,
-           sumIf(1, NOT first_seen_in_window) AS returning_visitors
+           countIf(first_ever >= cutoff) AS new_visitors,
+           countIf(first_ever < cutoff) AS returning_visitors
          FROM (
            SELECT person_id,
                   min(timestamp) AS first_ever,
+                  max(timestamp) AS last_ever,
                   ${range === 'today'
-                    ? `min(timestamp) >= toTimeZone(toStartOfDay(toTimeZone(now(), 'America/New_York')), 'UTC')`
-                    : `min(timestamp) >= now() - toIntervalDay(${days})`} AS first_seen_in_window
+                    ? `toTimeZone(toStartOfDay(toTimeZone(now(), 'America/New_York')), 'UTC')`
+                    : `now() - toIntervalDay(${days})`} AS cutoff
            FROM events
            WHERE event = '$pageview'
-             AND ${timeFilter}
            GROUP BY person_id
+           HAVING last_ever >= cutoff
          )`
       ),
     ]);

@@ -51,7 +51,11 @@ export default function AdminPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [returnToTab, setReturnToTab] = useState(null); // remembers which tab to return to after artist edit
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [dashDateRange, setDashDateRange] = useState('7d'); // 'today' | '7d' | '30d' | 'all'
+  // Default to 'today' (May 5, 2026): at current beta volume the day-to-day
+  // signal is what's actionable. 7d smooths out exactly the noise we want to
+  // see. Bump back to '7d' once we're at 100+ daily visitors and trends matter
+  // more than today's number.
+  const [dashDateRange, setDashDateRange] = useState('today'); // 'today' | '7d' | '30d' | 'all'
   const [analyticsData, setAnalyticsData] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsEnv, setAnalyticsEnv] = useState('production'); // 'production' | 'dev'
