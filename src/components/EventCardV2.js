@@ -97,45 +97,26 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
   const SHORT_BIO_LIMIT = 300;
   const isShortBio = desc.length > 0 && desc.length <= SHORT_BIO_LIMIT;
 
-  // Three-state card click cycle. Tapping anywhere on the card advances:
-  //   closed                → open with bio collapsed
-  //   open + bio collapsed  → bio expanded   (only if there's a long bio)
-  //   open + bio expanded   → closed
-  //   open + short bio      → closed         (no Read More step to walk)
-  // Action-row buttons stopPropagation so they bypass this cycle. The
-  // Read More / Show Less button has its own handler that participates
-  // in the same cycle but skips the "advance to bio expanded" step from
-  // the closed state (it's only reachable when the card is already open).
+  // Two-state card click cycle (reverted from 3-state on 2026-05-05).
+  //   closed   → open
+  //   open     → closed
+  // Long-bio expansion is now reachable ONLY via the inline "Read More"
+  // link inside the open card — tapping the card body always toggles
+  // between the two card-level states. This restores the simpler mental
+  // model users had before the 3-state cycle (#75): one tap to peek,
+  // one tap to close.
+  // Action-row buttons stopPropagation so they bypass this toggle.
+  // The Read More button (further down) toggles bioExpanded
+  // independently, scoped to the bio paragraph only.
+  // ALSO REVERTED: scrollIntoView on collapse. Users were finding the
+  // viewport snap on close jarring — the card now collapses in place,
+  // and if the user has scrolled past it they can scroll back themselves.
   const handleCardClick = () => {
     // Long-press just fired — swallow the click that follows pointerup.
     if (longPressFired.current) { longPressFired.current = false; return; }
-    const hasLongBio = desc.length > 0 && !isShortBio;
-    if (!expanded) {
-      setExpanded(true);
-      setBioExpanded(false);
-      return;
-    }
-    if (!bioExpanded && hasLongBio) {
-      setBioExpanded(true);
-      return;
-    }
-    // Closing transition. When the user reads a long bio they often
-    // scroll several hundred px down past the card's compact row, then
-    // tap to collapse — the card shrinks but their viewport stays where
-    // it was, leaving them stranded in whitespace below the now-tiny
-    // card. Scroll the card back into view so they don't lose their
-    // place. block:'center' puts the card mid-viewport (avoids the
-    // sticky top nav clipping the title flush at top:0). The setTimeout
-    // waits for the max-height collapse transition (250ms) to finish so
-    // the smooth scroll lands at the card's final compact position
-    // rather than chasing a moving target.
-    setExpanded(false);
-    setBioExpanded(false);
-    setTimeout(() => {
-      try {
-        cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      } catch { /* older browsers — ignore */ }
-    }, 260);
+    setExpanded(prev => !prev);
+    // When closing, also reset bio-expanded so reopening starts clean.
+    if (expanded) setBioExpanded(false);
   };
 
   // Check if description text is actually truncated. Short bios skip this
@@ -297,9 +278,10 @@ function EventCardV2({ event, isFavorited = false, onToggleFavorite, darkMode = 
       {/* Card body */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
 
-        {/* Compact row — long-press opens shortcut menu, tap walks the
-            three-state cycle (closed → open → bio expanded → closed). See
-            handleCardClick above for the full state machine. */}
+        {/* Compact row — long-press opens shortcut menu, tap toggles
+            the card open/closed (two-state). Long-bio expansion lives
+            on the inline "Read More" link inside the open card. See
+            handleCardClick above. */}
         <div
           onClick={handleCardClick}
           onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
