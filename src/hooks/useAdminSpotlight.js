@@ -406,6 +406,46 @@ export default function useAdminSpotlight({ password }) {
     setSpotlightStagingError(null);
   }, []);
 
+  // ── History panel state (May 5, 2026 — item #3 of safety pass) ──────────
+  // Recent saves for the currently-loaded date. Each entry has
+  // { id, saved_at, previous: [{id, title}], next: [{id, title}] }.
+  // Loaded on demand via fetchSpotlightHistory; used by the UI's
+  // "Recent changes" panel to surface revert candidates.
+  const [spotlightHistory, setSpotlightHistory] = useState([]);
+  const [spotlightHistoryLoading, setSpotlightHistoryLoading] = useState(false);
+
+  const fetchSpotlightHistory = useCallback(async (date) => {
+    setSpotlightHistoryLoading(true);
+    try {
+      const res = await fetch(
+        `/api/admin/spotlight-history?date=${encodeURIComponent(date)}&limit=10`,
+        { headers }
+      );
+      if (!res.ok) {
+        setSpotlightHistory([]);
+        return;
+      }
+      const data = await res.json();
+      setSpotlightHistory(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load spotlight history:', err);
+      setSpotlightHistory([]);
+    } finally {
+      setSpotlightHistoryLoading(false);
+    }
+  }, [headers]);
+
+  // revertSpotlightToHistory stages a prior pin set as the current draft.
+  // Caller is the admin UI; this does NOT auto-save — the admin must click
+  // Save Changes to commit the revert (which itself writes a NEW history
+  // row, so reverts are themselves auditable).
+  const revertSpotlightToHistory = useCallback((eventIds) => {
+    if (!Array.isArray(eventIds)) return;
+    setSpotlightPins(eventIds);
+    setSpotlightSources(Object.fromEntries(eventIds.map(id => [id, 'manual'])));
+    setSpotlightStagingError(null);
+  }, []);
+
   const clearSpotlight = async () => {
     if (!confirm(`Clear all spotlight pins for ${spotlightDate}? The carousel will use the automatic fallback.`)) return;
     await fetch(`/api/spotlight?date=${spotlightDate}`, { method: 'DELETE', headers });
@@ -609,6 +649,11 @@ export default function useAdminSpotlight({ password }) {
     spotlightDirty,
     savingPins,
     discardSpotlightChanges,
+    // History / revert (May 5, 2026 — item #3)
+    spotlightHistory,
+    spotlightHistoryLoading,
+    fetchSpotlightHistory,
+    revertSpotlightToHistory,
     spotlightEvents, setSpotlightEvents,
     spotlightLoading,
     spotlightImageWarning, setSpotlightImageWarning,

@@ -59,6 +59,11 @@ export default function AdminSpotlightTab({
   spotlightDirty = false,
   savingPins = false,
   discardSpotlightChanges = () => {},
+  // History / revert (May 5, 2026 — item #3 of safety pass)
+  spotlightHistory = [],
+  spotlightHistoryLoading = false,
+  fetchSpotlightHistory = () => {},
+  revertSpotlightToHistory = () => {},
   spotlightEvents, spotlightLoading,
   spotlightSearch, setSpotlightSearch,
   setSpotlightImageWarning,
@@ -106,6 +111,10 @@ export default function AdminSpotlightTab({
   const [bannerFilter, setBannerFilter] = useState(null);  // { type: 'updated'|'rescued', ids: string[] } | null
   // Confirmation dialog state — intercepts pin action so admin must confirm
   const [pendingPin, setPendingPin] = useState(null); // { eventId, artistName, venue } | null
+
+  // ── History panel (May 5, 2026 — item #3) ───────────────────────────────
+  // Collapsed by default. Open it on demand to see recent saves and revert.
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // ── Unsaved-changes guard (May 5, 2026 — item #2 of safety pass) ────────
   // beforeunload warns the admin if they try to close/refresh the tab with
@@ -462,8 +471,120 @@ export default function AdminSpotlightTab({
               >
                 Clear Pins
               </button>
+              {/* History toggle — opens the "Recent changes" panel below.
+                  Lazy-loads on first open so dates with no history don't
+                  pay for the round-trip until asked. */}
+              <button
+                className="px-3 py-2 rounded-lg text-sm font-medium"
+                style={{
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  border: '1px solid var(--border)',
+                  cursor: 'pointer',
+                }}
+                title="View recent saves and revert"
+                onClick={() => {
+                  setHistoryOpen(prev => {
+                    const next = !prev;
+                    if (next) fetchSpotlightHistory(spotlightDate);
+                    return next;
+                  });
+                }}
+              >
+                {historyOpen ? '▾ History' : '▸ History'}
+              </button>
             </div>
           </div>
+
+          {/* Recent changes panel (May 5, 2026 — item #3 of safety pass) ─
+              Loads on demand from /api/admin/spotlight-history. Shows the
+              most-recent saves for this date with the prior pin set so the
+              admin can revert an accidental overwrite. Revert STAGES the
+              prior set as the current draft — admin must click Save Changes
+              to commit (which writes a new history row, so reverts are
+              themselves auditable). */}
+          {historyOpen && (
+            <div style={{
+              marginTop: 12, padding: '12px 14px', borderRadius: 8,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              fontSize: 13, fontFamily: "'DM Sans', sans-serif",
+              color: 'var(--text-primary)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontWeight: 600 }}>Recent saves for {spotlightDate}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  Click Restore to stage that version. You'll still need to click Save to commit.
+                </span>
+              </div>
+              {spotlightHistoryLoading ? (
+                <div style={{ color: 'var(--text-muted)' }}>Loading…</div>
+              ) : spotlightHistory.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)' }}>
+                  No prior saves recorded for this date.
+                  {' '}<span style={{ fontSize: 11 }}>(History tracking started May 5, 2026 — older saves won't appear here.)</span>
+                </div>
+              ) : (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {spotlightHistory.map((entry, idx) => {
+                    const when = new Date(entry.saved_at);
+                    const ago = (() => {
+                      const diffMin = (Date.now() - when.getTime()) / 60000;
+                      if (diffMin < 1) return 'just now';
+                      if (diffMin < 60) return `${Math.floor(diffMin)}m ago`;
+                      const diffHr = diffMin / 60;
+                      if (diffHr < 24) return `${Math.floor(diffHr)}h ago`;
+                      return when.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                    })();
+                    const priorCount = entry.previous?.length || 0;
+                    const newCount = entry.next?.length || 0;
+                    const previewTitles = (entry.previous || []).slice(0, 3).map(p => p.title);
+                    const more = priorCount - previewTitles.length;
+                    return (
+                      <li key={entry.id} style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+                        gap: 12, padding: '8px 10px', borderRadius: 6,
+                        background: idx === 0 ? 'rgba(232,114,42,0.05)' : 'transparent',
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 12 }}>
+                            {ago} · replaced {priorCount} pin{priorCount === 1 ? '' : 's'} with {newCount}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                            Previous: {previewTitles.length > 0 ? previewTitles.join(' · ') : '(empty)'}
+                            {more > 0 && ` · +${more} more`}
+                          </div>
+                        </div>
+                        {priorCount > 0 && (
+                          <button
+                            className="px-2 py-1 rounded text-xs font-medium"
+                            style={{
+                              background: 'transparent',
+                              color: '#E8722A',
+                              border: '1px solid rgba(232,114,42,0.5)',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                            onClick={() => {
+                              if (spotlightDirty) {
+                                if (!confirm('Restoring will discard your unsaved changes. Continue?')) return;
+                              }
+                              const ids = (entry.previous || []).map(p => p.id);
+                              revertSpotlightToHistory(ids);
+                              setHistoryOpen(false);
+                            }}
+                            title="Stage this prior version as the current draft"
+                          >
+                            Restore
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
 
           {/* Magic Wand result banner — persists until the next run. */}
           {lastEnrichResult && (

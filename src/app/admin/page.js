@@ -515,6 +515,10 @@ export default function AdminPage() {
           spotlightDirty={sp.spotlightDirty}
           savingPins={sp.savingPins}
           discardSpotlightChanges={sp.discardSpotlightChanges}
+          spotlightHistory={sp.spotlightHistory}
+          spotlightHistoryLoading={sp.spotlightHistoryLoading}
+          fetchSpotlightHistory={sp.fetchSpotlightHistory}
+          revertSpotlightToHistory={sp.revertSpotlightToHistory}
           spotlightEvents={sp.spotlightEvents} spotlightLoading={sp.spotlightLoading}
           spotlightSearch={sp.spotlightSearch} setSpotlightSearch={sp.setSpotlightSearch}
           setSpotlightImageWarning={sp.setSpotlightImageWarning}

@@ -371,6 +371,39 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Maximum 8 spotlight events per day' }, { status: 400 });
   }
 
+  // ── Snapshot prior state into the audit log (May 5, 2026, item #3) ──────
+  // Read what's currently pinned for this date BEFORE deleting, then write
+  // the (previous, new) pair to spotlight_history. This is the audit trail
+  // that lets the admin UI revert an accidental overwrite. Best-effort —
+  // a history-write failure must NOT block the actual save (the user's
+  // intent is the foreground action; the audit is defensive).
+  let previousIds = [];
+  try {
+    const { data: priorPins } = await supabase
+      .from('spotlight_events')
+      .select('event_id, sort_order')
+      .eq('spotlight_date', date)
+      .order('sort_order', { ascending: true });
+    if (priorPins) previousIds = priorPins.map(p => p.event_id);
+  } catch { /* table may not exist on older deploys */ }
+
+  // Skip writing a history row when there's nothing to overwrite AND nothing
+  // new — empty-to-empty saves are noise (e.g. open a fresh date, save by
+  // accident, no actual change).
+  if (previousIds.length > 0 || event_ids.length > 0) {
+    try {
+      await supabase
+        .from('spotlight_history')
+        .insert({
+          spotlight_date: date,
+          previous_event_ids: previousIds,
+          new_event_ids: event_ids,
+        });
+    } catch (err) {
+      console.warn('[spotlight] history write failed (non-fatal):', err?.message);
+    }
+  }
+
   // Delete existing pins for this date
   await supabase
     .from('spotlight_events')
