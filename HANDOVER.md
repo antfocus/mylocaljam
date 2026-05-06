@@ -5969,4 +5969,48 @@ So the most likely scenario: Tony opened the Spotlight tab this morning, viewed 
 - The history panel lazy-loads on first open. Subsequent toggles use the cached state. After a save, the history doesn't auto-refresh in the panel — you'd need to close and re-open. Worth fixing if Tony uses it heavily; one-line `fetchSpotlightHistory(spotlightDate)` after a successful save would do it.
 - The `beforeunload` listener triggers the browser's generic "Leave site?" prompt — modern browsers ignore the `returnValue` text. The prompt itself is the safety net; it'll feel slightly noisy in dev when refreshing intentionally, but that's a one-time-cost of having dirty state across browser sessions.
 
+### 8. Audience tiles overhaul — replace NJ Traffic, add 3 new metrics
+
+Tony pushed back on the NJ Traffic tile that shipped earlier in the day: for a Jersey-Shore-specific product, "% NJ" has a knowable expected answer (mostly NJ) and tells you nothing actionable. Watching it read 80-90% week after week wastes a slot.
+
+**Pushback to drop NJ entirely.** The geographic dimension still matters; the lens just needs inverting. Replaced NJ % with **Top Non-NJ State**:
+- NY/PA = commuter or vacation traffic (potential expansion / partnership signal)
+- CA/TX/FL = ex-NJ diaspora staying connected, or out-of-state vacation planners
+- Random unexpected state = bot/scraper traffic to investigate
+- Same data source (`$geoip_subdivision_1_code` autocapture), one-line SQL change.
+
+**Three new tiles added** for higher-value signal:
+
+1. **Activation Rate** — `count(distinct person_id) WHERE event IN (engagement_events) / count(distinct person_id) WHERE event = '$pageview'`. Engagement events = `event_bookmarked`, `local_followed`, `user_signed_in`, `spotlight_tapped`, `add_to_jar_clicked`, `share_page_save_show`, `share_page_follow_artist`. The single most important PMF metric to watch on launch day — answers "are visitors doing anything besides looking?" 5% activation = problem; 30%+ = product-market fit signal.
+
+2. **Top Searched Term** — top of `properties.search_query` from `filter_applied` events. Required adding a new `search_query` property to the capture in `page.js` (line ~3520) with a PII guard:
+   ```js
+   const looksLikeEmail = rawQuery.includes('@');
+   const looksLikePhone = /^[0-9\-()\s.+]{7,}$/.test(rawQuery);
+   const safeQuery = (rawQuery && !looksLikeEmail && !looksLikePhone)
+     ? rawQuery.slice(0, 64).toLowerCase()
+     : null;
+   ```
+   Truncates to 64 chars, lowercases for aggregation, drops anything that smells like email or phone. Surfaces content-backlog signal — what users want that we may not have indexed yet. Pre-May-5 events have no `search_query` and naturally drop out of the aggregation.
+
+3. **Top Saved Artist** — top `properties.artist_name` from `event_bookmarked` events with `coalesce(properties.action, '') != 'unsaved'` (so legacy pre-action events count as saves). Reveals content patterns for spotlight curation and promotion decisions.
+
+**Audience section now has 7 tiles** (was 4): Activation Rate, Spotlight CTR, Top Referrer, Top Non-NJ State, Top Searched Term, Top Saved Artist, New vs Returning. Slightly busier but each tile drives an admin decision.
+
+### Files Changed (Audience overhaul)
+
+| File | Change |
+|------|--------|
+| `src/app/page.js` | `filter_applied` capture extended with `search_query` property + PII guard (email/phone shapes coerced to null) |
+| `src/app/api/admin/analytics/route.js` | NJ % query replaced with Top Non-NJ State; 3 new HogQL queries added (Activation, Top Searched Term, Top Saved Artist); destructure + parsing + response payload + debug raw all extended |
+| `src/components/admin/AdminDashboardTab.js` | Audience grid replaced — 4 tiles → 7 tiles |
+
+### Notes for next session (Audience)
+
+- **Activation Rate is the PMF watch metric.** Track it daily post-launch. If it's <10% with non-trivial visitor counts, dig into the funnel. If it's 30%+, you've nailed the beta-to-public-launch transition.
+- **Top Searched Term won't populate until users type.** Since the `search_query` property is captured fresh from this deploy, no historical data. Give it a day or two before judging whether the tile is useful at current volume.
+- **Top Saved Artist might surface duplicates** if the same person saves multiple events by the same artist in the window. The metric is "save events per artist" not "unique savers per artist." For most use cases the count metric is fine; if you ever want unique-savers-per-artist, swap `count()` for `count(distinct person_id)` in the query.
+- **Top Non-NJ State at current volume will be noisy** — single-digit visitor counts mean one outlier swings the result. Trust it more once you have 100+ daily visitors.
+- **PII guard on search queries is conservative, not exhaustive.** Catches obvious shapes; doesn't catch SSNs, addresses, names, etc. If a user types their full address into the search bar, it'll be captured. Worth re-reading at launch and tightening if needed.
+
 

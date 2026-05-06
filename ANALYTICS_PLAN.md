@@ -60,7 +60,9 @@
 
 **Trigger:** Two fire points on the main search modal — Search-button commit (`filter_type: 'search_committed'`) snapshots all current filters, and Clear filters (`filter_type: 'cleared_all'`).
 
-**Properties:** `filter_type`, plus on commit: `has_search_query`, `date_key`, `date_picked`, `active_shortcut`, `miles_radius`, `venue_count`, `town_only`, `active_filter_count`.
+**Properties:** `filter_type`, plus on commit: `has_search_query`, `search_query` (typed string, PII-guarded — see below), `date_key`, `date_picked`, `active_shortcut`, `miles_radius`, `venue_count`, `town_only`, `active_filter_count`.
+
+**`search_query` PII guard (May 5 PM):** before capture, the typed query is rejected if it contains `@` (email-shaped) or matches `/^[0-9\-()\s.+]{7,}$/` (phone-shaped). Otherwise truncated to 64 chars and lowercased for aggregation. Powers the Top Searched Term admin tile (see Audience section below).
 
 **Renamed companion:** `List Sorted/Filtered` (FollowingTab sort menu) → `following_list_sorted` for snake_case consistency.
 
@@ -124,9 +126,19 @@
 5. 🟠 **REQ-A7 funnel** — recipe in `POSTHOG_SETUP.md`, awaiting Tony's UI clicks.
 6. ✅ **Naming normalization** — `local_followed`, `user_signed_in`, `following_list_sorted` shipped May 5, 2026.
 
-## New admin dashboard tiles (May 5, 2026)
+## Admin dashboard — Audience section (May 5, 2026)
 
-Audience section added: Spotlight CTR (taps/impressions), Top Referring Domain, % NJ Traffic (PostHog `$geoip_subdivision_1_code = 'NJ'`), New vs Returning visitor split. Powered by 4 new HogQL queries in `src/app/api/admin/analytics/route.js`.
+Seven tiles, each driving a specific admin decision. All powered by HogQL queries in `src/app/api/admin/analytics/route.js`. Range-aware (Today / 7d / 30d / All).
+
+| Tile | Source | What it tells you |
+|---|---|---|
+| Activation Rate | engagement events / `$pageview` distinct person_ids | The PMF watch metric. <10% = problem; 30%+ = nailed it. |
+| Spotlight CTR | `spotlight_tapped` / `spotlight_impression` raw counts | Carousel engagement. Read with auto-rotation caveat — see PARKED #9 for the dedup-when-volume-justifies note. |
+| Top Referrer | `$referring_domain` autocapture, dedup by person, NJ-self filtered | Acquisition channel. `$direct` = no-referrer (typed URL, iMessage, etc.). |
+| Top Non-NJ State | `$geoip_subdivision_1_code` autocapture, dedup by person, excludes NJ | Out-of-state traffic source. NY/PA = commuter / vacation; random = potential bot. **Replaced the original NJ % tile (May 5 PM)** because for a Jersey-Shore-specific product the answer was always "mostly NJ" — uninformative. |
+| Top Searched Term | `properties.search_query` from `filter_applied`, lowercased, PII-guarded | Content-backlog signal — what users want indexed. |
+| Top Saved Artist | `properties.artist_name` from `event_bookmarked` (saves only) | Content patterns for spotlight / promotion decisions. |
+| New vs Returning | min(timestamp) vs cutoff over 30-day inner window | Retention signal. New = first-ever pageview in window. |
 
 ## Deferred
 
