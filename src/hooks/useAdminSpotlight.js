@@ -231,40 +231,18 @@ export default function useAdminSpotlight({ password }) {
     }
   }, [fetchSpotlightEvents, headers]);
 
-  // ── Auto-save (300ms debounce, fire-and-forget with rollback) ────────────
-  // Every pin mutation calls `commitPins(newPins)` which optimistically sets
-  // state, stashes a rollback snapshot, and debounces a single POST. Rapid
-  // reorders (drag → drag → drag) collapse into one network call.
+  // ── Stage-only commitPins (May 5, 2026 explicit-save refactor) ──────────
+  // Replaces the prior 300ms-debounced auto-save. Mutations now update
+  // local state ONLY — the POST happens explicitly via saveSpotlightChanges
+  // when the admin clicks Save. The "promote on touch" semantics still
+  // apply (any mutation flips a touched pin's source to 'manual') so the
+  // visual DRAFT-vs-solid distinction matches what WILL persist on save.
   const commitPins = useCallback((nextPins) => {
-    setSpotlightPins(prev => {
-      // Stash rollback only on the FIRST mutation within the debounce window
-      // so we revert to the last server-confirmed state, not an intermediate.
-      if (!autoSaveRollback.current) autoSaveRollback.current = prev;
-      return nextPins;
-    });
-    // Stash the sources rollback at the same gate so both refs move in
-    // lockstep — without this, a rolled-back pin list could pair with a
-    // post-promotion sources map and show solid cards for events that
-    // were actually still drafts.
-    setSpotlightSources(prev => {
-      if (!autoSaveSourcesRollback.current) autoSaveSourcesRollback.current = prev;
-      return prev;
-    });
-
-    // ── Promote-on-touch ─────────────────────────────────────────────────
-    // Any mutation — drag, reorder, remove, star — means the admin has
-    // taken ownership of the slate. We flip every pin in the new list to
-    // 'manual' so the DRAFT visuals disappear immediately (optimistic).
-    // This matches reality: the impending POST persists all IDs into
-    // `spotlight_events`, which the GET will then return as 'manual' on
-    // the next fetch anyway. Doing it optimistically here avoids a round-
-    // trip blink where the card re-paints from dashed → solid after save.
+    setSpotlightPins(nextPins);
     setSpotlightSources(prev => {
       const next = {};
       for (const id of nextPins) next[id] = 'manual';
-      // If the pin set didn't actually change identity-wise we can keep
-      // the previous object reference — cheap short-circuit for the
-      // common "reorder only" path where the set of IDs is identical.
+      // Cheap short-circuit for reorder-only — same set of IDs, same sources.
       const prevKeys = Object.keys(prev);
       const nextKeys = Object.keys(next);
       if (
@@ -275,45 +253,7 @@ export default function useAdminSpotlight({ password }) {
       }
       return next;
     });
-
-    clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(async () => {
-      const targetDate = spotlightDate;
-      try {
-        const res = await fetch('/api/spotlight', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ date: targetDate, event_ids: nextPins }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // Success — clear rollback.
-        //
-        // IMPORTANT: we deliberately do NOT call the parent's `fetchAll()`
-        // here. Doing so flipped the admin page's global `loading` flag,
-        // which unmounted the spotlight tab (it's gated behind
-        // `activeTab === 'spotlight' && !loading` in admin/page.js) and
-        // produced a ~1s black-screen blink after every drop. The public
-        // hero gets invalidated server-side via `revalidatePath` in the
-        // POST handler, and our local state is already correct, so there's
-        // nothing to refetch client-side.
-        autoSaveRollback.current = null;
-        autoSaveSourcesRollback.current = null;
-      } catch (err) {
-        console.error('Auto-save failed, rolling back:', err);
-        // Restore the last server-confirmed pin state AND the matching
-        // source map so the DRAFT badges reappear on the pins that had
-        // them before the user's failed attempt.
-        if (autoSaveRollback.current) {
-          setSpotlightPins(autoSaveRollback.current);
-        }
-        if (autoSaveSourcesRollback.current) {
-          setSpotlightSources(autoSaveSourcesRollback.current);
-        }
-        autoSaveRollback.current = null;
-        autoSaveSourcesRollback.current = null;
-      }
-    }, 300);
-  }, [spotlightDate, headers]);
+  }, []);
 
   // ── Pin mutation helpers (all route through commitPins) ─────────────────
 
@@ -415,42 +355,65 @@ export default function useAdminSpotlight({ password }) {
     });
   }, [commitPins]);
 
-  // ── Legacy save / clear (still wired for header buttons) ────────────────
+  // ── Save / Discard / Clear (May 5, 2026 explicit-save refactor) ─────────
+  // saveSpotlight is the explicit Save button's handler. Returns
+  // { success: true } on success or { success: false, error } on failure
+  // so callers can render their own toast/banner.
   const saveSpotlight = async () => {
-    clearTimeout(autoSaveTimer.current);
     const targetDate = spotlightDate;
     const validPins = spotlightPins.filter(id => spotlightEvents.some(e => e.id === id));
-    setSpotlightPins(validPins);
-    const res = await fetch('/api/spotlight', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ date: targetDate, event_ids: validPins }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      alert(`Failed to save Spotlight: ${err.error || res.statusText}`);
-      return;
+    setSavingPins(true);
+    try {
+      setSpotlightPins(validPins);
+      const res = await fetch('/api/spotlight', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ date: targetDate, event_ids: validPins }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return { success: false, error: err.error || res.statusText };
+      }
+      // Promote every saved pin to 'manual' (matches what the next GET will
+      // return) so DRAFT badges clear on save.
+      const allManualSources = Object.fromEntries(validPins.map(id => [id, 'manual']));
+      setSpotlightSources(allManualSources);
+      // Update pristine refs to the just-saved state so spotlightDirty
+      // flips back to false. Updated_at would be ideal here but the table
+      // doesn't have one yet (item #3 of this safety pass).
+      pristinePins.current = [...validPins];
+      pristineSources.current = { ...allManualSources };
+      // Bump the last-curated timestamp to now so the indicator reflects
+      // the just-saved state without waiting for a refetch.
+      setSpotlightLastCuratedAt(new Date().toISOString());
+      // Deliberately do NOT call `fetchAll()` — see note above `commitPins`.
+      // The candidate-event list is refreshed via `fetchSpotlightEvents`,
+      // which does NOT touch the admin page's global `loading` state.
+      fetchSpotlightEvents(spotlightDate);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    } finally {
+      setSavingPins(false);
     }
-    // Manual save explicitly commits the current slate → every pin is
-    // manual from here on. Mirror the promote-on-touch logic from
-    // `commitPins` so the DRAFT badges don't linger after Save.
-    setSpotlightSources(Object.fromEntries(validPins.map(id => [id, 'manual'])));
-    autoSaveRollback.current = null;
-    autoSaveSourcesRollback.current = null;
-    // Deliberately do NOT call `fetchAll()` — see note above `commitPins`.
-    // The candidate-event list is refreshed via `fetchSpotlightEvents`,
-    // which does NOT touch the admin page's global `loading` state.
-    fetchSpotlightEvents(spotlightDate);
   };
+
+  // discardSpotlightChanges resets pins/sources back to the last
+  // server-confirmed state. No network call.
+  const discardSpotlightChanges = useCallback(() => {
+    setSpotlightPins([...pristinePins.current]);
+    setSpotlightSources({ ...pristineSources.current });
+    setSpotlightStagingError(null);
+  }, []);
 
   const clearSpotlight = async () => {
     if (!confirm(`Clear all spotlight pins for ${spotlightDate}? The carousel will use the automatic fallback.`)) return;
-    clearTimeout(autoSaveTimer.current);
     await fetch(`/api/spotlight?date=${spotlightDate}`, { method: 'DELETE', headers });
     setSpotlightPins([]);
     setSpotlightSources({});
-    autoSaveRollback.current = null;
-    autoSaveSourcesRollback.current = null;
+    pristinePins.current = [];
+    pristineSources.current = {};
+    setSpotlightLastCuratedAt(null);
   };
 
   // ── Magic Wand — bulk AI enrichment for the current spotlightDate ────
@@ -605,6 +568,33 @@ export default function useAdminSpotlight({ password }) {
     }
   }, [headers, fetchSpotlightEvents, spotlightDate]);
 
+  // ── Dirty derivation (May 5, 2026 explicit-save refactor) ──────────────
+  // Compare the live pins/sources against the last server-confirmed
+  // pristine refs. Treats reorder as dirty (sort_order persists too).
+  // Length mismatch → dirty. Same length, any-position mismatch → dirty.
+  // Source flip on any pin → dirty.
+  const arraysEqualOrdered = (a, b) => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  };
+  const sourcesEqual = (a, b) => {
+    const ak = Object.keys(a);
+    const bk = Object.keys(b);
+    if (ak.length !== bk.length) return false;
+    return ak.every(k => a[k] === b[k]);
+  };
+  // Only manual pins count toward dirty — autopilot suggestions in
+  // unpinned-by-admin slots are not "owned" yet, so navigating onto a
+  // date with autopilot suggestions doesn't trigger a dirty state.
+  const liveManualPins = spotlightPins.filter(id => spotlightSources[id] === 'manual');
+  const liveManualSources = Object.fromEntries(
+    Object.entries(spotlightSources).filter(([, src]) => src === 'manual')
+  );
+  const spotlightDirty =
+    !arraysEqualOrdered(liveManualPins, pristinePins.current) ||
+    !sourcesEqual(liveManualSources, pristineSources.current);
+
   return {
     spotlightDate, setSpotlightDate,
     spotlightPins, setSpotlightPins,
@@ -613,6 +603,12 @@ export default function useAdminSpotlight({ password }) {
     // ISO timestamp of the most recent manual pin's created_at for the
     // currently-loaded date. Null when no manual pins.
     spotlightLastCuratedAt,
+    // Explicit-save state (May 5, 2026): spotlightDirty is true when
+    // the live pin set differs from the last server-confirmed state.
+    // savingPins is true while a Save POST is in flight.
+    spotlightDirty,
+    savingPins,
+    discardSpotlightChanges,
     spotlightEvents, setSpotlightEvents,
     spotlightLoading,
     spotlightImageWarning, setSpotlightImageWarning,

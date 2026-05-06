@@ -10,7 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const SPOTLIGHT_BULK_AUTOFILL_ENABLED = false;
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { formatTime } from '@/lib/utils';
 import { applyWaterfall, getSpotlightReadiness, isMidnight, normalizeName } from '@/lib/waterfall';
 import {
@@ -55,6 +55,10 @@ export default function AdminSpotlightTab({
   // render the "Last curated: <relative time>" indicator that warns
   // admins about prior curation before they accidentally overwrite it.
   spotlightLastCuratedAt = null,
+  // Explicit-save state (May 5, 2026 — item #2 of safety pass)
+  spotlightDirty = false,
+  savingPins = false,
+  discardSpotlightChanges = () => {},
   spotlightEvents, spotlightLoading,
   spotlightSearch, setSpotlightSearch,
   setSpotlightImageWarning,
@@ -102,6 +106,23 @@ export default function AdminSpotlightTab({
   const [bannerFilter, setBannerFilter] = useState(null);  // { type: 'updated'|'rescued', ids: string[] } | null
   // Confirmation dialog state — intercepts pin action so admin must confirm
   const [pendingPin, setPendingPin] = useState(null); // { eventId, artistName, venue } | null
+
+  // ── Unsaved-changes guard (May 5, 2026 — item #2 of safety pass) ────────
+  // beforeunload warns the admin if they try to close/refresh the tab with
+  // unsaved spotlight changes. The browser's confirmation dialog is
+  // generic ("Leave site?" / "Reload site?") — modern browsers ignore the
+  // returnValue text — but the prompt itself is the safety net. Only fires
+  // while spotlightDirty is true so it doesn't nag during normal browsing.
+  useEffect(() => {
+    if (!spotlightDirty) return;
+    const handler = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [spotlightDirty]);
 
   const toggleSlotExpanded = (eventId) => {
     setExpandedSlots(prev => {
@@ -373,6 +394,67 @@ export default function AdminSpotlightTab({
                 )}
               </button>
               )}
+              {/* Save / Discard — explicit-save replacement for the prior
+                  300ms-debounced auto-save (May 5, 2026, item #2 of the
+                  spotlight safety pass). Only visible when the slate has
+                  unsaved changes. Save shows a confirmation prompt if
+                  the date already had prior curation, so admins don't
+                  silently overwrite yesterday's work. */}
+              {spotlightDirty && (
+                <>
+                  <button
+                    className="px-4 py-2 rounded-lg text-sm font-bold"
+                    style={{
+                      background: '#E8722A',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      cursor: savingPins ? 'wait' : 'pointer',
+                      opacity: savingPins ? 0.7 : 1,
+                    }}
+                    disabled={savingPins}
+                    onClick={async () => {
+                      // Confirm before overwriting prior curation. Skip the
+                      // prompt if no prior curation OR if the prior was within
+                      // the last few minutes (likely the same session).
+                      if (spotlightLastCuratedAt) {
+                        const ageMin = (Date.now() - new Date(spotlightLastCuratedAt).getTime()) / 60000;
+                        if (ageMin >= 5) {
+                          const t = new Date(spotlightLastCuratedAt);
+                          const when = t.toLocaleString('en-US', {
+                            weekday: 'short', month: 'short', day: 'numeric',
+                            hour: 'numeric', minute: '2-digit',
+                          });
+                          if (!confirm(
+                            `This will replace the spotlight pins last curated on ${when}. Continue?`
+                          )) {
+                            return;
+                          }
+                        }
+                      }
+                      const result = await saveSpotlight();
+                      if (!result?.success) {
+                        alert(`Failed to save Spotlight: ${result?.error || 'Unknown error'}`);
+                      }
+                    }}
+                  >
+                    {savingPins ? 'Saving…' : 'Save Changes'}
+                  </button>
+                  <button
+                    className="px-3 py-2 rounded-lg text-sm font-medium"
+                    style={{
+                      background: 'transparent',
+                      color: 'var(--text-secondary)',
+                      border: '1px solid var(--border)',
+                      cursor: savingPins ? 'wait' : 'pointer',
+                    }}
+                    disabled={savingPins}
+                    onClick={discardSpotlightChanges}
+                    title="Revert to the last saved state"
+                  >
+                    Discard
+                  </button>
+                </>
+              )}
               <button
                 className="px-3 py-2 rounded-lg text-sm font-medium"
                 style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}
@@ -512,6 +594,20 @@ export default function AdminSpotlightTab({
               value={spotlightDate}
               onChange={(e) => {
                 const d = e.target.value;
+                // Guard against silent loss of unsaved changes when the
+                // admin flips the date picker (May 5, 2026 — item #2). The
+                // hook clears spotlightPins on the next fetch, so without
+                // this confirm the in-progress edits would just disappear.
+                if (spotlightDirty) {
+                  if (!confirm('You have unsaved spotlight changes. Switch dates and discard them?')) {
+                    // Reset the input back to the current date — without
+                    // this the picker UI shows the new date even though
+                    // the underlying state didn't change.
+                    e.target.value = spotlightDate;
+                    return;
+                  }
+                  discardSpotlightChanges();
+                }
                 setSpotlightDate(d);
                 fetchSpotlight(d);
                 // Review-Mode filter ids belong to the previous run on the
