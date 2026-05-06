@@ -285,15 +285,16 @@ export async function GET(request) {
          LIMIT 5`
       ),
 
-      // 8. % of traffic from NJ. PostHog's geo-IP autocaptures
-      // $geoip_subdivision_1_code (state code, e.g. "NJ"). We compute NJ
-      // visitors / total visitors with non-null geo (some browsers / VPNs
-      // may have null geo; excluding them gives a more honest %).
-      // One row per person (not per pageview) so heavy users don't skew.
+      // 8. Top non-NJ state. myLocalJam is Jersey-Shore-specific so "% NJ"
+      // has a knowable expected answer (mostly NJ) and tells you nothing
+      // actionable. Inverted to surface the most-common OUT-of-state source
+      // — useful for spotting commuter / vacation traffic (NY, PA), ex-NJ
+      // diaspora (CA, FL), or sudden bot traffic from a random state.
+      // Per-person dedup so heavy users don't skew. Excludes NJ itself.
       hogql(projectId,
         `SELECT
-           countIf(subdivision_code = 'NJ') AS nj_visits,
-           count() AS total_visits_with_geo
+           subdivision_code AS state,
+           count(*) AS visitors
          FROM (
            SELECT person_id,
                   any(properties.$geoip_subdivision_1_code) AS subdivision_code
@@ -303,7 +304,11 @@ export async function GET(request) {
              AND properties.$geoip_subdivision_1_code IS NOT NULL
              AND properties.$geoip_subdivision_1_code != ''
            GROUP BY person_id
-         )`
+         )
+         WHERE subdivision_code != 'NJ'
+         GROUP BY state
+         ORDER BY visitors DESC
+         LIMIT 1`
       ),
 
       // 9. New vs returning visitor split. Inner window dropped from 90
@@ -330,6 +335,78 @@ export async function GET(request) {
            HAVING last_ever >= cutoff
          )`
       ),
+
+      // 10. Activation rate: % of visitors who did anything beyond passive
+      // page-view in the time window. Numerator = distinct person_ids that
+      // fired at least one engagement event (save, follow, sign-in, spotlight
+      // tap, submission, share-page action). Denominator = distinct person_ids
+      // with $pageview in the window. The single most important PMF metric
+      // to watch — answers "are users doing anything besides looking?"
+      hogql(projectId,
+        `SELECT
+           count(DISTINCT person_id) AS pageview_users,
+           count(DISTINCT CASE WHEN event IN (
+             'event_bookmarked',
+             'local_followed',
+             'user_signed_in',
+             'spotlight_tapped',
+             'add_to_jar_clicked',
+             'share_page_save_show',
+             'share_page_follow_artist'
+           ) THEN person_id END) AS active_users
+         FROM events
+         WHERE ${timeFilter}
+           AND event IN (
+             '$pageview',
+             'event_bookmarked',
+             'local_followed',
+             'user_signed_in',
+             'spotlight_tapped',
+             'add_to_jar_clicked',
+             'share_page_save_show',
+             'share_page_follow_artist'
+           )`
+      ),
+
+      // 11. Top searched term in the window. Surfaces content-backlog signal
+      // — what are people typing that we may not have, or typing repeatedly
+      // (artists worth promoting). The search_query property is added by
+      // page.js (May 5, 2026) with a PII guard: emails and phone-shaped
+      // strings are coerced to NULL before capture, queries are truncated
+      // to 64 chars and lowercased. Pre-May-5 events have no search_query
+      // and naturally drop out of this aggregation.
+      hogql(projectId,
+        `SELECT
+           properties.search_query AS query,
+           count() AS searches
+         FROM events
+         WHERE event = 'filter_applied'
+           AND ${timeFilter}
+           AND properties.search_query IS NOT NULL
+           AND properties.search_query != ''
+         GROUP BY query
+         ORDER BY searches DESC
+         LIMIT 1`
+      ),
+
+      // 12. Top saved artist in the window. Counts only saves (action='saved'
+      // OR missing for legacy pre-May-5 events). Reveals content patterns —
+      // which artist is generating the most save activity, useful for
+      // promotion / spotlight curation decisions.
+      hogql(projectId,
+        `SELECT
+           properties.artist_name AS artist,
+           count() AS saves
+         FROM events
+         WHERE event = 'event_bookmarked'
+           AND ${timeFilter}
+           AND coalesce(properties.action, '') != 'unsaved'
+           AND properties.artist_name IS NOT NULL
+           AND properties.artist_name != ''
+         GROUP BY artist
+         ORDER BY saves DESC
+         LIMIT 1`
+      ),
     ]);
 
     // Normalize allSettled output back to the {data,error} shape the rest
@@ -348,8 +425,11 @@ export async function GET(request) {
       bookmarksRes,
       spotlightRes,
       referrerRes,
-      njRes,
+      topNonNjStateRes,
       newReturningRes,
+      activationRes,
+      topSearchTermRes,
+      topSavedArtistRes,
     ] = [
       normalize(settled[0], 'visitors'),
       normalize(settled[1], 'device'),
@@ -358,8 +438,11 @@ export async function GET(request) {
       normalize(settled[4], 'bookmarks'),
       normalize(settled[5], 'spotlight'),
       normalize(settled[6], 'referrer'),
-      normalize(settled[7], 'nj'),
+      normalize(settled[7], 'topNonNjState'),
       normalize(settled[8], 'newReturning'),
+      normalize(settled[9], 'activation'),
+      normalize(settled[10], 'topSearchTerm'),
+      normalize(settled[11], 'topSavedArtist'),
     ];
 
     // Log raw results for debugging
@@ -420,16 +503,13 @@ export async function GET(request) {
       topReferrerVisitors = referrerRes.data.results[0][1] || 0;
     }
 
-    // Parse % NJ traffic
-    let njPct = 0;
-    let njVisits = 0;
-    let totalGeoVisits = 0;
-    if (njRes.data?.results?.[0]) {
-      njVisits = njRes.data.results[0][0] || 0;
-      totalGeoVisits = njRes.data.results[0][1] || 0;
-      njPct = totalGeoVisits > 0
-        ? Math.round((njVisits / totalGeoVisits) * 100)
-        : 0;
+    // Parse top non-NJ state (May 5, 2026 — replaces NJ % which had a
+    // knowable expected answer for a JS-specific app and wasn't actionable)
+    let topNonNjState = '—';
+    let topNonNjStateVisitors = 0;
+    if (topNonNjStateRes.data?.results?.length > 0) {
+      topNonNjState = topNonNjStateRes.data.results[0][0] || '—';
+      topNonNjStateVisitors = topNonNjStateRes.data.results[0][1] || 0;
     }
 
     // Parse new vs returning split
@@ -438,6 +518,34 @@ export async function GET(request) {
     if (newReturningRes.data?.results?.[0]) {
       newVisitors = newReturningRes.data.results[0][0] || 0;
       returningVisitors = newReturningRes.data.results[0][1] || 0;
+    }
+
+    // Parse activation rate
+    let activationPct = 0;
+    let activeUsers = 0;
+    let pageviewUsers = 0;
+    if (activationRes.data?.results?.[0]) {
+      pageviewUsers = activationRes.data.results[0][0] || 0;
+      activeUsers = activationRes.data.results[0][1] || 0;
+      activationPct = pageviewUsers > 0
+        ? Math.round((activeUsers / pageviewUsers) * 100)
+        : 0;
+    }
+
+    // Parse top searched term
+    let topSearchTerm = '—';
+    let topSearchTermCount = 0;
+    if (topSearchTermRes.data?.results?.length > 0) {
+      topSearchTerm = topSearchTermRes.data.results[0][0] || '—';
+      topSearchTermCount = topSearchTermRes.data.results[0][1] || 0;
+    }
+
+    // Parse top saved artist
+    let topSavedArtist = '—';
+    let topSavedArtistSaves = 0;
+    if (topSavedArtistRes.data?.results?.length > 0) {
+      topSavedArtist = topSavedArtistRes.data.results[0][0] || '—';
+      topSavedArtistSaves = topSavedArtistRes.data.results[0][1] || 0;
     }
 
     const response = {
@@ -454,11 +562,24 @@ export async function GET(request) {
       spotlightCtr,           // percent, one decimal
       topReferrer,
       topReferrerVisitors,
-      njPct,                  // integer percent
-      njVisits,
-      totalGeoVisits,
+      // Top non-NJ state (May 5, 2026 — replaces njPct which wasn't actionable
+      // for a Jersey-Shore-specific product where the expected answer is
+      // "mostly NJ").
+      topNonNjState,
+      topNonNjStateVisitors,
       newVisitors,
       returningVisitors,
+      // Activation Rate (May 5, 2026)
+      activationPct,
+      activeUsers,
+      pageviewUsers,
+      // Top searched term (May 5, 2026) — search_query property added to
+      // filter_applied event in page.js with email/phone PII guard.
+      topSearchTerm,
+      topSearchTermCount,
+      // Top saved artist (May 5, 2026)
+      topSavedArtist,
+      topSavedArtistSaves,
       range,
       projectId,
     };
@@ -480,8 +601,11 @@ export async function GET(request) {
           bookmarks: bookmarksRes.error || bookmarksRes.data?.results,
           spotlight: spotlightRes.error || spotlightRes.data?.results,
           referrer: referrerRes.error || referrerRes.data?.results,
-          nj: njRes.error || njRes.data?.results,
+          topNonNjState: topNonNjStateRes.error || topNonNjStateRes.data?.results,
           newReturning: newReturningRes.error || newReturningRes.data?.results,
+          activation: activationRes.error || activationRes.data?.results,
+          topSearchTerm: topSearchTermRes.error || topSearchTermRes.data?.results,
+          topSavedArtist: topSavedArtistRes.error || topSavedArtistRes.data?.results,
         },
       };
     }

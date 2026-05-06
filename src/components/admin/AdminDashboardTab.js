@@ -146,12 +146,20 @@ export default function AdminDashboardTab({
             />
           </div>
 
-          {/* Audience — May 5, 2026 (item 8 from analytics audit). Surfaces
-              acquisition / geography / loyalty signals from PostHog autocapture
-              + the new spotlight tracking. CTR is the most actionable: low
-              numbers mean the spotlights aren't earning their position. */}
+          {/* Audience — May 5, 2026 PM (replaces NJ Traffic with Top
+              Non-NJ State + adds Activation Rate, Top Searched Term, and
+              Top Saved Artist for week). Activation is the single most
+              important PMF metric to watch on this row. */}
           <SectionHeader title="Audience" />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '12px' }}>
+            <MetricCard
+              label="Activation Rate"
+              value={analyticsLoading ? '…' : `${analyticsData?.activationPct ?? 0}%`}
+              sub={analyticsData?.pageviewUsers > 0
+                ? `${analyticsData.activeUsers} of ${analyticsData.pageviewUsers} engaged`
+                : dateLabels[dashDateRange]}
+              color={analyticsData?.activationPct > 0 ? '#22C55E' : undefined}
+            />
             <MetricCard
               label="Spotlight CTR"
               value={analyticsLoading ? '…' : `${(analyticsData?.spotlightCtr ?? 0).toFixed(1)}%`}
@@ -169,12 +177,28 @@ export default function AdminDashboardTab({
               color={analyticsData?.topReferrerVisitors > 0 ? '#3B82F6' : undefined}
             />
             <MetricCard
-              label="NJ Traffic"
-              value={analyticsLoading ? '…' : `${analyticsData?.njPct ?? 0}%`}
-              sub={analyticsData?.totalGeoVisits > 0
-                ? `${analyticsData.njVisits} of ${analyticsData.totalGeoVisits} geo-known`
+              label="Top Non-NJ State"
+              value={analyticsLoading ? '…' : (analyticsData?.topNonNjState || '—')}
+              sub={analyticsData?.topNonNjStateVisitors > 0
+                ? `${analyticsData.topNonNjStateVisitors} visitors`
                 : dateLabels[dashDateRange]}
-              color={analyticsData?.njPct > 0 ? '#22C55E' : undefined}
+              color={analyticsData?.topNonNjStateVisitors > 0 ? '#22C55E' : undefined}
+            />
+            <MetricCard
+              label="Top Searched Term"
+              value={analyticsLoading ? '…' : (analyticsData?.topSearchTerm || '—')}
+              sub={analyticsData?.topSearchTermCount > 0
+                ? `${analyticsData.topSearchTermCount} searches`
+                : dateLabels[dashDateRange]}
+              color={analyticsData?.topSearchTermCount > 0 ? '#3B82F6' : undefined}
+            />
+            <MetricCard
+              label="Top Saved Artist"
+              value={analyticsLoading ? '…' : (analyticsData?.topSavedArtist || '—')}
+              sub={analyticsData?.topSavedArtistSaves > 0
+                ? `${analyticsData.topSavedArtistSaves} saves`
+                : dateLabels[dashDateRange]}
+              color={analyticsData?.topSavedArtistSaves > 0 ? '#A855F7' : undefined}
             />
             <MetricCard
               label="New vs Returning"

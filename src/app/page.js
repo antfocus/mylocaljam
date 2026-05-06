@@ -3516,10 +3516,22 @@ export default function HomePage() {
                     // REQ-A4: snapshot the user's committed filter set on Search
                     // tap. Single fire (vs per-setter) keeps the event volume
                     // sane and matches user intent — the moment they say "go".
+                    // search_query (added May 5 2026) carries the actual
+                    // typed string for content-backlog signal. PII guard
+                    // rejects email/phone shapes so admin analytics doesn't
+                    // accumulate sensitive user data; truncated + lowercased
+                    // for aggregation.
                     try {
+                      const rawQuery = searchQuery.trim();
+                      const looksLikeEmail = rawQuery.includes('@');
+                      const looksLikePhone = /^[0-9\-()\s.+]{7,}$/.test(rawQuery);
+                      const safeQuery = (rawQuery && !looksLikeEmail && !looksLikePhone)
+                        ? rawQuery.slice(0, 64).toLowerCase()
+                        : null;
                       posthog.capture?.('filter_applied', {
                         filter_type: 'search_committed',
-                        has_search_query: !!searchQuery.trim(),
+                        has_search_query: !!rawQuery,
+                        search_query: safeQuery,
                         date_key: dateKey,
                         date_picked: dateKey === 'pick' ? pickedDate : null,
                         active_shortcut: activeShortcut,
