@@ -511,6 +511,7 @@ export default function AdminPage() {
           spotlightDate={sp.spotlightDate} setSpotlightDate={sp.setSpotlightDate}
           spotlightPins={sp.spotlightPins} setSpotlightPins={sp.setSpotlightPins}
           spotlightSources={sp.spotlightSources}
+          spotlightLastCuratedAt={sp.spotlightLastCuratedAt}
           spotlightEvents={sp.spotlightEvents} spotlightLoading={sp.spotlightLoading}
           spotlightSearch={sp.spotlightSearch} setSpotlightSearch={sp.setSpotlightSearch}
           setSpotlightImageWarning={sp.setSpotlightImageWarning}

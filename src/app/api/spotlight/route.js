@@ -81,13 +81,23 @@ export async function GET(request) {
 
   // ── Tier 0: Admin-pinned (sacred) ──────────────────────────────────────
   let pinIds = [];
+  // pinCreatedById: event_id → ISO timestamp string. Used by the admin UI
+  // to surface a "Last curated: <relative time>" indicator (May 5, 2026)
+  // so admins don't accidentally overwrite prior curation. Public callers
+  // can ignore the field. No update_at column on spotlight_events; we
+  // surface created_at since every save is a wholesale DELETE+INSERT, so
+  // the row's created_at IS its last-curated time.
+  const pinCreatedById = {};
   try {
     const { data: pins } = await supabase
       .from('spotlight_events')
-      .select('event_id, sort_order')
+      .select('event_id, sort_order, created_at')
       .eq('spotlight_date', date)
       .order('sort_order', { ascending: true });
-    if (pins && pins.length > 0) pinIds = pins.map(p => p.event_id);
+    if (pins && pins.length > 0) {
+      pinIds = pins.map(p => p.event_id);
+      for (const p of pins) pinCreatedById[p.event_id] = p.created_at;
+    }
   } catch { /* spotlight_events table may not exist */ }
 
   // Set of IDs that came from the admin-pin table. Used downstream to tag
@@ -326,6 +336,9 @@ export async function GET(request) {
           // render Suggested slots as editable DRAFT cards that auto-promote
           // to 'manual' on any user mutation.
           source: pinIdSet.has(id) ? 'manual' : 'suggested',
+          // pin_created_at: ISO string — only set on manual pins. The admin
+          // hook reduces these to the max for the "Last curated" indicator.
+          pin_created_at: pinCreatedById[id] || null,
           sort_order: i,
         };
       })

@@ -15,14 +15,19 @@ const MAX_PINS = 8; // 5 main spotlight + 3 runner-ups
 // refetching anything client-side.
 export default function useAdminSpotlight({ password }) {
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${password}` };
-  // Ref-based debounce for auto-save — cleared on every new pin mutation
-  // so rapid reorders collapse into a single POST.
-  const autoSaveTimer = useRef(null);
-  const autoSaveRollback = useRef(null);
-  // Parallel rollback for the sources map — restored alongside the pin
-  // list if the auto-save POST fails, so a failed save can't leave us
-  // with a pins/sources mismatch (e.g. a DRAFT card showing solid).
-  const autoSaveSourcesRollback = useRef(null);
+  // ── Explicit-save mode (May 5, 2026, item #2 of the spotlight safety pass) ──
+  // Previously: commitPins debounced a POST 300ms after every mutation, which
+  // meant opening a date and accidentally bumping anything overwrote yesterday's
+  // curation with no confirmation. The wholesale DELETE+INSERT shape of the
+  // POST handler made this a destructive operation with no audit trail.
+  //
+  // Now: mutations only update local state. `pristinePins` / `pristineSources`
+  // track the last server-confirmed shape (set on fetch + after a successful
+  // save). The hook exposes `spotlightDirty` and `saveSpotlightChanges()`;
+  // the admin UI renders an explicit Save button and a Discard button.
+  const pristinePins = useRef([]);
+  const pristineSources = useRef({});
+  const [savingPins, setSavingPins] = useState(false);
 
   const [spotlightDate, setSpotlightDate] = useState(() => {
     const d = new Date();
@@ -38,6 +43,12 @@ export default function useAdminSpotlight({ password }) {
   // definition. The admin UI uses this to render dashed DRAFT cards for
   // suggested autopilot picks vs solid cards for manual pins.
   const [spotlightSources, setSpotlightSources] = useState({});
+  // ISO timestamp of the most recent manual pin's created_at for the
+  // currently-loaded date. Used by AdminSpotlightTab to show a "Last
+  // curated: <relative time>" indicator (May 5, 2026) so admins can see
+  // when prior curation exists before accidentally overwriting it.
+  // Null when the date has no manual pins.
+  const [spotlightLastCuratedAt, setSpotlightLastCuratedAt] = useState(null);
   const [spotlightEvents, setSpotlightEvents] = useState([]);
   const [spotlightLoading, setSpotlightLoading] = useState(false);
   const [spotlightImageWarning, setSpotlightImageWarning] = useState(null);
@@ -125,6 +136,7 @@ export default function useAdminSpotlight({ password }) {
     setSpotlightLoading(true);
     let pinIds = [];
     let sourceMap = {};
+    let lastCurated = null;
     try {
       const res = await fetch(`/api/spotlight?date=${date}&all_pins=true`, { signal: controller.signal });
       const data = await res.json();
@@ -136,6 +148,16 @@ export default function useAdminSpotlight({ password }) {
         sourceMap = Object.fromEntries(
           data.map(d => [d.event_id, d.source || 'manual'])
         );
+        // Reduce the manual pins' pin_created_at values to the latest. Only
+        // manual pins carry the field (autopilot suggestions don't have a
+        // row in spotlight_events yet). Older API deploys won't return the
+        // field at all — null falls through and the indicator just hides.
+        const manualTimes = data
+          .filter(d => d.source === 'manual' && d.pin_created_at)
+          .map(d => d.pin_created_at);
+        if (manualTimes.length > 0) {
+          lastCurated = manualTimes.reduce((a, b) => (a > b ? a : b));
+        }
       }
     } catch (err) {
       if (err?.name !== 'AbortError') {
@@ -157,8 +179,18 @@ export default function useAdminSpotlight({ password }) {
     // Project only the sources that survived the validEventIds filter so
     // `spotlightSources` never carries a ghost key for an event that isn't
     // actually tonight's.
-    setSpotlightSources(
-      Object.fromEntries(cleanPins.map(id => [id, sourceMap[id] || 'manual']))
+    const cleanSources = Object.fromEntries(
+      cleanPins.map(id => [id, sourceMap[id] || 'manual'])
+    );
+    setSpotlightSources(cleanSources);
+    setSpotlightLastCuratedAt(lastCurated);
+    // Seed the pristine refs so spotlightDirty is correctly false right
+    // after a fresh load — a date toggle should NOT count as unsaved
+    // changes. Only manual pins count toward the dirty diff (autopilot
+    // suggestions in unpinned slots are not "owned" by the admin yet).
+    pristinePins.current = cleanPins.filter(id => cleanSources[id] === 'manual');
+    pristineSources.current = Object.fromEntries(
+      Object.entries(cleanSources).filter(([, src]) => src === 'manual')
     );
 
     // ── Stale-pin cleanup (audit H1, hardened post-9:51 PM incident) ─────
@@ -578,6 +610,9 @@ export default function useAdminSpotlight({ password }) {
     spotlightPins, setSpotlightPins,
     // Projected Spotlight — parallel source map: { id: 'manual' | 'suggested' }
     spotlightSources,
+    // ISO timestamp of the most recent manual pin's created_at for the
+    // currently-loaded date. Null when no manual pins.
+    spotlightLastCuratedAt,
     spotlightEvents, setSpotlightEvents,
     spotlightLoading,
     spotlightImageWarning, setSpotlightImageWarning,

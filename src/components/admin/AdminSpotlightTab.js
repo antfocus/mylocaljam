@@ -50,6 +50,11 @@ export default function AdminSpotlightTab({
   // When absent (older callers), every pin falls back to 'manual' so the
   // UI renders identically to pre-Projected behavior.
   spotlightSources = {},
+  // ISO timestamp of the most recent manual pin's created_at for the
+  // currently-loaded date. Null when no manual pins exist. Used to
+  // render the "Last curated: <relative time>" indicator that warns
+  // admins about prior curation before they accidentally overwrite it.
+  spotlightLastCuratedAt = null,
   spotlightEvents, spotlightLoading,
   spotlightSearch, setSpotlightSearch,
   setSpotlightImageWarning,
@@ -530,6 +535,55 @@ export default function AdminSpotlightTab({
                     return `${manualCount} pinned · ${draftCount} draft`;
                   })()}
             </span>
+            {/* Last-curated indicator (May 5, 2026, item #1 of the spotlight
+                safety pass). Surfaces when the date already has manual pins
+                and when they were last saved, so admin sees prior curation
+                before it gets overwritten by the next mutation. Spotlight
+                saves are wholesale DELETE+INSERT, so created_at IS the
+                row's last-curated time — no updated_at column needed (yet
+                — see item #3). */}
+            {spotlightLastCuratedAt && (() => {
+              const then = new Date(spotlightLastCuratedAt);
+              const now = new Date();
+              const diffMs = now - then;
+              const diffMin = Math.floor(diffMs / 60000);
+              const diffHr  = Math.floor(diffMs / 3600000);
+              const sameDay = then.toDateString() === now.toDateString();
+              const yesterday = new Date(now);
+              yesterday.setDate(yesterday.getDate() - 1);
+              const wasYesterday = then.toDateString() === yesterday.toDateString();
+              const timeStr = then.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+              const dateStr = then.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+              let label;
+              if (diffMin < 1)        label = 'Last saved: just now';
+              else if (diffMin < 60)  label = `Last saved: ${diffMin}m ago`;
+              else if (sameDay)       label = `Last saved: today at ${timeStr}`;
+              else if (wasYesterday)  label = `Last saved: yesterday at ${timeStr}`;
+              else                    label = `Last saved: ${dateStr} at ${timeStr}`;
+              // Tone the chip orange-ish if the prior curation is older than
+              // a few hours — the longer ago it was, the more intentional
+              // it likely was, and the more painful an accidental overwrite
+              // would be.
+              const isStale = diffHr >= 4 || !sameDay;
+              return (
+                <span
+                  title={then.toLocaleString()}
+                  style={{
+                    fontSize: '11px',
+                    fontFamily: "'DM Sans', sans-serif",
+                    color: isStale ? '#E8722A' : 'var(--text-muted)',
+                    fontWeight: isStale ? 600 : 500,
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    background: isStale ? 'rgba(232,114,42,0.10)' : 'transparent',
+                    border: isStale ? '1px solid rgba(232,114,42,0.25)' : 'none',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {label}
+                </span>
+              );
+            })()}
             {/* Traffic-light legend */}
             <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
               <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: TRAFFIC_COLORS.green.dot, marginRight: 4 }} />Ready</span>
