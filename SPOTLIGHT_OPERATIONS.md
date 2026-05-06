@@ -4,7 +4,7 @@
 >
 > **Companion docs.** Image enrichment for spotlight cards lives in `IMAGE-MANAGEMENT.md` (the image waterfall + PostImages rule). Bio/category resolution flows through `ENRICHMENT.md` (the metadata waterfall). UI rendering conventions live in `FRONTEND_SOP.md`. The data invariants this skill respects are in `DATA_LIFECYCLE.md` §3.
 >
-> **Code surface.** Admin: `src/components/admin/AdminSpotlightTab.js`, `src/hooks/useAdminSpotlight.js`. Public: `src/app/api/spotlight/route.js`, `src/components/HeroSection.js`. Persistence: `spotlight_events` table.
+> **Code surface.** Admin: `src/components/admin/AdminSpotlightTab.js`, `src/hooks/useAdminSpotlight.js`. Public: `src/app/api/spotlight/route.js`, `src/components/HeroSection.js`. Persistence: `spotlight_events` (current state) + `spotlight_history` (audit log of overwrites, May 5, 2026+). History endpoint: `src/app/api/admin/spotlight-history/route.js`.
 
 ---
 
@@ -46,7 +46,7 @@ Every pin carries a `source` flag in `spotlight_events`:
 - **`manual`** — admin explicitly placed this pin (drag-to-slot, ☆ star, or kept an autopilot suggestion). Renders as a solid card in the admin UI.
 - **`suggested`** — autopilot picked this; admin hasn't touched it. Renders as a DRAFT card (dashed border, DRAFT badge) so the admin can see what's auto vs deliberate.
 
-Auto-promotion: any mutation through `commitPins` flips every current pin to `manual`, because `spotlight_events` has no concept of a draft row. Touching a slot makes the whole list manual.
+Auto-promotion: any mutation through `commitPins` flips every current pin to `manual` (visually). The state is local until the admin clicks Save Changes, at which point the whole pin list persists into `spotlight_events` as manual rows. Touching a slot makes the whole list manual.
 
 The public route doesn't care about source — both render identically on the hero. The admin UI uses `spotlightSources[eventId]` to differentiate.
 
@@ -113,9 +113,18 @@ The ✨ button on each event card runs the same enrichment for one event only. S
 
 ## §7. Persistence + caching
 
-- **Auto-save debounce.** Pin mutations don't fetch the global admin state — `commitPins` debounces a POST to `/api/spotlight` so rapid reorders collapse into a single write. Optimistic UI; rollback ref captures pre-mutation state for restore on failure.
+- **Explicit-save model (May 5, 2026).** Pin mutations stage local state ONLY — `commitPins` no longer auto-POSTs. The admin clicks the orange **Save Changes** button to commit the slate. The button appears (alongside a **Discard** button) when `spotlightDirty` is true, computed from diffing the live manual-pin set against the `pristinePins`/`pristineSources` refs (last server-confirmed state, set on fetch and after a successful save).
+  - **Confirmation on overwrite.** If the date has prior curation older than ~5 minutes, Save shows a `window.confirm` dialog with the prior timestamp. Skipped for fresh-curation flows where the admin is iterating in-session.
+  - **Date-picker guard.** Switching to a different date while dirty shows a confirm dialog. Cancel restores the picker; accept discards the staged changes.
+  - **`beforeunload` warning.** Closing or refreshing the tab while dirty triggers the browser's native "Leave site?" prompt.
+- **Audit log + revert (May 5, 2026).** Every save snapshots the prior pin set to `spotlight_history` BEFORE the wipe-and-reinsert. Schema: `(id, spotlight_date, previous_event_ids[], new_event_ids[], saved_at)`. The history write is best-effort — a failure cannot block the save itself, since the admin's intent is the foreground action.
+  - Admin UI: collapsible **History** button next to Clear Pins. Lazy-loads `/api/admin/spotlight-history?date=YYYY-MM-DD` on first open. Shows recent saves with relative timestamps and a **Restore** button per entry.
+  - Restore stages the prior pin set as the current draft — admin must still click Save Changes to commit. The revert itself becomes a new history row, so reverts are auditable.
+  - The `spotlight_events` row's `created_at` IS its last-saved time (wholesale DELETE+INSERT means no UPDATE path; no `updated_at` column needed).
+- **"Last saved" indicator.** The admin tab renders a relative-time chip ("Last saved: yesterday at 4:45 PM") next to the pinned-count text. Stale (>4h or different day) curation gets an orange chip; recent saves get a muted gray label. Sourced from the max `pin_created_at` across the date's manual pins, exposed by the GET endpoint.
 - **Public cache invalidation.** The POST handler calls `revalidatePath` on the hero route, so visitors see admin changes without a manual refresh.
 - **Cache guards on the GET.** `dynamic = 'force-dynamic'`, `revalidate = 0`, `fetchCache = 'force-no-store'` — prevents Next.js Data Cache and Vercel Edge Cache from replaying stale spotlight responses. (These exports were added after the 7:12 PM Mariel "Heisenbug" — see HANDOVER.)
+- **Why the safety pass shipped.** Tony curated spotlights for May 5 and May 6 yesterday afternoon. This morning all 5 rows for each date had identical-microsecond `created_at` stamps from 8:27/8:32 AM, meaning his prior curation was wiped and replaced when he opened the admin tab and accidentally triggered the 300ms-debounced auto-save. The wholesale DELETE+INSERT shape made every visit to the tab a potential overwrite event. Items #1–#3 here close that class of accident: visibility (last-saved chip), confirmation (explicit Save with overwrite-confirm), recovery (history + revert).
 
 ---
 
@@ -127,8 +136,9 @@ The ✨ button on each event card runs the same enrichment for one event only. S
 
 **See also:**
 
-- `useAdminSpotlight.js` — pin list state, `toggleSpotlightPin`, `insertPin`, `reorderPins`, `removePin`, debounced auto-save.
-- `/api/spotlight/route.js` — public GET (autopilot tiers, dedup, image classification) + admin POST (persist `spotlight_events`, revalidate hero).
+- `useAdminSpotlight.js` — pin list state, `toggleSpotlightPin`, `insertPin`, `reorderPins`, `removePin`, explicit save + dirty tracking + history.
+- `/api/spotlight/route.js` — public GET (autopilot tiers, dedup, image classification) + admin POST (snapshot prior to `spotlight_history`, persist `spotlight_events`, revalidate hero).
+- `/api/admin/spotlight-history/route.js` — admin GET; recent saves for a date with event-title joins for human-readable diffs.
 - `DATA_LIFECYCLE.md` §3 invariants — system-wide rules this skill respects.
 - `IMAGE-MANAGEMENT.md` — image sourcing for spotlight cards.
 - `ENRICHMENT.md` — Magic Wand bulk + single-event enrichment.

@@ -5915,4 +5915,58 @@ Audit + priority list, H4 (helper + render sites + write sites + DB audit), M1 P
 - **Replace_all caution.** The buildTimeFilter ReferenceError happened because a broad string replace caught the function's own definition. Manually edit each occurrence when the pattern appears in semantically-different contexts.
 - **Header layout discipline.** The 6px stale spacer + parent `gap: 10px` double-count was a real bug that took a screenshot to surface. When introducing flex `gap` on a container, audit explicit-spacer divs in the children.
 
+### 7. Spotlight safety pass — three-step lockdown of the curation UX
+
+Tony reported that yesterday's manual spotlight curation (May 4 PM, set for May 5 + May 6) had been overwritten by this morning. SQL forensics confirmed: every May 5 row had `created_at = 2026-05-05 08:27:38 Eastern` to the microsecond, and every May 6 row had `08:32:05`. Identical microseconds within a date → single INSERT operation per date, not incremental edits. So the May 4 curation was wiped wholesale and re-inserted by something that fired around 8:27/8:32 AM today.
+
+**Root cause analysis** of `useAdminSpotlight.js` + `/api/spotlight` POST handler:
+
+- The POST handler does `DELETE all rows for date` + `INSERT new rows`. No upsert, no incremental update. Each save is a destructive overwrite of the whole date.
+- `commitPins` was firing a 300ms-debounced auto-save after every mutation — drag, ☆, click, anything. No save button, no confirmation.
+- "Promote on touch" logic flipped ALL displayed pins (including autopilot-suggested fills) to `source='manual'` on any mutation. So a single drag on a date promoted all 5 visible items to manual pins.
+- No `updated_at`, no audit trail. Once overwritten, prior state was unrecoverable.
+
+So the most likely scenario: Tony opened the Spotlight tab this morning, viewed today's curation (which loaded with 5 manual pins from yesterday + autopilot-filling any gaps), made some small interaction (drag, scroll-induced reorder, even an accidental click), the 300ms auto-save fired, and yesterday's curation was gone. Same 4.5 minutes later for May 6.
+
+**Fix shipped in three commits:**
+
+**Item #1 — "Last saved" indicator.** Read-only chip rendered next to the date-picker pin-count, sourced from each manual pin's `created_at` (max). Surfaces the existence of prior curation so the admin sees it before accidentally overwriting. Stale (>4h or different calendar day) prior curation gets an orange chip with border; recent in-session saves get a muted gray label. Implementation: extended GET `/api/spotlight` response to include `pin_created_at` per manual pin; hook reduces to max and exposes `spotlightLastCuratedAt`; tab renders relative-time string with `Intl`-style logic ("Today at 8:27 AM", "Yesterday at 4:45 PM", "May 1 at 2:30 PM").
+
+**Item #2 — Explicit Save button.** Replaced the auto-save mechanism wholesale.
+
+- `useAdminSpotlight.js` now tracks `pristinePins` and `pristineSources` refs as the last server-confirmed state. Set on fetch and after a successful save.
+- `commitPins` updates local state only — no debounced POST.
+- `spotlightDirty` derives from comparing live manual pins/sources vs pristine. Only manual pins count toward dirty (autopilot suggestions don't).
+- New `saveSpotlight` returns `{success, error}` instead of throwing or silently alerting. Updates pristine refs on commit.
+- New `discardSpotlightChanges` resets to pristine.
+- `AdminSpotlightTab.js` renders **Save Changes** (orange filled) + **Discard** (outlined) buttons when `spotlightDirty` is true.
+- Save button does `window.confirm` before overwriting prior curation that's older than 5 minutes — skips the prompt for fresh-curation-iteration where the admin is actively editing in-session.
+- Date-picker change confirms if dirty (shows "discard unsaved changes?" dialog; cancel restores the picker, accept calls `discardSpotlightChanges`).
+- `beforeunload` listener attached while dirty — browser native "Leave site?" prompt on close/refresh.
+
+**Item #3 — Audit log + revert.** New `spotlight_history` table (migration applied to prod) with columns `(id, spotlight_date, previous_event_ids[], new_event_ids[], saved_at)`. The POST handler snapshots the prior pin set into history BEFORE the DELETE+INSERT — best-effort, never blocks the save (failure logs and continues). New endpoint `/api/admin/spotlight-history?date=YYYY-MM-DD&limit=10` joins event titles into the response so the revert UI shows "Joe Faronea @ Sun Harbor" instead of bare UUIDs. AdminSpotlightTab gets a collapsible **History** button next to Clear Pins; click expands a panel with recent saves (relative-time labels, prior-set preview, Restore button per entry). Restore stages the prior pin set as the current draft — admin must still click Save Changes to commit. The revert itself writes a new history row, so reverts are auditable.
+
+**Skipped intentionally:** `updated_at` column on `spotlight_events`. Wholesale DELETE+INSERT means each row's `created_at` IS its last-saved time. The history table is the real audit value; an updated_at column would be redundant.
+
+**Files Changed (Spotlight safety pass)**
+
+| File | Change |
+|------|--------|
+| Supabase migration `create_spotlight_history` | NEW table with `(id, spotlight_date, previous_event_ids[], new_event_ids[], saved_at)` + lookup index |
+| `src/app/api/spotlight/route.js` | GET returns `pin_created_at` per manual pin; POST snapshots prior set into `spotlight_history` before DELETE+INSERT |
+| `src/app/api/admin/spotlight-history/route.js` | NEW admin GET; returns recent saves with event-title joins for human-readable diffs |
+| `src/hooks/useAdminSpotlight.js` | Removed auto-save + rollback refs; added pristine refs, `spotlightDirty`, `savingPins`, `discardSpotlightChanges`, `spotlightLastCuratedAt`, history state, `fetchSpotlightHistory`, `revertSpotlightToHistory` |
+| `src/app/admin/page.js` | Plumbed new props through to AdminSpotlightTab |
+| `src/components/admin/AdminSpotlightTab.js` | Last-saved chip; Save/Discard buttons (visible when dirty); overwrite-confirm dialog; date-picker dirty-confirm; beforeunload listener; History button + collapsible recent-saves panel with Restore |
+| `SPOTLIGHT_OPERATIONS.md` | §3 source tracking note updated; §7 Persistence rewritten with explicit-save + audit-log + last-saved indicator detail; Code Surface line updated; See Also expanded |
+
+**Tony's curation that triggered this:** the May 4 set Tony curated (Joe Faronea, Meg Whalen, Jazz Arts Jam Sessions, Ocean Avenue Stompers, Kevin Hill & Secret Sound at 4:45 PM) is preserved in prod as that date's `spotlight_events` rows. The May 5 + May 6 sets that got overwritten this morning are NOT recoverable — those overwrites happened BEFORE the audit log shipped. Going forward every save writes a history row, so this class of accident is recoverable.
+
+**Notes for next session:**
+
+- The migration to `spotlight_history` only logs saves AFTER it shipped. The audit panel will show "(history tracking started May 5, 2026 — older saves won't appear here)" for entries with no prior history. Tony's overwritten May 5/May 6 sets from this morning are gone.
+- The 5-minute fresh-curation skip on the overwrite-confirm dialog is a heuristic — admins iterating mid-session shouldn't be prompted on every save. If complaints land that the prompt fires too often, raise to 10 minutes; if complaints land that it doesn't fire enough, lower to 1.
+- The history panel lazy-loads on first open. Subsequent toggles use the cached state. After a save, the history doesn't auto-refresh in the panel — you'd need to close and re-open. Worth fixing if Tony uses it heavily; one-line `fetchSpotlightHistory(spotlightDate)` after a successful save would do it.
+- The `beforeunload` listener triggers the browser's generic "Leave site?" prompt — modern browsers ignore the `returnValue` text. The prompt itself is the safety net; it'll feel slightly noisy in dev when refreshing intentionally, but that's a one-time-cost of having dirty state across browser sessions.
+
 
